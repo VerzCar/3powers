@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3powers.dev/schemas/provenance-1.0.json",
+  "title": "3Powers Build Provenance",
+  "description": "A signed record binding an artifact (by hash) to its source commit, repository, producing run, and SBOM (3PWR-FR-066). Signed with the same independent Ed25519 identity as the verdict ledger (3PWR-FR-068).",
+  "type": "object",
+  "required": ["schema_version", "artifact", "source_commit", "repository", "built_at", "sbom", "signer_key_id", "signature"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "artifact": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "source_commit": { "type": "string" },
+    "repository": { "type": "string" },
+    "built_at": { "type": "string", "format": "date-time" },
+    "sbom": {
+      "type": "object",
+      "required": ["format", "components"],
+      "properties": {
+        "format": { "type": "string" },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "signer_key_id": { "type": "string", "pattern": "^ed25519:[0-9a-f]{16}$" },
+    "signature": { "type": "string" }
+  }
+}

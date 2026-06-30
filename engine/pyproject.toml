@@ -3,7 +3,7 @@ name = "threepowers"
 version = "0.1.0"
 description = "3Powers — judiciary kit engine (gate runner, hash-chained verdict ledger, verify) layered on GitHub Spec Kit."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "3Powers" }]
 dependencies = [
@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 warn_unused_ignores = true
 warn_redundant_casts = true
 
@@ -39,7 +39,7 @@ packages = ["src/threepowers"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

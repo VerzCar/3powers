@@ -226,3 +226,49 @@ def test_coverage_check_cli(project):
         )
         == 1
     )
+
+
+def test_scope_check_cli(project):
+    """Task req-id discipline via the CLI (3PWR-FR-016)."""
+    root, proj = project
+    tasks = proj / "tasks.md"
+    tasks.write_text("- [ ] T001 [DEMO-FR-001] do (files: src/x.ts)\n", encoding="utf-8")
+    assert main(["--root", str(root), "scope-check", "--tasks", str(tasks)]) == 0
+    tasks.write_text("- [ ] T001 orphan (files: src/x.ts)\n", encoding="utf-8")
+    assert main(["--root", str(root), "scope-check", "--tasks", str(tasks)]) == 1
+
+
+def test_provenance_and_deploy_gate(project):
+    """Signed provenance (3PWR-FR-066/068) verified at the deploy gate (3PWR-FR-067)."""
+    root, proj = project
+    artifact = root / "artifact.bin"
+    artifact.write_bytes(b"shipme-v1")
+    assert (
+        main(["--root", str(root), "provenance", "--artifact", str(artifact), "--path", str(proj)])
+        == 0
+    )
+    assert main(["--root", str(root), "deploy-gate", "--artifact", str(artifact)]) == 0
+    artifact.write_bytes(b"tampered")  # supply-chain tamper
+    assert main(["--root", str(root), "deploy-gate", "--artifact", str(artifact)]) == 1
+
+
+def test_residual_recorded(project):
+    """A residual review is recorded as a signed ledger entry (3PWR-FR-036)."""
+    root, _ = project
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "residual",
+                "--reviewer",
+                "anthropic",
+                "--spec-id",
+                "DEMO",
+                "--note",
+                "looks good",
+            ]
+        )
+        == 0
+    )
+    assert main(["--root", str(root), "verify"]) == 0

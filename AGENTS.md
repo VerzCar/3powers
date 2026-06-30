@@ -27,8 +27,12 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
 | Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
 | Two-way requirement↔task coverage | `3pwr coverage-check --spec <spec.md> --tasks <tasks.md>` |
+| Task req-id + file-scope discipline | `3pwr scope-check --tasks <tasks.md> [--base <ref>] [--path <dir>]` |
 | Reverse to a prior recorded state | `3pwr revert --to <ledger-seq> [--reason …]` |
 | Abort a run | `3pwr abort --spec-id <ID> [--reason …]` |
+| Record a residual review | `3pwr residual --reviewer <id> --note <…> --spec-id <ID>` |
+| Sign build provenance + SBOM | `3pwr provenance --artifact <path> [--path <dir>]` |
+| Verify provenance (deploy gate) | `3pwr deploy-gate --artifact <path>` |
 | Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
 | Sample: lint+format / types / tests | `npm run check` · `npm run typecheck` · `npm test` (in `examples/validation-utils/`) |
 | Sample: a single test | `npx vitest run tests/unit/validate.test.ts` |

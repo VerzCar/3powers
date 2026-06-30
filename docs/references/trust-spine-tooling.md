@@ -15,14 +15,20 @@
 The engine signs the canonical bytes of each ledger entry's *core* and chains entries by `prev_hash`;
 `verify` recomputes the chain + signatures locally. No network, no CI dependency.
 
-## Provenance & SBOM (plan 003)
+## Provenance & SBOM (implemented in plan 004)
 
+**As built:** `3pwr provenance` writes a signed record binding the artifact (by sha256) to its source
+commit, repo, run, and an SBOM — **signed with the engine's own Ed25519 ledger identity** (3PWR-FR-068),
+so it needs no `cosign` and no hosted CI (3PWR-NFR-004). `3pwr deploy-gate` recomputes the hash, finds
+the record, and verifies the signature — refusing any missing/mismatched/forged artifact (3PWR-FR-067).
+The SBOM is built in-core from lockfiles (`package-lock.json`, `uv.lock`); **syft** is used when present
+for a richer CycloneDX SBOM.
+
+Optional / future layers:
 - **GitHub Artifact Attestations** (`actions/attest-build-provenance`, `gh attestation verify`): SLSA
-  provenance, Sigstore-signed, **verifiable offline** with a pre-fetched trusted root — but
-  **GitHub-Actions-dependent**, so it can only be an A4 *re-validation* layer, never the source of trust.
-- **SLSA** provenance format (aim L3); **syft** for the SBOM (CycloneDX/SPDX); **cosign** to sign the
-  artifact + SBOM with the *same* independent key as the ledger (3PWR-FR-068). Primary path is
-  local-signer-first so provenance is produced and verified with no hosted CI (3PWR-NFR-004).
+  provenance, Sigstore-signed, verifiable offline with a pre-fetched trusted root — but
+  GitHub-Actions-dependent, so only an A4 *re-validation* layer, never the source of trust.
+- **cosign** with a self-managed key, for OCI/registry artifacts, if/when needed.
 
 ## Gate suite (cheapest-first)
 

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import __version__, config, keys, lifecycle
+from . import __version__, config, keys, lifecycle, provenance, scope
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger
@@ -377,6 +377,101 @@ def cmd_coverage_check(args: argparse.Namespace) -> int:
     return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
 
 
+def cmd_scope_check(args: argparse.Namespace) -> int:
+    """Task requirement-ID + file-scope discipline (3PWR-FR-016/017)."""
+    s = _settings(args.root)
+    target = Path(args.path).resolve() if args.path else None
+    gate = scope.scope_check(Path(args.tasks).resolve(), s.root, base=args.base, target=target)
+    human = f"scope-check: {gate.status.upper()}"
+    if gate.findings:
+        human += "\n  - " + "\n  - ".join(gate.findings)
+    _print({"status": gate.status, **gate.details}, args.json, human)
+    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
+
+
+def cmd_provenance(args: argparse.Namespace) -> int:
+    """Sign build provenance + SBOM for an artifact (3PWR-FR-066/068)."""
+    s = _settings(args.root)
+    artifact = Path(args.artifact).resolve()
+    if not artifact.exists():
+        print(f"error: artifact not found: {artifact}", file=sys.stderr)
+        return EXIT_USAGE
+    target = Path(args.path).resolve() if args.path else s.root
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    signed = provenance.sign_record(provenance.build_record(s.root, target, artifact), sk)
+    pdir = s.dir / "provenance"
+    pdir.mkdir(parents=True, exist_ok=True)
+    (pdir / f"{signed['artifact']['sha256'].split(':')[1]}.json").write_text(
+        json.dumps(signed, indent=2) + "\n", encoding="utf-8"
+    )
+    entry = Ledger(s.ledger_path).append(
+        "provenance",
+        {"artifact": signed["artifact"], "source_commit": signed["source_commit"]},
+        sk,
+        spec_id=args.spec_id or "",
+    )
+    _print(
+        {"artifact": signed["artifact"], "ledger_seq": entry["seq"]},
+        args.json,
+        f"provenance signed for {artifact.name} ({signed['artifact']['sha256']}); "
+        f"{len(signed['sbom']['components'])} SBOM components; ledger seq={entry['seq']}",
+    )
+    return EXIT_OK
+
+
+def cmd_deploy_gate(args: argparse.Namespace) -> int:
+    """Verify an artifact's provenance; refuse if missing or invalid (3PWR-FR-067)."""
+    s = _settings(args.root)
+    artifact = Path(args.artifact).resolve()
+    if not artifact.exists():
+        print(f"error: artifact not found: {artifact}", file=sys.stderr)
+        return EXIT_USAGE
+    digest = provenance.sha256_file(artifact)
+    pfile = s.dir / "provenance" / f"{digest.split(':')[1]}.json"
+    reasons: list[str] = []
+    if not pfile.exists():
+        reasons.append("no provenance record for this artifact hash")
+    else:
+        record = json.loads(pfile.read_text(encoding="utf-8"))
+        if record.get("artifact", {}).get("sha256") != digest:
+            reasons.append("artifact hash does not match provenance")
+        if not s.pubkey_path.exists():
+            reasons.append("public key not found")
+        elif not provenance.verify_record(record, keys.load_public(s.pubkey_path)):
+            reasons.append("provenance signature invalid")
+    if reasons:
+        _print(
+            {"deployable": False, "reasons": reasons},
+            args.json,
+            f"DEPLOY REFUSED for {artifact.name}:\n  - " + "\n  - ".join(reasons),
+        )
+        return EXIT_FAIL
+    _print(
+        {"deployable": True, "artifact": digest},
+        args.json,
+        f"deploy-gate PASS — provenance verified for {artifact.name}",
+    )
+    return EXIT_OK
+
+
+def cmd_residual(args: argparse.Namespace) -> int:
+    """Record a signed residual review (3PWR-FR-036/037)."""
+    s = _settings(args.root)
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    payload = {"reviewer": args.reviewer, "note": args.note or "", "findings": args.findings or []}
+    entry = Ledger(s.ledger_path).append("residual", payload, sk, spec_id=args.spec_id or "")
+    print(f"residual review recorded by {args.reviewer} (ledger seq={entry['seq']})")
+    return EXIT_OK
+
+
 # --------------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="3pwr", description="3Powers judiciary engine.")
@@ -446,6 +541,31 @@ def build_parser() -> argparse.ArgumentParser:
     ccp.add_argument("--spec", help="path to the governing spec.md")
     ccp.add_argument("--tasks", required=True, help="path to tasks.md")
     ccp.set_defaults(func=cmd_coverage_check)
+
+    scp = common(sub.add_parser("scope-check", help="task req-id + file-scope discipline"))
+    scp.add_argument("--tasks", required=True, help="path to tasks.md")
+    scp.add_argument("--base", help="git ref for the changed-file base")
+    scp.add_argument("--path", help="restrict the changed-file scan to this dir")
+    scp.set_defaults(func=cmd_scope_check)
+
+    pvp = common(sub.add_parser("provenance", help="sign build provenance + SBOM for an artifact"))
+    pvp.add_argument("--artifact", required=True)
+    pvp.add_argument("--path", help="project dir for the SBOM (default: repo root)")
+    pvp.add_argument("--spec-id", dest="spec_id")
+    pvp.set_defaults(func=cmd_provenance)
+
+    dgp = common(
+        sub.add_parser("deploy-gate", help="verify an artifact's provenance; refuse if bad")
+    )
+    dgp.add_argument("--artifact", required=True)
+    dgp.set_defaults(func=cmd_deploy_gate)
+
+    rsp = common(sub.add_parser("residual", help="record a signed residual review"))
+    rsp.add_argument("--reviewer", required=True)
+    rsp.add_argument("--note")
+    rsp.add_argument("--findings", nargs="*")
+    rsp.add_argument("--spec-id", dest="spec_id")
+    rsp.set_defaults(func=cmd_residual)
 
     lp = sub.add_parser("ledger", help="ledger operations")
     lsub = lp.add_subparsers(dest="ledger_cmd", required=True)

@@ -2,6 +2,7 @@
 # schemas and adapters ARE committed (self-contained record); runtime outputs are not.
 .3powers/runs/
 .3powers/verdicts/
+.3powers/provenance/
 .3powers/keys/*.key
 *.key
 

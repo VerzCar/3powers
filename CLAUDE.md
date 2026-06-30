@@ -27,16 +27,18 @@ Implemented and committed (not yet merged to `main`):
 - **Plan 001** (`plan/001-base-setup-and-tech-stack.md`) — base setup + a runnable walking skeleton.
 - **Plan 002** (`plan/002-self-application-and-scanners.md`) — self-application + supply-chain scanners.
 - **Plan 003** (`plan/003-complete-v0.1-mvp.md`) — completed the remaining **v0.1** trust-spine MVP gaps.
+- **Plan 004** (`plan/004-scope-provenance-residual.md`) — scope discipline + first **v0.5** pillars.
 
-**v0.1 status (honest):** essentially complete. The trust spine (ledger/verify/enforcement), the
-deterministic floor + oracle-bearing gates, two reference adapters (TypeScript + Python),
-self-application, **reversibility (FR-070)**, **lifecycle/resumability (FR-011/019)**, **two-way
-requirement↔task coverage (FR-015)**, and **gate-gaming detection (FR-035)** are all implemented and
-self-applied. Remaining gaps → **plan 004**: commit-tagging & file-scope enforcement (FR-016/017) and
-work-kind inference (FR-058); context strategy (FR-060/061) is constrained by the Copilot harness.
-Deferred to **v0.5** (plan 004+): residual review (FR-036), build provenance + SBOM + deploy gate
-(FR-066–068), SAST, the eval harness (FR-050). Secret + dependency scans (v0.5) were brought forward in
-plan 002.
+**Status (honest):** v0.1 is complete and v0.5 is underway. Implemented across plans 001–004: the trust
+spine (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the
+deterministic floor + oracle-bearing gates + **dependency / secret / gate-gaming** core gates, two
+reference adapters (TypeScript + Python), **lifecycle/resumability**, **two-way coverage**, **scope
+discipline (FR-016/017)**, **residual review (FR-036)**, and self-application (the engine gates its own
+code — 25 FRs traced). Remaining → **plan 005** to finish v0.5: **SAST** (semgrep) and the
+prompt/constitution **eval harness (FR-050)**; then **v1.0** (brownfield §12, observe §13,
+emergency/deviation §14, catalog distribution, a third adapter). Known approximations:
+**work-kind inference (FR-058)** and **context strategy (FR-060/061)** are command/harness-level and
+constrained by the Copilot-only setting.
 
 ## Repository layout
 
@@ -94,15 +96,16 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    same family); full structural isolation is a known approximation in a Copilot-only setting.
 
 2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
-   mutation → dependency → secret → spec-conformance (→ SAST, provenance later). Language support is a
+   mutation → dependency → secret → gate-gaming → spec-conformance (SAST later). Language support is a
    **declarative adapter manifest** — the core never assumes a language (NFR-007); language-agnostic
    gates (diff-coverage, conformance, secret, dependency) live in the core. One normalized **verdict**
    per run, identical across languages (NFR-001/FR-033), every failure actionable (FR-034).
 
 3. **The trust spine (§9).** No mandatory CI/CD enforcer; trust is recovered locally: an append-only
    **hash-chained, Ed25519-signed verdict ledger**; a `verify` that fails on any tamper/gap/break; a
-   local `advance` enforcement gate; full **reversibility** (`revert`, FR-070); (v0.5) signed build
-   provenance + SBOM. Self-contained and offline-reconstructable (NFR-004/010).
+   local `advance` enforcement gate; full **reversibility** (`revert`, FR-070); and signed build
+   **provenance + SBOM** verified at a **deploy gate** (`provenance`/`deploy-gate`, FR-066–068), signed
+   by the same independent identity as the ledger. Self-contained and offline-reconstructable (NFR-004/010).
 
 ## Key conventions
 

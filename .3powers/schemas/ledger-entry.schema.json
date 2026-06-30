@@ -10,7 +10,7 @@
     "seq": { "type": "integer", "minimum": 0, "description": "Dense, monotonic from 0." },
     "prev_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "timestamp": { "type": "string", "format": "date-time" },
-    "type": { "type": "string", "enum": ["verdict", "residual", "signoff", "stage_advance", "reversal", "abort"] },
+    "type": { "type": "string", "enum": ["verdict", "residual", "signoff", "stage_advance", "reversal", "abort", "provenance"] },
     "spec_id": { "type": "string" },
     "requirement_ids": { "type": "array", "items": { "type": "string" } },
     "payload": { "type": "object" },

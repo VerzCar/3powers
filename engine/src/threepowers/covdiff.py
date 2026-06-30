@@ -98,6 +98,19 @@ def diff_coverage(
     return round(100.0 * covered / total, 2), uncovered
 
 
+def changed_files(repo_root: Path, base: str | None, target: Path | None = None) -> set[str]:
+    """Repo-relative paths changed vs ``base`` (added/modified) plus untracked files."""
+    scope = ["--", str(target)] if target else []
+    files: set[str] = set()
+    ref = _resolve_base(repo_root, base)
+    if ref is not None:
+        out = _git(repo_root, ["diff", "--name-only", ref, *scope])
+        files |= {ln.strip() for ln in out.splitlines() if ln.strip()}
+    others = _git(repo_root, ["ls-files", "--others", "--exclude-standard", *scope])
+    files |= {ln.strip() for ln in others.splitlines() if ln.strip()}
+    return files
+
+
 # -- helpers ---------------------------------------------------------------
 def _git(repo_root: Path, args: list[str]) -> str:
     try:
