@@ -49,7 +49,7 @@ def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
         data = json.loads(feat.read_text(encoding="utf-8"))
         d = data.get("feature_directory")
         if d:
-            cand = (s.root / d / "spec.md")
+            cand = s.root / d / "spec.md"
             if cand.exists():
                 return cand
     raise FileNotFoundError("could not resolve a spec; pass --spec <path/to/spec.md>")
@@ -75,8 +75,9 @@ def _format_verdict(verdict, appended: Optional[dict]) -> str:
             extra = f"  ({g.details.get('covered_pct')}% ≥ {g.details.get('threshold')}%)"
         elif g.gate == "spec_conformance" and g.details:
             extra = f"  ({len(g.details.get('requirement_ids', []))} requirements traced)"
-        lines.append(f"  {mark.get(g.status, '?')} {g.gate}"
-                     f"{(' · ' + g.tool) if g.tool else ''}{extra}")
+        lines.append(
+            f"  {mark.get(g.status, '?')} {g.gate}{(' · ' + g.tool) if g.tool else ''}{extra}"
+        )
         for finding in g.findings[:5]:
             lines.append(f"      - {finding}")
     if verdict.failures:
@@ -111,8 +112,14 @@ def cmd_keygen(args: argparse.Namespace) -> int:
 def cmd_init(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve() if args.root else Path.cwd()
     s = Settings(root=root)
-    for d in (s.dir / "config", s.dir / "schemas", s.dir / "adapters",
-              s.dir / "keys", s.dir / "runs", s.dir / "verdicts"):
+    for d in (
+        s.dir / "config",
+        s.dir / "schemas",
+        s.dir / "adapters",
+        s.dir / "keys",
+        s.dir / "runs",
+        s.dir / "verdicts",
+    ):
         d.mkdir(parents=True, exist_ok=True)
     if not s.ledger_path.exists():
         s.ledger_path.touch()
@@ -126,7 +133,8 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     spec_path = _resolve_spec(s, args.spec)
 
     verdict = run_gates(
-        s, target,
+        s,
+        target,
         tier=args.tier,
         spec_path=spec_path,
         adapter_name=args.adapter,
@@ -141,15 +149,19 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         try:
             sk = keys.resolve_signing_key(s.root)
             appended = Ledger(s.ledger_path).append(
-                "verdict", verdict.to_dict(), sk,
-                spec_id=verdict.spec_id, requirement_ids=verdict.requirement_ids(),
+                "verdict",
+                verdict.to_dict(),
+                sk,
+                spec_id=verdict.spec_id,
+                requirement_ids=verdict.requirement_ids(),
             )
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
     human = _format_verdict(verdict, appended)
-    _print({"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")},
-           args.json, human)
+    _print(
+        {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")}, args.json, human
+    )
     return EXIT_OK if verdict.result == STATUS_PASS else EXIT_FAIL
 
 
@@ -161,7 +173,7 @@ def cmd_conformance(args: argparse.Namespace) -> int:
     roots = [Path(t).resolve() for t in args.tests] if args.tests else [s.root]
     gate = run_conformance(spec_path, roots)
     obj = {"gate": gate.gate, "status": gate.status, **gate.details}
-    human = f"spec-conformance: {gate.status.upper()} ({gate.details.get('spec_id','?')})"
+    human = f"spec-conformance: {gate.status.upper()} ({gate.details.get('spec_id', '?')})"
     if gate.findings:
         human += "\n  - " + "\n  - ".join(gate.findings)
     _print(obj, args.json, human)
@@ -171,8 +183,9 @@ def cmd_conformance(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     res = verify_ledger(s.ledger_path, s.pubkey_path)
-    _print({"ok": res.ok, "entries": res.entries, "problems": res.problems},
-           args.json, res.summary())
+    _print(
+        {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
+    )
     return EXIT_OK if res.ok else EXIT_FAIL
 
 
@@ -185,7 +198,9 @@ def cmd_signoff(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     payload = {"approver": args.approver, "stage": args.stage, "note": args.note or ""}
     entry = Ledger(s.ledger_path).append("signoff", payload, sk, spec_id=args.spec_id or "")
-    print(f"sign-off recorded by {args.approver} for stage '{args.stage}' (ledger seq={entry['seq']})")
+    print(
+        f"sign-off recorded by {args.approver} for stage '{args.stage}' (ledger seq={entry['seq']})"
+    )
     return EXIT_OK
 
 
@@ -215,8 +230,11 @@ def cmd_advance(args: argparse.Namespace) -> int:
         reasons.append("sign-off predates the latest verdict")
 
     if reasons:
-        _print({"advanced": False, "stage": args.stage, "reasons": reasons}, args.json,
-               f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons))
+        _print(
+            {"advanced": False, "stage": args.stage, "reasons": reasons},
+            args.json,
+            f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons),
+        )
         return EXIT_FAIL
 
     try:
@@ -225,8 +243,11 @@ def cmd_advance(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
-    _print({"advanced": True, "stage": args.stage, "ledger_seq": entry["seq"]}, args.json,
-           f"advanced to '{args.stage}' (ledger seq={entry['seq']})")
+    _print(
+        {"advanced": True, "stage": args.stage, "ledger_seq": entry["seq"]},
+        args.json,
+        f"advanced to '{args.stage}' (ledger seq={entry['seq']})",
+    )
     return EXIT_OK
 
 
@@ -237,8 +258,10 @@ def cmd_ledger_show(args: argparse.Namespace) -> int:
         print(json.dumps(entries, indent=2))
         return EXIT_OK
     for e in entries:
-        print(f"#{e['seq']:>3} {e['type']:<13} {e['timestamp']} "
-              f"{e.get('spec_id',''):<8} sig={e['signer_key_id']}")
+        print(
+            f"#{e['seq']:>3} {e['type']:<13} {e['timestamp']} "
+            f"{e.get('spec_id', ''):<8} sig={e['signer_key_id']}"
+        )
     if not entries:
         print("(empty ledger)")
     return EXIT_OK
@@ -249,8 +272,11 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     roles = s.load_roles()
     ok = model_diversity_ok(roles, args.role_a, args.role_b)
-    _print({"diverse": ok, "role_a": args.role_a, "role_b": args.role_b}, args.json,
-           f"model diversity {args.role_a} vs {args.role_b}: {'OK' if ok else 'VIOLATION'}")
+    _print(
+        {"diverse": ok, "role_a": args.role_a, "role_b": args.role_b},
+        args.json,
+        f"model diversity {args.role_a} vs {args.role_b}: {'OK' if ok else 'VIOLATION'}",
+    )
     return EXIT_OK if ok else EXIT_FAIL
 
 
@@ -309,7 +335,9 @@ def build_parser() -> argparse.ArgumentParser:
     ls = common(lsub.add_parser("show", help="print the ledger"))
     ls.set_defaults(func=cmd_ledger_show)
 
-    rp = common(sub.add_parser("roles-check", help="check model-family diversity between two roles"))
+    rp = common(
+        sub.add_parser("roles-check", help="check model-family diversity between two roles")
+    )
     rp.add_argument("--role-a", dest="role_a", default="oracle")
     rp.add_argument("--role-b", dest="role_b", default="coder")
     rp.set_defaults(func=cmd_roles_check)

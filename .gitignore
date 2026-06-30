@@ -1,6 +1,7 @@
 # 3Powers trust-spine: transient state only. The ledger, public key, config,
-# schemas, adapters and latest verdict ARE committed (self-contained record).
+# schemas and adapters ARE committed (self-contained record); runtime outputs are not.
 .3powers/runs/
+.3powers/verdicts/
 .3powers/keys/*.key
 *.key
 
@@ -11,6 +12,7 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.coverage
 dist/
 build/
 *.egg-info/

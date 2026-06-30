@@ -15,9 +15,20 @@ from pathlib import Path
 
 from .verdict import STATUS_FAIL, STATUS_PASS, GateResult, failure
 
-# Canonical requirement ID, namespaced by spec ID (3PWR-FR-059): e.g. VUTIL-FR-001.
-_REQ_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,15})-(FR|NFR)-(\d{3,})\b")
-_SPEC_ID_RE = re.compile(r"(?im)^\*{0,2}Spec ID\*{0,2}\s*[:=]\s*`?([A-Z][A-Z0-9]{1,15})`?")
+# Canonical requirement ID, namespaced by spec ID (3PWR-FR-059): e.g. VUTIL-FR-001 or
+# 3PWR-FR-038. The spec ID may start with a digit (the 3Powers epic id is "3PWR"). The
+# number group also captures slash-runs like "038/039/040", expanded by _iter_req_ids.
+_REQ_RE = re.compile(r"\b([0-9A-Z]{2,16})-(FR|NFR)-(\d{3,}(?:/\d{3,})*)\b")
+_SPEC_ID_RE = re.compile(r"(?im)^\*{0,2}Spec ID\*{0,2}\s*[:=]\s*`?([0-9A-Z]{2,16})`?")
+
+
+def _iter_req_ids(text: str):
+    """Yield ``(spec_id, kind, num)`` for every requirement ID in ``text``, expanding
+    slash-runs such as ``3PWR-FR-038/039/040`` into 038, 039, 040."""
+    for sid, kind, nums in _REQ_RE.findall(text):
+        for num in nums.split("/"):
+            yield sid, kind, num
+
 
 _LAYER_HINTS = {
     "unit": ("/unit/", ".unit.", "tests/unit"),
@@ -34,7 +45,7 @@ def extract_spec(spec_path: Path) -> tuple[str, set[str]]:
     m = _SPEC_ID_RE.search(text)
     declared_spec = m.group(1) if m else ""
     ids: set[str] = set()
-    for spec_id, kind, num in _REQ_RE.findall(text):
+    for spec_id, kind, num in _iter_req_ids(text):
         if declared_spec and spec_id != declared_spec:
             continue
         ids.add(f"{spec_id}-{kind}-{num}")
@@ -71,10 +82,10 @@ def referenced_ids(test_roots: list[Path], spec_id: str) -> dict[str, set[str]]:
         seen.add(f)
         try:
             text = f.read_text(encoding="utf-8")
-        except OSError:
-            continue
+        except (OSError, UnicodeDecodeError):
+            continue  # skip binary / unreadable files
         layer = _layer_of(f)
-        for sid, kind, num in _REQ_RE.findall(text):
+        for sid, kind, num in _iter_req_ids(text):
             if spec_id and sid != spec_id:
                 continue
             refs.setdefault(f"{sid}-{kind}-{num}", set()).add(layer)
@@ -104,7 +115,10 @@ def run_conformance(spec_path: Path, test_roots: list[Path]) -> GateResult:
 
 def conformance_failures(gate: GateResult) -> list[dict]:
     return [
-        failure("untested_requirement", requirement_id=rid,
-                detail="no test references this requirement ID")
+        failure(
+            "untested_requirement",
+            requirement_id=rid,
+            detail="no test references this requirement ID",
+        )
         for rid in gate.details.get("untested_requirements", [])
     ]

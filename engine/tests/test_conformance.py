@@ -32,8 +32,7 @@ def test_all_requirements_tested_passes(tmp_path):
     tests = tmp_path / "tests" / "unit"
     tests.mkdir(parents=True)
     (tests / "validate.test.ts").write_text(
-        'describe("VUTIL-FR-001: empty", () => {});\n'
-        'describe("VUTIL-FR-002: email", () => {});\n',
+        'describe("VUTIL-FR-001: empty", () => {});\ndescribe("VUTIL-FR-002: email", () => {});\n',
         encoding="utf-8",
     )
     gate = run_conformance(spec, [tmp_path / "tests"])
@@ -51,8 +50,23 @@ def test_untested_requirement_is_flagged(tmp_path):
     assert gate.details["untested_requirements"] == ["VUTIL-FR-002"]
 
 
+def test_digit_leading_spec_id_and_slash_runs(tmp_path):
+    """The 3Powers epic id "3PWR" starts with a digit; shorthand 3PWR-FR-038/039/040 expands."""
+    spec = tmp_path / "spec.md"
+    spec.write_text(
+        "**Spec ID**: 3PWR\n\n- **3PWR-FR-038**: x\n- **3PWR-FR-039**: y\n- **3PWR-FR-040**: z\n",
+        encoding="utf-8",
+    )
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "t.test.py").write_text("# exercises 3PWR-FR-038/039/040\n", encoding="utf-8")
+    gate = run_conformance(spec, [tests])
+    assert gate.details["spec_id"] == "3PWR"
+    assert gate.status == STATUS_PASS
+    assert set(gate.details["requirement_ids"]) == {"3PWR-FR-038", "3PWR-FR-039", "3PWR-FR-040"}
+
+
 def test_layers_are_recorded(tmp_path):
-    spec = _write_spec(tmp_path)
     for layer in ("unit", "integration", "e2e"):
         d = tmp_path / "tests" / layer
         d.mkdir(parents=True)

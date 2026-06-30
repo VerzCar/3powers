@@ -15,12 +15,17 @@ from pathlib import Path
 _HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
-def parse_lcov(lcov_path: Path) -> dict[str, dict[int, int]]:
-    """Return ``{absolute_file_path: {line_number: hit_count}}`` from an LCOV file."""
+def parse_lcov(lcov_path: Path, root: Path | None = None) -> dict[str, dict[int, int]]:
+    """Return ``{absolute_file_path: {line_number: hit_count}}`` from an LCOV file.
+
+    Relative ``SF:`` paths are resolved against ``root`` (the project root the coverage
+    tool ran in — e.g. coverage.py emits paths relative to cwd), falling back to the
+    LCOV file's own directory when ``root`` is not given.
+    """
     result: dict[str, dict[int, int]] = {}
     if not lcov_path.exists():
         return result
-    base = lcov_path.parent
+    base = root or lcov_path.parent
     current: str | None = None
     for line in lcov_path.read_text(encoding="utf-8").splitlines():
         if line.startswith("SF:"):
@@ -60,8 +65,8 @@ def changed_lines(repo_root: Path, target: Path, base: str | None) -> dict[str, 
         fpath = (repo_root / rel).resolve()
         try:
             n = len(fpath.read_text(encoding="utf-8").splitlines())
-        except OSError:
-            continue
+        except (OSError, UnicodeDecodeError):
+            continue  # skip binary / unreadable files
         changed[str(fpath)] = set(range(1, n + 1))
     return changed
 

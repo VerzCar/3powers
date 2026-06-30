@@ -36,7 +36,10 @@ def _git_commit(repo_root: Path) -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root, capture_output=True, text=True, check=False,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout.strip()
         return out
     except OSError:
@@ -91,15 +94,35 @@ def run_gates(
         if gate in _ADAPTER_GATES:
             spec = adapters.gate_spec(manifest, gate)
             if not spec:
-                verdict.add(GateResult(gate=gate, status=STATUS_SKIP,
-                                       findings=[f"adapter '{adapter_name}' declares no '{gate}' gate"]))
+                verdict.add(
+                    GateResult(
+                        gate=gate,
+                        status=STATUS_SKIP,
+                        findings=[f"adapter '{adapter_name}' declares no '{gate}' gate"],
+                    )
+                )
                 continue
             if gate == "mutation" and not allow_mutation:
                 # Wired but non-blocking in v0.1 (3PWR §17): report as skipped.
-                verdict.add(GateResult(gate=gate, status=STATUS_SKIP, tool="mutation",
-                                       findings=["mutation wired but not enforced in this run"]))
+                verdict.add(
+                    GateResult(
+                        gate=gate,
+                        status=STATUS_SKIP,
+                        tool="mutation",
+                        findings=["mutation wired but not enforced in this run"],
+                    )
+                )
                 continue
             cmd = adapters.command_of(spec)
+            if not cmd:
+                verdict.add(
+                    GateResult(
+                        gate=gate,
+                        status=STATUS_SKIP,
+                        findings=[f"adapter declares no command for '{gate}'"],
+                    )
+                )
+                continue
             res = adapters.run_cmd(cmd, cwd=target)
             gr = _result_from_cmd(gate, spec, res)
             if gate == "tests" and spec.get("coverage_path"):
@@ -118,17 +141,22 @@ def run_gates(
     # Make sure tests actually ran when required even if listed only via diff_coverage.
     if need_tests and not any(g.gate == "tests" for g in verdict.gates):
         spec = adapters.gate_spec(manifest, "tests")
-        if spec:
-            res = adapters.run_cmd(adapters.command_of(spec), cwd=target)
+        cmd = adapters.command_of(spec) if spec else None
+        if spec and cmd:
+            res = adapters.run_cmd(cmd, cwd=target)
             verdict.add(_result_from_cmd("tests", spec, res))
-            if spec.get("coverage_path"):
-                coverage_path = target / spec["coverage_path"]
 
     # Generic actionable failures for any failed adapter gate.
     for g in verdict.gates:
         if g.status == STATUS_FAIL and g.gate in _ADAPTER_GATES:
-            verdict.failures.append(failure("gate_failed", gate=g.gate, tool=g.tool,
-                                            detail="; ".join(g.findings[-3:]) or "non-zero exit"))
+            verdict.failures.append(
+                failure(
+                    "gate_failed",
+                    gate=g.gate,
+                    tool=g.tool,
+                    detail="; ".join(g.findings[-3:]) or "non-zero exit",
+                )
+            )
     return verdict.finalize()
 
 
@@ -152,9 +180,13 @@ def _diff_coverage_gate(
         if spec.get("coverage_path"):
             coverage_path = target / spec["coverage_path"]
     if coverage_path is None or not coverage_path.exists():
-        return GateResult(gate="diff_coverage", status=STATUS_FAIL, tool="3pwr-covdiff",
-                          findings=[f"no coverage report found at {coverage_path}"])
-    lcov = covdiff.parse_lcov(coverage_path)
+        return GateResult(
+            gate="diff_coverage",
+            status=STATUS_FAIL,
+            tool="3pwr-covdiff",
+            findings=[f"no coverage report found at {coverage_path}"],
+        )
+    lcov = covdiff.parse_lcov(coverage_path, root=target)
     changed = covdiff.changed_lines(settings.root, target, base)
     pct, uncovered = covdiff.diff_coverage(lcov, changed)
     status = STATUS_PASS if pct >= threshold else STATUS_FAIL

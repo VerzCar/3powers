@@ -21,7 +21,14 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "hypothesis>=6",
+    "types-PyYAML>=6",
+    "mutmut>=2.4",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+warn_redundant_casts = true
 
 [build-system]
 requires = ["hatchling"]

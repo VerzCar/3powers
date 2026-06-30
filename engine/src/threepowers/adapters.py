@@ -75,13 +75,15 @@ def run_cmd(command: str, cwd: Path, timeout: int = 600) -> CmdResult:
             timeout=timeout,
             check=False,
         )
-        return CmdResult(proc.returncode, proc.stdout, proc.stderr,
-                         int((time.monotonic() - start) * 1000))
+        return CmdResult(
+            proc.returncode, proc.stdout, proc.stderr, int((time.monotonic() - start) * 1000)
+        )
     except FileNotFoundError as exc:
         return CmdResult(127, "", f"tool not found: {exc}", int((time.monotonic() - start) * 1000))
     except subprocess.TimeoutExpired:
-        return CmdResult(124, "", f"timed out after {timeout}s",
-                         int((time.monotonic() - start) * 1000))
+        return CmdResult(
+            124, "", f"timed out after {timeout}s", int((time.monotonic() - start) * 1000)
+        )
 
 
 def command_of(spec: dict[str, Any]) -> Optional[str]:

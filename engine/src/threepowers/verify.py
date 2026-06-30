@@ -27,7 +27,9 @@ class VerifyResult:
     def summary(self) -> str:
         if self.ok:
             return f"ledger OK — {self.entries} entr{'y' if self.entries == 1 else 'ies'}, chain and signatures intact"
-        return f"ledger TAMPERED — {len(self.problems)} problem(s):\n  - " + "\n  - ".join(self.problems)
+        return f"ledger TAMPERED — {len(self.problems)} problem(s):\n  - " + "\n  - ".join(
+            self.problems
+        )
 
 
 def verify_ledger(ledger_path: Path, pubkey_path: Path) -> VerifyResult:
@@ -39,8 +41,9 @@ def verify_ledger(ledger_path: Path, pubkey_path: Path) -> VerifyResult:
         return res  # an empty ledger trivially verifies
 
     if not pubkey_path.exists():
-        return VerifyResult(ok=False, entries=len(entries),
-                            problems=[f"public key not found at {pubkey_path}"])
+        return VerifyResult(
+            ok=False, entries=len(entries), problems=[f"public key not found at {pubkey_path}"]
+        )
     vk: VerifyKey = load_public(pubkey_path)
 
     expected_prev = GENESIS_PREV_HASH
