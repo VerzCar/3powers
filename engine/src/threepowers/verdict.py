@@ -27,6 +27,7 @@ GATE_ORDER = [
     "mutation",
     "dependency_scan",
     "secret_scan",
+    "gate_gaming",
     "spec_conformance",
 ]
 

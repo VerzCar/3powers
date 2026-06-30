@@ -21,13 +21,13 @@ tiers:
     diff_coverage: 80
     mutation_score: 0
     model_diversity: true
-    gates: [format, lint, types, tests, diff_coverage, dependency_scan, secret_scan, spec_conformance]
+    gates: [format, lint, types, tests, diff_coverage, dependency_scan, secret_scan, gate_gaming, spec_conformance]
 
   High-risk:       # this IS the trust — strictest bar, diversity + mutation required
     diff_coverage: 95
     mutation_score: 70
     model_diversity: true
-    gates: [format, lint, types, tests, diff_coverage, mutation, dependency_scan, secret_scan, spec_conformance]
+    gates: [format, lint, types, tests, diff_coverage, mutation, dependency_scan, secret_scan, gate_gaming, spec_conformance]
 
 # Capability area → tier (spec §4). A change to trust-spine code is held to
 # High-risk; the executive/legislative workflow to Standard; docs/CLI polish to

@@ -24,7 +24,11 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Spec-conformance only | `3pwr conformance --spec <spec.md> --tests <dir>` |
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
-| Enforce + advance a stage | `3pwr advance --stage ship` |
+| Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
+| Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
+| Two-way requirement↔task coverage | `3pwr coverage-check --spec <spec.md> --tasks <tasks.md>` |
+| Reverse to a prior recorded state | `3pwr revert --to <ledger-seq> [--reason …]` |
+| Abort a run | `3pwr abort --spec-id <ID> [--reason …]` |
 | Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
 | Sample: lint+format / types / tests | `npm run check` · `npm run typecheck` · `npm test` (in `examples/validation-utils/`) |
 | Sample: a single test | `npx vitest run tests/unit/validate.test.ts` |

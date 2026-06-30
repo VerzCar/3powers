@@ -24,7 +24,7 @@ from .keys import SigningKey
 # Fields that are derived (hash/signature) and therefore excluded from the signed core.
 _DERIVED_FIELDS = ("entry_hash", "signer_key_id", "signature")
 
-ENTRY_TYPES = ("verdict", "residual", "signoff", "stage_advance")
+ENTRY_TYPES = ("verdict", "residual", "signoff", "stage_advance", "reversal", "abort")
 
 
 def _now_iso() -> str:

@@ -163,3 +163,66 @@ def test_ledger_show_and_json(project, capsys):
     assert main(["--root", str(root), "ledger", "show"]) == 0
     out = capsys.readouterr().out
     assert "verdict" in out
+
+
+def test_lifecycle_status_revert_abort(project):
+    """Lifecycle status (3PWR-FR-011/019) and reversal (3PWR-FR-070) via the CLI."""
+    root, proj = project
+    assert _gate_run(root, proj) == 0  # verdict #0 (spec DEMO)
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "signoff",
+                "--approver",
+                "x",
+                "--stage",
+                "review",
+                "--spec-id",
+                "DEMO",
+            ]
+        )
+        == 0
+    )  # #1
+    assert main(["--root", str(root), "advance", "--stage", "ship", "--spec-id", "DEMO"]) == 0  # #2
+    assert main(["--root", str(root), "status", "--spec-id", "DEMO"]) == 0
+    assert main(["--root", str(root), "revert", "--to", "0", "--reason", "rollback"]) == 0  # #3
+    assert main(["--root", str(root), "abort", "--spec-id", "DEMO", "--reason", "done"]) == 0  # #4
+    assert main(["--root", str(root), "verify"]) == 0  # chain still intact
+
+
+def test_coverage_check_cli(project):
+    """Two-way requirement<->task coverage via the CLI (3PWR-FR-015)."""
+    root, proj = project
+    tasks = proj / "tasks.md"
+    tasks.write_text("- [ ] T001 [DEMO-FR-001] implement\n", encoding="utf-8")
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "coverage-check",
+                "--spec",
+                str(proj / "spec.md"),
+                "--tasks",
+                str(tasks),
+            ]
+        )
+        == 0
+    )
+    tasks.write_text("- [ ] T001 orphan task with no requirement\n", encoding="utf-8")
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "coverage-check",
+                "--spec",
+                str(proj / "spec.md"),
+                "--tasks",
+                str(tasks),
+            ]
+        )
+        == 1
+    )

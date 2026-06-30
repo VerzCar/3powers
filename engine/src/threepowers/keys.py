@@ -104,19 +104,8 @@ class SigningKey:
 
 
 def generate() -> SigningKey:
-    pk = Ed25519PrivateKey.generate()
-    seed = pk.private_bytes_raw() if hasattr(pk, "private_bytes_raw") else _seed_compat(pk)
-    return SigningKey(seed=seed)
-
-
-def _seed_compat(pk: Ed25519PrivateKey) -> bytes:  # pragma: no cover - old cryptography
-    from cryptography.hazmat.primitives.serialization import (
-        Encoding,
-        NoEncryption,
-        PrivateFormat,
-    )
-
-    return pk.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    # cryptography>=42 (a hard dependency) always provides private_bytes_raw().
+    return SigningKey(seed=Ed25519PrivateKey.generate().private_bytes_raw())
 
 
 def write_public(path: Path, vk: VerifyKey) -> None:

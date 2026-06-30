@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import __version__, config, keys
+from . import __version__, config, keys, lifecycle
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger
@@ -239,7 +239,9 @@ def cmd_advance(args: argparse.Namespace) -> int:
 
     try:
         sk = keys.resolve_signing_key(s.root)
-        entry = ledger.append("stage_advance", {"stage": args.stage}, sk)
+        entry = ledger.append(
+            "stage_advance", {"stage": args.stage}, sk, spec_id=args.spec_id or ""
+        )
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -278,6 +280,101 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
         f"model diversity {args.role_a} vs {args.role_b}: {'OK' if ok else 'VIOLATION'}",
     )
     return EXIT_OK if ok else EXIT_FAIL
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""
+    s = _settings(args.root)
+    states = lifecycle.derive(Ledger(s.ledger_path).entries())
+    if args.spec_id:
+        states = {k: v for k, v in states.items() if k == args.spec_id}
+    rows = [
+        {
+            "spec_id": st.spec_id,
+            "stage": st.stage,
+            "last_verdict": st.last_verdict,
+            "signed_off": st.signed_off,
+            "aborted": st.aborted,
+        }
+        for st in states.values()
+    ]
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return EXIT_OK
+    if not rows:
+        print("(no tracked specs in the ledger)")
+    for r in rows:
+        flags = []
+        if r["signed_off"]:
+            flags.append("signed-off")
+        if r["aborted"]:
+            flags.append("ABORTED")
+        print(
+            f"{r['spec_id']:<10} stage={r['stage']:<10} verdict={r['last_verdict']:<5} "
+            f"{' '.join(flags)}"
+        )
+    return EXIT_OK
+
+
+def cmd_revert(args: argparse.Namespace) -> int:
+    """Reverse to a prior recorded state via a signed reversal entry (3PWR-FR-070)."""
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    entries = ledger.entries()
+    target = next((e for e in entries if e["seq"] == args.to), None)
+    if target is None:
+        print(f"error: no ledger entry with seq={args.to}", file=sys.stderr)
+        return EXIT_USAGE
+    spec_id = target.get("spec_id") or ""
+    state_at = lifecycle.derive([e for e in entries if e["seq"] <= args.to])
+    to_stage = state_at[spec_id].stage if spec_id in state_at else lifecycle.STAGES[1]
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    entry = ledger.append(
+        "reversal",
+        {"to_seq": args.to, "to_stage": to_stage, "reason": args.reason or ""},
+        sk,
+        spec_id=spec_id,
+    )
+    _print(
+        {"reverted_to_seq": args.to, "to_stage": to_stage, "ledger_seq": entry["seq"]},
+        args.json,
+        f"reverted {spec_id or '(global)'} to stage '{to_stage}' (state @seq={args.to}); "
+        f"recorded as ledger seq={entry['seq']}",
+    )
+    return EXIT_OK
+
+
+def cmd_abort(args: argparse.Namespace) -> int:
+    """Record an abort for a spec's run (3PWR-FR-019)."""
+    s = _settings(args.root)
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    entry = Ledger(s.ledger_path).append(
+        "abort", {"reason": args.reason or ""}, sk, spec_id=args.spec_id
+    )
+    print(f"aborted '{args.spec_id}' (ledger seq={entry['seq']})")
+    return EXIT_OK
+
+
+def cmd_coverage_check(args: argparse.Namespace) -> int:
+    """Two-way requirement<->task coverage before code (3PWR-FR-015)."""
+    from .conformance import two_way_coverage
+
+    s = _settings(args.root)
+    spec_path = _resolve_spec(s, args.spec)
+    gate = two_way_coverage(spec_path, Path(args.tasks).resolve())
+    human = f"coverage-map: {gate.status.upper()} ({gate.details.get('spec_id', '?')})"
+    if gate.findings:
+        human += "\n  - " + "\n  - ".join(gate.findings)
+    _print({"status": gate.status, **gate.details}, args.json, human)
+    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
 
 
 # --------------------------------------------------------------------------- parser
@@ -328,7 +425,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     ap = common(sub.add_parser("advance", help="enforce gate+ledger+sign-off before advancing"))
     ap.add_argument("--stage", required=True)
+    ap.add_argument("--spec-id", dest="spec_id")
     ap.set_defaults(func=cmd_advance)
+
+    stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
+    stp.add_argument("--spec-id", dest="spec_id")
+    stp.set_defaults(func=cmd_status)
+
+    rvp = common(sub.add_parser("revert", help="reverse to a prior recorded state (signed)"))
+    rvp.add_argument("--to", type=int, required=True, help="ledger seq to revert to")
+    rvp.add_argument("--reason")
+    rvp.set_defaults(func=cmd_revert)
+
+    abp = common(sub.add_parser("abort", help="record an abort for a spec's run"))
+    abp.add_argument("--spec-id", dest="spec_id", required=True)
+    abp.add_argument("--reason")
+    abp.set_defaults(func=cmd_abort)
+
+    ccp = common(sub.add_parser("coverage-check", help="two-way requirement<->task coverage"))
+    ccp.add_argument("--spec", help="path to the governing spec.md")
+    ccp.add_argument("--tasks", required=True, help="path to tasks.md")
+    ccp.set_defaults(func=cmd_coverage_check)
 
     lp = sub.add_parser("ledger", help="ledger operations")
     lsub = lp.add_subparsers(dest="ledger_cmd", required=True)
@@ -355,5 +472,5 @@ def main(argv: Optional[list[str]] = None) -> int:
         return EXIT_USAGE
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     sys.exit(main())

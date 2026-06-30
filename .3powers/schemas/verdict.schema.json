@@ -24,7 +24,7 @@
         "properties": {
           "gate": {
             "type": "string",
-            "enum": ["format", "lint", "types", "tests", "diff_coverage", "mutation", "dependency_scan", "secret_scan", "spec_conformance"]
+            "enum": ["format", "lint", "types", "tests", "diff_coverage", "mutation", "dependency_scan", "secret_scan", "gate_gaming", "spec_conformance"]
           },
           "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
           "tool": { "type": "string" },

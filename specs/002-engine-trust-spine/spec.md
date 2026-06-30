@@ -44,6 +44,16 @@ to what the engine actually implements (the full 71-FR epic lives in `3Powers_Sp
   - *Acceptance*: `advance` is refused with no sign-off and succeeds after one is recorded.
 - **3PWR-FR-042**: The engine shall apply enforcement uniformly, with no fast path.
   - *Acceptance*: `advance` applies the same checks regardless of caller.
+- **3PWR-FR-011**: The engine shall track the eight-stage lifecycle, derivable from the ledger.
+  - *Acceptance*: `status` reports a spec's current stage from its ledger entries.
+- **3PWR-FR-015**: The engine shall verify two-way requirement↔task coverage before code.
+  - *Acceptance*: `coverage-check` fails when a requirement has no task or a task has no requirement.
+- **3PWR-FR-019**: The engine shall support resuming/aborting a run with state persisted in the ledger.
+  - *Acceptance*: lifecycle state is derived from the committed ledger; an abort is recorded.
+- **3PWR-FR-035**: The engine shall flag gate-gaming (suppressions, deleted assertions) for human review.
+  - *Acceptance*: an added `# type: ignore` or a removed assertion fails the `gate_gaming` gate.
+- **3PWR-FR-070**: The engine shall reverse to a prior recorded state via a signed reversal entry.
+  - *Acceptance*: `revert` appends a reversal that returns the stage to its value at the target seq.
 
 ### Non-Functional Requirements
 

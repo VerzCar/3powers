@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import adapters, covdiff, scanners
+from . import adapters, covdiff, gaming, scanners
 from .adapters import CmdResult
 from .conformance import conformance_failures, extract_spec, run_conformance
 from .config import Settings, tier_config
@@ -29,7 +29,7 @@ from .verdict import (
 
 # Gates executed by invoking an adapter command vs. computed in the core.
 _ADAPTER_GATES = {"format", "lint", "types", "tests", "mutation"}
-_CORE_GATES = {"diff_coverage", "dependency_scan", "secret_scan", "spec_conformance"}
+_CORE_GATES = {"diff_coverage", "dependency_scan", "secret_scan", "gate_gaming", "spec_conformance"}
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -138,6 +138,9 @@ def run_gates(
         elif gate == "secret_scan":
             verdict.add(scanners.secret_scan(target))
 
+        elif gate == "gate_gaming":
+            verdict.add(gaming.detect_gaming(settings.root, target, base))
+
         elif gate == "spec_conformance":
             roots = _test_roots(manifest, target)
             gr = run_conformance(spec_path, roots)
@@ -179,6 +182,15 @@ def run_gates(
                     "vulnerable_dependency",
                     gate=g.gate,
                     detail="; ".join(g.findings[:3]) or "vulnerable dependency",
+                )
+            )
+        elif g.gate == "gate_gaming":
+            verdict.failures.append(
+                failure(
+                    "gate_gaming",
+                    gate=g.gate,
+                    detail="; ".join(g.findings[:3])
+                    or "suppression detected — human review required",
                 )
             )
     return verdict.finalize()

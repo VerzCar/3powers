@@ -122,3 +122,44 @@ def conformance_failures(gate: GateResult) -> list[dict]:
         )
         for rid in gate.details.get("untested_requirements", [])
     ]
+
+
+# A task line in tasks.md carries a task id like T001 (3PWR-FR-016).
+_TASK_RE = re.compile(r"\bT\d{2,}\b")
+
+
+def two_way_coverage(spec_path: Path, tasks_path: Path) -> GateResult:
+    """Verify two-way requirement↔task coverage before code (3PWR-FR-015).
+
+    Every requirement must map to ≥1 task and every task must trace to a requirement;
+    a gap in either direction fails.
+    """
+    spec_id, declared = extract_spec(spec_path)
+    text = tasks_path.read_text(encoding="utf-8")
+
+    reqs_in_tasks: set[str] = set()
+    tasks_without_req: list[str] = []
+    for line in text.splitlines():
+        if not _TASK_RE.search(line):
+            continue
+        ids = {f"{s}-{k}-{n}" for s, k, n in _iter_req_ids(line) if (not spec_id or s == spec_id)}
+        if ids:
+            reqs_in_tasks |= ids
+        else:
+            tasks_without_req.append(line.strip()[:80])
+
+    reqs_without_task = sorted(declared - reqs_in_tasks)
+    findings = [f"requirement {r} has no task" for r in reqs_without_task]
+    findings += [f"task has no requirement id: {t}" for t in tasks_without_req]
+    status = STATUS_FAIL if findings else STATUS_PASS
+    return GateResult(
+        gate="coverage_map",
+        status=status,
+        tool="3pwr-coverage-map",
+        details={
+            "spec_id": spec_id,
+            "requirements_without_task": reqs_without_task,
+            "tasks_without_requirement": tasks_without_req,
+        },
+        findings=findings,
+    )
