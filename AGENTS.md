@@ -41,6 +41,8 @@ Authoritative pins live in the lockfiles: `engine/uv.lock` and
 | Node | 23.3.0 |
 | Engine runtime deps | `cryptography`, `PyYAML` |
 | TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
+| Supply-chain scanners | gitleaks 8.30, osv-scanner 2.4 — secret + dependency core gates (Standard+) |
+| Mutation | mutmut (Python) / Stryker (TS) — scoped to the High-risk trust-spine; full sweep scheduled |
 
 ## Boundaries (hard rules for executive agents)
 

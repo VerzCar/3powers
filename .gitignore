@@ -17,6 +17,7 @@ dist/
 build/
 *.egg-info/
 .mutmut-cache
+mutants/
 
 # Sample / TypeScript
 node_modules/

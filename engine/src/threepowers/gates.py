@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import adapters, covdiff
+from . import adapters, covdiff, scanners
 from .adapters import CmdResult
 from .conformance import conformance_failures, extract_spec, run_conformance
 from .config import Settings, tier_config
@@ -29,7 +29,7 @@ from .verdict import (
 
 # Gates executed by invoking an adapter command vs. computed in the core.
 _ADAPTER_GATES = {"format", "lint", "types", "tests", "mutation"}
-_CORE_GATES = {"diff_coverage", "spec_conformance"}
+_CORE_GATES = {"diff_coverage", "dependency_scan", "secret_scan", "spec_conformance"}
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -132,6 +132,12 @@ def run_gates(
         elif gate == "diff_coverage":
             verdict.add(_diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base))
 
+        elif gate == "dependency_scan":
+            verdict.add(scanners.dependency_scan(target))
+
+        elif gate == "secret_scan":
+            verdict.add(scanners.secret_scan(target))
+
         elif gate == "spec_conformance":
             roots = _test_roots(manifest, target)
             gr = run_conformance(spec_path, roots)
@@ -146,15 +152,33 @@ def run_gates(
             res = adapters.run_cmd(cmd, cwd=target)
             verdict.add(_result_from_cmd("tests", spec, res))
 
-    # Generic actionable failures for any failed adapter gate.
+    # Actionable failures for any failed gate (3PWR-FR-034).
     for g in verdict.gates:
-        if g.status == STATUS_FAIL and g.gate in _ADAPTER_GATES:
+        if g.status != STATUS_FAIL:
+            continue
+        if g.gate in _ADAPTER_GATES:
             verdict.failures.append(
                 failure(
                     "gate_failed",
                     gate=g.gate,
                     tool=g.tool,
                     detail="; ".join(g.findings[-3:]) or "non-zero exit",
+                )
+            )
+        elif g.gate == "secret_scan":
+            verdict.failures.append(
+                failure(
+                    "secret_exposed",
+                    gate=g.gate,
+                    detail="; ".join(g.findings[:3]) or "secret detected",
+                )
+            )
+        elif g.gate == "dependency_scan":
+            verdict.failures.append(
+                failure(
+                    "vulnerable_dependency",
+                    gate=g.gate,
+                    detail="; ".join(g.findings[:3]) or "vulnerable dependency",
                 )
             )
     return verdict.finalize()

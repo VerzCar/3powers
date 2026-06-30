@@ -37,11 +37,14 @@ The engine signs the canonical bytes of each ledger entry's *core* and chains en
 | spec-conformance | **core** | — | — | requirement ID → test trace (FR-030) |
 | property tests | adapter lib | fast-check | hypothesis | where input is parsed/validated (FR-024) |
 
-### Scanners (plan 002–003)
+### Scanners
 
-- **Secrets**: gitleaks (offline, pre-commit/CI) + trufflehog (verified findings; needs network).
-- **Dependencies**: trivy (offline w/ cached DB) and/or osv-scanner, grype.
-- **SAST**: semgrep (fast, 30+ langs) on every change; CodeQL (deeper) on a schedule.
+- **Secrets**: **gitleaks** — wired as a core gate in plan 002 (offline; quarantines if absent). trufflehog (verified findings; needs network) is a later option.
+- **Dependencies**: **osv-scanner** — wired as a core gate in plan 002 (respects `.gitignore`; quarantines if absent). trivy/grype are alternatives.
+- **SAST**: semgrep (fast, 30+ langs) on every change; CodeQL (deeper) on a schedule — **plan 003**.
+
+Both core scanners **quarantine** (report `skip` + a surfaced finding) when the tool isn't
+installed, so the suite stays runnable without silently passing (3PWR-NFR-015).
 
 All are free/OSS. Secrets, dependency policy, conformance, and provenance are the **language-agnostic
 core gates** (3PWR-FR-028); everything else comes through the adapter contract.

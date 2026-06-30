@@ -17,7 +17,7 @@ from typing import Any
 
 from . import SCHEMA_VERSION
 
-# Cheapest-first canonical gate order (3PWR-FR-026).
+# Cheapest-first canonical gate order (3PWR-FR-026, spec §8).
 GATE_ORDER = [
     "format",
     "lint",
@@ -25,6 +25,8 @@ GATE_ORDER = [
     "tests",
     "diff_coverage",
     "mutation",
+    "dependency_scan",
+    "secret_scan",
     "spec_conformance",
 ]
 

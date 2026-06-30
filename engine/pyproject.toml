@@ -43,3 +43,15 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Mutation testing is scoped to the High-risk trust-spine modules (spec §4); the
+# full sweep runs on a schedule (3PWR-NFR-002), not on every change (3PWR-FR-031).
+# NOTE: mutmut 3.x + src-layout needs additional runner setup to import the mutated
+# package; tracked as a follow-up. The gate + scope are wired here.
+[tool.mutmut]
+source_paths = [
+    "src/threepowers/canonical.py",
+    "src/threepowers/keys.py",
+    "src/threepowers/ledger.py",
+    "src/threepowers/verify.py",
+]

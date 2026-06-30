@@ -1,6 +1,9 @@
 # Plan 002 — Self-Application, Python Adapter & Supply-Chain Scanners
 
-**Status**: In progress. Builds directly on plan [`001`](001-base-setup-and-tech-stack.md).
+**Status**: Largely implemented. Self-application is green at Standard (engine gated by its own
+Python adapter), and secret + dependency scanners are wired as core gates. Mutation is scoped to the
+trust-spine modules and wired, but the mutmut 3.x + src-layout runner needs follow-up setup, so the
+full sweep runs on schedule (3PWR-NFR-002). Builds on plan [`001`](001-base-setup-and-tech-stack.md).
 
 ## Context — why
 
