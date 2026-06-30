@@ -7,9 +7,9 @@ of powers — the spec as legislature, agents as executive, an independent oracl
 as judiciary — across any model family, language toolchain, or LLM provider, with no required CI/CD
 platform. It layers on **GitHub Spec Kit** over Git.
 
-**Status:** walking skeleton (plan [`001`](plan/001-base-setup-and-tech-stack.md)) — the `3pwr` engine,
-a TypeScript reference adapter, the signed trust-spine ledger, and a runnable sample, all verified
-end-to-end.
+**Status:** **v0.1 + v0.5 complete** (the full judiciary), self-applied. New here or picking it back up?
+Start with **[`docs/STATUS.md`](docs/STATUS.md)** — a cold-start handoff with the spec-validated status,
+a direction check, and what's next ([`plan/006`](plan/006-v1.0-and-hardening.md)).
 
 ## How it works
 
