@@ -7,9 +7,10 @@ of powers — the spec as legislature, agents as executive, an independent oracl
 as judiciary — across any model family, language toolchain, or LLM provider, with no required CI/CD
 platform. It layers on **GitHub Spec Kit** over Git.
 
-**Status:** **v0.1 + v0.5 complete** (the full judiciary), self-applied. New here or picking it back up?
-Start with **[`docs/STATUS.md`](docs/STATUS.md)** — a cold-start handoff with the spec-validated status,
-a direction check, and what's next ([`plan/006`](plan/006-v1.0-and-hardening.md)).
+**Status:** **v0.5 complete; v1.0 in progress** — the full judiciary, self-applied **at High-risk**
+(NFR-006 met), with **brownfield Stage Zero** landed ([`plan/006`](plan/006-v1.0-and-hardening.md)). New
+here? Start with the **[documentation](docs/)** below, or **[`docs/STATUS.md`](docs/STATUS.md)** for the
+spec-validated status and what's next.
 
 ## How it works
 
@@ -18,8 +19,8 @@ through GitHub Copilot slash commands. Spec Kit drives the legislative/executive
 (`/speckit.*`); 3Powers adds the judiciary (`/3pwr.*`) and a local trust spine:
 
 - an independent **oracle** authored from the spec alone, by a *different model family* than the coder;
-- a cheapest-first **gate suite** (format → lint → types → tests → diff-coverage → spec-conformance) that
-  emits one normalized verdict;
+- a cheapest-first **gate suite** (format → lint → types → tests → diff-coverage → mutation → SAST →
+  dependency → secret → gate-gaming → spec-conformance) that emits one normalized verdict;
 - an append-only, **hash-chained, Ed25519-signed ledger** with an offline `3pwr verify` and a local
   `advance` gate that refuses to proceed without green gates + a human sign-off.
 
@@ -53,6 +54,17 @@ feature:
 → `/3pwr.oracle` (Phase A, independent tests) → **switch back** → `/speckit.implement` →
 `/3pwr.verify` → `/3pwr.signoff` → `/3pwr.advance`.
 
+## Documentation
+
+Full guides live in **[`docs/`](docs/)**:
+
+- **[Concepts](docs/concepts.md)** — the three powers, lifecycle, risk tiers, oracle independence, trust spine.
+- **[Getting Started](docs/getting-started.md)** — install and run the whole thing end-to-end.
+- **[Engine Architecture](docs/engine-architecture.md)** — how the gates, verdict, and ledger work inside.
+- **[CLI Reference](docs/cli-reference.md)** — every `3pwr` command and flag.
+- **[Brownfield Adoption](docs/brownfield.md)** — bring 3Powers to an existing codebase.
+- **[STATUS](docs/STATUS.md)** — implementation status, validated against the spec.
+
 ## Layout
 
 | Path | What |
@@ -62,8 +74,8 @@ feature:
 | [`.specify/`](.specify/), `.github/` | Spec Kit + 3Powers constitution, templates, and `/3pwr.*` commands |
 | [`examples/validation-utils/`](examples/validation-utils/) | the runnable TypeScript sample |
 | [`specs/`](specs/) | authoritative specs (the law) |
-| [`plan/`](plan/) | the continuous plan series (001 = this base setup) |
-| [`docs/references/`](docs/references/) | compacted Spec Kit + trust-spine tooling references |
+| [`plan/`](plan/) | the continuous plan series (001 → 006) |
+| [`docs/`](docs/) | guides (concepts, getting-started, architecture, CLI, brownfield) + references |
 
 - 📜 Specification — [`3Powers_Spec_v0.2.md`](3Powers_Spec_v0.2.md) (Spec ID `3PWR`)
 - 🏛️ Constitution — [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
