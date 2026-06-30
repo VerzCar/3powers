@@ -58,7 +58,7 @@ different model family) → **switch back** → `/speckit.implement` → `/3pwr.
 
 ```
 engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates, scanners, gaming,
-                            #   mutation, characterize, conformance, covdiff, scope, lifecycle,
+                            #   mutation, characterize, deviations, conformance, covdiff, scope, lifecycle,
                             #   provenance, evals, ledger, verify, keys, verdict, config, canonical (+ tests/)
 .3powers/                   # in-repo trust spine: config/{risk-tiers,roles}.yaml, schemas/*.json,
                             #   adapters/{CONTRACT.md,typescript,python}, eval/cases.yaml,
@@ -67,7 +67,7 @@ engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates
 specs/                      # authoritative specs (the epic + per-feature); 002 = the engine's own
 examples/validation-utils/  # runnable TypeScript sample
 docs/references/            # compacted Spec Kit + trust-spine tooling references
-plan/                       # the continuous plan series 001..006 (006 = this slice; 007 = next)
+plan/                       # the continuous plan series 001..007 (007 = emergency & deviation; 008 = next)
 ```
 
 ## 4. Status — validated against the spec
@@ -78,7 +78,7 @@ plan/                       # the continuous plan series 001..006 (006 = this sl
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; remaining: observe §13, emergency/deviation §14, catalog, 3rd adapter) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; remaining: observe §13, structural oracle independence, catalog, 3rd adapter) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -113,8 +113,12 @@ FR-050 ✅ (deterministic eval set; model-driven layer is future).
 **v1.0 (§12–14):** **FR-051 ✅** (diff-scoped gating — `--paths`/`--diff-scope` hold only changed files;
 scanners + diff-coverage honor the scope), **FR-052 ✅** (`gate run --report-only` emits but does not
 block; `advance` ignores advisory verdicts), **FR-053 ✅** (`3pwr characterize` reconstructs a spec stub
-+ runnable characterization tests pinning a legacy module's behavior as its oracle) ·
-FR-054/055 ⬜ (observe), FR-056/057 ⬜ (emergency/deviation).
++ runnable characterization tests pinning a legacy module's behavior as its oracle),
+**FR-056 ✅** (`3pwr emergency` — a fast path that defers only mutation + coverage, never the
+security/secret gates, sign-off, or provenance, and whose overdue one-day cleanup blocks `advance`),
+**FR-057 ✅** (`3pwr deviation` — a signed, reversible relaxation of named gates with a reason + a way back;
+`advance` accepts a red gate only when an active deviation covers it; also the sanctioned acceptance of a
+`gate_gaming` flag) · FR-054/055 ⬜ (observe).
 
 **NFRs:** NFR-001 ✅, NFR-004 ✅, NFR-005 ✅, NFR-007 ✅, NFR-008 ✅, NFR-010 ✅, NFR-011 ✅,
 NFR-013 ✅, NFR-014 ✅ ·
@@ -159,12 +163,15 @@ it is now the clearest gap on the spec's thesis, and it is sequenced with the A3
 scoping; the engine runs green at `--tier High-risk`), and ✅ **B — Brownfield Stage Zero** (report-only
 mode FR-052, diff-scoped gating FR-051, `3pwr characterize` FR-053).
 
+**Plan 007 is done** ([`plan/007-emergency-and-deviation.md`](../plan/007-emergency-and-deviation.md)):
+✅ **emergency & deviation paths (§14, FR-056/057)** — `3pwr deviation` (signed, reversible, named-gate
+relaxation; the sanctioned acceptance of a `gate_gaming` flag) and `3pwr emergency` (defer only
+mutation+coverage, never security/secret/sign-off/provenance, overdue cleanup blocks `advance`).
+
 Next, in priority order (the rest of v1.0 + the hardening track):
-- **Emergency & deviation paths (§14, FR-056/057)** — small and high-leverage; the deviation mechanism is
-  also the sanctioned way to accept a `gate_gaming`-flagged suppression (e.g. a refactor that removes an
-  assertion) without weakening the gate.
+- **Structural oracle independence** via Spec Kit headless dispatch (FR-021/062; direction risk #1) — now
+  the top remaining gap on the spec's thesis.
 - Observe / feedback loop (§13, FR-054/055).
-- **Structural oracle independence** via Spec Kit headless dispatch (FR-021/062; direction risk #1).
 - Catalog distribution as a Spec Kit extension/preset (A1; direction risk #2) + a **third adapter** (e.g. Go/Rust/Java).
 - Loose ends: defect-flow (FR-008) & design oracles (FR-009); tier-required test layers (FR-064);
   a root `LICENSE` file (NFR-012); model-driven eval layer (FR-050); cross-platform validation (NFR-003).

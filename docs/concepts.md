@@ -113,6 +113,25 @@ It guarantees tamper-**evidence**, not tamper-**proofing** (`3PWR-NFR-013`): som
 enforcement, but the ledger and provenance make it **detectable**. The whole record reconstructs from the
 repository alone, offline (`3PWR-NFR-010`).
 
+## Off the happy path — emergencies & deviations
+
+A process that cannot bend under fire gets abandoned; one that bends without discipline rots. So both
+ways off the happy path are **pre-agreed, signed, and reversible** (spec §14):
+
+- A **deviation** (`3pwr deviation`, `3PWR-FR-057`) relaxes *named gates* with a recorded reason, a human
+  approver, and a **way back** (an expiry or an explicit revoke). `advance` will accept a red gate **only**
+  when an active deviation covers it — recorded and surfaced, never silent. This is also the sanctioned way
+  to **accept a `gate_gaming` flag** (a refactor that legitimately removed an assertion): you don't weaken
+  the gate, you record a reversible deviation that a human signed.
+- An **emergency fast path** (`3pwr emergency`, `3PWR-FR-056`) is a *constrained* deviation: it may defer
+  only **mutation** and **coverage**, never the security/secret gates, the human sign-off, or provenance —
+  and it requires a **cleanup within one working day** (file the follow-up requirement and revoke it), or
+  `advance` blocks.
+
+Crucially, deviations act at the **enforcement boundary**, not in the verdict: gates always run honestly,
+so the verdict stays deterministic (`3PWR-NFR-001`). The deviation is an explicit, ledgered override —
+exactly the discipline the constitution's "never satisfy a gate by weakening it" demands.
+
 ## The eight-stage lifecycle
 
 Every change flows through eight stages with explicit human gates (`3PWR-FR-011`, spec §6):

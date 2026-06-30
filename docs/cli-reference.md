@@ -84,13 +84,15 @@ Appends a signed `signoff` entry (`3PWR-FR-037`).
 ```
 
 ### `advance` — local enforcement gate
-Refuses to advance unless the ledger verifies, the latest *enforced* verdict is green, **and** a human
-sign-off exists at/after it (`3PWR-FR-041/042`). Report-only verdicts don't count.
+Refuses to advance unless the ledger verifies, the latest *enforced* verdict is green **(or every red gate
+is covered by an active deviation)**, and a human sign-off exists at/after it (`3PWR-FR-041/042/057`).
+Report-only verdicts don't count, and an overdue emergency cleanup blocks the advance (`3PWR-FR-056`).
 - `--stage STAGE` (required) · `--spec-id SPEC_ID`.
 ```bash
 3pwr advance --stage ship --spec-id VUTIL
 ```
-Exit `1` (refused) with reasons, or `0` and a signed `stage_advance` entry.
+Exit `1` (refused) with reasons, or `0` and a signed `stage_advance` entry (which records any
+`deviations_applied`).
 
 ### `status` — per-spec lifecycle stage
 Derives the eight-stage position of each spec from the ledger (`3PWR-FR-011`).
@@ -111,6 +113,41 @@ Appends a signed `reversal` entry returning a spec to its stage at a given ledge
 ```bash
 3pwr abort --spec-id VUTIL --reason "superseded"
 ```
+
+---
+
+## Off the happy path (emergency & deviation)
+
+Both paths are **signed, recorded, and reversible** — bending the process without breaking it (spec §14).
+They act at the `advance` enforcement boundary; gates always run honestly, so the verdict stays
+deterministic. See [Concepts → emergencies & deviations](concepts.md).
+
+### `deviation` — relax named gates, reversibly
+Records a signed deviation that lets `advance` accept specific red gates, with a reason, a human approver,
+and a way back (an expiry or an explicit revoke). Also the **sanctioned way to accept a `gate_gaming`
+flag** (`3PWR-FR-035/057`). Human sign-off and provenance are never deviatable.
+- `--gate GATE` (repeatable; required unless `--revoke`) · `--approver APPROVER` (required to record) ·
+  `--note NOTE` (reason) · `--until ISO8601` (auto-expiry) · `--revoke SEQ` (the way back) · `--spec-id SPEC_ID`
+  (scope; default global).
+```bash
+# accept a specific red gate, tracked as a follow-up, until a date
+3pwr deviation --gate dependency_scan --approver "$(git config user.name)" \
+               --note "GHSA-… waiting on upstream fix" --until 2026-07-15T00:00:00Z --spec-id VUTIL
+# the way back
+3pwr deviation --revoke 7
+```
+
+### `emergency` — the constrained fast path
+Opens an emergency deviation that may defer **only mutation + diff-coverage**; it never relaxes the
+security/secret gates, sign-off, or provenance, and it sets a one-working-day cleanup deadline. `advance`
+refuses while that cleanup is overdue (`3PWR-FR-056`).
+- `--approver APPROVER` (required) · `--note NOTE` (reason) · `--cleanup-hours N` (default 24) · `--spec-id SPEC_ID`.
+```bash
+3pwr emergency --approver "$(git config user.name)" --note "prod down — hotfix" --spec-id VUTIL
+# …ship the fix, then clean up within a day:
+3pwr deviation --revoke <seq>
+```
+Active deviations and overdue cleanups are surfaced by `3pwr status`.
 
 ---
 

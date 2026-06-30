@@ -31,25 +31,28 @@ Implemented and committed (not yet merged to `main`):
 - **Plan 005** (`plan/005-sast-and-eval-harness.md`) — SAST gate + eval harness; **completes v0.5**.
 - **Plan 006** (`plan/006-v1.0-and-hardening.md`) — **High-risk self-application (NFR-006)** + **brownfield
   Stage Zero** (report-only, diff-scoped gating, characterization); starts **v1.0**.
+- **Plan 007** (`plan/007-emergency-and-deviation.md`) — **emergency & deviation paths** (§14, FR-056/057):
+  `3pwr deviation` (signed, reversible, named-gate relaxation; sanctioned `gate_gaming` acceptance) and
+  `3pwr emergency` (defer only mutation+coverage; overdue cleanup blocks `advance`).
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
 suite** cheapest-first (floor + tests/diff-coverage + **mutation** + **SAST** + dependency + secret +
 gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**,
 **two-way coverage**, **scope discipline**, **residual review**, the **prompt/constitution eval harness
-(FR-050)**, and **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
-FR-053). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage
-**and** mutation (≈89% ≥ the 70% threshold) — via the fixed mutmut src-layout runner and per-path tier
-scoping; the engine runs green at `--tier High-risk`. Next → rest of **v1.0**: observe §13,
-emergency/deviation §14, **structural** oracle independence (A3 headless dispatch), catalog distribution,
-and a third adapter. Known approximations (command/harness-level in a Copilot-only setting): work-kind
+(FR-050)**, **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
+FR-053), and **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`). **NFR-006 is met:**
+the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
+70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
+`--tier High-risk`. Next → rest of **v1.0**: **structural** oracle independence (A3 headless dispatch),
+observe §13, catalog distribution, and a third adapter. Known approximations (command/harness-level in a Copilot-only setting): work-kind
 inference (FR-058), context strategy (FR-060/061), structural oracle isolation (FR-021).
 
 ## Repository layout
 
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
-  src/threepowers/          #   cli, gates, mutation, characterize, conformance, covdiff,
+  src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff,
                             #   adapters, scanners, ledger, verify, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
@@ -94,6 +97,10 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr gate run --path <dir> --tier Standard --report-only            # FR-052
 3pwr gate run --path <dir> --tier Standard --base main --diff-scope # FR-051 (block only the diff)
 3pwr characterize --module <path/to/legacy.py>                      # FR-053 (reconstruct spec + oracle)
+
+# Off the happy path (§14): signed, reversible relaxations — never weaken a gate, record a deviation:
+3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]   # FR-057 (way back: --revoke <seq>)
+3pwr emergency --approver <you> --note "<why>"                                 # FR-056 (defers mutation+coverage; 1-day cleanup)
 ```
 
 The lifecycle runs through GitHub Copilot slash commands: `/speckit.specify → clarify → plan → tasks`

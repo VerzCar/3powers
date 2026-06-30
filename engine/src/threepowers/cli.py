@@ -23,11 +23,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from . import __version__, config, keys, lifecycle, provenance, scope
+from . import __version__, config, deviations, keys, lifecycle, provenance, scope
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger
-from .verdict import STATUS_PASS
+from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
 EXIT_OK = 0
@@ -217,25 +217,54 @@ def cmd_advance(args: argparse.Namespace) -> int:
     """Local, CI-independent enforcement (3PWR-FR-041/042)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
+    entries = ledger.entries()
     reasons: list[str] = []
+    deviations_applied: list[int] = []
 
     # 1. Ledger must verify.
     vres = verify_ledger(s.ledger_path, s.pubkey_path)
     if not vres.ok:
         reasons.append("ledger fails verification")
 
-    # 2. Latest *enforced* verdict must be green. Report-only verdicts are advisory
-    #    (brownfield adoption, 3PWR-FR-052) and never satisfy an advance.
+    # 2. Latest *enforced* verdict must be green — OR every red gate must be covered by an
+    #    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)
+    #    and never satisfy an advance.
     enforced = [
         e
-        for e in ledger.entries()
+        for e in entries
         if e.get("type") == "verdict" and not e.get("payload", {}).get("report_only")
     ]
     last_verdict = enforced[-1] if enforced else None
     if not last_verdict:
         reasons.append("no enforced verdict recorded")
     elif last_verdict.get("payload", {}).get("result") != STATUS_PASS:
-        reasons.append("latest verdict is red")
+        red_gates = {
+            g["gate"]
+            for g in last_verdict.get("payload", {}).get("gates", [])
+            if g.get("status") == "fail"
+        }
+        active = deviations.active_deviations(entries)
+        covered = deviations.covered_gates(active, last_verdict.get("spec_id"))
+        uncovered = sorted(red_gates - covered)
+        if uncovered:
+            reasons.append(f"latest verdict is red on un-deviated gate(s): {', '.join(uncovered)}")
+        else:
+            deviations_applied = sorted(
+                int(d["seq"])
+                for d in active
+                if red_gates & set(d.get("gates", []))
+                and (
+                    not (d.get("spec_id") or "") or d.get("spec_id") == last_verdict.get("spec_id")
+                )
+            )
+
+    # 2b. An emergency cleanup overdue past one working day blocks the advance (3PWR-FR-056).
+    overdue = deviations.overdue_emergencies(entries)
+    if overdue:
+        reasons.append(
+            f"emergency cleanup overdue ({len(overdue)}) — file the follow-up requirement and "
+            "`3pwr deviation --revoke <seq>`"
+        )
 
     # 3. A human sign-off must exist at or after the latest verdict (3PWR-FR-037).
     last_signoff = ledger.latest_of("signoff")
@@ -252,18 +281,107 @@ def cmd_advance(args: argparse.Namespace) -> int:
         )
         return EXIT_FAIL
 
+    payload: dict = {"stage": args.stage}
+    if deviations_applied:
+        payload["deviations_applied"] = deviations_applied
     try:
         sk = keys.resolve_signing_key(s.root)
-        entry = ledger.append(
-            "stage_advance", {"stage": args.stage}, sk, spec_id=args.spec_id or ""
-        )
+        entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
+    note = f" under deviation {deviations_applied}" if deviations_applied else ""
     _print(
-        {"advanced": True, "stage": args.stage, "ledger_seq": entry["seq"]},
+        {"advanced": True, "stage": args.stage, "ledger_seq": entry["seq"], **payload},
         args.json,
-        f"advanced to '{args.stage}' (ledger seq={entry['seq']})",
+        f"advanced to '{args.stage}'{note} (ledger seq={entry['seq']})",
+    )
+    return EXIT_OK
+
+
+def cmd_deviation(args: argparse.Namespace) -> int:
+    """Record (or revoke) a signed, reversible gate deviation (3PWR-FR-057)."""
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.revoke is not None:
+        target = next((e for e in ledger.entries() if e["seq"] == args.revoke), None)
+        if target is None or target.get("type") != "deviation":
+            print(f"error: no deviation at ledger seq={args.revoke}", file=sys.stderr)
+            return EXIT_USAGE
+        entry = ledger.append(
+            "deviation", {"revokes": args.revoke, "reason": args.note or ""}, sk, spec_id=""
+        )
+        _print(
+            {"revoked": args.revoke, "ledger_seq": entry["seq"]},
+            args.json,
+            f"deviation at seq={args.revoke} revoked (ledger seq={entry['seq']})",
+        )
+        return EXIT_OK
+
+    if not args.gate:
+        print("error: --gate is required (or use --revoke <seq>)", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.approver:
+        print("error: --approver is required — a human accepts the deviation", file=sys.stderr)
+        return EXIT_USAGE
+    unknown = sorted(set(args.gate) - set(GATE_ORDER))
+    if unknown:
+        print(
+            f"error: unknown gate(s): {', '.join(unknown)}; known: {', '.join(GATE_ORDER)}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    if args.until and deviations.parse_iso(args.until) is None:
+        print("error: --until must be ISO-8601 (e.g. 2026-07-01T00:00:00Z)", file=sys.stderr)
+        return EXIT_USAGE
+
+    payload = deviations.deviation_payload(args.gate, args.note or "", args.approver, args.until)
+    entry = ledger.append("deviation", payload, sk, spec_id=args.spec_id or "")
+    way_back = f"until {args.until}" if args.until else "revoke to end"
+    _print(
+        {"gates": payload["gates"], "ledger_seq": entry["seq"]},
+        args.json,
+        f"deviation recorded by {args.approver} for gate(s) {', '.join(payload['gates'])} "
+        f"({way_back}; ledger seq={entry['seq']})",
+    )
+    return EXIT_OK
+
+
+def cmd_emergency(args: argparse.Namespace) -> int:
+    """Open the constrained emergency fast path (3PWR-FR-056)."""
+    s = _settings(args.root)
+    if not args.approver:
+        print("error: --approver is required — a human opens the emergency path", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    hours = (
+        args.cleanup_hours if args.cleanup_hours is not None else deviations.DEFAULT_CLEANUP_HOURS
+    )
+    payload = deviations.emergency_payload(args.note or "", args.approver, hours)
+    entry = Ledger(s.ledger_path).append("deviation", payload, sk, spec_id=args.spec_id or "")
+    _print(
+        {
+            "emergency": True,
+            "deferring": payload["gates"],
+            "cleanup_due": payload["cleanup_due"],
+            "ledger_seq": entry["seq"],
+        },
+        args.json,
+        f"EMERGENCY fast path opened by {args.approver}: deferring "
+        f"{', '.join(deviations.EMERGENCY_DEFERRABLE)} until cleanup by {payload['cleanup_due']}.\n"
+        "  The security/secret gates, human sign-off, and provenance still apply.\n"
+        f"  Clean up within {hours}h (file a requirement + `3pwr deviation --revoke {entry['seq']}`) "
+        "or advance will block.",
     )
     return EXIT_OK
 
@@ -300,7 +418,8 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""
     s = _settings(args.root)
-    states = lifecycle.derive(Ledger(s.ledger_path).entries())
+    ledger_entries = Ledger(s.ledger_path).entries()
+    states = lifecycle.derive(ledger_entries)
     if args.spec_id:
         states = {k: v for k, v in states.items() if k == args.spec_id}
     rows = [
@@ -327,6 +446,16 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(
             f"{r['spec_id']:<10} stage={r['stage']:<10} verdict={r['last_verdict']:<5} "
             f"{' '.join(flags)}"
+        )
+    # Surface active deviations + overdue emergency cleanups (3PWR-FR-056/057).
+    active = deviations.active_deviations(ledger_entries)
+    overdue_seqs = {d.get("seq") for d in deviations.overdue_emergencies(ledger_entries)}
+    for d in active:
+        kind = "emergency" if d.get("emergency") else "deviation"
+        tag = "  ⚠ CLEANUP OVERDUE" if d.get("seq") in overdue_seqs else ""
+        print(
+            f"  ⚑ {kind} #{d.get('seq')}: gates={','.join(d.get('gates', []))} "
+            f"by {d.get('approver', '?')}{tag}"
         )
     return EXIT_OK
 
@@ -607,6 +736,26 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--stage", required=True)
     ap.add_argument("--spec-id", dest="spec_id")
     ap.set_defaults(func=cmd_advance)
+
+    dvp = common(
+        sub.add_parser("deviation", help="record/revoke a reversible gate deviation (FR-057)")
+    )
+    dvp.add_argument(
+        "--gate", action="append", help="gate to relax (repeatable); required unless --revoke"
+    )
+    dvp.add_argument("--approver", help="human who accepts the deviation (required to record)")
+    dvp.add_argument("--note", help="recorded reason")
+    dvp.add_argument("--until", help="auto-expiry, ISO-8601 (the way back); else use --revoke")
+    dvp.add_argument("--revoke", type=int, help="revoke the deviation at this ledger seq")
+    dvp.add_argument("--spec-id", dest="spec_id", help="scope to a spec (default: global)")
+    dvp.set_defaults(func=cmd_deviation)
+
+    emp = common(sub.add_parser("emergency", help="open the emergency fast path (FR-056)"))
+    emp.add_argument("--approver", help="human who opens the emergency path")
+    emp.add_argument("--note", help="recorded reason")
+    emp.add_argument("--cleanup-hours", dest="cleanup_hours", type=int, help="cleanup window (24)")
+    emp.add_argument("--spec-id", dest="spec_id")
+    emp.set_defaults(func=cmd_emergency)
 
     stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
     stp.add_argument("--spec-id", dest="spec_id")

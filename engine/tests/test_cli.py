@@ -121,6 +121,114 @@ def test_full_enforcement_flow(project):
     assert main(["--root", str(root), "verify"]) == 0
 
 
+def _signoff(root, spec="DEMO"):
+    return main(["--root", str(root), "signoff", "--approver", "carlo", "--spec-id", spec])
+
+
+def _advance(root, spec="DEMO"):
+    return main(["--root", str(root), "advance", "--stage", "ship", "--spec-id", spec])
+
+
+def _make_conformance_red(proj):
+    # add an untested requirement → spec-conformance fails → verdict red on that gate
+    (proj / "spec.md").write_text(SPEC + "- **DEMO-FR-002**: shall also work.\n", encoding="utf-8")
+
+
+def test_deviation_lets_advance_pass_a_red_gate(project):
+    """3PWR-FR-057: a recorded, signed deviation lets advance accept a named red gate."""
+    root, proj = project
+    _make_conformance_red(proj)
+    assert _gate_run(root, proj) == 1  # red on spec_conformance
+    assert _signoff(root) == 0
+    assert _advance(root) == 1  # refused: red on un-deviated spec_conformance
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "deviation",
+                "--gate",
+                "spec_conformance",
+                "--approver",
+                "carlo",
+                "--note",
+                "DEMO-FR-002 tracked as follow-up",
+                "--spec-id",
+                "DEMO",
+            ]
+        )
+        == 0
+    )
+    assert _advance(root) == 0  # proceeds under the deviation
+    assert main(["--root", str(root), "verify"]) == 0  # ledger still verifies
+
+
+def test_uncovered_red_gate_still_blocks(project):
+    """3PWR-FR-057: a deviation for a different gate does not unblock the failing one."""
+    root, proj = project
+    _make_conformance_red(proj)
+    assert _gate_run(root, proj) == 1
+    assert _signoff(root) == 0
+    assert main(["--root", str(root), "deviation", "--gate", "lint", "--approver", "carlo"]) == 0
+    assert _advance(root) == 1  # still red on un-deviated spec_conformance
+
+
+def test_deviation_revoke_reblocks_advance(project):
+    """3PWR-FR-057: revoking the deviation (the way back) re-blocks the advance."""
+    root, proj = project
+    _make_conformance_red(proj)
+    assert _gate_run(root, proj) == 1  # #0
+    assert _signoff(root) == 0  # #1
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "deviation",
+                "--gate",
+                "spec_conformance",
+                "--approver",
+                "carlo",
+                "--spec-id",
+                "DEMO",
+            ]
+        )
+        == 0
+    )  # #2
+    assert _advance(root) == 0  # #3 — proceeds under deviation
+    assert main(["--root", str(root), "deviation", "--revoke", "2"]) == 0  # #4 — way back
+    assert _advance(root) == 1  # re-blocked
+
+
+def test_emergency_overdue_cleanup_blocks_advance(project):
+    """3PWR-FR-056: an emergency past its one-day cleanup blocks advance until revoked."""
+    root, proj = project
+    assert _gate_run(root, proj) == 0  # green verdict #0
+    assert _signoff(root) == 0  # #1
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "emergency",
+                "--approver",
+                "carlo",
+                "--note",
+                "prod down",
+                "--cleanup-hours",
+                "0",
+                "--spec-id",
+                "DEMO",
+            ]
+        )
+        == 0
+    )  # #2 — cleanup_due = now → immediately overdue
+    assert _advance(root) == 1  # blocked: emergency cleanup overdue
+    assert main(["--root", str(root), "deviation", "--revoke", "2"]) == 0  # #3 — cleaned up
+    assert _advance(root) == 0  # now proceeds
+    assert main(["--root", str(root), "status"]) == 0
+
+
 def test_tamper_makes_verify_fail(project):
     """3PWR-FR-040: a mutated ledger entry fails verification."""
     root, proj = project

@@ -79,6 +79,10 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
   - *Acceptance*: `gate run --report-only` flags the verdict advisory, exits 0 on red, and `advance` ignores it.
 - **3PWR-FR-053**: The engine shall reconstruct a spec for a legacy module and pin its current behavior with characterization tests as its oracle.
   - *Acceptance*: `3pwr characterize --module <p>` writes a spec stub + runnable tests that trace the reconstructed requirement IDs.
+- **3PWR-FR-056**: The engine shall provide an emergency fast path that may defer mutation + coverage but never the security/secret gates, sign-off, or provenance, and shall require a one-working-day cleanup.
+  - *Acceptance*: `3pwr emergency` defers only mutation + diff-coverage; an overdue cleanup blocks `advance` until the emergency is revoked.
+- **3PWR-FR-057**: The engine shall provide a reversible deviation that relaxes named gates with a recorded reason and a defined way back.
+  - *Acceptance*: a signed `deviation` lets `advance` accept a named red gate; revoking or expiring it re-blocks; an uncovered red gate still blocks.
 
 ### Non-Functional Requirements
 

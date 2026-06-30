@@ -4,14 +4,14 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-**v0.5 complete; v1.0 in progress** (through plan [`006`](plan/006-v1.0-and-hardening.md)). The `3pwr`
+**v0.5 complete; v1.0 in progress** (through plan [`007`](plan/007-emergency-and-deviation.md)). The `3pwr`
 engine drives the full gate suite (floor → tests/diff-coverage → **mutation** → SAST → dependency →
 secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
-enforcement, provenance/deploy-gate, residual review, the eval harness, and **brownfield Stage Zero**
-(report-only, diff-scoped gating, `characterize`). **NFR-006 is met:** the trust-spine modules pass their
-own **High-risk** bar (mutation ≈89% ≥ 70%). Two reference adapters (TypeScript + Python). Built on GitHub
-Spec Kit. See [`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and
-[`docs/references/trust-spine-tooling.md`](docs/references/trust-spine-tooling.md).
+enforcement, provenance/deploy-gate, residual review, the eval harness, **brownfield Stage Zero**
+(report-only, diff-scoped gating, `characterize`), and **emergency & deviation paths** (`emergency` +
+`deviation`). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar (mutation ≈89% ≥
+70%). Two reference adapters (TypeScript + Python). Built on GitHub Spec Kit. See
+[`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and the guides in [`docs/`](docs/).
 
 ## Commands
 
@@ -33,6 +33,8 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
+| Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`) |
+| Emergency fast path | `3pwr emergency --approver <you> --note "<why>"` (`3PWR-FR-056`; defers mutation+coverage; 1-day cleanup) |
 | Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
 | Two-way requirement↔task coverage | `3pwr coverage-check --spec <spec.md> --tasks <tasks.md>` |
 | Task req-id + file-scope discipline | `3pwr scope-check --tasks <tasks.md> [--base <ref>] [--path <dir>]` |

@@ -23,6 +23,7 @@ mandatory CI. Read [Concepts](concepts.md) first for the *why*; this page is the
 | `gaming.py` | 104 | gate-gaming detection (suppressions, deleted assertions) (`FR-035`) |
 | `config.py` | 90 | locate the repo root; load `risk-tiers.yaml` / `roles.yaml` (`FR-032/049`) |
 | `adapters.py` | 91 | load + run the declarative language adapter manifests (`FR-027/NFR-007`) |
+| `deviations.py` | 110 | emergency & deviation logic at the enforcement boundary (`FR-056/057`) |
 | `lifecycle.py` | 80 | derive the eight-stage state from the ledger (`FR-011/019`) |
 | `verify.py` | 77 | recompute the ledger chain + signatures, offline (`FR-040`) |
 | `scope.py` | 71 | task requirement-ID + file-scope discipline (`FR-016/017`) |
@@ -167,6 +168,11 @@ tamper-**evidence**, not tamper-**proofing** (`NFR-013`): evasion is *detectable
 - **`advance`** (in `cli.py`) is the local enforcement gate: it refuses unless the ledger verifies, the
   latest *enforced* verdict is green, and a human sign-off exists at/after that verdict (`FR-041`).
   Report-only verdicts are advisory and never satisfy an advance (`FR-052`).
+- **`deviation` / `emergency`** ([`deviations.py`](../engine/src/threepowers/deviations.py)) bend the
+  process without breaking it (`FR-056/057`). Deviations act at the **enforcement boundary**, not in the
+  verdict — gates run honestly (determinism, `NFR-001`); a signed, reversible `deviation` ledger entry lets
+  `advance` accept specific named red gates (including a `gate_gaming` flag), and the constrained
+  `emergency` profile defers only mutation+coverage with a one-day cleanup that `advance` enforces.
 - **`provenance` / `deploy-gate`** ([`provenance.py`](../engine/src/threepowers/provenance.py)) sign a
   build record binding an artifact (by hash) to its commit/repo/SBOM with the *same* identity, and refuse
   to deploy an artifact whose provenance is missing or invalid (`FR-066–068`).

@@ -32,6 +32,7 @@ ENTRY_TYPES = (
     "reversal",
     "abort",
     "provenance",
+    "deviation",
 )
 
 
