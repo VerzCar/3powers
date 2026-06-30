@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -68,3 +70,55 @@ def test_malformed_lines_rejected():
         keys.VerifyKey.from_line("garbage line")
     with pytest.raises(ValueError):
         keys.SigningKey.from_line("garbage line")
+
+
+def test_default_private_path_layout(tmp_path):
+    """The default key path is ~/.config/3powers/<repo>.key, OUTSIDE the repo (3PWR-NFR-005)."""
+    repo = tmp_path / "myrepo"
+    p = keys.default_private_path(repo)
+    assert p.name == "myrepo.key"
+    assert p.parent.name == "3powers"
+    assert p.parent.parent.name == ".config"
+    # The path is anchored at the user's home, not inside the repo.
+    assert str(p).startswith(str(Path(os.path.expanduser("~"))))
+    assert str(repo) not in str(p)
+
+
+def test_resolve_from_default_path(tmp_path, monkeypatch):
+    """With no env override, the key is read from the default user path (3PWR-NFR-005)."""
+    monkeypatch.delenv("THREEPOWERS_SIGNING_KEY_FILE", raising=False)
+    monkeypatch.delenv("THREEPOWERS_SIGNING_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    sk = keys.generate()
+    repo = tmp_path / "repo"
+    keys.write_private(keys.default_private_path(repo), sk)
+    assert keys.resolve_signing_key(repo).seed == sk.seed
+
+
+def test_resolve_missing_message_names_keygen_and_outside(tmp_path, monkeypatch):
+    monkeypatch.delenv("THREEPOWERS_SIGNING_KEY_FILE", raising=False)
+    monkeypatch.delenv("THREEPOWERS_SIGNING_KEY", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "no-home"))
+    with pytest.raises(FileNotFoundError) as exc:
+        keys.resolve_signing_key(tmp_path)
+    msg = str(exc.value)
+    assert "keygen" in msg and "OUTSIDE the repository" in msg
+
+
+def test_write_creates_missing_parent_dirs(tmp_path):
+    """write_* must create missing parent directories (parents=True)."""
+    sk = keys.generate()
+    pub = tmp_path / "deep" / "nested" / "k.pub"
+    priv = tmp_path / "other" / "deep" / "k.key"
+    keys.write_public(pub, sk.verify_key)
+    keys.write_private(priv, sk)
+    assert pub.exists() and priv.exists()
+
+
+def test_public_key_file_is_one_trailing_newline(tmp_path):
+    sk = keys.generate()
+    p = tmp_path / "k.pub"
+    keys.write_public(p, sk.verify_key)
+    text = p.read_text(encoding="utf-8")
+    assert text == sk.verify_key.to_line() + "\n"
+    assert text.count("\n") == 1

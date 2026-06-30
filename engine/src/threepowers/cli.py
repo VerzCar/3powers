@@ -140,6 +140,9 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         adapter_name=args.adapter,
         base=args.base,
         allow_mutation=args.mutation,
+        paths=args.paths,
+        report_only=args.report_only,
+        diff_scope=args.diff_scope,
     )
     s.verdicts_dir.mkdir(parents=True, exist_ok=True)
     verdict.write(s.verdicts_dir / "latest.json")
@@ -159,9 +162,15 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
     human = _format_verdict(verdict, appended)
+    if args.report_only and verdict.result != STATUS_PASS:
+        human += "\n  ⓘ report-only: verdict emitted but not enforced (3PWR-FR-052)"
     _print(
         {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")}, args.json, human
     )
+    # Report-only never blocks the developer's flow; ratchet to a blocking run
+    # (optionally diff-scoped via --base/--paths) once the diff is clean (3PWR-FR-052).
+    if args.report_only:
+        return EXIT_OK
     return EXIT_OK if verdict.result == STATUS_PASS else EXIT_FAIL
 
 
@@ -215,10 +224,16 @@ def cmd_advance(args: argparse.Namespace) -> int:
     if not vres.ok:
         reasons.append("ledger fails verification")
 
-    # 2. Latest verdict must be green.
-    last_verdict = ledger.latest_of("verdict")
+    # 2. Latest *enforced* verdict must be green. Report-only verdicts are advisory
+    #    (brownfield adoption, 3PWR-FR-052) and never satisfy an advance.
+    enforced = [
+        e
+        for e in ledger.entries()
+        if e.get("type") == "verdict" and not e.get("payload", {}).get("report_only")
+    ]
+    last_verdict = enforced[-1] if enforced else None
     if not last_verdict:
-        reasons.append("no verdict recorded")
+        reasons.append("no enforced verdict recorded")
     elif last_verdict.get("payload", {}).get("result") != STATUS_PASS:
         reasons.append("latest verdict is red")
 
@@ -472,6 +487,47 @@ def cmd_residual(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_characterize(args: argparse.Namespace) -> int:
+    """Reconstruct a spec + characterization tests for a legacy module (3PWR-FR-053)."""
+    from . import characterize
+
+    # Brownfield Stage Zero runs *before* a repo has adopted 3Powers, so a `.3powers/`
+    # trust spine may not exist yet — fall back to --root or cwd rather than requiring it.
+    base = Path(args.root).resolve() if args.root else None
+    try:
+        root = config.find_root(base)
+    except FileNotFoundError:
+        root = base or Path.cwd()
+    module_path = Path(args.module).resolve()
+    specs_dir = Path(args.specs).resolve() if args.specs else root / "specs"
+    tests_dir = Path(args.tests).resolve() if args.tests else module_path.parent
+    try:
+        res = characterize.characterize_module(
+            root, module_path, specs_dir=specs_dir, tests_dir=tests_dir
+        )
+    except (FileNotFoundError, SyntaxError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    human = (
+        f"characterized {module_path.name} → spec {res.spec_id} "
+        f"({len(res.symbols)} symbol(s), {len(res.requirement_ids)} requirement(s))\n"
+        f"  spec:  {res.spec_path}\n"
+        f"  tests: {res.test_path}"
+    )
+    _print(
+        {
+            "spec_id": res.spec_id,
+            "spec_path": str(res.spec_path),
+            "test_path": str(res.test_path),
+            "symbols": res.symbols,
+            "requirement_ids": res.requirement_ids,
+        },
+        args.json,
+        human,
+    )
+    return EXIT_OK
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     """Run the prompt/constitution eval set; block on regression (3PWR-FR-050)."""
     from .evals import run_evals
@@ -514,6 +570,21 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--spec", help="path to the governing spec.md")
     gr.add_argument("--base", help="git ref for diff-coverage base")
     gr.add_argument("--mutation", action="store_true", help="run the mutation gate")
+    gr.add_argument(
+        "--paths",
+        nargs="*",
+        help="scope diff-coverage + mutation to these files (per-capability tier, spec §4)",
+    )
+    gr.add_argument(
+        "--report-only",
+        action="store_true",
+        help="emit the verdict but do not block (brownfield adoption, 3PWR-FR-052)",
+    )
+    gr.add_argument(
+        "--diff-scope",
+        action="store_true",
+        help="block only on files changed vs --base (brownfield, 3PWR-FR-051)",
+    )
     gr.add_argument("--no-ledger", action="store_true", help="do not append to the ledger")
     gr.set_defaults(func=cmd_gate_run)
 
@@ -580,6 +651,14 @@ def build_parser() -> argparse.ArgumentParser:
     rsp.add_argument("--findings", nargs="*")
     rsp.add_argument("--spec-id", dest="spec_id")
     rsp.set_defaults(func=cmd_residual)
+
+    chp = common(
+        sub.add_parser("characterize", help="reconstruct a spec + pin a legacy module (FR-053)")
+    )
+    chp.add_argument("--module", required=True, help="path to the legacy module to characterize")
+    chp.add_argument("--specs", help="specs/ directory (default: <root>/specs)")
+    chp.add_argument("--tests", help="tests output dir (default: alongside the module)")
+    chp.set_defaults(func=cmd_characterize)
 
     evp = common(sub.add_parser("eval", help="run the prompt/constitution eval set (FR-050)"))
     evp.add_argument("--cases", help="eval cases.yaml (default: .3powers/eval/cases.yaml)")

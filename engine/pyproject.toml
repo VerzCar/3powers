@@ -46,10 +46,16 @@ testpaths = ["tests"]
 
 # Mutation testing is scoped to the High-risk trust-spine modules (spec §4); the
 # full sweep runs on a schedule (3PWR-NFR-002), not on every change (3PWR-FR-031).
-# NOTE: mutmut 3.x + src-layout needs additional runner setup to import the mutated
-# package; tracked as a follow-up. The gate + scope are wired here.
+#
+# src-layout note: mutmut 3.x copies `source_paths` into `mutants/` and puts
+# `mutants/src` on sys.path, so the WHOLE package must be copied for `import
+# threepowers` to resolve — but we only want to *mutate* the four trust-spine
+# modules. So `source_paths` is the package (everything is copied verbatim) and
+# `only_mutate` narrows mutation to the High-risk files (others are copied, not
+# mutated). This keeps the mutated package importable while honouring §4 scoping.
 [tool.mutmut]
-source_paths = [
+source_paths = ["src/threepowers"]
+only_mutate = [
     "src/threepowers/canonical.py",
     "src/threepowers/keys.py",
     "src/threepowers/ledger.py",

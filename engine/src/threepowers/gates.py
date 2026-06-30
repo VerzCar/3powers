@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import adapters, covdiff, gaming, scanners
+from . import adapters, covdiff, gaming, mutation, scanners
 from .adapters import CmdResult
 from .conformance import conformance_failures, extract_spec, run_conformance
 from .config import Settings, tier_config
@@ -74,10 +74,22 @@ def run_gates(
     adapter_name: str | None = None,
     base: str | None = None,
     allow_mutation: bool = False,
+    paths: list[str] | None = None,
+    report_only: bool = False,
+    diff_scope: bool = False,
 ) -> Verdict:
     tiers = settings.load_risk_tiers()
     tcfg = tier_config(tiers, tier)
     required: list[str] = list(tcfg.get("gates", []))
+
+    # Brownfield diff-scope: block only on new/changed files (3PWR-FR-051). When set,
+    # the file-based scanners count only findings in files changed vs. ``base``.
+    changed_scope: set[str] | None = None
+    if diff_scope:
+        changed_scope = {
+            str((settings.root / rel).resolve())
+            for rel in covdiff.changed_files(settings.root, base, target)
+        }
 
     adapter_name = adapter_name or adapters.detect_adapter(settings, target)
     manifest = adapters.load_adapter(settings, adapter_name)
@@ -88,6 +100,7 @@ def run_gates(
         tier=tier,
         adapter=adapter_name,
         commit=_git_commit(settings.root),
+        report_only=report_only,
     )
 
     # Run tests (with coverage) if either the tests or diff_coverage gate is required.
@@ -109,14 +122,25 @@ def run_gates(
                     )
                 )
                 continue
-            if gate == "mutation" and not allow_mutation:
-                # Wired but non-blocking in v0.1 (3PWR §17): report as skipped.
+            if gate == "mutation":
+                if not allow_mutation:
+                    # Expensive gate — opt in with --mutation; full sweep is scheduled
+                    # (3PWR-NFR-002). Reported as skipped, never silently passed.
+                    verdict.add(
+                        GateResult(
+                            gate="mutation",
+                            status=STATUS_SKIP,
+                            tool="mutation",
+                            findings=["mutation wired; pass --mutation to enforce (3PWR-NFR-002)"],
+                        )
+                    )
+                    continue
                 verdict.add(
-                    GateResult(
-                        gate=gate,
-                        status=STATUS_SKIP,
-                        tool="mutation",
-                        findings=["mutation wired but not enforced in this run"],
+                    mutation.mutation_gate(
+                        target,
+                        spec,
+                        threshold=float(tcfg.get("mutation_score", 0)),
+                        paths=paths,
                     )
                 )
                 continue
@@ -137,16 +161,23 @@ def run_gates(
             verdict.add(gr)
 
         elif gate == "diff_coverage":
-            verdict.add(_diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base))
+            verdict.add(
+                _diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base, paths)
+            )
 
         elif gate == "sast":
-            verdict.add(scanners.sast_scan(target, settings.dir / "config" / "semgrep-rules.yml"))
+            verdict.add(
+                scanners.sast_scan(
+                    target, settings.dir / "config" / "semgrep-rules.yml", changed_scope
+                )
+            )
 
         elif gate == "dependency_scan":
+            # Dependency vulnerabilities are not file-local; never diff-scoped.
             verdict.add(scanners.dependency_scan(target))
 
         elif gate == "secret_scan":
-            verdict.add(scanners.secret_scan(target))
+            verdict.add(scanners.secret_scan(target, changed_scope))
 
         elif gate == "gate_gaming":
             verdict.add(gaming.detect_gaming(settings.root, target, base))
@@ -169,7 +200,17 @@ def run_gates(
     for g in verdict.gates:
         if g.status != STATUS_FAIL:
             continue
-        if g.gate in _ADAPTER_GATES:
+        if g.gate == "mutation":
+            verdict.failures.append(
+                failure(
+                    "surviving_mutant",
+                    gate=g.gate,
+                    detail=f"{g.details.get('survived')} mutant(s) survived — "
+                    f"score {g.details.get('mutation_score')}% < {g.details.get('threshold')}% "
+                    "(each surviving mutant is a missing assertion)",
+                )
+            )
+        elif g.gate in _ADAPTER_GATES:
             verdict.failures.append(
                 failure(
                     "gate_failed",
@@ -227,6 +268,7 @@ def _diff_coverage_gate(
     tcfg: dict[str, Any],
     coverage_path: Path | None,
     base: str | None,
+    paths: list[str] | None = None,
 ) -> GateResult:
     threshold = float(tcfg.get("diff_coverage", 0))
     if coverage_path is None:
@@ -242,7 +284,9 @@ def _diff_coverage_gate(
         )
     lcov = covdiff.parse_lcov(coverage_path, root=target)
     changed = covdiff.changed_lines(settings.root, target, base)
-    pct, uncovered = covdiff.diff_coverage(lcov, changed)
+    # When --paths is given, scope coverage to those files only (spec §4 / 3PWR-FR-051).
+    allow = {str((target / p).resolve()) for p in paths} if paths else None
+    pct, uncovered = covdiff.diff_coverage(lcov, changed, allow)
     status = STATUS_PASS if pct >= threshold else STATUS_FAIL
     findings = []
     if status == STATUS_FAIL:
@@ -251,6 +295,11 @@ def _diff_coverage_gate(
         gate="diff_coverage",
         status=status,
         tool="3pwr-covdiff",
-        details={"covered_pct": pct, "threshold": threshold, "uncovered_count": len(uncovered)},
+        details={
+            "covered_pct": pct,
+            "threshold": threshold,
+            "uncovered_count": len(uncovered),
+            "scoped_paths": list(paths) if paths else [],
+        },
         findings=findings,
     )

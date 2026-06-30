@@ -25,5 +25,6 @@ gates:
     coverage_path: "coverage/lcov.info"
   mutation:
     cmd: "uv run mutmut run"
+    score_cmd: "uv run mutmut results --all true"   # --all lists killed too (for scoring)
     parser: mutmut
     tier_min: "High-risk"

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from threepowers import gates as gates_mod
 from threepowers.config import Settings
 from threepowers.gates import run_gates
-from threepowers.verdict import STATUS_FAIL, STATUS_SKIP
+from threepowers.verdict import STATUS_FAIL, STATUS_SKIP, GateResult
 
 RISK = "tiers:\n  T: { diff_coverage: 0, gates: [format, mutation, spec_conformance] }\n"
 
@@ -44,3 +45,33 @@ def test_mutation_skipped_when_not_allowed(tmp_path):
     v = run_gates(s, proj, tier="T", spec_path=proj / "spec.md", adapter_name="a")
     mutation = next(g for g in v.gates if g.gate == "mutation")
     assert mutation.status == STATUS_SKIP
+
+
+def test_mutation_enforced_when_allowed_fails_with_surviving_mutant(tmp_path, monkeypatch):
+    """A red mutation gate fails the verdict and names a surviving_mutant (3PWR-FR-031/034)."""
+    s, proj = _project(
+        tmp_path,
+        '  format: { cmd: "python -c pass", parser: x }\n'
+        '  mutation: { cmd: "python -c pass", parser: mutmut }',
+    )
+    monkeypatch.setattr(
+        gates_mod.mutation,
+        "mutation_gate",
+        lambda *a, **k: GateResult(
+            gate="mutation",
+            status=STATUS_FAIL,
+            tool="mutmut",
+            details={"mutation_score": 50.0, "threshold": 70, "survived": 3},
+        ),
+    )
+    v = run_gates(
+        s, proj, tier="T", spec_path=proj / "spec.md", adapter_name="a", allow_mutation=True
+    )
+    assert v.result == STATUS_FAIL
+    assert any(f["class"] == "surviving_mutant" for f in v.failures)
+
+
+def test_report_only_run_is_flagged_on_the_verdict(tmp_path):
+    s, proj = _project(tmp_path, '  format: { cmd: "python -c pass", parser: x }')
+    v = run_gates(s, proj, tier="T", spec_path=proj / "spec.md", adapter_name="a", report_only=True)
+    assert v.report_only is True

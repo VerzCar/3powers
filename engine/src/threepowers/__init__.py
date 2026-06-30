@@ -19,5 +19,6 @@ Everything is self-contained in the repository and reconstructable offline
 __version__ = "0.1.0"
 
 # Version of the normalized verdict / ledger schemas this engine emits.
-# Documented, versioned, and stable (3PWR-NFR-008).
-SCHEMA_VERSION = "1.0"
+# Documented, versioned, and stable (3PWR-NFR-008). 1.1 adds the additive,
+# backward-compatible ``report_only`` verdict field (brownfield adoption, 3PWR-FR-052).
+SCHEMA_VERSION = "1.1"

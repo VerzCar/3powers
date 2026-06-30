@@ -27,4 +27,5 @@ gates:
   mutation:
     cmd: "npx --no-install stryker run"
     parser: stryker
+    report_path: "reports/mutation/mutation.json"   # Stryker JSON report for scoring
     tier_min: "High-risk"

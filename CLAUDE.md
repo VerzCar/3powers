@@ -29,30 +29,34 @@ Implemented and committed (not yet merged to `main`):
 - **Plan 003** (`plan/003-complete-v0.1-mvp.md`) — completed the remaining **v0.1** trust-spine MVP gaps.
 - **Plan 004** (`plan/004-scope-provenance-residual.md`) — scope discipline + first **v0.5** pillars.
 - **Plan 005** (`plan/005-sast-and-eval-harness.md`) — SAST gate + eval harness; **completes v0.5**.
+- **Plan 006** (`plan/006-v1.0-and-hardening.md`) — **High-risk self-application (NFR-006)** + **brownfield
+  Stage Zero** (report-only, diff-scoped gating, characterization); starts **v1.0**.
 
-**Status (honest): v0.5 complete.** Implemented across plans 001–005: the trust spine (ledger / verify /
-enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate suite**
-cheapest-first (floor + tests/diff-coverage + mutation + **SAST** + dependency + secret + gate-gaming +
-spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**, **two-way
-coverage**, **scope discipline**, **residual review**, and the **prompt/constitution eval harness
-(FR-050)** — all self-applied (the engine gates its own code; 26 FRs traced). Next → **v1.0**
-(plan 006+): brownfield §12, observe §13, emergency/deviation §14, catalog distribution as a Spec Kit
-extension/preset, and a third adapter. Known approximations (command/harness-level in a Copilot-only
-setting): work-kind inference (FR-058), context strategy (FR-060/061); the mutmut src-layout runner is a
-follow-up.
+**Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
+(ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
+suite** cheapest-first (floor + tests/diff-coverage + **mutation** + **SAST** + dependency + secret +
+gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**,
+**two-way coverage**, **scope discipline**, **residual review**, the **prompt/constitution eval harness
+(FR-050)**, and **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
+FR-053). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage
+**and** mutation (≈89% ≥ the 70% threshold) — via the fixed mutmut src-layout runner and per-path tier
+scoping; the engine runs green at `--tier High-risk`. Next → rest of **v1.0**: observe §13,
+emergency/deviation §14, **structural** oracle independence (A3 headless dispatch), catalog distribution,
+and a third adapter. Known approximations (command/harness-level in a Copilot-only setting): work-kind
+inference (FR-058), context strategy (FR-060/061), structural oracle isolation (FR-021).
 
 ## Repository layout
 
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
-  src/threepowers/          #   cli, gates, conformance, covdiff, adapters, scanners,
-                            #   ledger, verify, keys, verdict, config, canonical
+  src/threepowers/          #   cli, gates, mutation, characterize, conformance, covdiff,
+                            #   adapters, scanners, ledger, verify, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
   config/{risk-tiers,roles}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}
   ledger.jsonl  keys/ledger.pub    (private key lives OUTSIDE the repo — NFR-005)
 .specify/                   # Spec Kit; constitution + spec/plan/tasks templates OVERRIDDEN by 3Powers
-.github/{prompts,agents}/   # Spec Kit /speckit.* commands + custom /3pwr.{oracle,verify,signoff,advance}
+.github/{prompts,agents}/   # Spec Kit /speckit.* commands + custom /3pwr.{oracle,verify,review,signoff,advance,characterize}
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs
 examples/validation-utils/  # the runnable TypeScript sample (spec id VUTIL)
 docs/references/            # compacted Spec Kit + trust-spine tooling references
@@ -76,14 +80,25 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr signoff --approver <you> --stage review --spec-id <ID>
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
 
-# Self-application (3Powers gating its own engine):
+# Self-application (3Powers gating its own engine), Standard tier:
 3pwr gate run --path engine --adapter python --spec specs/002-engine-trust-spine/spec.md \
               --tier Standard --base <pre-engine-commit>
+
+# Self-application at HIGH-RISK — the NFR-006 proof (mutation on the trust-spine modules):
+(cd engine && uv run python -m threepowers.cli --root .. gate run --path . --adapter python \
+   --spec ../specs/002-engine-trust-spine/spec.md --tier High-risk --mutation --no-ledger \
+   --paths src/threepowers/canonical.py src/threepowers/keys.py \
+           src/threepowers/ledger.py src/threepowers/verify.py)   # mutation_score ≈ 89% ≥ 70%
+
+# Brownfield (existing repos): emit-don't-block, diff-scope, and characterize a legacy module:
+3pwr gate run --path <dir> --tier Standard --report-only            # FR-052
+3pwr gate run --path <dir> --tier Standard --base main --diff-scope # FR-051 (block only the diff)
+3pwr characterize --module <path/to/legacy.py>                      # FR-053 (reconstruct spec + oracle)
 ```
 
 The lifecycle runs through GitHub Copilot slash commands: `/speckit.specify → clarify → plan → tasks`
 then (switch model for the judiciary) `/3pwr.oracle`, then `/speckit.implement → /3pwr.verify →
-/3pwr.signoff → /3pwr.advance`.
+/3pwr.signoff → /3pwr.advance`. For an existing repo, start with `/3pwr.characterize` on a legacy module.
 
 ## Architecture (the big picture)
 

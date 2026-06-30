@@ -4,9 +4,13 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-Walking skeleton in place (plan [`001`](plan/001-base-setup-and-tech-stack.md)): the `3pwr` engine,
-the TypeScript reference adapter, the trust-spine ledger, and a runnable sample. Built on GitHub Spec
-Kit. See [`docs/references/speckit.md`](docs/references/speckit.md) and
+**v0.5 complete; v1.0 in progress** (through plan [`006`](plan/006-v1.0-and-hardening.md)). The `3pwr`
+engine drives the full gate suite (floor → tests/diff-coverage → **mutation** → SAST → dependency →
+secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
+enforcement, provenance/deploy-gate, residual review, the eval harness, and **brownfield Stage Zero**
+(report-only, diff-scoped gating, `characterize`). **NFR-006 is met:** the trust-spine modules pass their
+own **High-risk** bar (mutation ≈89% ≥ 70%). Two reference adapters (TypeScript + Python). Built on GitHub
+Spec Kit. See [`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and
 [`docs/references/trust-spine-tooling.md`](docs/references/trust-spine-tooling.md).
 
 ## Commands
@@ -20,6 +24,10 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Engine dev env / tests | `uv sync --extra dev` · `uv run pytest` (in `engine/`) |
 | Create the signer identity | `3pwr keygen` |
 | Run the gate suite | `3pwr gate run --path <target> --spec specs/<feature>/spec.md --tier <Cosmetic\|Standard\|High-risk>` |
+| Run with mutation, scoped to files | `3pwr gate run … --tier High-risk --mutation --paths <file …>` (per-capability tier, §4) |
+| Brownfield: emit, don't block | `3pwr gate run … --report-only` (`3PWR-FR-052`) |
+| Brownfield: block only the diff | `3pwr gate run … --base <ref> --diff-scope` (`3PWR-FR-051`) |
+| Characterize a legacy module | `3pwr characterize --module <path> [--specs <dir>] [--tests <dir>]` (`3PWR-FR-053`) |
 | Read the latest verdict | `.3powers/verdicts/latest.json` (or add `--json`) |
 | Spec-conformance only | `3pwr conformance --spec <spec.md> --tests <dir>` |
 | Verify the ledger (offline) | `3pwr verify` |
@@ -52,7 +60,7 @@ Authoritative pins live in the lockfiles: `engine/uv.lock` and
 | TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
 | Supply-chain scanners | gitleaks 8.30, osv-scanner 2.4 — secret + dependency core gates (Standard+) |
 | SAST | semgrep against a local offline ruleset (`.3powers/config/semgrep-rules.yml`); quarantines if absent |
-| Mutation | mutmut (Python) / Stryker (TS) — scoped to the High-risk trust-spine; full sweep scheduled |
+| Mutation | mutmut 3.x (Python) / Stryker (TS) — scoped to the High-risk trust-spine via `[tool.mutmut]` `source_paths`+`only_mutate`; score graded vs the tier threshold; full sweep scheduled |
 
 ## Boundaries (hard rules for executive agents)
 

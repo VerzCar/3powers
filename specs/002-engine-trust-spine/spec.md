@@ -1,4 +1,4 @@
-# Feature Specification: 3Powers Engine — Trust Spine (v0.1 slice)
+# Feature Specification: 3Powers Engine — Trust Spine + Judiciary + Brownfield
 
 **Spec ID**: 3PWR
 
@@ -7,16 +7,17 @@
 
 **Status**: Approved
 
-**Input**: The implemented v0.1 slice of the 3PWR epic — the `3pwr` engine. This scopes spec-conformance
-to what the engine actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
+**Input**: The implemented slice of the 3PWR epic — the `3pwr` engine (v0.5 complete + the v1.0 brownfield
+Stage Zero and High-risk self-application from plan 006). This scopes spec-conformance to what the engine
+actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 ---
 
 ## Non-Goals *(mandatory)*
 
-- Does **not** cover the gates deferred past v0.1 (SAST, residual review, build provenance) — those land
-  in plans 003+.
-- Does **not** re-state the whole epic; only the FRs the engine implements today are listed here.
+- Does **not** cover the v1.0 work still ahead — observe/feedback (§13), emergency/deviation (§14),
+  structural oracle isolation (A3 headless dispatch), catalog distribution, or a third adapter.
+- Does **not** re-state the whole epic; only the FRs/NFRs the engine implements today are listed here.
 
 ## Requirements *(the implemented subset — each is referenced by ≥1 engine test)*
 
@@ -30,6 +31,10 @@ to what the engine actually implements (the full 71-FR epic lives in `3Powers_Sp
   - *Acceptance*: diff-coverage over a changed covered line is 100%; over a changed uncovered line, 0%.
 - **3PWR-FR-030**: The engine shall fail spec-conformance when any requirement has no linked test.
   - *Acceptance*: a spec with an untested requirement yields a failing conformance gate naming that ID.
+- **3PWR-FR-031**: The engine shall run mutation testing scoped to changed/high-risk files and report each surviving mutant as an actionable missing assertion.
+  - *Acceptance*: the mutation gate executes on the trust-spine modules, grades the score, and lists survivors as findings.
+- **3PWR-FR-032**: The engine shall read every gate threshold (incl. mutation score) from the single risk-tier table and never satisfy a gate by weakening it.
+  - *Acceptance*: the mutation gate passes only when the score meets the tier's `mutation_score`; a below-threshold score fails.
 - **3PWR-FR-033**: The engine shall emit one normalized verdict whose shape is identical across languages.
   - *Acceptance*: a verdict serializes with `schema_version`, `result`, and ordered `gates`.
 - **3PWR-FR-034**: The engine shall make each failure actionable, naming its class and offending item.
@@ -68,6 +73,12 @@ to what the engine actually implements (the full 71-FR epic lives in `3Powers_Sp
   - *Acceptance*: provenance verifies against the committed ledger public key.
 - **3PWR-FR-050**: The engine shall treat prompts/commands/constitution as versioned software with an eval set and block on regression.
   - *Acceptance*: `eval` fails when a required phrase is missing from a constitution/command file.
+- **3PWR-FR-051**: The engine shall hold only new/changed code to the full process, leaving existing code untouched until modified.
+  - *Acceptance*: with `--paths`/`--diff-scope`, diff-coverage and the file-based scanners count only the in-scope files.
+- **3PWR-FR-052**: The engine shall support running gates in report-only mode that emits a verdict but does not block.
+  - *Acceptance*: `gate run --report-only` flags the verdict advisory, exits 0 on red, and `advance` ignores it.
+- **3PWR-FR-053**: The engine shall reconstruct a spec for a legacy module and pin its current behavior with characterization tests as its oracle.
+  - *Acceptance*: `3pwr characterize --module <p>` writes a spec stub + runnable tests that trace the reconstructed requirement IDs.
 
 ### Non-Functional Requirements
 

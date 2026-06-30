@@ -63,3 +63,50 @@ def test_sast_reports_findings(tmp_path, monkeypatch):
     gate = scanners.sast_scan(tmp_path, rules)
     assert gate.status == STATUS_FAIL
     assert any("dangerous-eval" in f for f in gate.findings)
+
+
+def _sast_with_finding(tmp_path, monkeypatch, path="a.py"):
+    monkeypatch.setattr(scanners.shutil, "which", lambda _tool: "/bin/semgrep")
+    rules = tmp_path / "rules.yml"
+    rules.write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(
+        scanners,
+        "run_cmd",
+        lambda cmd, cwd: CmdResult(
+            1,
+            '{"results":[{"check_id":"dangerous-eval","path":"%s","start":{"line":3}}]}' % path,
+            "",
+            5,
+        ),
+    )
+    return rules
+
+
+def test_sast_diff_scope_ignores_unchanged_files(tmp_path, monkeypatch):
+    """A legacy finding outside the diff does not block (brownfield, 3PWR-FR-051)."""
+    rules = _sast_with_finding(tmp_path, monkeypatch, path="legacy.py")
+    changed = {str((tmp_path / "feature.py").resolve())}  # legacy.py not in the diff
+    gate = scanners.sast_scan(tmp_path, rules, changed)
+    assert gate.status == STATUS_PASS and gate.findings == []
+
+
+def test_sast_diff_scope_blocks_changed_files(tmp_path, monkeypatch):
+    rules = _sast_with_finding(tmp_path, monkeypatch, path="feature.py")
+    changed = {str((tmp_path / "feature.py").resolve())}
+    gate = scanners.sast_scan(tmp_path, rules, changed)
+    assert gate.status == STATUS_FAIL
+    assert any("dangerous-eval" in f for f in gate.findings)
+
+
+def test_secret_scan_diff_scope_ignores_unchanged(tmp_path, monkeypatch):
+    monkeypatch.setattr(scanners.shutil, "which", lambda _tool: "/bin/gitleaks")
+
+    def fake_run(cmd, cwd):
+        out = Path(shlex.split(cmd)[shlex.split(cmd).index("--report-path") + 1])
+        out.write_text('[{"RuleID":"aws-key","File":"legacy.py","StartLine":1}]', encoding="utf-8")
+        return CmdResult(1, "", "", 4)
+
+    monkeypatch.setattr(scanners, "run_cmd", fake_run)
+    changed = {str((tmp_path / "feature.py").resolve())}
+    gate = scanners.secret_scan(tmp_path, changed)
+    assert gate.status == STATUS_PASS and gate.findings == []

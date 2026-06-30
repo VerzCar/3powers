@@ -74,16 +74,21 @@ def changed_lines(repo_root: Path, target: Path, base: str | None) -> dict[str, 
 def diff_coverage(
     lcov: dict[str, dict[int, int]],
     changed: dict[str, set[int]],
+    allow: set[str] | None = None,
 ) -> tuple[float, list[dict]]:
     """Return ``(percent_covered, uncovered)`` over changed *executable* lines.
 
     When ``changed`` is empty (no resolvable base) we fall back to all measured lines
-    so the metric is still meaningful on a fresh tree.
+    so the metric is still meaningful on a fresh tree. When ``allow`` is given (a set
+    of absolute file paths), only those files are measured — this scopes coverage to a
+    capability area's files at its tier (spec §4) or to a brownfield diff (3PWR-FR-051).
     """
     covered = 0
     total = 0
     uncovered: list[dict] = []
     for file, line_hits in lcov.items():
+        if allow is not None and file not in allow:
+            continue
         scope = changed.get(file)
         for line, hits in sorted(line_hits.items()):
             if scope is not None and line not in scope:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from threepowers import SCHEMA_VERSION
 from threepowers.canonical import canonical_bytes
 from threepowers.verdict import STATUS_FAIL, STATUS_PASS, GateResult, Verdict, failure
 
@@ -36,7 +37,8 @@ def test_write_and_requirement_ids(tmp_path):
     p = tmp_path / "v.json"
     v.write(p)
     written = json.loads(p.read_text())
-    assert written["spec_id"] == "X" and written["schema_version"] == "1.0"
+    assert written["spec_id"] == "X" and written["schema_version"] == SCHEMA_VERSION
+    assert written["report_only"] is False  # advisory flag defaults off (3PWR-FR-052)
     assert v.requirement_ids() == ["X-FR-001", "X-FR-002"]
 
 

@@ -35,3 +35,16 @@ def test_no_changed_lines_falls_back_to_all_measured():
     lcov = {"/proj/src/validate.ts": {1: 1, 2: 0}}
     pct, _ = diff_coverage(lcov, {})
     assert pct == 50.0
+
+
+def test_allow_scopes_measurement_to_named_files():
+    """--paths / brownfield diff-scope: only the allowed files count (3PWR-FR-051, §4)."""
+    lcov = {
+        "/proj/src/trust.py": {1: 1, 2: 1},  # fully covered (the high-risk file)
+        "/proj/src/legacy.py": {1: 0, 2: 0},  # untested legacy — must be excluded
+    }
+    pct, uncovered = diff_coverage(lcov, {}, allow={"/proj/src/trust.py"})
+    assert pct == 100.0 and uncovered == []
+    # Without the allow-list, the legacy file drags the number down.
+    pct_all, _ = diff_coverage(lcov, {})
+    assert pct_all == 50.0

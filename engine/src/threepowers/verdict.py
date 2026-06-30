@@ -59,6 +59,7 @@ class Verdict:
         default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     )
     result: str = STATUS_PASS
+    report_only: bool = False  # advisory run: emit but do not block (3PWR-FR-052)
     gates: list[GateResult] = field(default_factory=list)
     failures: list[dict[str, Any]] = field(default_factory=list)
 
