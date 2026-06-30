@@ -47,7 +47,9 @@ Optional / future layers:
 
 - **Secrets**: **gitleaks** — wired as a core gate in plan 002 (offline; quarantines if absent). trufflehog (verified findings; needs network) is a later option.
 - **Dependencies**: **osv-scanner** — wired as a core gate in plan 002 (respects `.gitignore`; quarantines if absent). trivy/grype are alternatives.
-- **SAST**: semgrep (fast, 30+ langs) on every change; CodeQL (deeper) on a schedule — **plan 003**.
+- **SAST**: **semgrep** — wired as a core gate in plan 005 against a **local, committed ruleset**
+  (`.3powers/config/semgrep-rules.yml`); offline and deterministic (`--config auto` avoided), quarantines
+  if absent. CodeQL (deeper, on a schedule) is a future option.
 
 Both core scanners **quarantine** (report `skip` + a surfaced finding) when the tool isn't
 installed, so the suite stays runnable without silently passing (3PWR-NFR-015).

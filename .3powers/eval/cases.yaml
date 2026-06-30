@@ -1,0 +1,32 @@
+# 3Powers' constitution, commands, and role config are versioned software with an eval
+# set (3PWR-FR-050). `3pwr eval` runs this and BLOCKS on any regression — a change that
+# drops a non-negotiable property fails here instead of shipping silently.
+cases:
+  - name: constitution-non-negotiables
+    file: .specify/memory/constitution.md
+    must_contain:
+      - "Separation of Powers"
+      - "Oracle Independence"
+      - "different model family"
+      - "hash-chained"
+      - "never satisfied by weakening"
+
+  - name: oracle-command-independence
+    file: .github/agents/3pwr.oracle.agent.md
+    must_contain:
+      - "Read ONLY"
+      - "different model family"
+      - "property-based"
+
+  - name: review-command-different-family
+    file: .github/agents/3pwr.review.agent.md
+    must_contain:
+      - "different model family"
+      - "intent fit"
+
+  - name: roles-bind-model-families
+    file: .3powers/config/roles.yaml
+    must_contain:
+      - "model_family"
+      - "oracle"
+      - "coder"

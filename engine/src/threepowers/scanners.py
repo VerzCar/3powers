@@ -95,3 +95,28 @@ def dependency_scan(target: Path) -> GateResult:
             details={"count": len(findings)},
             findings=findings[:10],
         )
+
+
+def sast_scan(target: Path, rules_path: Path) -> GateResult:
+    """Static analysis with semgrep against a local, offline ruleset (3PWR-FR-026 §8)."""
+    if not shutil.which("semgrep") or not rules_path.exists():
+        return _quarantine("sast", "semgrep")
+    res = run_cmd(f"semgrep scan --quiet --json --config {rules_path} {target}", cwd=target)
+    findings: list[str] = []
+    try:
+        for r in (json.loads(res.stdout or "{}").get("results") or [])[:20]:
+            line = r.get("start", {}).get("line", "?")
+            findings.append(f"{r.get('check_id', 'rule')} at {r.get('path', '?')}:{line}")
+    except ValueError:
+        pass
+    if res.returncode >= 2 and not findings:  # semgrep itself errored
+        return _quarantine("sast", "semgrep")
+    status = STATUS_FAIL if findings else STATUS_PASS
+    return GateResult(
+        gate="sast",
+        status=status,
+        tool="semgrep",
+        duration_ms=res.duration_ms,
+        details={"count": len(findings)},
+        findings=findings,
+    )

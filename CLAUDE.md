@@ -28,17 +28,18 @@ Implemented and committed (not yet merged to `main`):
 - **Plan 002** (`plan/002-self-application-and-scanners.md`) — self-application + supply-chain scanners.
 - **Plan 003** (`plan/003-complete-v0.1-mvp.md`) — completed the remaining **v0.1** trust-spine MVP gaps.
 - **Plan 004** (`plan/004-scope-provenance-residual.md`) — scope discipline + first **v0.5** pillars.
+- **Plan 005** (`plan/005-sast-and-eval-harness.md`) — SAST gate + eval harness; **completes v0.5**.
 
-**Status (honest):** v0.1 is complete and v0.5 is underway. Implemented across plans 001–004: the trust
-spine (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the
-deterministic floor + oracle-bearing gates + **dependency / secret / gate-gaming** core gates, two
-reference adapters (TypeScript + Python), **lifecycle/resumability**, **two-way coverage**, **scope
-discipline (FR-016/017)**, **residual review (FR-036)**, and self-application (the engine gates its own
-code — 25 FRs traced). Remaining → **plan 005** to finish v0.5: **SAST** (semgrep) and the
-prompt/constitution **eval harness (FR-050)**; then **v1.0** (brownfield §12, observe §13,
-emergency/deviation §14, catalog distribution, a third adapter). Known approximations:
-**work-kind inference (FR-058)** and **context strategy (FR-060/061)** are command/harness-level and
-constrained by the Copilot-only setting.
+**Status (honest): v0.5 complete.** Implemented across plans 001–005: the trust spine (ledger / verify /
+enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate suite**
+cheapest-first (floor + tests/diff-coverage + mutation + **SAST** + dependency + secret + gate-gaming +
+spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**, **two-way
+coverage**, **scope discipline**, **residual review**, and the **prompt/constitution eval harness
+(FR-050)** — all self-applied (the engine gates its own code; 26 FRs traced). Next → **v1.0**
+(plan 006+): brownfield §12, observe §13, emergency/deviation §14, catalog distribution as a Spec Kit
+extension/preset, and a third adapter. Known approximations (command/harness-level in a Copilot-only
+setting): work-kind inference (FR-058), context strategy (FR-060/061); the mutmut src-layout runner is a
+follow-up.
 
 ## Repository layout
 
@@ -96,7 +97,7 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    same family); full structural isolation is a known approximation in a Copilot-only setting.
 
 2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
-   mutation → dependency → secret → gate-gaming → spec-conformance (SAST later). Language support is a
+   mutation → SAST → dependency → secret → gate-gaming → spec-conformance. Language support is a
    **declarative adapter manifest** — the core never assumes a language (NFR-007); language-agnostic
    gates (diff-coverage, conformance, secret, dependency) live in the core. One normalized **verdict**
    per run, identical across languages (NFR-001/FR-033), every failure actionable (FR-034).

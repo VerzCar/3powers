@@ -33,6 +33,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Record a residual review | `3pwr residual --reviewer <id> --note <…> --spec-id <ID>` |
 | Sign build provenance + SBOM | `3pwr provenance --artifact <path> [--path <dir>]` |
 | Verify provenance (deploy gate) | `3pwr deploy-gate --artifact <path>` |
+| Run the prompt/constitution eval set | `3pwr eval [--cases <cases.yaml>]` |
 | Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
 | Sample: lint+format / types / tests | `npm run check` · `npm run typecheck` · `npm test` (in `examples/validation-utils/`) |
 | Sample: a single test | `npx vitest run tests/unit/validate.test.ts` |
@@ -50,6 +51,7 @@ Authoritative pins live in the lockfiles: `engine/uv.lock` and
 | Engine runtime deps | `cryptography`, `PyYAML` |
 | TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
 | Supply-chain scanners | gitleaks 8.30, osv-scanner 2.4 — secret + dependency core gates (Standard+) |
+| SAST | semgrep against a local offline ruleset (`.3powers/config/semgrep-rules.yml`); quarantines if absent |
 | Mutation | mutmut (Python) / Stryker (TS) — scoped to the High-risk trust-spine; full sweep scheduled |
 
 ## Boundaries (hard rules for executive agents)

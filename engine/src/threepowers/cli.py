@@ -472,6 +472,20 @@ def cmd_residual(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """Run the prompt/constitution eval set; block on regression (3PWR-FR-050)."""
+    from .evals import run_evals
+
+    s = _settings(args.root)
+    cases = Path(args.cases).resolve() if args.cases else (s.dir / "eval" / "cases.yaml")
+    gate = run_evals(s.root, cases)
+    human = f"eval: {gate.status.upper()} ({gate.details.get('passed')}/{gate.details.get('cases')} cases)"
+    if gate.findings:
+        human += "\n  - " + "\n  - ".join(gate.findings)
+    _print({"status": gate.status, **gate.details}, args.json, human)
+    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
+
+
 # --------------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="3pwr", description="3Powers judiciary engine.")
@@ -566,6 +580,10 @@ def build_parser() -> argparse.ArgumentParser:
     rsp.add_argument("--findings", nargs="*")
     rsp.add_argument("--spec-id", dest="spec_id")
     rsp.set_defaults(func=cmd_residual)
+
+    evp = common(sub.add_parser("eval", help="run the prompt/constitution eval set (FR-050)"))
+    evp.add_argument("--cases", help="eval cases.yaml (default: .3powers/eval/cases.yaml)")
+    evp.set_defaults(func=cmd_eval)
 
     lp = sub.add_parser("ledger", help="ledger operations")
     lsub = lp.add_subparsers(dest="ledger_cmd", required=True)

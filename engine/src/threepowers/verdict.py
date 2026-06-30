@@ -25,6 +25,7 @@ GATE_ORDER = [
     "tests",
     "diff_coverage",
     "mutation",
+    "sast",
     "dependency_scan",
     "secret_scan",
     "gate_gaming",

@@ -66,6 +66,8 @@ to what the engine actually implements (the full 71-FR epic lives in `3Powers_Sp
   - *Acceptance*: `deploy-gate` refuses an artifact whose hash does not match its provenance.
 - **3PWR-FR-068**: The engine shall sign provenance with the same independent signer identity as the ledger.
   - *Acceptance*: provenance verifies against the committed ledger public key.
+- **3PWR-FR-050**: The engine shall treat prompts/commands/constitution as versioned software with an eval set and block on regression.
+  - *Acceptance*: `eval` fails when a required phrase is missing from a constitution/command file.
 
 ### Non-Functional Requirements
 

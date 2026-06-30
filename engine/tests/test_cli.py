@@ -272,3 +272,17 @@ def test_residual_recorded(project):
         == 0
     )
     assert main(["--root", str(root), "verify"]) == 0
+
+
+def test_eval_cli(project):
+    """Prompt/constitution eval set blocks on regression (3PWR-FR-050)."""
+    root, _ = project
+    (root / "doc.md").write_text("we keep the different model family rule\n", encoding="utf-8")
+    cases = root / "cases.yaml"
+    cases.write_text(
+        'cases:\n  - name: c\n    file: doc.md\n    must_contain: ["different model family"]\n',
+        encoding="utf-8",
+    )
+    assert main(["--root", str(root), "eval", "--cases", str(cases)]) == 0
+    (root / "doc.md").write_text("the rule was quietly weakened\n", encoding="utf-8")  # regression
+    assert main(["--root", str(root), "eval", "--cases", str(cases)]) == 1

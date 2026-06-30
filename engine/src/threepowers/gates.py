@@ -29,7 +29,14 @@ from .verdict import (
 
 # Gates executed by invoking an adapter command vs. computed in the core.
 _ADAPTER_GATES = {"format", "lint", "types", "tests", "mutation"}
-_CORE_GATES = {"diff_coverage", "dependency_scan", "secret_scan", "gate_gaming", "spec_conformance"}
+_CORE_GATES = {
+    "diff_coverage",
+    "sast",
+    "dependency_scan",
+    "secret_scan",
+    "gate_gaming",
+    "spec_conformance",
+}
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -132,6 +139,9 @@ def run_gates(
         elif gate == "diff_coverage":
             verdict.add(_diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base))
 
+        elif gate == "sast":
+            verdict.add(scanners.sast_scan(target, settings.dir / "config" / "semgrep-rules.yml"))
+
         elif gate == "dependency_scan":
             verdict.add(scanners.dependency_scan(target))
 
@@ -166,6 +176,14 @@ def run_gates(
                     gate=g.gate,
                     tool=g.tool,
                     detail="; ".join(g.findings[-3:]) or "non-zero exit",
+                )
+            )
+        elif g.gate == "sast":
+            verdict.failures.append(
+                failure(
+                    "sast_finding",
+                    gate=g.gate,
+                    detail="; ".join(g.findings[:3]) or "static-analysis finding",
                 )
             )
         elif g.gate == "secret_scan":
