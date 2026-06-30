@@ -1,0 +1,29 @@
+# Python reference adapter — SCAFFOLD (completed in plan 002).
+#
+# This is the adapter that lets 3Powers gate its OWN engine code at the High-risk
+# tier (self-application, 3PWR-A6 / 3PWR-NFR-006). Python is chosen partly because
+# its mutation tooling (mutmut) is mature, which makes credible self-gating possible.
+language: python
+detect: ["pyproject.toml"]
+test_roots: ["tests", "src"]
+property_test_lib: hypothesis
+
+gates:
+  format:
+    check_cmd: "ruff format --check ."
+    parser: ruff
+  lint:
+    cmd: "ruff check ."
+    parser: ruff
+  types:
+    cmd: "mypy src"
+    parser: mypy
+  tests:
+    cmd: "pytest --cov=src --cov-report=lcov:coverage/lcov.info"
+    parser: pytest
+    coverage_format: lcov
+    coverage_path: "coverage/lcov.info"
+  mutation:
+    cmd: "mutmut run"
+    parser: mutmut
+    tier_min: "High-risk"

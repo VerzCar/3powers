@@ -1,0 +1,105 @@
+{
+  "spec_id": "VUTIL",
+  "tier": "Standard",
+  "adapter": "typescript",
+  "commit": "3e20aad",
+  "schema_version": "1.0",
+  "verdict_id": "0e79b348-0643-4502-ace2-c1edb236d873",
+  "created_at": "2026-06-30T15:23:59Z",
+  "result": "pass",
+  "gates": [
+    {
+      "gate": "format",
+      "status": "pass",
+      "tool": "biome",
+      "duration_ms": 796,
+      "details": {
+        "returncode": 0
+      },
+      "findings": []
+    },
+    {
+      "gate": "lint",
+      "status": "pass",
+      "tool": "biome",
+      "duration_ms": 986,
+      "details": {
+        "returncode": 0
+      },
+      "findings": []
+    },
+    {
+      "gate": "types",
+      "status": "pass",
+      "tool": "tsc",
+      "duration_ms": 1235,
+      "details": {
+        "returncode": 0
+      },
+      "findings": []
+    },
+    {
+      "gate": "tests",
+      "status": "pass",
+      "tool": "vitest",
+      "duration_ms": 1867,
+      "details": {
+        "returncode": 0
+      },
+      "findings": []
+    },
+    {
+      "gate": "diff_coverage",
+      "status": "pass",
+      "tool": "3pwr-covdiff",
+      "duration_ms": 0,
+      "details": {
+        "covered_pct": 100.0,
+        "threshold": 80.0,
+        "uncovered_count": 0
+      },
+      "findings": []
+    },
+    {
+      "gate": "spec_conformance",
+      "status": "pass",
+      "tool": "3pwr-conformance",
+      "duration_ms": 0,
+      "details": {
+        "spec_id": "VUTIL",
+        "requirement_ids": [
+          "VUTIL-FR-001",
+          "VUTIL-FR-002",
+          "VUTIL-FR-003",
+          "VUTIL-FR-004",
+          "VUTIL-FR-005"
+        ],
+        "untested_requirements": [],
+        "layers": {
+          "VUTIL-FR-001": [
+            "e2e",
+            "unit"
+          ],
+          "VUTIL-FR-002": [
+            "integration",
+            "unit"
+          ],
+          "VUTIL-FR-003": [
+            "integration",
+            "unit"
+          ],
+          "VUTIL-FR-004": [
+            "e2e",
+            "unit"
+          ],
+          "VUTIL-FR-005": [
+            "e2e",
+            "unit"
+          ]
+        }
+      },
+      "findings": []
+    }
+  ],
+  "failures": []
+}

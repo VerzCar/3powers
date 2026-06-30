@@ -1,0 +1,16 @@
+# 3Powers role → model-family binding.
+#
+# Roles are bound to model *families*, never to a single provider or model
+# (3PWR-FR-044 / 3PWR-A3). The judiciary (oracle) MUST resolve to a different
+# family than the coder; the engine refuses otherwise (3PWR-FR-022). In GitHub
+# Copilot, switch the chat model between the coder step (/speckit.implement) and
+# the oracle step (/3pwr.oracle) to honour this — and record the model actually
+# used in the ledger entry.
+version: 1
+diversity_enforced: true
+
+roles:
+  planner:  { model_family: "" }            # set per project / per run
+  coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot
+  oracle:   { model_family: "anthropic" }   # judiciary — MUST differ from `coder`
+  reviewer: { model_family: "google" }      # residual review (3PWR-FR-036, arrives v0.5)

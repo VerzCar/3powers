@@ -1,0 +1,27 @@
+# 3Powers trust-spine: transient state only. The ledger, public key, config,
+# schemas, adapters and latest verdict ARE committed (self-contained record).
+.3powers/runs/
+.3powers/keys/*.key
+*.key
+
+# Engine (Python)
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.mutmut-cache
+
+# Sample / TypeScript
+node_modules/
+coverage/
+.stryker-tmp/
+reports/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store

@@ -1,0 +1,30 @@
+# TypeScript reference adapter (built + exercised in plan 001).
+#
+# Biome covers BOTH formatting and linting via its `ci` check command (no writes,
+# non-zero exit on any issue); we map both gates to it for a unified, fast floor.
+# Vitest emits LCOV which the core uses for diff-coverage. Stryker is wired for the
+# mutation gate but stays non-blocking until plan 002.
+language: typescript
+detect: ["package.json", "tsconfig.json"]
+test_roots: ["tests", "src"]
+property_test_lib: fast-check
+
+gates:
+  format:
+    check_cmd: "npx --no-install @biomejs/biome ci ."
+    parser: biome
+  lint:
+    cmd: "npx --no-install @biomejs/biome ci ."
+    parser: biome
+  types:
+    cmd: "npx --no-install tsc --noEmit"
+    parser: tsc
+  tests:
+    cmd: "npx --no-install vitest run --coverage"
+    parser: vitest
+    coverage_format: lcov
+    coverage_path: "coverage/lcov.info"
+  mutation:
+    cmd: "npx --no-install stryker run"
+    parser: stryker
+    tier_min: "High-risk"

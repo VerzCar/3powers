@@ -4,24 +4,43 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-Pre-implementation, spec-only repository. There is no toolchain yet, so the Commands and Pinned versions sections below are placeholders to fill in as code arrives.
+Walking skeleton in place (plan [`001`](plan/001-base-setup-and-tech-stack.md)): the `3pwr` engine,
+the TypeScript reference adapter, the trust-spine ledger, and a runnable sample. Built on GitHub Spec
+Kit. See [`docs/references/speckit.md`](docs/references/speckit.md) and
+[`docs/references/trust-spine-tooling.md`](docs/references/trust-spine-tooling.md).
 
 ## Commands
 
-_None yet._ Populate as the toolchain lands:
+The signer's private key lives **outside** the repo; point the engine at it once:
+`export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"` (printed by `3pwr keygen`).
 
 | Purpose | Command |
 |---|---|
-| Build | _tbd_ |
-| Format / lint | _tbd_ |
-| Type check | _tbd_ |
-| Run tests | _tbd_ |
-| Run a single test | _tbd_ |
-| Run the gate suite / read a verdict | _tbd_ |
+| Install the engine (provides `3pwr`) | `uv tool install ./engine` |
+| Engine dev env / tests | `uv sync --extra dev` · `uv run pytest` (in `engine/`) |
+| Create the signer identity | `3pwr keygen` |
+| Run the gate suite | `3pwr gate run --path <target> --spec specs/<feature>/spec.md --tier <Cosmetic\|Standard\|High-risk>` |
+| Read the latest verdict | `.3powers/verdicts/latest.json` (or add `--json`) |
+| Spec-conformance only | `3pwr conformance --spec <spec.md> --tests <dir>` |
+| Verify the ledger (offline) | `3pwr verify` |
+| Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
+| Enforce + advance a stage | `3pwr advance --stage ship` |
+| Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
+| Sample: lint+format / types / tests | `npm run check` · `npm run typecheck` · `npm test` (in `examples/validation-utils/`) |
+| Sample: a single test | `npx vitest run tests/unit/validate.test.ts` |
 
 ## Pinned versions
 
-_None yet._
+Authoritative pins live in the lockfiles: `engine/uv.lock` and
+`examples/validation-utils/package-lock.json`. Confirmed in this environment:
+
+| Component | Version |
+|---|---|
+| Spec Kit (`specify`) | `0.11.6.dev0` (pin `uv tool install … @<tag>`) |
+| Python (via `uv`) | 3.12 (engine `requires-python >=3.10`) |
+| Node | 23.3.0 |
+| Engine runtime deps | `cryptography`, `PyYAML` |
+| TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
 
 ## Boundaries (hard rules for executive agents)
 

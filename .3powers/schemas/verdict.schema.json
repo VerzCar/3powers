@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3powers.dev/schemas/verdict-1.0.json",
+  "title": "3Powers Verdict",
+  "description": "One normalized, machine-readable verdict, identical across languages (3PWR-FR-033, 3PWR-NFR-001/008). Every failure is actionable (3PWR-FR-034).",
+  "type": "object",
+  "required": ["schema_version", "verdict_id", "spec_id", "tier", "adapter", "result", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "verdict_id": { "type": "string" },
+    "spec_id": { "type": "string", "description": "Spec ID this verdict answers to (3PWR-FR-059)." },
+    "tier": { "type": "string", "enum": ["Cosmetic", "Standard", "High-risk"] },
+    "adapter": { "type": "string", "description": "Language adapter that produced the language-specific gates." },
+    "commit": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "result": { "type": "string", "enum": ["pass", "fail"] },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["gate", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "gate": {
+            "type": "string",
+            "enum": ["format", "lint", "types", "tests", "diff_coverage", "mutation", "spec_conformance"]
+          },
+          "status": { "type": "string", "enum": ["pass", "fail", "skip"] },
+          "tool": { "type": "string" },
+          "duration_ms": { "type": "integer", "minimum": 0 },
+          "details": { "type": "object" },
+          "findings": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "description": "Actionable failure records (3PWR-FR-034).",
+      "items": {
+        "type": "object",
+        "required": ["class"],
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "e.g. untested_requirement | coverage_drop | gate_failed | surviving_mutant"
+          },
+          "requirement_id": { "type": "string" },
+          "file": { "type": "string" },
+          "gate": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  }
+}

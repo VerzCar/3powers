@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://3powers.dev/schemas/ledger-entry-1.0.json",
+  "title": "3Powers Ledger Entry",
+  "description": "One line of the append-only, hash-chained, signed verdict ledger (3PWR-FR-038/039). The signed/chained bytes are the canonical encoding of every field EXCEPT entry_hash, signer_key_id, and signature.",
+  "type": "object",
+  "required": ["seq", "prev_hash", "timestamp", "type", "payload", "entry_hash", "signer_key_id", "signature"],
+  "additionalProperties": false,
+  "properties": {
+    "seq": { "type": "integer", "minimum": 0, "description": "Dense, monotonic from 0." },
+    "prev_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "type": { "type": "string", "enum": ["verdict", "residual", "signoff", "stage_advance"] },
+    "spec_id": { "type": "string" },
+    "requirement_ids": { "type": "array", "items": { "type": "string" } },
+    "payload": { "type": "object" },
+    "entry_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "signer_key_id": { "type": "string", "pattern": "^ed25519:[0-9a-f]{16}$" },
+    "signature": { "type": "string", "description": "base64(Ed25519 over canonical core bytes)." }
+  }
+}
