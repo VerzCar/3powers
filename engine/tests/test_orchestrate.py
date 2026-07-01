@@ -60,6 +60,35 @@ def test_helpers_tracker_mandatory_resume_index():
     assert orchestrate.resume_index("signoff") == 11
 
 
+def test_tracker_frame_is_pure():
+    frame = orchestrate.tracker_frame("Plan", orchestrate.Event("step", "plan", "Plan"))
+    assert "▶ Plan" in frame and "plan" in frame  # stage tracker + current activity
+
+
+def test_tracker_plain_fallback_off_tty():
+    """Off a TTY (pipe / --json) the tracker falls back to plain streamed lines — no ANSI control."""
+    import io
+
+    buf = io.StringIO()
+    tr = orchestrate.Tracker(buf, "auto", tty=False)
+    tr.on_event(orchestrate.Event("step", "specify", "Spec"))
+    tr.on_event(orchestrate.Event("gate-stop", "review-spec", "Spec"))
+    out = buf.getvalue()
+    assert "specify" in out and "review-spec" in out
+    assert "\r" not in out and "\033" not in out  # plain, no in-place cursor control
+
+
+def test_tracker_in_place_on_tty():
+    """On a TTY the tracker redraws a single line in place (carriage return + clear)."""
+    import io
+
+    buf = io.StringIO()
+    tr = orchestrate.Tracker(buf, "auto", tty=True)
+    tr.on_event(orchestrate.Event("step", "plan", "Plan"))
+    out = buf.getvalue()
+    assert "\r" in out and "Plan" in out
+
+
 def test_parse_specify_outcome_tolerant():
     assert (
         orchestrate._parse_specify_outcome('{"status": "gate", "gate": "signoff"}', 0).status

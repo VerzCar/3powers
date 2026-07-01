@@ -24,6 +24,60 @@ def test_secret_scan_clean(tmp_path, monkeypatch):
     assert gate.status == STATUS_PASS and gate.findings == []
 
 
+def test_secret_scan_prefers_betterleaks(tmp_path, monkeypatch):
+    """3PWR-FR-028: when both are installed, betterleaks (the maintained successor) is used."""
+    monkeypatch.setattr(scanners.shutil, "which", lambda t: "/bin/" + t)  # both on PATH
+    monkeypatch.setattr(scanners, "run_cmd", lambda cmd, cwd: CmdResult(0, "", "", 3))
+    gate = scanners.secret_scan(tmp_path)
+    assert gate.tool == "betterleaks" and gate.status == STATUS_PASS
+
+
+def test_secret_scan_falls_back_to_gitleaks(tmp_path, monkeypatch):
+    """gitleaks is the fallback when betterleaks is not installed."""
+    monkeypatch.setattr(
+        scanners.shutil, "which", lambda t: "/bin/gitleaks" if t == "gitleaks" else None
+    )
+    monkeypatch.setattr(scanners, "run_cmd", lambda cmd, cwd: CmdResult(0, "", "", 3))
+    gate = scanners.secret_scan(tmp_path)
+    assert gate.tool == "gitleaks" and gate.status == STATUS_PASS
+
+
+def test_secret_scan_quarantine_when_neither(tmp_path, monkeypatch):
+    """3PWR-NFR-015: neither scanner installed → quarantined, never silently passed."""
+    monkeypatch.setattr(scanners.shutil, "which", lambda t: None)
+    gate = scanners.secret_scan(tmp_path)
+    assert gate.status == STATUS_SKIP and "betterleaks/gitleaks" in gate.tool
+
+
+def test_secret_scan_betterleaks_null_report_is_clean(tmp_path, monkeypatch):
+    """betterleaks writes `null` for an empty report (gitleaks writes `[]`); both mean clean."""
+    monkeypatch.setattr(scanners.shutil, "which", lambda t: "/bin/betterleaks")
+
+    def fake_run(cmd, cwd):
+        out = Path(shlex.split(cmd)[shlex.split(cmd).index("--report-path") + 1])
+        out.write_text("null", encoding="utf-8")  # betterleaks' empty-report form
+        return CmdResult(0, "", "", 3)
+
+    monkeypatch.setattr(scanners, "run_cmd", fake_run)
+    gate = scanners.secret_scan(tmp_path)
+    assert gate.status == STATUS_PASS and gate.findings == []
+
+
+def test_secret_scan_betterleaks_finds_secret(tmp_path, monkeypatch):
+    """betterleaks shares gitleaks' JSON schema (File/RuleID/StartLine)."""
+    monkeypatch.setattr(scanners.shutil, "which", lambda t: "/bin/betterleaks")
+
+    def fake_run(cmd, cwd):
+        out = Path(shlex.split(cmd)[shlex.split(cmd).index("--report-path") + 1])
+        out.write_text('[{"RuleID":"github-pat","File":".env","StartLine":1}]', encoding="utf-8")
+        return CmdResult(1, "", "", 4)
+
+    monkeypatch.setattr(scanners, "run_cmd", fake_run)
+    gate = scanners.secret_scan(tmp_path)
+    assert gate.status == STATUS_FAIL and gate.tool == "betterleaks"
+    assert any("github-pat" in f and ".env" in f for f in gate.findings)
+
+
 def test_dependency_scan_reports_vulns(tmp_path, monkeypatch):
     monkeypatch.setattr(scanners.shutil, "which", lambda _tool: "/bin/osv-scanner")
 

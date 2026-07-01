@@ -40,6 +40,13 @@ components:
 
   # Supply-chain scanners (language-agnostic core gates; the gate engine quarantines them if
   # absent — 3PWR-NFR-015 — so these stay `warn` here).
+  # betterleaks is the preferred secret scanner (maintained Gitleaks successor, same `dir` CLI +
+  # JSON schema); gitleaks is the fallback. The gate uses whichever is on PATH, betterleaks first.
+  - name: betterleaks
+    probe: "betterleaks version"
+    supported: ">=1,<2"
+    known_good: "1.6.1"
+    on_drift: warn
   - name: gitleaks
     probe: "gitleaks version"
     supported: ">=8,<9"

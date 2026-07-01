@@ -45,7 +45,7 @@ Optional / future layers:
 
 ### Scanners
 
-- **Secrets**: **gitleaks** — wired as a core gate in plan 002 (offline; quarantines if absent). trufflehog (verified findings; needs network) is a later option.
+- **Secrets**: **betterleaks** (the maintained Gitleaks successor) — the core secret gate as of plan 014; **gitleaks** is the fallback (same `dir` CLI + JSON schema). Offline; quarantines if neither is installed. trufflehog (verified findings; needs network) is a later option.
 - **Dependencies**: **osv-scanner** — wired as a core gate in plan 002 (respects `.gitignore`; quarantines if absent). trivy/grype are alternatives.
 - **SAST**: **semgrep** — wired as a core gate in plan 005 against a **local, committed ruleset**
   (`.3powers/config/semgrep-rules.yml`); offline and deterministic (`--config auto` avoided), quarantines

@@ -1,9 +1,9 @@
 """Language-agnostic supply-chain scanners — core gates (3PWR-FR-028).
 
-Secret scanning (gitleaks) and dependency scanning (osv-scanner) live in the core,
-not in a language adapter, because they do not depend on the project's language. When
-a scanner binary is absent the gate is **quarantined** — reported as ``skip`` with a
-surfaced finding — never silently passed (3PWR-NFR-015).
+Secret scanning (betterleaks, falling back to gitleaks) and dependency scanning (osv-scanner)
+live in the core, not in a language adapter, because they do not depend on the project's language.
+When a scanner binary is absent the gate is **quarantined** — reported as ``skip`` with a surfaced
+finding — never silently passed (3PWR-NFR-015).
 """
 
 from __future__ import annotations
@@ -39,22 +39,37 @@ def _in_scope(target: Path, file: str, changed: set[str] | None) -> bool:
     return resolved in changed
 
 
+# Secret scanners tried in order of preference. betterleaks is the maintained Gitleaks successor;
+# gitleaks is the fallback. Both share the same ``dir`` CLI and JSON schema (File/RuleID/StartLine),
+# so one command + one parser serves both — betterleaks writes ``null`` for an empty report where
+# gitleaks writes ``[]``, handled below. Neither installed → the gate is quarantined (3PWR-NFR-015).
+_SECRET_TOOLS = ("betterleaks", "gitleaks")
+
+
+def _secret_tool() -> str | None:
+    return next((t for t in _SECRET_TOOLS if shutil.which(t)), None)
+
+
 def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
-    """Scan the working tree for committed secrets with gitleaks."""
-    if not shutil.which("gitleaks"):
-        return _quarantine("secret_scan", "gitleaks")
+    """Scan the working tree for committed secrets (3PWR-FR-026 §8).
+
+    Prefers betterleaks (the maintained Gitleaks successor), falls back to gitleaks — both share the
+    ``dir`` CLI and JSON schema. Quarantined when neither binary is installed (3PWR-NFR-015)."""
+    tool = _secret_tool()
+    if tool is None:
+        return _quarantine("secret_scan", "betterleaks/gitleaks")
     with tempfile.TemporaryDirectory() as td:
-        report = Path(td) / "gitleaks.json"
+        report = Path(td) / "secrets.json"
         res = run_cmd(
-            f"gitleaks dir {target} --no-banner --exit-code 1 "
+            f"{tool} dir {target} --no-banner --exit-code 1 "
             f"--report-format json --report-path {report}",
             cwd=target,
         )
         findings: list[str] = []
-        in_scope = True
         if report.exists():
             try:
-                for f in json.loads(report.read_text(encoding="utf-8") or "[]"):
+                # betterleaks emits `null` for no findings; gitleaks emits `[]`. Coerce both to [].
+                for f in json.loads(report.read_text(encoding="utf-8") or "null") or []:
                     if not _in_scope(target, f.get("File", ""), changed):
                         continue
                     findings.append(
@@ -63,18 +78,18 @@ def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
                     )
                     if len(findings) >= 10:
                         break
-            except (ValueError, OSError):
+            except (ValueError, OSError, TypeError):
                 pass
         if res.returncode not in (0, 1):
             # scanner error (not a clean pass/fail) → quarantine rather than block
-            return _quarantine("secret_scan", "gitleaks")
+            return _quarantine("secret_scan", tool)
         # When diff-scoped, only changed-file findings block (3PWR-FR-051).
         in_scope = bool(findings) if changed is not None else res.returncode == 1
         status = STATUS_FAIL if in_scope else STATUS_PASS
         return GateResult(
             gate="secret_scan",
             status=status,
-            tool="gitleaks",
+            tool=tool,
             duration_ms=res.duration_ms,
             details={"count": len(findings)},
             findings=findings,

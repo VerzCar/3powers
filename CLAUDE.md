@@ -68,6 +68,13 @@ Implemented and committed (not yet merged to `main`):
   (FR-037); `commit` mode stops at every gate. Sign-offs + progress are recorded in the ledger (resumable:
   `--resume`/`--status`); a red verdict stops + `--notify`s + suggests `observe signal`; orchestration
   never enters the deterministic verdict (NFR-001). Fully-headless executive dispatch is the A3 residual.
+- **Plan 014** (`plan/014-hardening-core.md`) — **hardening core**: the secret gate now runs **betterleaks**
+  (maintained Gitleaks successor; gitleaks fallback, quarantine if neither); **work-kind inference (FR-058)**
+  — `3pwr classify` + `3pwr run` infer kind(s) + a suggested tier deterministically, shaping the tier/gates
+  + oracle but never the sign-off; **tier test-layers (FR-064)** — `required_layers` per tier enforced by
+  spec-conformance as a per-change union (High-risk needs unit+integration+e2e); a **richer in-place `3pwr
+  run` tracker** (dependency-free); and the **root `LICENSE`** (NFR-012). FR-008/FR-009 + a 3rd adapter →
+  plan 015.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -126,6 +133,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
 
 # The whole lifecycle in one command (§6, FR-011): auto mode stops ONLY at the two human gates (FR-006/037).
+3pwr classify "<intent>"                            # FR-058: infer work kind(s) + a suggested risk tier
 3pwr run "<intent>" --mode auto                     # streams a live stage tracker; composes `specify workflow run` (A1)
 3pwr run --resume --spec-id <ID> --approver <you>   # after a human gate: record sign-off + continue
 3pwr run --status --spec-id <ID>                    # stage tracker from the ledger   (try it offline: add --dry-run)

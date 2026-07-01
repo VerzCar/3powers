@@ -48,6 +48,12 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
   - *Acceptance*: a verdict serializes with `schema_version`, `result`, and ordered `gates`.
 - **3PWR-FR-034**: The engine shall make each failure actionable, naming its class and offending item.
   - *Acceptance*: an untested requirement appears as a failure with class `untested_requirement` and the requirement id.
+- **3PWR-FR-058**: The engine shall infer the kind(s) of work from free-form intent and use the inference only to shape the risk tier / applicable gates and the oracle strategy, never to bypass the human sign-off.
+  - *Acceptance*: `classify` returns work kind(s) + a suggested tier deterministically (a payment/auth intent → High-risk; a docs-only intent → Cosmetic); `run` records them without removing the mandatory human gates.
+- **3PWR-FR-064**: The engine shall, per risk tier, require the tier's test layers (unit / integration / e2e) for a change, via the spec-conformance gate.
+  - *Acceptance*: with a tier's `required_layers` set, spec-conformance fails a change whose tests do not cover a required layer (class `untested_layer`), and passes when all required layers are present.
+- **3PWR-FR-065**: The engine's spec-conformance shall account for all three test layers, tracing each requirement to the layers that reference it.
+  - *Acceptance*: the conformance verdict reports, per requirement, the set of layers (unit/integration/e2e) whose tests reference it.
 - **3PWR-FR-038**: The engine shall maintain an append-only, hash-chained ledger.
   - *Acceptance*: each appended entry links to its predecessor's `entry_hash` via `prev_hash`.
 - **3PWR-FR-039**: The engine shall sign each ledger entry with an independent signer identity.

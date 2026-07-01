@@ -6,7 +6,7 @@ command and its output below is real — you can reproduce it. New to the ideas?
 [Concepts](concepts.md) first.
 
 > **Prerequisites:** [`uv`](https://docs.astral.sh/uv/) (Python tooling) and `git`. The TypeScript sample
-> additionally uses `npm`. Some gates shell out to optional tools (`gitleaks`, `osv-scanner`, `semgrep`);
+> additionally uses `npm`. Some gates shell out to optional tools (`betterleaks` or `gitleaks`, `osv-scanner`, `semgrep`);
 > when one is absent its gate is **quarantined** (surfaced as skipped) rather than silently passed.
 
 ## 1. Install the engine

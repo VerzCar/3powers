@@ -249,3 +249,42 @@ def format_event(ev: Event, mode: str) -> str:
     if ev.kind == "done":
         return "  ✓ lifecycle complete"
     return f"  · {ev.kind}"
+
+
+# --------------------------------------------------------------------------- richer progress (dependency-free)
+_TERMINAL_KINDS = ("gate-stop", "done", "failed", "aborted")
+
+
+def tracker_frame(reached_stage: str, ev: Event) -> str:
+    """One rendered progress frame (pure, testable): the stage tracker + the current activity line."""
+    return f"{render_tracker(reached_stage)}   {format_event(ev, '').strip()}"
+
+
+class Tracker:
+    """A dependency-free progress view for ``3pwr run``. On a TTY it redraws a single stage-tracker
+    line **in place** (``\\r`` + clear-line) as steps stream; off a TTY (pipe / ``--json``) it falls
+    back to the plain streamed ``format_event`` log. No ``rich``/``curses`` dependency (NFR-014)."""
+
+    def __init__(self, stream, mode: str, *, tty: Optional[bool] = None) -> None:
+        self._stream = stream
+        self._mode = mode
+        self._tty = bool(getattr(stream, "isatty", lambda: False)()) if tty is None else tty
+        self._reached = "Discovery"
+        self._live = False  # an in-place line is currently drawn
+
+    def on_event(self, ev: Event) -> None:
+        if ev.stage:
+            self._reached = ev.stage
+        if not self._tty:
+            self._stream.write(format_event(ev, self._mode) + "\n")
+            self._stream.flush()
+            return
+        if ev.kind in _TERMINAL_KINDS:
+            if self._live:  # finalize the in-place line before the terminal detail
+                self._stream.write("\r\033[2K")
+                self._live = False
+            self._stream.write(format_event(ev, self._mode) + "\n")
+        else:
+            self._stream.write("\r\033[2K" + tracker_frame(self._reached, ev))
+            self._live = True
+        self._stream.flush()

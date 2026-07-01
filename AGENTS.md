@@ -38,6 +38,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
+| Infer work kind(s) + suggested tier | `3pwr classify "<intent>"` (`3PWR-FR-058`; deterministic; shapes the tier/gates + oracle, never the sign-off) |
 | Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; composes `specify workflow run`, A1) |
 | Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`) |
 | Emergency fast path | `3pwr emergency --approver <you> --note "<why>"` (`3PWR-FR-056`; defers mutation+coverage; 1-day cleanup) |
@@ -77,7 +78,7 @@ Confirmed in this environment:
 | Node | 23.3.0 |
 | Engine runtime deps | `cryptography`, `PyYAML` |
 | TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
-| Supply-chain scanners | gitleaks 8.30, osv-scanner 2.4 — secret + dependency core gates (Standard+) |
+| Supply-chain scanners | betterleaks 1.6 (secret; gitleaks 8.x fallback), osv-scanner 2.4 (dependency) — core gates (Standard+) |
 | SAST | semgrep against a local offline ruleset (`.3powers/config/semgrep-rules.yml`); quarantines if absent |
 | Mutation | mutmut 3.x (Python) / Stryker (TS) — scoped to the High-risk trust-spine via `[tool.mutmut]` `source_paths`+`only_mutate`; score graded vs the tier threshold; full sweep scheduled |
 

@@ -92,13 +92,32 @@ def referenced_ids(test_roots: list[Path], spec_id: str) -> dict[str, set[str]]:
     return refs
 
 
-def run_conformance(spec_path: Path, test_roots: list[Path]) -> GateResult:
+def run_conformance(
+    spec_path: Path, test_roots: list[Path], required_layers: list[str] | None = None
+) -> GateResult:
     spec_id, declared = extract_spec(spec_path)
     refs = referenced_ids(test_roots, spec_id)
     untested = sorted(declared - set(refs))
+    required = list(required_layers or [])
+
+    # Per tier, the CHANGE must exercise all required test layers (3PWR-FR-064/065). We check the
+    # UNION of layers across the spec's tested requirements — a High-risk change needs unit +
+    # integration + e2e tests *somewhere* for this spec, not every requirement in every layer. When
+    # there are no tests at all, the untested-requirement failures already cover it (skip layers).
+    covered_layers: set[str] = set()
+    for layers in refs.values():
+        covered_layers |= layers
+    missing_layers = (
+        [layer for layer in required if layer not in covered_layers] if (required and refs) else []
+    )
 
     findings = [f"requirement {rid} has no linked test" for rid in untested]
-    status = STATUS_FAIL if untested else STATUS_PASS
+    if missing_layers:
+        findings.append(
+            f"this change is missing tier-required test layer(s): {', '.join(missing_layers)} "
+            "(3PWR-FR-064)"
+        )
+    status = STATUS_FAIL if (untested or missing_layers) else STATUS_PASS
     return GateResult(
         gate="spec_conformance",
         status=status,
@@ -107,6 +126,9 @@ def run_conformance(spec_path: Path, test_roots: list[Path]) -> GateResult:
             "spec_id": spec_id,
             "requirement_ids": sorted(declared),
             "untested_requirements": untested,
+            "required_layers": required,
+            "covered_layers": sorted(covered_layers),
+            "missing_layers": missing_layers,
             "layers": {rid: sorted(layers) for rid, layers in sorted(refs.items())},
         },
         findings=findings,
@@ -114,7 +136,7 @@ def run_conformance(spec_path: Path, test_roots: list[Path]) -> GateResult:
 
 
 def conformance_failures(gate: GateResult) -> list[dict]:
-    return [
+    out = [
         failure(
             "untested_requirement",
             requirement_id=rid,
@@ -122,6 +144,14 @@ def conformance_failures(gate: GateResult) -> list[dict]:
         )
         for rid in gate.details.get("untested_requirements", [])
     ]
+    out += [
+        failure(
+            "untested_layer",
+            detail=f"the change lacks a '{layer}' test layer required at this tier (3PWR-FR-064)",
+        )
+        for layer in gate.details.get("missing_layers", [])
+    ]
+    return out
 
 
 # A task line in tasks.md carries a task id like T001 (3PWR-FR-016).

@@ -52,6 +52,7 @@ from . import (
     orchestrate,
     provenance,
     scope,
+    workkind,
 )
 from .adapters import run_cmd
 from .config import Settings, model_diversity_ok
@@ -1118,6 +1119,23 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_classify(args: argparse.Namespace) -> int:
+    """Infer work kind(s) + a suggested risk tier from free-form intent (3PWR-FR-058).
+
+    Deterministic (keyword heuristics, no model call — never perturbs the verdict, 3PWR-NFR-001). The
+    inference shapes the tier + oracle strategy; it never bypasses the human sign-off (3PWR-FR-006)."""
+    wk = workkind.classify(args.intent)
+    human = f"work kind(s): {', '.join(wk.kinds)}  |  suggested tier: {wk.suggested_tier}"
+    if wk.signals:
+        human += f"\n  signals: {', '.join(wk.signals)}"
+    _print(
+        {"kinds": wk.kinds, "suggested_tier": wk.suggested_tier, "signals": wk.signals},
+        args.json,
+        human,
+    )
+    return EXIT_OK
+
+
 def _notify(cmd: Optional[str], message: str) -> None:
     """Best-effort notification hook: ``<cmd> "<message>"`` (3pwr run --notify). Never blocks the run."""
     if cmd:
@@ -1195,10 +1213,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
+    tracker = orchestrate.Tracker(sys.stdout, mode)
 
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
-            print(orchestrate.format_event(ev, mode))
+            tracker.on_event(ev)
 
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
@@ -1211,6 +1230,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             not args.dry_run
         )  # live: `specify resume`; dry-run: runner is already positioned
     else:
+        wk = workkind.classify(
+            args.intent or ""
+        )  # FR-058: shape the tier + oracle, not the sign-off
         ledger.append(
             "run",
             {
@@ -1218,12 +1240,18 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "intent": args.intent or "",
                 "mode": mode,
                 "integration": args.integration,
+                "inferred_kinds": wk.kinds,
+                "suggested_tier": wk.suggested_tier,
             },
             sk,
             spec_id=spec_id,
         )
         if not args.json:
             print(f"▶ 3pwr run [{mode}] {spec_id}: {args.intent or ''}")
+            print(
+                f"  inferred work kind(s): {', '.join(wk.kinds)} · suggested tier: {wk.suggested_tier} "
+                "(you still approve the spec — FR-006)"
+            )
         runner = _run_make_runner(s, args, mode)
         first_resuming = False
 
@@ -1661,6 +1689,14 @@ def build_parser() -> argparse.ArgumentParser:
     stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
     stp.add_argument("--spec-id", dest="spec_id")
     stp.set_defaults(func=cmd_status)
+
+    clp = common(
+        sub.add_parser(
+            "classify", help="infer work kind(s) + a suggested tier from intent (FR-058)"
+        )
+    )
+    clp.add_argument("intent", help="the free-form intent to classify")
+    clp.set_defaults(func=cmd_classify)
 
     rnp = common(
         sub.add_parser("run", help="drive the full lifecycle loop (auto/commit; §6, FR-011)")
