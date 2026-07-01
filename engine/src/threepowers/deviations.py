@@ -24,6 +24,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+# A named non-gate requirement a deviation MAY relax (3PWR-FR-057): model diversity (FR-022) is
+# recommended, not forced — a same-family/same-model oracle proceeds only under a signed deviation.
+MODEL_DIVERSITY = "model_diversity"
+DEVIATABLE_REQUIREMENTS: tuple[str, ...] = (MODEL_DIVERSITY,)
+
 # Gates an emergency fast path MAY defer (3PWR-FR-056).
 EMERGENCY_DEFERRABLE: tuple[str, ...] = ("mutation", "diff_coverage")
 # Gates an emergency fast path shall NEVER relax — the deterministic security + secret gates.
@@ -114,6 +119,23 @@ def covered_gates(active: list[dict[str, Any]], spec_id: str | None = None) -> s
             continue  # a spec-scoped deviation does not leak to another spec
         gates.update(dev.get("gates", []))
     return gates
+
+
+def diversity_deviation(active: list[dict[str, Any]], spec_id: str | None = None) -> int | None:
+    """Seq of an active deviation relaxing model diversity for ``spec_id`` (global applies too), else
+    None. Model diversity (3PWR-FR-022) is recommended; a same-family setup needs a signed deviation."""
+    for dev in active:
+        dev_spec = dev.get("spec_id") or ""
+        if spec_id and dev_spec and dev_spec != spec_id:
+            continue
+        if MODEL_DIVERSITY in dev.get("gates", []):
+            return dev.get("seq")
+    return None
+
+
+def covers_model_diversity(active: list[dict[str, Any]], spec_id: str | None = None) -> bool:
+    """True iff an active deviation relaxes model diversity (3PWR-FR-022 via FR-057)."""
+    return diversity_deviation(active, spec_id) is not None
 
 
 def overdue_emergencies(

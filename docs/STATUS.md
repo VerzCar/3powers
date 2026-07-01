@@ -3,7 +3,7 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 011**.
+> single source of truth; this document is checked against it. Last updated after **plan 012**.
 
 ---
 
@@ -29,7 +29,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 191 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 201 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -67,7 +67,7 @@ engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates
 specs/                      # authoritative specs (the epic + per-feature); 002 = the engine's own
 examples/validation-utils/  # runnable TypeScript sample
 docs/references/            # compacted Spec Kit + trust-spine tooling references
-plan/                       # the continuous plan series 001..011 (011 = A3 live headless dispatch; 012 = next)
+plan/                       # the continuous plan series 001..012 (012 = recommend-not-force diversity; 013 = next)
 ```
 
 ## 4. Status — validated against the spec
@@ -97,8 +97,10 @@ from the ledger seq; enforced at High-risk `advance`), FR-018 ◑ (advisory) · 
 (context strategy — harness-limited).
 
 **Judiciary — oracle (§7):** **FR-020 ✅** (`oracle seal` writes a spec-only bundle the judiciary authors
-from; the authoring record binds to its content hash), **FR-022 ✅** (strengthened — `oracle record` refuses
-the coder's family on the *actual* recorded model, not just config), FR-023 ✅, **FR-062 ✅** ·
+from; the authoring record binds to its content hash), **FR-022 ✅** (checked on the *actual* recorded model
+at a configurable granularity — `family` default or `model`, plan 012; **recommend-not-force**: a same-model
+setup proceeds only under a signed `model_diversity` deviation, FR-057, warned + recorded), FR-023 ✅,
+**FR-062 ✅** ·
 **FR-021 ✅** (**physical read-path isolation delivered**, plan 011 — `3pwr oracle dispatch` authors the
 oracle headlessly in a sanitized git worktree with the implementation/plan/tasks/contracts physically
 absent, attested by a worktree manifest hash in the ledger; a High-risk `advance` with `require_dispatch`
@@ -172,13 +174,13 @@ Harden these before adding breadth:
    *live* cross-integration headless `workflow run` dispatch (running the judiciary isolated under a
    non-Copilot agent) — verifiable only with the Spec Kit runtime, and tied to the A3 read-path isolation in #1.
 
-**Recommendation:** with plan 011 the thesis-level judiciary now delivers **physical** oracle read-path
-isolation (FR-021) and the first real cross-integration dispatch (FR-012/013, oracle leg) — the last
-spec-level *headline* is closed to the limit of this repo. What remains is breadth + hardening: the *fuller*
-A3 proof (the coder leg also headless under a second, different-family CLI; a live non-Copilot end-to-end
-run), the **recommend-not-force diversity** policy (plan 012 — relax the same-family refusal via a signed
-`deviation` so single-model users are never walled off), then defect-flow (FR-008), design oracles (FR-009),
-a root `LICENSE` (NFR-012), and cross-platform (NFR-003).
+**Recommendation:** with plan 011 the thesis-level judiciary delivers **physical** oracle read-path
+isolation (FR-021) and the first real cross-integration dispatch (FR-012/013, oracle leg), and plan 012
+made model diversity **recommend-not-force** (a same-model setup proceeds via a signed `model_diversity`
+deviation, so single-model users are never walled off) with configurable granularity — the spec-level
+*headlines* are closed to the limit of this repo. What remains is breadth + hardening: the *fuller* A3 proof
+(the coder leg also headless under a second, different-family CLI; a live non-Copilot end-to-end run),
+defect-flow (FR-008), design oracles (FR-009), a root `LICENSE` (NFR-012), and cross-platform (NFR-003).
 
 ## 6. What's next (roadmap)
 
@@ -221,10 +223,15 @@ stays advisory (NFR-001); dispatch never enters `gate run`. An optional **distin
 supported (two-key `verify`, NFR-005). The runtime is present in-repo (`specify` + `claude`), so the minimal
 live proof runs here; the *fuller* dual-headless proof is the residual.
 
+**Plan 012 is done** ([`plan/012-diversity-recommend-not-force.md`](../plan/012-diversity-recommend-not-force.md)):
+✅ **model diversity — recommend, not force (FR-022 via FR-057).** Comparison granularity is configurable
+(`diversity_level: family|model`, default family); a same-family/model oracle is refused by default but
+proceeds under a signed, warned, reversible `model_diversity` deviation (`3pwr deviation --gate
+model_diversity`), recorded in the ledger and undone by `--revoke`. `oracle record`/`dispatch`/`advance`/
+`roles-check` all honour it; `independence()` moves a covered mismatch to advisory (never blocking, NFR-001).
+Single-model users (e.g. only Claude Code) are warned, never walled off; FR-022 stays the law.
+
 Next, in priority order (the rest of v1.0 + the hardening track):
-- **Plan 012 — model diversity: recommend, not force.** Relax the same-family refusal via a signed
-  `deviation` + warning so single-model users (e.g. only Claude Code) are never walled off; keep FR-022
-  as the law. Standard/Cosmetic already don't force it.
 - **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
   live non-Copilot end-to-end `workflow run` verification.
 - Catalog *publishing* of the `3powers` extension + a **third adapter** (e.g. Go/Rust/Java).
@@ -234,10 +241,10 @@ Next, in priority order (the rest of v1.0 + the hardening track):
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) · **Constitution:** [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→011 done; 012 = next) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→012 done; 013 = next) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/speckit.md`](references/speckit.md), [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
-- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-011-a3-live-headless-dispatch`,
+- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-012-diversity-recommend-not-force`,
   none merged to `main`, no remote configured (PRs need a GitHub repo + push first).
 - **External tools used by some gates** (optional; gates quarantine if absent): `gitleaks`, `osv-scanner`,
   `semgrep`; the TS adapter uses `biome`, `tsc`, `vitest`, `stryker`, `fast-check` via `npm`.

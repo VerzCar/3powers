@@ -2,22 +2,32 @@
 #
 # Roles are bound to model *families*, never to a single provider or model
 # (3PWR-FR-044 / 3PWR-A3): any agent Spec Kit can dispatch may fill a role. The
-# judiciary (oracle) MUST resolve to a different family than the coder; the engine
-# refuses otherwise (3PWR-FR-022). Switch the model between the coder step
-# (/speckit.implement) and the oracle step (/3pwr.oracle) in whatever Spec Kit
-# integration you initialized (copilot, claude, gemini, …) — 3Powers assumes no
-# single provider — and record the model actually used via `3pwr oracle record`.
+# judiciary (oracle) SHOULD resolve to a different family than the coder (3PWR-FR-022).
+# Switch the model between the coder step (/speckit.implement) and the oracle step
+# (/3pwr.oracle) in whatever Spec Kit integration you initialized (copilot, claude,
+# gemini, …) — 3Powers assumes no single provider — and record the model actually used
+# via `3pwr oracle record`.
+#
+# Diversity is RECOMMENDED, not forced. If you have only one model family (e.g. Claude
+# Code only), you are not walled off: the engine warns, and you proceed by recording a
+# signed, reversible deviation — `3pwr deviation --gate model_diversity --approver <you>
+# --note "single-model dev"` (3PWR-FR-057). It is never a silent drop.
+#
+# `diversity_level` (default `family`) sets how "diverse enough" is judged (3PWR-FR-022):
+#   family — the oracle and coder must be different model *families*.
+#   model  — a different *model* in one family qualifies (e.g. opus vs sonnet). At `model`
+#            level, set `coder.model` below so the comparison has the coder's full model.
 #
 # `oracle.require_dispatch` (default false) is the High-risk policy for 3PWR-FR-021/A3:
 # when true, a High-risk `advance` requires an isolated *headless* dispatch attestation
-# (`3pwr oracle dispatch` — the oracle authored under a non-coder integration in a
-# sanitized worktree with the implementation physically absent), not just the manual
-# in-IDE record. Leave it false to keep the watchable, model-switch-in-the-IDE flow.
+# (`3pwr oracle dispatch`), not just the manual in-IDE record.
 version: 1
 diversity_enforced: true
+diversity_level: family                     # family | model (3PWR-FR-022)
 
 roles:
   planner:  { model_family: "" }            # set per project / per run
   coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot
-  oracle:   { model_family: "anthropic", require_dispatch: false }  # judiciary — MUST differ from `coder`
+  # coder:  { model_family: "openai", model: "openai/gpt-4o" }   # add `model` for diversity_level: model
+  oracle:   { model_family: "anthropic", require_dispatch: false }  # judiciary — SHOULD differ from `coder`
   reviewer: { model_family: "google" }      # residual review (3PWR-FR-036, arrives v0.5)

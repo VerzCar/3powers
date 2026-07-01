@@ -54,6 +54,13 @@ Implemented and committed (not yet merged to `main`):
   `roles.oracle.require_dispatch` is on; the 008 peek/touch signal stays advisory; dispatch never enters
   `gate run` (NFR-001). Optional distinct oracle signer key + two-key `verify` (NFR-005). Runs in-IDE by
   default (opt-in, High-risk only); the fuller dual-headless (coder leg) proof is the residual.
+- **Plan 012** (`plan/012-diversity-recommend-not-force.md`) — **model diversity: recommend, not force**
+  (FR-022 via FR-057): comparison granularity is configurable (`diversity_level: family|model`, default
+  family); a same-family/model oracle is refused by default but proceeds under a signed, warned, reversible
+  `model_diversity` deviation (`3pwr deviation --gate model_diversity`), recorded in the ledger and undone
+  by `--revoke`. `oracle record`/`dispatch`/`advance`/`roles-check` honour it; `independence()` moves a
+  covered mismatch to advisory (never blocking). Single-model users (e.g. only Claude Code) are warned,
+  never walled off; FR-022 stays the law.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -70,11 +77,10 @@ the judiciary headlessly in a sanitized worktree, attested in the ledger, blocki
 `require_dispatch` is on). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. Next → rest of **v1.0**: **recommend-not-force model diversity** (plan 012 — relax the
-same-family refusal via a signed `deviation` so single-model users are never walled off), the **fuller A3**
-(coder leg also headless under a second, different-family CLI + a live non-Copilot end-to-end run), catalog
-publishing, and a third adapter. Known approximations (command/harness-level): work-kind inference (FR-058),
-context strategy (FR-060/061); the fuller dual-headless dispatch (the **oracle** leg is delivered).
+`--tier High-risk`. Next → rest of **v1.0**: the **fuller A3** (coder leg also headless under a second,
+different-family CLI + a live non-Copilot end-to-end run), catalog publishing, and a third adapter. Known
+approximations (command/harness-level): work-kind inference (FR-058), context strategy (FR-060/061); the
+fuller dual-headless dispatch (the **oracle** leg is delivered).
 
 ## Repository layout
 
@@ -144,6 +150,8 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 
 # Off the happy path (§14): signed, reversible relaxations — never weaken a gate, record a deviation:
 3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]   # FR-057 (way back: --revoke <seq>)
+# `--gate model_diversity` is the recommend-not-force relief for FR-022 (single-model dev proceeds, warned):
+3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"   # FR-022 via FR-057
 3pwr emergency --approver <you> --note "<why>"                                 # FR-056 (defers mutation+coverage; 1-day cleanup)
 ```
 

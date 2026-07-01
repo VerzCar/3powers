@@ -69,6 +69,18 @@ class Settings:
         oracle = (roles.get("roles") or {}).get("oracle") or {}
         return bool(oracle.get("require_dispatch", False))
 
+    def diversity_level(self) -> str:
+        """How strictly model diversity is compared (3PWR-FR-022): ``family`` (default) or ``model``.
+
+        ``family`` — the oracle and coder must be different model *families*.
+        ``model``  — a different *model* in the same family qualifies (e.g. opus vs sonnet)."""
+        level = str(self.load_roles().get("diversity_level", "family")).strip().lower()
+        return level if level in ("family", "model") else "family"
+
+    def coder_model(self) -> str:
+        """The coder's full ``<family>/<model>`` if declared (for model-level diversity); else ''."""
+        return ((self.load_roles().get("roles") or {}).get("coder") or {}).get("model", "") or ""
+
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -94,11 +106,18 @@ def tier_config(tiers: dict[str, Any], tier: str) -> dict[str, Any]:
     return table[tier]
 
 
-def model_diversity_ok(roles: dict[str, Any], role_a: str, role_b: str) -> bool:
-    """True iff the two roles resolve to *different* model families (3PWR-FR-022)."""
+def model_diversity_ok(
+    roles: dict[str, Any], role_a: str, role_b: str, level: str = "family"
+) -> bool:
+    """True iff two roles are *diverse enough* at ``level`` (3PWR-FR-022).
+
+    Compares each role's declared ``model`` (full ``<family>/<model>``) when present, else its
+    ``model_family``. Delegates to ``oracle.diverse`` for a single source of truth."""
+    from .oracle import diverse  # local import avoids any import cycle at module load
+
     table = roles.get("roles", {})
-    fam_a = (table.get(role_a) or {}).get("model_family")
-    fam_b = (table.get(role_b) or {}).get("model_family")
-    if not fam_a or not fam_b:
-        return False
-    return fam_a != fam_b
+    a = table.get(role_a) or {}
+    b = table.get(role_b) or {}
+    a_id = (a.get("model") or a.get("model_family") or "").strip()
+    b_id = (b.get("model") or b.get("model_family") or "").strip()
+    return diverse(a_id, b_id, level)

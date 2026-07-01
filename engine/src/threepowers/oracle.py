@@ -105,14 +105,30 @@ def coder_family(roles: dict) -> str:
     return ((roles.get("roles") or {}).get("coder") or {}).get("model_family", "") or ""
 
 
+def diverse(coder: str, oracle: str, level: str) -> bool:
+    """True iff ``coder`` and ``oracle`` are diverse enough at ``level`` (3PWR-FR-022).
+
+    ``level='family'`` (the recommended posture): different model *families* (the part before ``/``).
+    ``level='model'``: a different *model* qualifies (e.g. ``anthropic/opus`` vs ``anthropic/sonnet``),
+    but only when both sides name a full ``<family>/<model>``; otherwise it falls back to comparing
+    families. Empty inputs are never diverse — independence cannot be proven."""
+    c, o = (coder or "").strip(), (oracle or "").strip()
+    if not c or not o:
+        return False
+    if level == "model" and "/" in c and "/" in o:
+        return c != o
+    return family_of(c) != family_of(o)
+
+
 def record_payload(
     bound_bundle_hash: str,
     model: str,
     test_paths: list[str],
     test_hashes: dict[str, str],
     advisory: list[str],
+    diversity_deviation: Optional[int] = None,
 ) -> dict:
-    return {
+    payload: dict = {
         "kind": "record",
         "bundle_hash": bound_bundle_hash,
         "model": model,
@@ -121,6 +137,11 @@ def record_payload(
         "test_hashes": {p: test_hashes[p] for p in sorted(test_hashes)},
         "advisory_findings": advisory,
     }
+    if (
+        diversity_deviation is not None
+    ):  # same-family authoring sanctioned by a signed deviation (FR-057)
+        payload["diversity_deviation"] = diversity_deviation
+    return payload
 
 
 # --------------------------------------------------------------------------- ledger-derived queries
@@ -238,23 +259,27 @@ def independence(
     repo_root: Path,
     test_roots: list[Path],
     require_dispatch: bool = False,
+    diversity_relaxed: bool = False,
+    diversity_level: str = "family",
+    coder_model: str = "",
 ) -> Independence:
     """Prove oracle independence from the ledger + roles + the recorded oracle tests.
 
     Structural (blocking) facts: an active seal exists; the authoring record is bound to it
-    (FR-020/021); the recorded oracle family differs from the coder's (FR-022); the record
-    precedes the implementation verdict by ledger ``seq`` (FR-062); every sealed acceptance
+    (FR-020/021); the recorded oracle is diverse from the coder at ``diversity_level`` (FR-022); the
+    record precedes the implementation verdict by ledger ``seq`` (FR-062); every sealed acceptance
     criterion has an oracle test (FR-023). When a dispatch attestation is present — or when
     ``require_dispatch`` is set (the High-risk tier policy) — physical read-path isolation is also
-    proven (FR-021/A3): the dispatch is seal-bound, its worktree manifest shows the implementation
-    was absent, and the dispatched family differs from the coder's. Advisory (non-blocking)
-    findings come from the record and never enter ``reasons`` (3PWR-NFR-001).
+    proven (FR-021/A3). A same-family/same-model finding is blocking **unless** ``diversity_relaxed``
+    (a signed ``model_diversity`` deviation, FR-057), in which case it is advisory — never a silent
+    drop. Advisory findings never enter ``reasons`` (3PWR-NFR-001).
     """
     reasons: list[str] = []
     covered: list[str] = []
     seal = active_seal(entries, spec_id)
     rec = authoring_record(entries, spec_id)
     coder = coder_family(roles)
+    coder_side = coder_model or coder  # full model at model-level, else the family
     label = spec_id or "(spec)"
 
     if seal is None:
@@ -278,13 +303,24 @@ def independence(
                 "oracle authored against a stale/mismatched bundle — re-seal or re-record (FR-020/021)"
             )
 
-        # model-family diversity on the ACTUAL model used (FR-022).
+        # diversity on the ACTUAL model used, at the configured granularity (FR-022). A same
+        # family/model is blocking unless a signed model_diversity deviation relaxes it (FR-057).
+        oracle_model = rp.get("model") or ""
         if not model_family:
             reasons.append("oracle authoring record has no model family (FR-022)")
         elif not coder:
             reasons.append("coder model family is unset in roles.yaml (FR-022)")
-        elif model_family == coder:
-            reasons.append(f"oracle model family '{model_family}' equals the coder family (FR-022)")
+        elif not diverse(coder_side, oracle_model or model_family, diversity_level):
+            model_lvl = diversity_level == "model" and "/" in oracle_model and "/" in coder_side
+            msg = (
+                f"oracle model '{oracle_model}' equals the coder model (FR-022)"
+                if model_lvl
+                else f"oracle model family '{model_family}' equals the coder family (FR-022)"
+            )
+            if diversity_relaxed:
+                advisory.append(msg + " — relaxed by an active model_diversity deviation (FR-057)")
+            else:
+                reasons.append(msg)
 
         # ordering (FR-062): Phase A must precede Phase B, proven by ledger seq (not git time).
         impl = _latest_impl_verdict(entries, spec_id)
@@ -326,11 +362,23 @@ def independence(
             reasons.append("oracle dispatch did not prove read-path isolation (FR-021)")
             dispatch_ok = False
         disp_family = dp.get("model_family")
-        if disp_family and coder and disp_family == coder:
-            reasons.append(
-                f"oracle dispatch model family '{disp_family}' equals the coder family (FR-022)"
+        disp_model = dp.get("model") or ""
+        if (
+            disp_family
+            and coder
+            and not diverse(coder_side, disp_model or disp_family, diversity_level)
+        ):
+            model_lvl = diversity_level == "model" and "/" in disp_model and "/" in coder_side
+            msg = (
+                f"oracle dispatch model '{disp_model}' equals the coder model (FR-022)"
+                if model_lvl
+                else f"oracle dispatch model family '{disp_family}' equals the coder family (FR-022)"
             )
-            dispatch_ok = False
+            if diversity_relaxed:
+                advisory.append(msg + " — relaxed by an active model_diversity deviation (FR-057)")
+            else:
+                reasons.append(msg)
+                dispatch_ok = False
 
     return Independence(
         ok=not reasons,

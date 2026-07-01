@@ -256,6 +256,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     entries = ledger.entries()
+    active = deviations.active_deviations(entries)
     reasons: list[str] = []
     deviations_applied: list[int] = []
 
@@ -281,7 +282,6 @@ def cmd_advance(args: argparse.Namespace) -> int:
             for g in last_verdict.get("payload", {}).get("gates", [])
             if g.get("status") == "fail"
         }
-        active = deviations.active_deviations(entries)
         covered = deviations.covered_gates(active, last_verdict.get("spec_id"))
         uncovered = sorted(red_gates - covered)
         if uncovered:
@@ -321,11 +321,13 @@ def cmd_advance(args: argparse.Namespace) -> int:
     oracle_advisory: list[str] = []
     oracle_dispatch_ok: Optional[bool] = None
     oracle_isolation: Optional[str] = None
+    oracle_diversity_relaxed = False
     spec_for_oracle = args.spec_id or (last_verdict.get("spec_id") if last_verdict else "") or ""
     tier = (last_verdict.get("payload", {}) if last_verdict else {}).get("tier")
     if tier == "High-risk":
         rec = oracle.authoring_record(entries, spec_for_oracle)
         test_roots = [s.root / p for p in rec["payload"].get("test_paths", [])] if rec else []
+        oracle_diversity_relaxed = deviations.covers_model_diversity(active, spec_for_oracle)
         ind = oracle.independence(
             entries,
             s.load_roles(),
@@ -333,6 +335,9 @@ def cmd_advance(args: argparse.Namespace) -> int:
             repo_root=s.root,
             test_roots=test_roots,
             require_dispatch=s.oracle_require_dispatch(),
+            diversity_relaxed=oracle_diversity_relaxed,
+            diversity_level=s.diversity_level(),
+            coder_model=s.coder_model(),
         )
         oracle_ok = ind.ok
         oracle_advisory = ind.advisory
@@ -366,6 +371,8 @@ def cmd_advance(args: argparse.Namespace) -> int:
         payload["dispatch_ok"] = oracle_dispatch_ok
     if oracle_isolation:
         payload["isolation_method"] = oracle_isolation
+    if oracle_diversity_relaxed:
+        payload["diversity_relaxed"] = True
     try:
         sk = keys.resolve_signing_key(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
@@ -421,10 +428,12 @@ def cmd_deviation(args: argparse.Namespace) -> int:
     if not args.approver:
         print("error: --approver is required — a human accepts the deviation", file=sys.stderr)
         return EXIT_USAGE
-    unknown = sorted(set(args.gate) - set(GATE_ORDER))
+    allowed = set(GATE_ORDER) | set(deviations.DEVIATABLE_REQUIREMENTS)
+    unknown = sorted(set(args.gate) - allowed)
     if unknown:
         print(
-            f"error: unknown gate(s): {', '.join(unknown)}; known: {', '.join(GATE_ORDER)}",
+            f"error: unknown gate/requirement(s): {', '.join(unknown)}; known gates: "
+            f"{', '.join(GATE_ORDER)}; requirements: {', '.join(deviations.DEVIATABLE_REQUIREMENTS)}",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -494,16 +503,36 @@ def cmd_ledger_show(args: argparse.Namespace) -> int:
 
 
 def cmd_roles_check(args: argparse.Namespace) -> int:
-    """Refuse when oracle and coder share a model family (3PWR-FR-022)."""
+    """Check model diversity between two roles (3PWR-FR-022), at the configured granularity.
+
+    Recommended, not forced: a same-family setup passes only under a signed ``model_diversity``
+    deviation (3PWR-FR-057), which turns the VIOLATION into a warned RELAXED (exit 0)."""
     s = _settings(args.root)
-    roles = s.load_roles()
-    ok = model_diversity_ok(roles, args.role_a, args.role_b)
+    level = s.diversity_level()
+    ok = model_diversity_ok(s.load_roles(), args.role_a, args.role_b, level)
+    dev_seq = None
+    if not ok:
+        active = deviations.active_deviations(Ledger(s.ledger_path).entries())
+        dev_seq = deviations.diversity_deviation(active)  # global scope for a config-level check
+    verdict = "OK" if ok else ("RELAXED" if dev_seq is not None else "VIOLATION")
+    human = f"model diversity ({level}) {args.role_a} vs {args.role_b}: {verdict}"
+    if dev_seq is not None:
+        human += (
+            f"\n  ⚑ relaxed by model_diversity deviation #{dev_seq} (FR-057) — "
+            f"a different {level} is recommended, not required"
+        )
     _print(
-        {"diverse": ok, "role_a": args.role_a, "role_b": args.role_b},
+        {
+            "diverse": ok,
+            "level": level,
+            "relaxed_by_deviation": dev_seq,
+            "role_a": args.role_a,
+            "role_b": args.role_b,
+        },
         args.json,
-        f"model diversity {args.role_a} vs {args.role_b}: {'OK' if ok else 'VIOLATION'}",
+        human,
     )
-    return EXIT_OK if ok else EXIT_FAIL
+    return EXIT_OK if (ok or dev_seq is not None) else EXIT_FAIL
 
 
 def cmd_oracle_seal(args: argparse.Namespace) -> int:
@@ -562,25 +591,36 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     fam = oracle.family_of(args.model)
     coder = oracle.coder_family(s.load_roles())
+    level = s.diversity_level()
+    coder_side = s.coder_model() or coder
     if not fam:
         print("error: --model must be <family/model> (e.g. anthropic/claude-...)", file=sys.stderr)
         return EXIT_USAGE
     if not coder:
         print("error: coder model family is unset in roles.yaml (3PWR-FR-022)", file=sys.stderr)
         return EXIT_USAGE
-    if fam == coder:
-        _print(
-            {
-                "recorded": False,
-                "reason": "same_model_family",
-                "oracle_family": fam,
-                "coder_family": coder,
-            },
-            args.json,
-            f"REFUSED: oracle model family '{fam}' equals the coder family — the judiciary must "
-            "differ from the coder (3PWR-FR-022)",
+    # Diversity is recommended, not forced (3PWR-FR-022): a same-family/model setup proceeds only under
+    # a signed model_diversity deviation (3PWR-FR-057) — warned and recorded, never a silent drop.
+    diversity_dev: Optional[int] = None
+    if not oracle.diverse(coder_side, args.model, level):
+        diversity_dev = deviations.diversity_deviation(
+            deviations.active_deviations(entries), args.spec_id
         )
-        return EXIT_FAIL
+        if diversity_dev is None:
+            _print(
+                {
+                    "recorded": False,
+                    "reason": "same_model_family",
+                    "oracle_family": fam,
+                    "coder_family": coder,
+                    "level": level,
+                },
+                args.json,
+                f"REFUSED: oracle model '{args.model}' is not diverse from the coder at {level} level — "
+                "the judiciary must differ (3PWR-FR-022). Diversity is recommended, not forced: record a "
+                "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
+            )
+            return EXIT_FAIL
 
     test_paths: list[str] = []
     test_hashes: dict[str, str] = {}
@@ -612,7 +652,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
     payload = oracle.record_payload(
-        seal["payload"]["bundle_hash"], args.model, test_paths, test_hashes, advisory
+        seal["payload"]["bundle_hash"], args.model, test_paths, test_hashes, advisory, diversity_dev
     )
     entry = Ledger(s.ledger_path).append(
         "oracle",
@@ -625,6 +665,11 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         f"recorded oracle authoring for {args.spec_id} by {args.model} "
         f"(family={fam}; {len(test_paths)} test file(s)); ledger seq={entry['seq']}"
     )
+    if diversity_dev is not None:
+        human += (
+            f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} (FR-057) — "
+            f"same {level} as the coder; not the recommended posture"
+        )
     for a in advisory:
         human += f"\n  ⚑ advisory (not a blocker): {a}"
     _print(
@@ -633,6 +678,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
             "model_family": fam,
             "test_paths": test_paths,
             "advisory_findings": advisory,
+            "diversity_deviation": diversity_dev,
             "ledger_seq": entry["seq"],
         },
         args.json,
@@ -659,6 +705,11 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
         repo_root=s.root,
         test_roots=test_roots,
         require_dispatch=args.require_dispatch,
+        diversity_relaxed=deviations.covers_model_diversity(
+            deviations.active_deviations(entries), args.spec_id
+        ),
+        diversity_level=s.diversity_level(),
+        coder_model=s.coder_model(),
     )
     lines = [f"oracle independence for {args.spec_id}: {'PASS' if ind.ok else 'FAIL'}"]
     if ind.model_family:
@@ -706,8 +757,11 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_USAGE
 
-    # Resolve the oracle model/family and refuse the coder's family up front (3PWR-FR-022).
+    # Resolve the oracle model/family. Diversity is recommended, not forced (3PWR-FR-022): a
+    # same-family/model dispatch proceeds only under a signed model_diversity deviation (FR-057).
     coder = oracle.coder_family(s.load_roles())
+    coder_side = s.coder_model() or coder
+    level = s.diversity_level()
     intg_family = oracle.integration_family(args.integration)
     model = args.model or (f"{intg_family}/{args.integration}" if intg_family else "")
     if not model:
@@ -718,19 +772,26 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_USAGE
     fam = oracle.family_of(model)
-    if coder and fam == coder:
-        _print(
-            {
-                "dispatched": False,
-                "reason": "same_model_family",
-                "oracle_family": fam,
-                "coder_family": coder,
-            },
-            args.json,
-            f"REFUSED: dispatch integration '{args.integration}' resolves to the coder family "
-            f"'{fam}' — the judiciary must differ (3PWR-FR-022)",
+    diversity_dev: Optional[int] = None
+    if coder and not oracle.diverse(coder_side, model, level):
+        diversity_dev = deviations.diversity_deviation(
+            deviations.active_deviations(ledger.entries()), args.spec_id
         )
-        return EXIT_FAIL
+        if diversity_dev is None:
+            _print(
+                {
+                    "dispatched": False,
+                    "reason": "same_model_family",
+                    "oracle_family": fam,
+                    "coder_family": coder,
+                    "level": level,
+                },
+                args.json,
+                f"REFUSED: dispatch integration '{args.integration}' (model '{model}') is not diverse "
+                f"from the coder at {level} level — the judiciary must differ (3PWR-FR-022). Record a "
+                "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
+            )
+            return EXIT_FAIL
 
     sealed_bundle = s.dir / "oracle" / args.spec_id / "sealed.json"
     worktree_dir = s.dir / "worktrees" / args.spec_id
@@ -823,7 +884,9 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
         req_ids = seal["payload"].get("requirement_ids", [])
         rec_entry = ledger.append(
             "oracle",
-            oracle.record_payload(seal_hash, dispatched_model, test_paths, test_hashes, advisory),
+            oracle.record_payload(
+                seal_hash, dispatched_model, test_paths, test_hashes, advisory, diversity_dev
+            ),
             osk,
             spec_id=args.spec_id,
             requirement_ids=req_ids,
@@ -853,6 +916,11 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             f"  record seq={rec_entry['seq']}, dispatch seq={disp_entry['seq']}; "
             f"manifest {info.manifest_hash}"
         )
+        if diversity_dev is not None:
+            human += (
+                f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} (FR-057) — "
+                f"same {level} as the coder; not the recommended posture"
+            )
         if args.dry_run:
             human += "\n  ⓘ dry-run: worktree isolation built + attested; no live agent dispatched"
         for a in advisory:
@@ -868,6 +936,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
                 "file_count": info.file_count,
                 "excluded_absent": True,
                 "advisory_findings": advisory,
+                "diversity_deviation": diversity_dev,
                 "record_seq": rec_entry["seq"],
                 "dispatch_seq": disp_entry["seq"],
             },
@@ -1383,7 +1452,10 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_parser("deviation", help="record/revoke a reversible gate deviation (FR-057)")
     )
     dvp.add_argument(
-        "--gate", action="append", help="gate to relax (repeatable); required unless --revoke"
+        "--gate",
+        action="append",
+        help="gate or requirement to relax (repeatable), e.g. a gate name or `model_diversity` "
+        "(3PWR-FR-022); required unless --revoke",
     )
     dvp.add_argument("--approver", help="human who accepts the deviation (required to record)")
     dvp.add_argument("--note", help="recorded reason")
