@@ -13,9 +13,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import adapters, covdiff, gaming, mutation, scanners
+from . import adapters, covdiff, design, gaming, mutation, scanners
 from .adapters import CmdResult
-from .conformance import conformance_failures, extract_spec, run_conformance
+from .conformance import conformance_failures, extract_spec, regression_gate, run_conformance
 from .config import Settings, tier_config
 from .verdict import (
     GATE_ORDER,
@@ -26,6 +26,14 @@ from .verdict import (
     Verdict,
     failure,
 )
+
+# Design-oracle gate → its actionable failure class (3PWR-FR-009/034).
+_DESIGN_FAILURE_CLASS = {
+    "visual_regression": "visual_regression",
+    "a11y_scan": "a11y_violation",
+    "contract_check": "contract_break",
+    "component_contract": "component_contract",
+}
 
 # Gates executed by invoking an adapter command vs. computed in the core.
 _ADAPTER_GATES = {"format", "lint", "types", "tests", "mutation"}
@@ -65,6 +73,24 @@ def _result_from_cmd(gate: str, spec: dict[str, Any], res: CmdResult) -> GateRes
     )
 
 
+def _augment_gates(required: list[str], work_kind: list[str], settings: Settings) -> list[str]:
+    """Union the gates an inferred work-kind pulls in onto the tier's list (3PWR-FR-058).
+
+    Only ever *adds* — a defect adds the regression gate (3PWR-FR-008), design work adds the
+    catalog's design oracles (3PWR-FR-009). A tier gate is never removed (3PWR-FR-032).
+    """
+    if not work_kind:
+        return required
+    out = list(required)
+    if "defect" in work_kind and "defect_regression" not in out:
+        out.append("defect_regression")
+    if "design" in work_kind:
+        for gate in design.selected_gates(settings):
+            if gate not in out:
+                out.append(gate)
+    return out
+
+
 def run_gates(
     settings: Settings,
     target: Path,
@@ -77,10 +103,16 @@ def run_gates(
     paths: list[str] | None = None,
     report_only: bool = False,
     diff_scope: bool = False,
+    work_kind: list[str] | None = None,
 ) -> Verdict:
     tiers = settings.load_risk_tiers()
     tcfg = tier_config(tiers, tier)
     required: list[str] = list(tcfg.get("gates", []))
+    # Work-kind shaping (3PWR-FR-058): an inferred kind can *add* gates — a regression gate for a
+    # defect (3PWR-FR-008), the design oracles for design work (3PWR-FR-009) — but never removes a
+    # tier gate (inference shapes, never weakens; 3PWR-FR-032).
+    kinds = list(work_kind or [])
+    required = _augment_gates(required, kinds, settings)
 
     # Brownfield diff-scope: block only on new/changed files (3PWR-FR-051). When set,
     # the file-based scanners count only findings in files changed vs. ``base``.
@@ -101,6 +133,7 @@ def run_gates(
         adapter=adapter_name,
         commit=_git_commit(settings.root),
         report_only=report_only,
+        work_kind=kinds,
     )
 
     # Run tests (with coverage) if either the tests or diff_coverage gate is required.
@@ -154,7 +187,7 @@ def run_gates(
                     )
                 )
                 continue
-            res = adapters.run_cmd(cmd, cwd=target)
+            res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
             gr = _result_from_cmd(gate, spec, res)
             if gate == "tests" and spec.get("coverage_path"):
                 coverage_path = target / spec["coverage_path"]
@@ -188,12 +221,20 @@ def run_gates(
             verdict.add(gr)
             verdict.failures.extend(conformance_failures(gr))
 
+        elif gate == "defect_regression":
+            # Work-kind: defect — a fix must ship a failing regression test (3PWR-FR-008).
+            verdict.add(regression_gate(spec_path, _test_roots(manifest, target)))
+
+        elif gate in design.DESIGN_GATES:
+            # Work-kind: design — adapter-supplied design oracle, quarantined if unwired (3PWR-FR-009).
+            verdict.add(design.design_gate(gate, manifest, adapter_name, target))
+
     # Make sure tests actually ran when required even if listed only via diff_coverage.
     if need_tests and not any(g.gate == "tests" for g in verdict.gates):
         spec = adapters.gate_spec(manifest, "tests")
         cmd = adapters.command_of(spec) if spec else None
         if spec and cmd:
-            res = adapters.run_cmd(cmd, cwd=target)
+            res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
             verdict.add(_result_from_cmd("tests", spec, res))
 
     # Actionable failures for any failed gate (3PWR-FR-034).
@@ -250,6 +291,24 @@ def run_gates(
                     gate=g.gate,
                     detail="; ".join(g.findings[:3])
                     or "suppression detected — human review required",
+                )
+            )
+        elif g.gate == "defect_regression":
+            verdict.failures.append(
+                failure(
+                    "missing_regression_test",
+                    gate=g.gate,
+                    detail="; ".join(g.findings[:1])
+                    or "a defect fix requires a failing regression test (3PWR-FR-008)",
+                )
+            )
+        elif g.gate in _DESIGN_FAILURE_CLASS:
+            verdict.failures.append(
+                failure(
+                    _DESIGN_FAILURE_CLASS[g.gate],
+                    gate=g.gate,
+                    tool=g.tool,
+                    detail="; ".join(g.findings[:3]) or f"{g.gate} oracle failed",
                 )
             )
     return verdict.finalize()

@@ -31,6 +31,10 @@ inputs:
     type: string
     default: "auto"
     prompt: "Executive integration (coder). The oracle step should differ in family (3PWR-FR-022)."
+  work_kind:
+    type: string
+    default: ""
+    prompt: "Inferred work kind(s), comma-separated (3PWR-FR-058) — shapes the verify gate suite."
 
 steps:
   # ---- Legislative: author the law, human approves it (Stage 1–2) ----
@@ -89,7 +93,11 @@ steps:
     command: 3pwr.verify
     integration: "{{ inputs.integration }}"
     input:
-      args: "Run the deterministic gate suite and verify the signed ledger (3PWR-FR-026/040)."
+      args: >
+        Run the deterministic gate suite and verify the signed ledger (3PWR-FR-026/040). When a work
+        kind was inferred (3PWR-FR-058), shape the suite with it: pass `--work-kind {{ inputs.work_kind }}`
+        so a defect run requires a regression test (3PWR-FR-008) and a design run runs the design
+        oracles (3PWR-FR-009).
   - id: review-verify
     type: gate
     message: "Review the verdict + residual (intermediate gate — auto mode continues; commit stops)."

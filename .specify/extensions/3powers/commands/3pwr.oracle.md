@@ -23,6 +23,15 @@ initialized (copilot, claude, gemini, …) — 3Powers assumes no single provide
    matches the coder (3PWR-FR-022); records the actual model, signer, and test hashes.
 4. `3pwr oracle verify --spec-id <ID>` — confirm **PASS**, then hand off to `/3pwr.verify`.
 
+**If this is a defect fix (work-kind `defect`, 3PWR-FR-008):** author the **failing regression test first**
+— a test named `*regression*`/`*reproduce*` that references the defect's requirement id and *fails before
+the fix*. That test is the oracle's acceptance criterion; `/3pwr.verify --work-kind defect` refuses to go
+green without it (`missing_regression_test`). Then implement the fix until it passes.
+
+**If this is design work (work-kind `design`, 3PWR-FR-009):** the code gates alone don't judge it — the
+**design oracles** do (visual-regression, accessibility, structural/API contract, component contract).
+`/3pwr.verify --work-kind design` runs whichever your language adapter declares and quarantines the rest.
+
 **High-risk (physical read-path isolation, 3PWR-FR-021/A3):** instead of steps 1–3 by hand, run
 `3pwr oracle dispatch --spec-id <ID> --integration <non-coder, e.g. claude>`. It builds a **sanitized git
 worktree** (the implementation/plan/tasks/contracts are physically absent), authors the oracle there

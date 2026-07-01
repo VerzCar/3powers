@@ -51,6 +51,10 @@ class Settings:
         return self.dir / "config" / "roles.yaml"
 
     @property
+    def design_oracles_path(self) -> Path:
+        return self.dir / "config" / "design-oracles.yaml"
+
+    @property
     def adapters_dir(self) -> Path:
         return self.dir / "adapters"
 

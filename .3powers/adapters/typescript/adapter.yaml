@@ -29,3 +29,19 @@ gates:
     parser: stryker
     report_path: "reports/mutation/mutation.json"   # Stryker JSON report for scoring
     tier_min: "High-risk"
+
+  # Optional design oracles (3PWR-FR-009) — run ONLY when work-kind inference tags a change `design`
+  # (3PWR-FR-058). These are illustrative TS wirings; when the tool isn't installed (or the project
+  # doesn't define the script) the gate is quarantined, never silently passed (3PWR-NFR-015).
+  visual_regression:
+    cmd: "npx --no-install playwright test --grep @visual"
+    parser: playwright
+  a11y_scan:
+    cmd: "npx --no-install axe ./dist"
+    parser: axe
+  contract_check:
+    cmd: "npx --no-install oasdiff breaking base.yaml revision.yaml"
+    parser: oasdiff
+  component_contract:
+    cmd: "npx --no-install pact-verifier"
+    parser: pact

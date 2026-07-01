@@ -135,6 +135,58 @@ def run_conformance(
     )
 
 
+# A regression test names itself: a *regression* / *reproduce* file or body marker (3PWR-FR-008).
+_REGRESSION_RE = re.compile(r"(?i)regress|reproduc")
+
+
+def has_regression_test(test_roots: list[Path], spec_id: str) -> tuple[bool, list[str]]:
+    """Detect a failing-regression test guarding a defect fix (3PWR-FR-008), deterministically.
+
+    A regression test is one that is *marked* as such — by file name (``*regression*`` /
+    ``*reproduce*``) or an inline mention — **and** references a requirement id of this spec, so it
+    is traceable to the defect it guards (mirrors the conformance trace; no model call, 3PWR-NFR-001).
+    Returns ``(present, [requirement ids the regression tests reference])``.
+    """
+    hits: set[str] = set()
+    seen: set[Path] = set()
+    for f in _iter_test_files(test_roots):
+        if f in seen or not f.is_file():
+            continue
+        seen.add(f)
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not (_REGRESSION_RE.search(f.name) or _REGRESSION_RE.search(text)):
+            continue
+        for sid, kind, num in _iter_req_ids(text):
+            if spec_id and sid != spec_id:
+                continue
+            hits.add(f"{sid}-{kind}-{num}")
+    return (bool(hits), sorted(hits))
+
+
+def regression_gate(spec_path: Path, test_roots: list[Path]) -> GateResult:
+    """The defect-flow gate (3PWR-FR-008): a defect fix must ship a failing regression test."""
+    spec_id, _ = extract_spec(spec_path)
+    present, refs = has_regression_test(test_roots, spec_id)
+    findings = (
+        []
+        if present
+        else [
+            "defect fix has no regression test: add a test named *regression*/*reproduce* that "
+            f"references a {spec_id or 'spec'} requirement id and fails before the fix (3PWR-FR-008)"
+        ]
+    )
+    return GateResult(
+        gate="defect_regression",
+        status=STATUS_PASS if present else STATUS_FAIL,
+        tool="3pwr-conformance",
+        details={"regression_refs": refs},
+        findings=findings,
+    )
+
+
 def conformance_failures(gate: GateResult) -> list[dict]:
     out = [
         failure(

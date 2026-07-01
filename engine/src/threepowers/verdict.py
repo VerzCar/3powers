@@ -17,7 +17,10 @@ from typing import Any
 
 from . import SCHEMA_VERSION
 
-# Cheapest-first canonical gate order (3PWR-FR-026, spec §8).
+# Cheapest-first canonical gate order (3PWR-FR-026, spec §8). The trailing gates are
+# work-kind-shaped (3PWR-FR-058): they join the suite only when the inferred kind pulls
+# them in — ``defect_regression`` for a defect (3PWR-FR-008), the design oracles for design
+# work (3PWR-FR-009) — and never replace a tier gate.
 GATE_ORDER = [
     "format",
     "lint",
@@ -30,6 +33,11 @@ GATE_ORDER = [
     "secret_scan",
     "gate_gaming",
     "spec_conformance",
+    "defect_regression",  # work-kind: defect (3PWR-FR-008)
+    "contract_check",  # work-kind: design — structural/API contract (3PWR-FR-009)
+    "component_contract",  # work-kind: design — component contract (3PWR-FR-009)
+    "a11y_scan",  # work-kind: design — accessibility (3PWR-FR-009)
+    "visual_regression",  # work-kind: design — visual regression (3PWR-FR-009)
 ]
 
 STATUS_PASS = "pass"
@@ -60,6 +68,9 @@ class Verdict:
     )
     result: str = STATUS_PASS
     report_only: bool = False  # advisory run: emit but do not block (3PWR-FR-052)
+    work_kind: list[str] = field(
+        default_factory=list
+    )  # inferred kinds shaping the suite (3PWR-FR-058)
     gates: list[GateResult] = field(default_factory=list)
     failures: list[dict[str, Any]] = field(default_factory=list)
 

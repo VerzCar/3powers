@@ -23,7 +23,22 @@ gates:
   tests:    { cmd: "<cmd>",       parser: <name>,
               coverage_format: lcov, coverage_path: "<relative path>" }
   mutation: { cmd: "<cmd>",       parser: <name>, tier_min: "High-risk" }
+
+  # Optional design oracles (3PWR-FR-009) — run only when work-kind inference tags a change `design`.
+  visual_regression:  { cmd: "<cmd>", parser: <name> }
+  a11y_scan:          { cmd: "<cmd>", parser: <name> }
+  contract_check:     { cmd: "<cmd>", parser: <name> }
+  component_contract: { cmd: "<cmd>", parser: <name> }
 ```
+
+### Design oracles (optional, work-kind-shaped)
+
+Design work is judged by **design oracles**, not the code gates alone (3PWR-FR-009). When work-kind
+inference (3PWR-FR-058) tags a change `design`, the engine unions the oracle gates listed in
+`.3powers/config/design-oracles.yaml` onto the tier's gate set. Each oracle's *tool* is adapter-supplied
+(`visual_regression`, `a11y_scan`, `contract_check`, `component_contract`); a selected oracle the adapter
+doesn't declare — or whose tool isn't installed — is **quarantined**, never silently passed (3PWR-NFR-015).
+An adapter for a non-UI language may declare none; design runs then quarantine every oracle (surfaced).
 
 ### Gate responsibilities
 

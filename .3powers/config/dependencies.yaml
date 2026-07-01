@@ -83,3 +83,28 @@ components:
   # TypeScript reference adapter toolchain is pinned by examples/validation-utils/package-lock.json
   # (Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6). `node` above covers its runtime; per-tool
   # probes are project-local (run via `npx` inside the sample) and omitted here to avoid false misses.
+
+  # Go reference adapter toolchain (plan 015). `go` covers format/lint/types/tests; `gcov2lcov`
+  # converts the coverprofile to LCOV for diff-coverage; golangci-lint / go-mutesting are optional.
+  # All `warn` — a Go project only needs these when it runs the Go adapter (else the gates just fail
+  # like any other absent adapter tool). Cross-platform of the shell-guarded gofmt check is residual.
+  - name: go
+    adapter: go
+    probe: "go version"
+    supported: ">=1.21"
+    on_drift: warn
+  - name: gcov2lcov
+    adapter: go
+    probe: "gcov2lcov -version"
+    supported: ">=1"
+    on_drift: warn
+  - name: golangci-lint
+    adapter: go
+    probe: "golangci-lint version"
+    supported: ">=1.55"
+    on_drift: warn
+  - name: go-mutesting
+    adapter: go
+    probe: "go-mutesting --help"
+    supported: ">=1"
+    on_drift: warn

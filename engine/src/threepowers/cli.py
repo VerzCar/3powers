@@ -187,6 +187,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         paths=args.paths,
         report_only=args.report_only,
         diff_scope=args.diff_scope,
+        work_kind=args.work_kind,
     )
     s.verdicts_dir.mkdir(parents=True, exist_ok=True)
     verdict.write(s.verdicts_dir / "latest.json")
@@ -1172,7 +1173,15 @@ def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_fr
             verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
         )
     workflow = args.workflow or str(s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-    inputs = {"intent": args.intent or "", "mode": mode, "integration": args.integration}
+    # Carry the inferred work-kind into the workflow so the verify step shapes the gate suite
+    # (3PWR-FR-058 → FR-008/009); deterministic, so it never perturbs the verdict (3PWR-NFR-001).
+    kinds = workkind.classify(args.intent or "").kinds
+    inputs = {
+        "intent": args.intent or "",
+        "mode": mode,
+        "integration": args.integration,
+        "work_kind": ",".join(kinds),
+    }
     return orchestrate.SpecifyRunner(s.root, workflow, inputs)
 
 
@@ -1639,6 +1648,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--diff-scope",
         action="store_true",
         help="block only on files changed vs --base (brownfield, 3PWR-FR-051)",
+    )
+    gr.add_argument(
+        "--work-kind",
+        action="append",
+        choices=list(workkind.KINDS),
+        help="shape the gate set for an inferred kind (repeatable): defect adds a regression gate "
+        "(3PWR-FR-008), design adds the design oracles (3PWR-FR-009); never weakens a tier gate",
     )
     gr.add_argument("--no-ledger", action="store_true", help="do not append to the ledger")
     gr.set_defaults(func=cmd_gate_run)

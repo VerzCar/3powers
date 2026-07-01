@@ -57,17 +57,18 @@ different model family) → **switch back** → `/speckit.implement` → `/3pwr.
 ## 3. Repo map
 
 ```
-engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates, scanners, gaming,
-                            #   mutation, characterize, deviations, conformance, covdiff, scope, lifecycle,
-                            #   provenance, evals, ledger, verify, keys, verdict, config, canonical (+ tests/)
-.3powers/                   # in-repo trust spine: config/{risk-tiers,roles}.yaml, schemas/*.json,
-                            #   adapters/{CONTRACT.md,typescript,python}, eval/cases.yaml,
+engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates, scanners, gaming, workkind,
+                            #   design, mutation, characterize, deviations, conformance, covdiff, scope, lifecycle,
+                            #   orchestrate, oracle, observe, deps, provenance, evals, ledger, verify, keys, verdict,
+                            #   config, canonical (+ tests/)
+.3powers/                   # in-repo trust spine: config/{risk-tiers,roles,design-oracles}.yaml, schemas/*.json,
+                            #   adapters/{CONTRACT.md,typescript,python,go}, eval/cases.yaml,
                             #   semgrep-rules.yml, ledger.jsonl, keys/ledger.pub
 .specify/ + .github/        # Spec Kit; 3Powers constitution + template overrides + /3pwr.* commands
 specs/                      # authoritative specs (the epic + per-feature); 002 = the engine's own
 examples/validation-utils/  # runnable TypeScript sample
 docs/references/            # compacted Spec Kit + trust-spine tooling references
-plan/                       # the continuous plan series 001..014 (014 = hardening core: betterleaks/FR-058/FR-064; 015 = next)
+plan/                       # the continuous plan series 001..015 (015 = work-kind-shaped gates: FR-008/FR-009 + Go adapter)
 ```
 
 ## 4. Status — validated against the spec
@@ -78,7 +79,7 @@ plan/                       # the continuous plan series 001..014 (014 = hardeni
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); remaining: FR-008/FR-009 + 3rd adapter (plan 015), dual-headless coder leg, catalog publishing) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; remaining: dual-headless coder leg, catalog publishing) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -87,8 +88,12 @@ FR-005 ◑ (Spec Kit `/clarify` exists; "block on unmeasurable" is prompt-level)
 FR-006 ◑ (sign-off recorded + enforced before *ship*; not hard-gated before *build*) ·
 FR-007 ◑ (constitution/plan-template guidance, not a gate) · **FR-058 ✅** (`3pwr classify` + `3pwr run`
 infer work kind(s) + a suggested tier, deterministically, shaping the tier/gates + oracle — never the
-sign-off; per-kind gate shaping in plan 015) ·
-FR-008 ⬜ (defect→regression-test flow) · FR-009 ⬜ (design oracles).
+sign-off; per-kind gate shaping wired into `run_gates` in plan 015) ·
+**FR-008 ✅** (a `defect` run adds a **regression gate**: `3pwr gate run --work-kind defect` fails
+`missing_regression_test` unless a *regression*/*reproduce* test referencing the requirement is present —
+deterministic, no model call) · **FR-009 ✅** (a `design` run unions the **design oracles** —
+visual-regression / a11y / structural-contract / component-contract — from `design-oracles.yaml`; each tool
+is adapter-supplied, a missing one is **quarantined** not silently passed; live scanners are the residual).
 
 **Executive (§6):** FR-011 ✅ (stages derived from ledger; **`3pwr run` drives the whole loop**, plan 013 — auto mode stops only at the two human gates, composing `specify workflow run`), FR-019 ✅, FR-014 ✅, FR-015 ✅,
 FR-016 ◑ (tasks gated by `scope-check`; commit-message tagging not gated), FR-017 ✅, FR-063 ✅ ·
@@ -109,7 +114,9 @@ absent, attested by a worktree manifest hash in the ledger; a High-risk `advance
 blocks a missing/non-isolated dispatch; the 008 peek/touch signal stays advisory. Network egress is out
 of scope — read-path isolation only), FR-024 ◑ (required by prompt/sample, not enforced), FR-025 ◑.
 
-**Judiciary — gate engine (§8):** FR-026 ✅, FR-027 ✅ (TypeScript + Python), FR-028 ✅, FR-029 ✅,
+**Judiciary — gate engine (§8):** FR-026 ✅, FR-027 ✅ (TypeScript + Python + **Go**, plan 015 — the Go
+adapter reuses the core LCOV diff-coverage via `gcov2lcov`; a live Go gate run needs a Go toolchain),
+FR-028 ✅, FR-029 ✅,
 FR-030 ✅, FR-031 ✅ (**mutation now executes** on the trust spine via the fixed mutmut src-layout
 runner; score graded vs the tier threshold; survivors reported as missing assertions), FR-032 ✅,
 FR-033 ✅, FR-034 ✅, FR-035 ✅, FR-065 ✅ · **FR-064 ✅** (per-tier `required_layers` in risk-tiers.yaml,
@@ -182,9 +189,11 @@ Harden these before adding breadth:
 isolation (FR-021) and the first real cross-integration dispatch (FR-012/013, oracle leg), and plan 012
 made model diversity **recommend-not-force** (a same-model setup proceeds via a signed `model_diversity`
 deviation, so single-model users are never walled off) with configurable granularity — the spec-level
-*headlines* are closed to the limit of this repo. What remains is breadth + hardening: the *fuller* A3 proof
-(the coder leg also headless under a second, different-family CLI; a live non-Copilot end-to-end run),
-defect-flow (FR-008), design oracles (FR-009), a root `LICENSE` (NFR-012), and cross-platform (NFR-003).
+*headlines* are closed to the limit of this repo. Plans 014–015 then took the hardening track: betterleaks,
+work-kind inference (FR-058) now **shaping the gate set** — defect-flow (FR-008) and design oracles (FR-009) —
+and a **third (Go) reference adapter** (FR-027). What remains is breadth: the *fuller* A3 proof (the coder
+leg also headless under a second, different-family CLI; a live non-Copilot end-to-end run), live design
+scanners + a Go toolchain for those adapters' live runs, catalog publishing, and cross-platform (NFR-003).
 
 ## 6. What's next (roadmap)
 
@@ -254,13 +263,24 @@ run` infer kind(s) + a suggested tier deterministically, shaping the tier/gates 
 `3pwr run` tracker (plain fallback off a TTY). **Root `LICENSE`** (Apache-2.0, NFR-012). Self-applies green
 at High-risk (secret_scan · betterleaks, 39 requirements traced across all layers).
 
-Next, in priority order (the rest of v1.0 + the hardening track):
-- **Plan 015:** FR-008 defect→regression-test flow + FR-009 design oracles (both consume work-kind to shape
-  per-kind gates) + a third (Go) reference adapter.
+**Plan 015 is done** ([`plan/015-defect-design-go-adapter.md`](../plan/015-defect-design-go-adapter.md)):
+✅ **work-kind-shaped gates.** Work-kind inference now *shapes the gate set* via `run_gates(work_kind=…)` /
+`3pwr gate run --work-kind` (never weakening a tier gate — FR-032). **FR-008 defect-flow:** a `defect` run
+adds a **regression gate** that fails `missing_regression_test` unless a *regression*/*reproduce* test
+referencing the requirement is present (deterministic, no model call). **FR-009 design oracles:** a `design`
+run unions the oracle gates from `design-oracles.yaml` (visual-regression / a11y / structural-contract /
+component-contract); each tool is adapter-supplied and a missing one is **quarantined**, never silently
+passed (NFR-015). **Third (Go) adapter:** a declarative `.3powers/adapters/go/adapter.yaml` proving the
+contract is language-agnostic (FR-027/NFR-007) — it reuses the core LCOV diff-coverage via `gcov2lcov` (a
+new opt-in `shell: true` on an adapter gate enables the two-step pipeline). Self-applies green at High-risk
+(mutation on the trust spine) and Standard (whole engine, diff-coverage 88% ≥ 80%).
+
+Next, in priority order (breadth + the remaining hardening track):
 - **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
   live non-Copilot end-to-end `workflow run` verification (also completes `3pwr run`'s live executive leg).
-- Catalog *publishing* of the `3powers` extension; model-driven eval layer (FR-050); cross-platform
-  validation (NFR-003); fuller test-layer labelling of the existing engine suite.
+- **Live design/Go runs** — playwright/axe/schema-diff for a real UI sample (FR-009) and a Go toolchain for
+  the Go adapter's live gate run; catalog *publishing* of the `3powers` extension; model-driven eval layer
+  (FR-050); cross-platform validation (NFR-003).
 
 ## 7. Pointers
 

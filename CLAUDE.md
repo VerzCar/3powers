@@ -75,6 +75,17 @@ Implemented and committed (not yet merged to `main`):
   spec-conformance as a per-change union (High-risk needs unit+integration+e2e); a **richer in-place `3pwr
   run` tracker** (dependency-free); and the **root `LICENSE`** (NFR-012). FR-008/FR-009 + a 3rd adapter →
   plan 015.
+- **Plan 015** (`plan/015-defect-design-go-adapter.md`) — **work-kind-shaped gates** (FR-008/FR-009,
+  FR-027): work-kind inference now *shapes the gate set* via `run_gates(work_kind=…)` / `3pwr gate run
+  --work-kind` (adds gates, never weakens a tier gate — FR-032). **FR-008 defect-flow** — a `defect` run
+  adds a **regression gate** that fails `missing_regression_test` unless a *regression*/*reproduce* test
+  referencing the requirement is present (deterministic, no model call). **FR-009 design oracles** — a
+  `design` run unions the oracle gates from `.3powers/config/design-oracles.yaml` (visual-regression /
+  a11y / structural-contract / component-contract); each tool is **adapter-supplied**, a missing one is
+  **quarantined** not silently passed (NFR-015). **Third (Go) reference adapter** — a declarative
+  `.3powers/adapters/go/adapter.yaml` proving the contract is language-agnostic (FR-027/NFR-007); it reuses
+  the core LCOV diff-coverage via `gcov2lcov` (a new opt-in `shell: true` per adapter gate enables the
+  two-step pipeline). Live design scanners + a Go toolchain (for those adapters' live runs) are the residual.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -92,20 +103,24 @@ the judiciary headlessly in a sanitized worktree, attested in the ledger, blocki
 lifecycle with a live tracker; `auto` mode stops only at the two human gates FR-006/FR-037). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. Next → rest of **v1.0**: the **fuller A3** (coder leg also headless under a second,
-different-family CLI + a live non-Copilot end-to-end run), catalog publishing, and a third adapter. Known
-approximations (command/harness-level): work-kind inference (FR-058), context strategy (FR-060/061); the
-fuller dual-headless dispatch (the **oracle** leg is delivered).
+`--tier High-risk`. **Work-kind now shapes the gate set** (plan 015): defect-flow (FR-008), design oracles
+(FR-009), and a **third (Go) reference adapter** (FR-027) are delivered. Next → rest of **v1.0**: the
+**fuller A3** (coder leg also headless under a second, different-family CLI + a live non-Copilot end-to-end
+run), catalog publishing, and live design/Go gate runs (live scanners + a Go toolchain). Known
+approximations (command/harness-level): context strategy (FR-060/061); the fuller dual-headless dispatch
+(the **oracle** leg is delivered); design oracles are wired + quarantine-safe but their live scanners are
+the residual.
 
 ## Repository layout
 
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
-                            #   observe, deps, adapters, scanners, ledger, verify, keys, verdict, config, canonical
+                            #   observe, deps, workkind, design, orchestrate, adapters, scanners, ledger, verify,
+                            #   keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
-  config/{risk-tiers,roles,dependencies,observability}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}
+  config/{risk-tiers,roles,dependencies,observability,design-oracles}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
   ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
 .specify/                   # Spec Kit; constitution + templates OVERRIDDEN by 3Powers; extensions/3powers/ (A1)
 .github/{prompts,agents}/   # Spec Kit /speckit.* commands + custom /3pwr.{oracle,verify,review,signoff,advance,characterize}
@@ -127,7 +142,11 @@ uv tool install ./engine            # install the `3pwr` command
 
 3pwr keygen                         # create the independent signer (key kept OUTSIDE the repo)
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
-3pwr gate run --path <dir> --adapter <ts|python> --spec specs/<feature>/spec.md --tier <tier>
+3pwr gate run --path <dir> --adapter <ts|python|go> --spec specs/<feature>/spec.md --tier <tier>
+# Work-kind-shaped gates (FR-058 → FR-008/009): a defect adds a regression gate, a design run the design
+# oracles. Never weakens a tier gate; the inference is deterministic (NFR-001).
+3pwr gate run --path <dir> --spec <spec> --tier <tier> --work-kind defect   # requires a regression test (FR-008)
+3pwr gate run --path <dir> --spec <spec> --tier <tier> --work-kind design   # runs design oracles; quarantines missing (FR-009)
 3pwr verify                         # recompute ledger chain + signatures, offline
 3pwr signoff --approver <you> --stage review --spec-id <ID>
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
@@ -203,10 +222,13 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    coder leg also running headless (the fuller dispatch) is the residual.
 
 2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
-   mutation → SAST → dependency → secret → gate-gaming → spec-conformance. Language support is a
-   **declarative adapter manifest** — the core never assumes a language (NFR-007); language-agnostic
-   gates (diff-coverage, conformance, secret, dependency) live in the core. One normalized **verdict**
-   per run, identical across languages (NFR-001/FR-033), every failure actionable (FR-034).
+   mutation → SAST → dependency → secret → gate-gaming → spec-conformance. **Work-kind inference then
+   *shapes* the set** (FR-058, plan 015): a `defect` run adds a regression gate (FR-008), a `design` run
+   adds the adapter-supplied design oracles (FR-009) — it only ever *adds*, never weakening a tier gate
+   (FR-032). Language support is a **declarative adapter manifest** — the core never assumes a language
+   (NFR-007; TypeScript + Python + **Go**); language-agnostic gates (diff-coverage, conformance, secret,
+   dependency) live in the core. One normalized **verdict** per run, identical across languages
+   (NFR-001/FR-033), every failure actionable (FR-034).
 
 3. **The trust spine (§9).** No mandatory CI/CD enforcer; trust is recovered locally: an append-only
    **hash-chained, Ed25519-signed verdict ledger**; a `verify` that fails on any tamper/gap/break; a

@@ -1,0 +1,35 @@
+# Go reference adapter (plan 015) — the third language, proving the adapter contract is truly
+# language-agnostic (3PWR-FR-027 / 3PWR-NFR-007): adding a language is "add a manifest", no core change.
+#
+# Most gates run with just the base Go toolchain (`go`). Diff-coverage reuses the core's LCOV path
+# (3PWR-FR-029) unchanged — `go test` writes a Go coverprofile, so the tests gate converts it to LCOV
+# with `gcov2lcov` in a shell pipeline (opt-in `shell: true`; see the adapter CONTRACT). golangci-lint
+# and go-mutesting are optional richer tools. Exact flags to confirm against an installed toolchain.
+language: go
+detect: ["go.mod"]
+test_roots: ["."]
+property_test_lib: rapid
+
+gates:
+  format:
+    # gofmt -l lists unformatted files but exits 0; the shell guard makes "any unformatted" a failure.
+    check_cmd: 'test -z "$(gofmt -l .)"'
+    shell: true
+    parser: gofmt
+  lint:
+    cmd: "go vet ./..."
+    parser: govet
+  types:
+    cmd: "go build ./..."
+    parser: gobuild
+  tests:
+    # Emit LCOV so the core's diff-coverage (3PWR-FR-029) works unchanged across languages.
+    cmd: "go test -covermode=atomic -coverprofile=cover.out ./... && gcov2lcov -infile cover.out -outfile coverage/lcov.info"
+    shell: true
+    parser: gotest
+    coverage_format: lcov
+    coverage_path: "coverage/lcov.info"
+  mutation:
+    cmd: "go-mutesting ./..."
+    parser: go-mutesting
+    tier_min: "High-risk"

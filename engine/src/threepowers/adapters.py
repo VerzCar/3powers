@@ -64,16 +64,25 @@ def gate_spec(manifest: dict[str, Any], gate: str) -> Optional[dict[str, Any]]:
     return (manifest.get("gates") or {}).get(gate)
 
 
-def run_cmd(command: str, cwd: Path, timeout: int = 600) -> CmdResult:
+def run_cmd(command: str, cwd: Path, timeout: int = 600, shell: bool = False) -> CmdResult:
+    """Run an adapter command and capture its result.
+
+    ``shell=True`` (opt-in per gate via ``shell: true`` in the manifest) runs the command through the
+    system shell so a toolchain that needs a pipeline can be declared — e.g. Go's
+    ``go test -coverprofile=… && gcov2lcov …`` to emit LCOV for the core's diff-coverage. Commands come
+    only from committed, trusted adapter manifests, never from user input, so no injection surface is
+    opened. Default stays ``shlex.split`` (no shell) for the reference adapters.
+    """
     start = time.monotonic()
     try:
         proc = subprocess.run(
-            shlex.split(command),
+            command if shell else shlex.split(command),
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
+            shell=shell,
         )
         return CmdResult(
             proc.returncode, proc.stdout, proc.stderr, int((time.monotonic() - start) * 1000)
@@ -89,3 +98,8 @@ def run_cmd(command: str, cwd: Path, timeout: int = 600) -> CmdResult:
 def command_of(spec: dict[str, Any]) -> Optional[str]:
     """Prefer a non-mutating ``check_cmd`` over a mutating ``cmd``."""
     return spec.get("check_cmd") or spec.get("cmd")
+
+
+def wants_shell(spec: dict[str, Any]) -> bool:
+    """Whether this gate's command must run through the shell (opt-in ``shell: true``)."""
+    return bool(spec.get("shell"))

@@ -15,7 +15,9 @@ sanitized worktree, ledger-attested), **portability & dependency stability** (`d
 provider-agnostic Spec Kit extension), and the **observe & feedback loop**
 (`observe signal`/`coverage`/`log-action`, §13).
 **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar
-(mutation ≈89% ≥ 70%). Two reference adapters (TypeScript + Python). Built on GitHub Spec Kit. See
+(mutation ≈89% ≥ 70%). Three reference adapters (TypeScript + Python + Go). Work-kind inference shapes the
+gate set (plan 015): a defect run adds a regression gate (FR-008), a design run adds the design oracles
+(FR-009). Built on GitHub Spec Kit. See
 [`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and the guides in [`docs/`](docs/).
 
 ## Commands
@@ -78,6 +80,7 @@ Confirmed in this environment:
 | Node | 23.3.0 |
 | Engine runtime deps | `cryptography`, `PyYAML` |
 | TS adapter toolchain | Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6, fast-check 3 |
+| Go adapter toolchain | `go` ≥1.21 (format/lint/types/tests), `gcov2lcov` (coverprofile→LCOV), golangci-lint / go-mutesting optional — all `warn` in `deps-check`; a live Go gate run needs them installed |
 | Supply-chain scanners | betterleaks 1.6 (secret; gitleaks 8.x fallback), osv-scanner 2.4 (dependency) — core gates (Standard+) |
 | SAST | semgrep against a local offline ruleset (`.3powers/config/semgrep-rules.yml`); quarantines if absent |
 | Mutation | mutmut 3.x (Python) / Stryker (TS) — scoped to the High-risk trust-spine via `[tool.mutmut]` `source_paths`+`only_mutate`; score graded vs the tier threshold; full sweep scheduled |

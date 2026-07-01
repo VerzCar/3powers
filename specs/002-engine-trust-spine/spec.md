@@ -19,7 +19,8 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
   different-family CLI, and end-to-end verification of a live non-Copilot `workflow run` dispatch (the
   **oracle** leg's *physical* read-path isolation IS delivered here via `oracle dispatch`); nor the
   *live* production instrumentation runtime (observe records signals + declarations, §13), catalog
-  publishing, or a third adapter.
+  publishing, or the *live* runs of the design oracles (FR-009) and the Go adapter (both need their
+  external tools — playwright/axe, a Go toolchain — installed; the wiring + quarantine ship here).
 - Does **not** re-state the whole epic; only the FRs/NFRs the engine implements today are listed here.
 
 ## Requirements *(the implemented subset — each is referenced by ≥1 engine test)*
@@ -49,7 +50,11 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 - **3PWR-FR-034**: The engine shall make each failure actionable, naming its class and offending item.
   - *Acceptance*: an untested requirement appears as a failure with class `untested_requirement` and the requirement id.
 - **3PWR-FR-058**: The engine shall infer the kind(s) of work from free-form intent and use the inference only to shape the risk tier / applicable gates and the oracle strategy, never to bypass the human sign-off.
-  - *Acceptance*: `classify` returns work kind(s) + a suggested tier deterministically (a payment/auth intent → High-risk; a docs-only intent → Cosmetic); `run` records them without removing the mandatory human gates.
+  - *Acceptance*: `classify` returns work kind(s) + a suggested tier deterministically (a payment/auth intent → High-risk; a docs-only intent → Cosmetic); `run` records them without removing the mandatory human gates; `run_gates(work_kind=…)` only ever *adds* gates for a kind, never removing a tier gate.
+- **3PWR-FR-008**: The engine shall require a defect fix to ship a failing regression test as an acceptance criterion.
+  - *Acceptance*: a `defect` gate run (`--work-kind defect`) fails with class `missing_regression_test` unless a *regression*/*reproduce* test referencing the spec's requirement id is present, and passes once it is — determined deterministically, with no model call.
+- **3PWR-FR-009**: The engine shall judge design work by design oracles (visual-regression, accessibility, structural/API contract, component contract), not by the code gates alone.
+  - *Acceptance*: a `design` gate run (`--work-kind design`) unions the oracle gates listed in `design-oracles.yaml`; each oracle's tool is adapter-supplied; a selected oracle the adapter does not declare, or whose tool is absent, is **quarantined** (skip + surfaced finding), never silently passed; a failing oracle fails the verdict with its own class.
 - **3PWR-FR-064**: The engine shall, per risk tier, require the tier's test layers (unit / integration / e2e) for a change, via the spec-conformance gate.
   - *Acceptance*: with a tier's `required_layers` set, spec-conformance fails a change whose tests do not cover a required layer (class `untested_layer`), and passes when all required layers are present.
 - **3PWR-FR-065**: The engine's spec-conformance shall account for all three test layers, tracing each requirement to the layers that reference it.
@@ -118,6 +123,7 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 - **3PWR-SC-001**: `3pwr gate run --path engine --adapter python` is green at the declared tier.
 - **3PWR-SC-002**: Trust-spine modules (`canonical`, `keys`, `ledger`, `verify`) meet the High-risk bar.
+- **3PWR-SC-003**: A third reference adapter (`go`) loads and auto-detects on `go.mod`, proving the adapter contract is language-agnostic (no core change per language).
 
 ## Sign-off
 
