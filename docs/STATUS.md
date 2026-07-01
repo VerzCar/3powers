@@ -3,7 +3,7 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 012**.
+> single source of truth; this document is checked against it. Last updated after **plan 013**.
 
 ---
 
@@ -29,7 +29,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 201 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 211 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -67,7 +67,7 @@ engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates
 specs/                      # authoritative specs (the epic + per-feature); 002 = the engine's own
 examples/validation-utils/  # runnable TypeScript sample
 docs/references/            # compacted Spec Kit + trust-spine tooling references
-plan/                       # the continuous plan series 001..012 (012 = recommend-not-force diversity; 013 = next)
+plan/                       # the continuous plan series 001..013 (013 = orchestration front-end `3pwr run`; 014 = next)
 ```
 
 ## 4. Status — validated against the spec
@@ -78,7 +78,7 @@ plan/                       # the continuous plan series 001..012 (012 = recomme
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); remaining: dual-headless coder leg, catalog publishing, 3rd adapter) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; remaining: dual-headless coder leg, catalog publishing, 3rd adapter) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -88,7 +88,7 @@ FR-006 ◑ (sign-off recorded + enforced before *ship*; not hard-gated before *b
 FR-007 ◑ (constitution/plan-template guidance, not a gate) · FR-058 ⬜ (work-kind inference) ·
 FR-008 ⬜ (defect→regression-test flow) · FR-009 ⬜ (design oracles).
 
-**Executive (§6):** FR-011 ✅ (stages derived from ledger), FR-019 ✅, FR-014 ✅, FR-015 ✅,
+**Executive (§6):** FR-011 ✅ (stages derived from ledger; **`3pwr run` drives the whole loop**, plan 013 — auto mode stops only at the two human gates, composing `specify workflow run`), FR-019 ✅, FR-014 ✅, FR-015 ✅,
 FR-016 ◑ (tasks gated by `scope-check`; commit-message tagging not gated), FR-017 ✅, FR-063 ✅ ·
 FR-012 ◑ / FR-013 ◑ (**oracle leg now dispatched headlessly** via `3pwr oracle dispatch` + Spec Kit
 `workflow run` under a non-coder integration, plan 011; the **coder** leg staying interactive/in-IDE, and
@@ -231,9 +231,19 @@ model_diversity`), recorded in the ledger and undone by `--revoke`. `oracle reco
 `roles-check` all honour it; `independence()` moves a covered mismatch to advisory (never blocking, NFR-001).
 Single-model users (e.g. only Claude Code) are warned, never walled off; FR-022 stays the law.
 
+**Plan 013 is done** ([`plan/013-orchestration-loop.md`](../plan/013-orchestration-loop.md)):
+✅ **orchestration front-end `3pwr run` (§6, FR-011).** One command drives the whole lifecycle with a live
+stage tracker, composing Spec Kit's `workflow run` (A1; the engine makes no model call, A3). In `auto` mode
+it auto-approves the intermediate review gates and **stops only at the two mandatory human gates** —
+`review-spec` (FR-006 spec approval) and `signoff` (FR-037 evidence sign-off); `commit` mode stops at every
+gate. Sign-offs + progress are recorded in the ledger (resumable, FR-011/019 — `--resume`/`--status`), a red
+verdict stops + `--notify`s + suggests `observe signal` (FR-054), and orchestration never enters the
+deterministic verdict (NFR-001). Fully-headless execution of the executive stages rides on the A3 dispatch
+leg (residual); interactive under Copilot.
+
 Next, in priority order (the rest of v1.0 + the hardening track):
 - **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
-  live non-Copilot end-to-end `workflow run` verification.
+  live non-Copilot end-to-end `workflow run` verification (also completes `3pwr run`'s live executive leg).
 - Catalog *publishing* of the `3powers` extension + a **third adapter** (e.g. Go/Rust/Java).
 - Loose ends: defect-flow (FR-008) & design oracles (FR-009); tier-required test layers (FR-064);
   a root `LICENSE` file (NFR-012); model-driven eval layer (FR-050); cross-platform validation (NFR-003).
@@ -241,10 +251,10 @@ Next, in priority order (the rest of v1.0 + the hardening track):
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) · **Constitution:** [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→012 done; 013 = next) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→013 done; 014 = next) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/speckit.md`](references/speckit.md), [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
-- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-012-diversity-recommend-not-force`,
+- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-013-orchestration-loop`,
   none merged to `main`, no remote configured (PRs need a GitHub repo + push first).
 - **External tools used by some gates** (optional; gates quarantine if absent): `gitleaks`, `osv-scanner`,
   `semgrep`; the TS adapter uses `biome`, `tsc`, `vitest`, `stryker`, `fast-check` via `npm`.

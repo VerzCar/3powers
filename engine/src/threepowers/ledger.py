@@ -36,6 +36,7 @@ ENTRY_TYPES = (
     "oracle",
     "observe",
     "agent_action",
+    "run",
 )
 
 

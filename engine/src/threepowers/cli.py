@@ -14,6 +14,9 @@ Subcommands:
                 (refusing the coder's model family), dispatch it headlessly + read-path
                 isolated (A3), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
+  run           drive the whole lifecycle loop (§6): auto mode stops only at the two mandatory
+                human gates (spec approval FR-006, sign-off FR-037); composes Spec Kit's
+                `workflow run` (A1) and streams progress
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
   ledger show   print the ledger
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -45,6 +49,7 @@ from . import (
     lifecycle,
     observe,
     oracle,
+    orchestrate,
     provenance,
     scope,
 )
@@ -1113,6 +1118,188 @@ def cmd_status(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _notify(cmd: Optional[str], message: str) -> None:
+    """Best-effort notification hook: ``<cmd> "<message>"`` (3pwr run --notify). Never blocks the run."""
+    if cmd:
+        run_cmd(f"{cmd} {shlex.quote(message)}", cwd=Path.cwd())
+
+
+def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
+    st = lifecycle.derive(ledger.entries()).get(spec_id)
+    return st.pending_gate if st else ""
+
+
+def _run_signoff(
+    ledger: Ledger, sk, spec_id: str, gate: str, approver: Optional[str], note: Optional[str]
+) -> None:
+    """Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence)."""
+    stage = "Spec" if gate == "review-spec" else "Review"
+    fr = orchestrate.MANDATORY_GATES.get(gate, "")
+    ledger.append(
+        "signoff",
+        {
+            "approver": approver or "human",
+            "stage": stage,
+            "note": note or f"approved gate '{gate}' {fr}".strip(),
+        },
+        sk,
+        spec_id=spec_id,
+    )
+
+
+def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+    if args.dry_run:
+        idx = orchestrate.resume_index(resume_from) if resume_from else 0
+        return orchestrate.SimulatedRunner(
+            verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
+        )
+    workflow = args.workflow or str(s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
+    inputs = {"intent": args.intent or "", "mode": mode, "integration": args.integration}
+    return orchestrate.SpecifyRunner(s.root, workflow, inputs)
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human
+    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. Orchestration only —
+    it composes ``specify workflow run`` (A1), makes no model call (A3), and never enters the
+    deterministic verdict (NFR-001)."""
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    mode = args.mode
+    spec_id = args.spec_id or "RUN"
+
+    if args.status:
+        st = lifecycle.derive(ledger.entries()).get(spec_id)
+        if st is None:
+            _print(
+                {"spec_id": spec_id, "found": False}, args.json, f"no run recorded for {spec_id}"
+            )
+            return EXIT_OK
+        human = f"{spec_id}: {orchestrate.render_tracker(st.stage)}"
+        if st.pending_gate:
+            human += (
+                f"\n  ⏸ paused at '{st.pending_gate}' — "
+                f"`3pwr run --resume --spec-id {spec_id} --approver <you>`"
+            )
+        _print(
+            {"spec_id": spec_id, "stage": st.stage, "pending_gate": st.pending_gate},
+            args.json,
+            human,
+        )
+        return EXIT_OK
+
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+
+    interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
+
+    def on_event(ev: orchestrate.Event) -> None:
+        if not args.json:
+            print(orchestrate.format_event(ev, mode))
+
+    if args.resume:
+        pending = _run_pending_gate(ledger, spec_id)
+        if not pending:
+            print(f"error: no paused run to resume for {spec_id}", file=sys.stderr)
+            return EXIT_USAGE
+        _run_signoff(ledger, sk, spec_id, pending, args.approver, args.note)
+        runner = _run_make_runner(s, args, mode, resume_from=pending)
+        first_resuming = (
+            not args.dry_run
+        )  # live: `specify resume`; dry-run: runner is already positioned
+    else:
+        ledger.append(
+            "run",
+            {
+                "kind": "start",
+                "intent": args.intent or "",
+                "mode": mode,
+                "integration": args.integration,
+            },
+            sk,
+            spec_id=spec_id,
+        )
+        if not args.json:
+            print(f"▶ 3pwr run [{mode}] {spec_id}: {args.intent or ''}")
+        runner = _run_make_runner(s, args, mode)
+        first_resuming = False
+
+    try:
+        result = orchestrate.drive(runner, mode, on_event, resuming=first_resuming)
+        while result.status == "paused_at_gate":
+            ledger.append(
+                "run",
+                {"kind": "gate", "gate": result.gate, "stage": result.stage},
+                sk,
+                spec_id=spec_id,
+            )
+            _notify(
+                args.notify,
+                f"3pwr run {spec_id}: gate '{result.gate}' ({result.gate_fr or 'review'}) awaits your commitment",
+            )
+            if not interactive:
+                fr = f" ({result.gate_fr})" if result.gate_fr else ""
+                human = (
+                    f"{orchestrate.render_tracker(result.stage)}\n  ⏸ HUMAN GATE '{result.gate}'{fr}"
+                    f" — review, then `3pwr run --resume --spec-id {spec_id} --approver <you>`"
+                )
+                _print(
+                    {
+                        "status": "paused_at_gate",
+                        "gate": result.gate,
+                        "gate_fr": result.gate_fr,
+                        "stage": result.stage,
+                        "spec_id": spec_id,
+                    },
+                    args.json,
+                    human,
+                )
+                return EXIT_OK
+            fr = f" ({result.gate_fr})" if result.gate_fr else ""
+            ans = input(f"  approve gate '{result.gate}'{fr}? [y/N] ").strip().lower()
+            if ans not in ("y", "yes"):
+                ledger.append(
+                    "run", {"kind": "complete", "stage": result.stage}, sk, spec_id=spec_id
+                )
+                _print(
+                    {"status": "rejected", "gate": result.gate, "spec_id": spec_id},
+                    args.json,
+                    f"  ⊘ gate '{result.gate}' rejected — run stopped",
+                )
+                return EXIT_FAIL
+            _run_signoff(ledger, sk, spec_id, result.gate, args.approver, args.note)
+            result = orchestrate.drive(runner, mode, on_event, resuming=True)
+    except FileNotFoundError as exc:  # `specify` not installed on the live path
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+
+    if result.status == "failed":
+        _notify(args.notify, f"3pwr run {spec_id}: gates RED — needs your decision")
+        human = (
+            f"{orchestrate.render_tracker(result.stage)}\n  ✗ gates red. Fix + re-run, or route the "
+            f"lesson to a new spec round:\n    "
+            f'`3pwr observe signal --spec-id {spec_id} --kind incident --note "..."` (FR-054).'
+        )
+        _print({"status": "failed", "stage": result.stage, "spec_id": spec_id}, args.json, human)
+        return EXIT_FAIL
+    if result.status == "aborted":
+        _notify(args.notify, f"3pwr run {spec_id}: aborted")
+        _print({"status": "aborted", "spec_id": spec_id}, args.json, "  ⊘ run aborted")
+        return EXIT_FAIL
+
+    ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
+    _notify(args.notify, f"3pwr run {spec_id}: lifecycle complete")
+    human = (
+        f"{orchestrate.render_tracker('Observe')}\n  ✓ lifecycle complete — advanced to Ship; "
+        "observe feeds new intent (FR-054)"
+    )
+    _print({"status": "done", "spec_id": spec_id}, args.json, human)
+    return EXIT_OK
+
+
 def cmd_revert(args: argparse.Namespace) -> int:
     """Reverse to a prior recorded state via a signed reversal entry (3PWR-FR-070)."""
     s = _settings(args.root)
@@ -1474,6 +1661,61 @@ def build_parser() -> argparse.ArgumentParser:
     stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
     stp.add_argument("--spec-id", dest="spec_id")
     stp.set_defaults(func=cmd_status)
+
+    rnp = common(
+        sub.add_parser("run", help="drive the full lifecycle loop (auto/commit; §6, FR-011)")
+    )
+    rnp.add_argument(
+        "intent", nargs="?", help="the human's one-paragraph intent (omit with --resume/--status)"
+    )
+    rnp.add_argument(
+        "--mode",
+        choices=["auto", "commit"],
+        default="auto",
+        help="auto = stop only at the two human gates (FR-006/FR-037); commit = stop at every gate",
+    )
+    rnp.add_argument(
+        "--integration",
+        default="auto",
+        help="executive integration (coder); the oracle should differ (FR-022)",
+    )
+    rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
+    rnp.add_argument(
+        "--workflow",
+        help="lifecycle workflow yaml (default: .specify/workflows/3powers/lifecycle.yml)",
+    )
+    rnp.add_argument(
+        "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'
+    )
+    rnp.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue after a human gate (records the sign-off first)",
+    )
+    rnp.add_argument(
+        "--status", action="store_true", help="show the run's stage tracker from the ledger"
+    )
+    rnp.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="simulate the loop offline (no live agents)",
+    )
+    rnp.add_argument(
+        "--simulate-fail",
+        dest="simulate_fail",
+        action="store_true",
+        help="(dry-run) simulate a red gate verdict",
+    )
+    rnp.add_argument(
+        "--no-input",
+        dest="no_input",
+        action="store_true",
+        help="never prompt; stop at gates and print the resume command",
+    )
+    rnp.add_argument("--approver", help="human approver recorded at gate sign-offs")
+    rnp.add_argument("--note", help="note recorded with the gate sign-off")
+    rnp.set_defaults(func=cmd_run)
 
     rvp = common(sub.add_parser("revert", help="reverse to a prior recorded state (signed)"))
     rvp.add_argument("--to", type=int, required=True, help="ledger seq to revert to")

@@ -18,9 +18,12 @@ requires:
 # Provider-agnostic: no integration is hardcoded. Spec Kit renders these commands into whichever
 # integration the project was initialized with (copilot, claude, gemini, codex, …) — the same
 # `integration: "auto"` model used by .specify/workflows/speckit/workflow.yml.
-# The A3 oracle-dispatch workflow (.specify/workflows/3powers/oracle.yml) runs the Phase-A step
-# headlessly under a non-coder integration; `3pwr oracle dispatch` wraps it with a sanitized worktree
-# (implementation absent) and records the isolation attestation in the ledger (3PWR-FR-021/012/013).
+# Workflows (.specify/workflows/3powers/):
+#  - oracle.yml    — the Phase-A oracle authoring step, run headlessly under a non-coder integration;
+#                    `3pwr oracle dispatch` wraps it with a sanitized worktree (implementation absent)
+#                    and records the isolation attestation in the ledger (3PWR-FR-021/012/013, A3).
+#  - lifecycle.yml — the full eight-stage loop driven by `3pwr run` (§6, 3PWR-FR-011): auto mode stops
+#                    only at the two mandatory human gates (spec approval FR-006, sign-off FR-037).
 provides:
   commands:
     - name: 3pwr.oracle

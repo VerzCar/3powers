@@ -39,6 +39,7 @@ class SpecState:
     last_verdict_seq: int = -1
     aborted: bool = False
     last_seq: int = -1
+    pending_gate: str = ""  # a `3pwr run` orchestration paused at this human gate (3PWR-FR-011/019)
 
     @property
     def signed_off(self) -> bool:
@@ -65,11 +66,20 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
             stage = canonical_stage(payload.get("stage"))
             if stage:
                 st.stage = stage
+            st.pending_gate = ""  # advancing clears any paused-at-gate run marker
         elif etype == "verdict":
             st.last_verdict = payload.get("result", "none")
             st.last_verdict_seq = e["seq"]
         elif etype == "signoff":
             st.signed_off_seq = e["seq"]
+            st.pending_gate = ""  # the human acted on the gate
+        elif etype == "run":
+            # `3pwr run` orchestration checkpoints (3PWR-FR-011/019): start / paused-at-gate / complete.
+            kind = payload.get("kind")
+            stage = canonical_stage(payload.get("stage"))
+            if stage:
+                st.stage = stage
+            st.pending_gate = payload.get("gate", "") if kind == "gate" else ""
         elif etype == "reversal":
             to_stage = canonical_stage(payload.get("to_stage"))
             if to_stage:

@@ -61,6 +61,13 @@ Implemented and committed (not yet merged to `main`):
   by `--revoke`. `oracle record`/`dispatch`/`advance`/`roles-check` honour it; `independence()` moves a
   covered mismatch to advisory (never blocking). Single-model users (e.g. only Claude Code) are warned,
   never walled off; FR-022 stays the law.
+- **Plan 013** (`plan/013-orchestration-loop.md`) — **orchestration front-end `3pwr run`** (§6, FR-011):
+  one command drives the whole lifecycle with a **live stage tracker**, composing Spec Kit's
+  `workflow run` (A1 — the engine makes no model call, A3). `auto` mode auto-approves the intermediate
+  review gates and **stops only at the two mandatory human gates** — spec approval (FR-006) and sign-off
+  (FR-037); `commit` mode stops at every gate. Sign-offs + progress are recorded in the ledger (resumable:
+  `--resume`/`--status`); a red verdict stops + `--notify`s + suggests `observe signal`; orchestration
+  never enters the deterministic verdict (NFR-001). Fully-headless executive dispatch is the A3 residual.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -74,7 +81,8 @@ independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk 
 **observe & feedback loop** (FR-054/055: `observe signal`/`coverage`/`log-action`), and **A3 live headless
 dispatch** (FR-021 physical oracle read-path isolation + oracle leg of FR-012/013: `oracle dispatch` runs
 the judiciary headlessly in a sanitized worktree, attested in the ledger, blocking at High-risk when
-`require_dispatch` is on). **NFR-006 is met:**
+`require_dispatch` is on), and the **orchestration front-end** (FR-011: `3pwr run` drives the whole
+lifecycle with a live tracker; `auto` mode stops only at the two human gates FR-006/FR-037). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
 `--tier High-risk`. Next → rest of **v1.0**: the **fuller A3** (coder leg also headless under a second,
@@ -117,6 +125,11 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr signoff --approver <you> --stage review --spec-id <ID>
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
 
+# The whole lifecycle in one command (§6, FR-011): auto mode stops ONLY at the two human gates (FR-006/037).
+3pwr run "<intent>" --mode auto                     # streams a live stage tracker; composes `specify workflow run` (A1)
+3pwr run --resume --spec-id <ID> --approver <you>   # after a human gate: record sign-off + continue
+3pwr run --status --spec-id <ID>                    # stage tracker from the ledger   (try it offline: add --dry-run)
+
 # Oracle independence (Phase A, §7): seal a spec-only bundle, author from it, then record + verify.
 # At High-risk, `advance` refuses unless independence holds (FR-020/021/022/062).
 3pwr oracle seal   --spec specs/<feature>/spec.md --spec-id <ID>
@@ -158,6 +171,9 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 The lifecycle runs through GitHub Copilot slash commands: `/speckit.specify → clarify → plan → tasks`
 then (switch model for the judiciary) `/3pwr.oracle`, then `/speckit.implement → /3pwr.verify →
 /3pwr.signoff → /3pwr.advance`. For an existing repo, start with `/3pwr.characterize` on a legacy module.
+**`3pwr run "<intent>"` automates that whole sequence** (§6, plan 013): it composes Spec Kit's
+`workflow run`, streams a stage tracker, and in `auto` mode stops only at the two human gates (spec
+approval, sign-off). The slash commands remain for a hands-on, step-by-step run.
 
 ## Architecture (the big picture)
 

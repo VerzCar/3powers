@@ -38,6 +38,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
+| Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; composes `specify workflow run`, A1) |
 | Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`) |
 | Emergency fast path | `3pwr emergency --approver <you> --note "<why>"` (`3PWR-FR-056`; defers mutation+coverage; 1-day cleanup) |
 | Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
