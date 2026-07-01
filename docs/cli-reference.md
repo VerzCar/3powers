@@ -74,6 +74,44 @@ Recomputes the hash chain + signatures; fails on any tamper, gap, or break (`3PW
 
 ---
 
+## Oracle independence (Phase A / judiciary)
+
+Moves oracle independence from procedural to **structurally attested** — the judiciary authors from a
+sealed, spec-only bundle, and independence is proven from the signed ledger (`3PWR-FR-020/021/022/062`).
+The binding check runs at `advance` at the **High-risk** tier (spec §4); detection that the author
+*touched/read* the implementation is an **advisory** flag surfaced for review, never a blocker. Physical
+read-path isolation (the full FR-021) needs A3 headless dispatch and is a documented follow-up.
+
+### `oracle seal` — seal a spec-only bundle
+Extracts the acceptance criteria (requirement IDs + text — no impl/plan/tasks/contracts) to
+`.3powers/oracle/<spec-id>/sealed.json`, hashed with a re-seal-stable content hash, and records a signed
+`oracle` seal entry (`3PWR-FR-020`).
+- `--spec SPEC` · `--spec-id SPEC_ID`.
+```bash
+3pwr oracle seal --spec specs/001-validation-utils/spec.md --spec-id VUTIL
+```
+
+### `oracle record` — record oracle authoring
+Records the authoring event, bound to the sealed bundle: the model actually used, the oracle test files
+(hashed), and any advisory peek/touch findings. **Refuses** when the oracle's model family equals the
+coder's, checking the model actually recorded (`3PWR-FR-022/062`).
+- `--spec-id SPEC_ID` (required) · `--model FAMILY/MODEL` (required) · `--tests PATHS…` (required) ·
+  `--base BASE` (git ref for the touched-implementation advisory scan).
+```bash
+3pwr oracle record --spec-id VUTIL --model anthropic/claude-opus \
+                   --tests examples/validation-utils/tests/unit/validators.test.ts
+```
+
+### `oracle verify` — verify independence from the ledger
+Checks seal-binding, model-family diversity, Phase-A-before-B ordering (by ledger seq, not git time), and
+one oracle test per criterion; prints advisory findings too. Exit `1` if the structural check fails.
+- `--spec-id SPEC_ID` (required) · `--tests [ROOTS …]` (default: the recorded oracle test paths).
+```bash
+3pwr oracle verify --spec-id VUTIL
+```
+
+---
+
 ## Lifecycle & enforcement
 
 ### `signoff` — record a signed human sign-off
@@ -87,6 +125,9 @@ Appends a signed `signoff` entry (`3PWR-FR-037`).
 Refuses to advance unless the ledger verifies, the latest *enforced* verdict is green **(or every red gate
 is covered by an active deviation)**, and a human sign-off exists at/after it (`3PWR-FR-041/042/057`).
 Report-only verdicts don't count, and an overdue emergency cleanup blocks the advance (`3PWR-FR-056`).
+At the **High-risk** tier it additionally requires oracle independence — a sealed spec-only bundle, an
+authoring record in a different model family than the coder, authored *before* the implementation verdict
+(`3PWR-FR-020/021/022/062`). Advisory peek/touch findings are surfaced but never block.
 - `--stage STAGE` (required) · `--spec-id SPEC_ID`.
 ```bash
 3pwr advance --stage ship --spec-id VUTIL

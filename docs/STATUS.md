@@ -3,7 +3,7 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 006**.
+> single source of truth; this document is checked against it. Last updated after **plan 008**.
 
 ---
 
@@ -29,7 +29,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 121 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 147 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -78,7 +78,7 @@ plan/                       # the continuous plan series 001..007 (007 = emergen
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; remaining: observe §13, structural oracle independence, catalog, 3rd adapter) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; remaining: observe §13, A3 headless read-path isolation, catalog, 3rd adapter) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -91,12 +91,15 @@ FR-008 ⬜ (defect→regression-test flow) · FR-009 ⬜ (design oracles).
 **Executive (§6):** FR-011 ✅ (stages derived from ledger), FR-019 ✅, FR-014 ✅, FR-015 ✅,
 FR-016 ◑ (tasks gated by `scope-check`; commit-message tagging not gated), FR-017 ✅, FR-063 ✅ ·
 FR-012 ◑ / FR-013 ◑ (roles bind to model *families* in config; dispatch is interactive Copilot, not
-Spec Kit headless `workflow run`) · FR-062 ◑, FR-018 ◑ (advisory) · FR-060 ⬜, FR-061 ⬜ (context
-strategy — harness-limited).
+Spec Kit headless `workflow run`) · FR-062 ✅ (Phase-A/B ordering proven from the ledger seq; enforced at
+High-risk `advance`), FR-018 ◑ (advisory) · FR-060 ⬜, FR-061 ⬜ (context strategy — harness-limited).
 
-**Judiciary — oracle (§7):** FR-022 ✅ (engine refuses same family), FR-023 ✅ ·
-FR-020 ◑, FR-021 ◑ (judiciary prompt forbids reads, but **isolation is procedural, not structural** in a
-Copilot-only setting), FR-024 ◑ (required by prompt/sample, not enforced), FR-025 ◑.
+**Judiciary — oracle (§7):** **FR-020 ✅** (`oracle seal` writes a spec-only bundle the judiciary authors
+from; the authoring record binds to its content hash), **FR-022 ✅** (strengthened — `oracle record` refuses
+the coder's family on the *actual* recorded model, not just config), FR-023 ✅, **FR-062 ✅** ·
+FR-021 ◑ (now **ledger-anchored structural attestation** — sealed bundle + `advance`-enforced independence +
+an **advisory, non-blocking** peek/touch signal; **physical read-path isolation still needs A3 headless
+dispatch**), FR-024 ◑ (required by prompt/sample, not enforced), FR-025 ◑.
 
 **Judiciary — gate engine (§8):** FR-026 ✅, FR-027 ✅ (TypeScript + Python), FR-028 ✅, FR-029 ✅,
 FR-030 ✅, FR-031 ✅ (**mutation now executes** on the trust spine via the fixed mutmut src-layout
@@ -141,11 +144,13 @@ The deterministic, offline, signed trust spine — the spec's distinctive promis
 High-risk bar, mutation included.** Two approximations remain, and they touch the spec's central thesis.
 Harden these before adding breadth:
 
-1. **Oracle independence is procedural, not structural (FR-021/022, FR-062).** This *is* the thesis —
-   "tests written by a different mind than the code." Today we enforce it with the `/3pwr.oracle` prompt,
-   `roles-check` (engine refuses same family), authoring order, and ledger records. A determined coder
-   could still peek. Closing this likely means using **Spec Kit's headless dispatch (A3)** to run the
-   judiciary as an isolated step with a different model and no read path to the implementation.
+1. **Oracle independence — now ledger-anchored; only *physical* read-path isolation remains (FR-021, A3).**
+   Plan 008 made this structural: `oracle seal` narrows the judiciary to a spec-only bundle, `oracle record`
+   captures the actual model + signer + test hashes and refuses the coder's family (FR-022), and a High-risk
+   `advance` proves — from the signed ledger seq, not spoofable git time — that the oracle was authored before
+   the implementation (FR-020/062). Peeking/touching the implementation is now **flagged as an advisory,
+   never a blocker**. What remains is *physically* preventing the read: running the judiciary as an isolated
+   **Spec Kit headless dispatch (A3)** step with no filesystem path to the implementation.
 2. **A1 packaging drift.** The spec says 3Powers ships as Spec Kit **preset(s)/extension(s)/workflow(s)**
    via catalogs and reuses Spec Kit's `workflow run` dispatch. We layered via confirmed primitives
    (templates + custom commands + a standalone `3pwr` engine) and drive it interactively in Copilot.
@@ -168,10 +173,16 @@ mode FR-052, diff-scoped gating FR-051, `3pwr characterize` FR-053).
 relaxation; the sanctioned acceptance of a `gate_gaming` flag) and `3pwr emergency` (defer only
 mutation+coverage, never security/secret/sign-off/provenance, overdue cleanup blocks `advance`).
 
+**Plan 008 is done** ([`plan/008-oracle-independence.md`](../plan/008-oracle-independence.md)):
+✅ **structural oracle independence (§7, FR-020/021/022/062)** — `3pwr oracle seal` (spec-only sealed bundle),
+`oracle record` (actual model + signer + test hashes; refuses the coder's family), and `oracle verify`; a
+High-risk `advance` now proves oracle independence from the ledger seq, while peeking/touching the
+implementation is an **advisory** flag, never a blocker.
+
 Next, in priority order (the rest of v1.0 + the hardening track):
-- **Structural oracle independence** via Spec Kit headless dispatch (FR-021/062; direction risk #1) — now
-  the top remaining gap on the spec's thesis.
 - Observe / feedback loop (§13, FR-054/055).
+- **A3 headless dispatch** — the *physical* oracle read-path isolation that completes FR-021 (run the
+  judiciary as an isolated Spec Kit `workflow run` step with no path to the implementation).
 - Catalog distribution as a Spec Kit extension/preset (A1; direction risk #2) + a **third adapter** (e.g. Go/Rust/Java).
 - Loose ends: defect-flow (FR-008) & design oracles (FR-009); tier-required test layers (FR-064);
   a root `LICENSE` file (NFR-012); model-driven eval layer (FR-050); cross-platform validation (NFR-003).

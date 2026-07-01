@@ -8,7 +8,10 @@ Subcommands:
   verify        recompute the ledger hash chain + signatures (offline)
   signoff       append a signed human sign-off entry
   advance       local enforcement gate: refuse to proceed unless gate green + ledger
-                verifies + the tier-required sign-off is present
+                verifies + the tier-required sign-off is present (+ oracle independence
+                at High-risk)
+  oracle        structural oracle independence: seal a spec-only bundle, record authoring
+                (refusing the coder's model family), verify from the ledger
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
@@ -19,11 +22,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
-from . import __version__, config, deviations, keys, lifecycle, provenance, scope
+from . import (
+    __version__,
+    canonical,
+    config,
+    covdiff,
+    deviations,
+    keys,
+    lifecycle,
+    oracle,
+    provenance,
+    scope,
+)
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger
@@ -273,17 +288,46 @@ def cmd_advance(args: argparse.Namespace) -> int:
     elif last_verdict and last_signoff.get("seq", -1) < last_verdict.get("seq", 0):
         reasons.append("sign-off predates the latest verdict")
 
+    # 4. Oracle independence (3PWR-FR-020/021/022/062). The judiciary must have authored the oracle
+    #    from the spec, with a different model family, before the implementation. This binds at the
+    #    High-risk tier only (oracle separation IS High-risk, spec §4); lower tiers stay advisory.
+    #    Detection that the author *touched* the implementation is advisory — surfaced, never blocking.
+    oracle_ok: Optional[bool] = None
+    oracle_advisory: list[str] = []
+    spec_for_oracle = args.spec_id or (last_verdict.get("spec_id") if last_verdict else "") or ""
+    tier = (last_verdict.get("payload", {}) if last_verdict else {}).get("tier")
+    if tier == "High-risk":
+        rec = oracle.authoring_record(entries, spec_for_oracle)
+        test_roots = [s.root / p for p in rec["payload"].get("test_paths", [])] if rec else []
+        ind = oracle.independence(
+            entries, s.load_roles(), spec_for_oracle, repo_root=s.root, test_roots=test_roots
+        )
+        oracle_ok = ind.ok
+        oracle_advisory = ind.advisory
+        if not ind.ok:
+            reasons += [f"oracle independence — {r}" for r in ind.reasons]
+
     if reasons:
+        human = f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons)
+        for a in oracle_advisory:
+            human += f"\n  ⚑ advisory (not a blocker): {a}"
         _print(
-            {"advanced": False, "stage": args.stage, "reasons": reasons},
+            {
+                "advanced": False,
+                "stage": args.stage,
+                "reasons": reasons,
+                "oracle_advisory": oracle_advisory,
+            },
             args.json,
-            f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons),
+            human,
         )
         return EXIT_FAIL
 
     payload: dict = {"stage": args.stage}
     if deviations_applied:
         payload["deviations_applied"] = deviations_applied
+    if oracle_ok is not None:
+        payload["oracle_ok"] = oracle_ok
     try:
         sk = keys.resolve_signing_key(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
@@ -291,10 +335,19 @@ def cmd_advance(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
     note = f" under deviation {deviations_applied}" if deviations_applied else ""
+    human = f"advanced to '{args.stage}'{note} (ledger seq={entry['seq']})"
+    for a in oracle_advisory:
+        human += f"\n  ⚑ advisory (not a blocker): {a}"
     _print(
-        {"advanced": True, "stage": args.stage, "ledger_seq": entry["seq"], **payload},
+        {
+            "advanced": True,
+            "stage": args.stage,
+            "ledger_seq": entry["seq"],
+            "oracle_advisory": oracle_advisory,
+            **payload,
+        },
         args.json,
-        f"advanced to '{args.stage}'{note} (ledger seq={entry['seq']})",
+        human,
     )
     return EXIT_OK
 
@@ -415,6 +468,178 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
     return EXIT_OK if ok else EXIT_FAIL
 
 
+def cmd_oracle_seal(args: argparse.Namespace) -> int:
+    """Seal a spec-only oracle bundle the judiciary authors from (3PWR-FR-020)."""
+    s = _settings(args.root)
+    spec_path = _resolve_spec(s, args.spec)
+    spec_id, criteria = oracle.extract_criteria(spec_path)
+    spec_id = args.spec_id or spec_id
+    if not spec_id:
+        print("error: could not determine the spec id; pass --spec-id", file=sys.stderr)
+        return EXIT_USAGE
+    if not criteria:
+        print("error: no requirement ids / acceptance criteria found in the spec", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    source = os.path.relpath(spec_path, s.root)
+    bundle = oracle.build_bundle(spec_id, source, criteria, deviations.iso(deviations.now_utc()))
+    out = s.dir / "oracle" / spec_id / "sealed.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
+    entry = Ledger(s.ledger_path).append(
+        "oracle",
+        oracle.seal_payload(spec_id, source, criteria),
+        sk,
+        spec_id=spec_id,
+        requirement_ids=sorted(criteria),
+    )
+    _print(
+        {
+            "sealed": str(out),
+            "bundle_hash": bundle["bundle_hash"],
+            "requirement_ids": bundle["requirement_ids"],
+            "ledger_seq": entry["seq"],
+        },
+        args.json,
+        f"sealed oracle bundle for {spec_id}: {len(criteria)} acceptance criteria → {out}\n"
+        f"  {bundle['bundle_hash']}; ledger seq={entry['seq']}",
+    )
+    return EXIT_OK
+
+
+def cmd_oracle_record(args: argparse.Namespace) -> int:
+    """Record oracle authoring; refuse the coder's model family (3PWR-FR-022/062)."""
+    s = _settings(args.root)
+    entries = Ledger(s.ledger_path).entries()
+    seal = oracle.active_seal(entries, args.spec_id)
+    if seal is None:
+        print(
+            f"error: no sealed bundle for {args.spec_id} — run `3pwr oracle seal` first",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    fam = oracle.family_of(args.model)
+    coder = oracle.coder_family(s.load_roles())
+    if not fam:
+        print("error: --model must be <family/model> (e.g. anthropic/claude-...)", file=sys.stderr)
+        return EXIT_USAGE
+    if not coder:
+        print("error: coder model family is unset in roles.yaml (3PWR-FR-022)", file=sys.stderr)
+        return EXIT_USAGE
+    if fam == coder:
+        _print(
+            {
+                "recorded": False,
+                "reason": "same_model_family",
+                "oracle_family": fam,
+                "coder_family": coder,
+            },
+            args.json,
+            f"REFUSED: oracle model family '{fam}' equals the coder family — the judiciary must "
+            "differ from the coder (3PWR-FR-022)",
+        )
+        return EXIT_FAIL
+
+    test_paths: list[str] = []
+    test_hashes: dict[str, str] = {}
+    test_texts: dict[str, str] = {}
+    for t in args.tests:
+        tp = Path(t).resolve()
+        if not tp.exists():
+            print(f"error: oracle test not found: {tp}", file=sys.stderr)
+            return EXIT_USAGE
+        rel = os.path.relpath(tp, s.root)
+        text = tp.read_text(encoding="utf-8")
+        test_paths.append(rel)
+        test_hashes[rel] = canonical.sha256_hex(text.encode("utf-8"))
+        test_texts[rel] = text
+
+    # Advisory (non-blocking) peek/touch signals for human review (3PWR-FR-021).
+    bundle_file = s.dir / "oracle" / args.spec_id / "sealed.json"
+    criteria_text = ""
+    if bundle_file.exists():
+        data = json.loads(bundle_file.read_text(encoding="utf-8"))
+        criteria_text = " ".join(c.get("text", "") for c in data.get("criteria", []))
+    advisory = oracle.scan_touched_impl(
+        covdiff.changed_files(s.root, args.base), set(test_paths)
+    ) + oracle.scan_symbol_leakage(test_texts, criteria_text)
+
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    payload = oracle.record_payload(
+        seal["payload"]["bundle_hash"], args.model, test_paths, test_hashes, advisory
+    )
+    entry = Ledger(s.ledger_path).append(
+        "oracle",
+        payload,
+        sk,
+        spec_id=args.spec_id,
+        requirement_ids=seal["payload"].get("requirement_ids", []),
+    )
+    human = (
+        f"recorded oracle authoring for {args.spec_id} by {args.model} "
+        f"(family={fam}; {len(test_paths)} test file(s)); ledger seq={entry['seq']}"
+    )
+    for a in advisory:
+        human += f"\n  ⚑ advisory (not a blocker): {a}"
+    _print(
+        {
+            "recorded": True,
+            "model_family": fam,
+            "test_paths": test_paths,
+            "advisory_findings": advisory,
+            "ledger_seq": entry["seq"],
+        },
+        args.json,
+        human,
+    )
+    return EXIT_OK
+
+
+def cmd_oracle_verify(args: argparse.Namespace) -> int:
+    """Verify oracle independence structurally, from the ledger (3PWR-FR-020/021/022/062)."""
+    s = _settings(args.root)
+    entries = Ledger(s.ledger_path).entries()
+    rec = oracle.authoring_record(entries, args.spec_id)
+    if args.tests:
+        test_roots = [Path(t).resolve() for t in args.tests]
+    elif rec:
+        test_roots = [s.root / p for p in rec["payload"].get("test_paths", [])]
+    else:
+        test_roots = []
+    ind = oracle.independence(
+        entries, s.load_roles(), args.spec_id, repo_root=s.root, test_roots=test_roots
+    )
+    lines = [f"oracle independence for {args.spec_id}: {'PASS' if ind.ok else 'FAIL'}"]
+    if ind.model_family:
+        lines.append(f"  oracle model family: {ind.model_family}")
+    if ind.covered:
+        lines.append(f"  covered: {', '.join(ind.covered)}")
+    for r in ind.reasons:
+        lines.append(f"  ✗ {r}")
+    for a in ind.advisory:
+        lines.append(f"  ⚑ advisory (not a blocker): {a}")
+    _print(
+        {
+            "ok": ind.ok,
+            "reasons": ind.reasons,
+            "advisory": ind.advisory,
+            "covered": ind.covered,
+            "model_family": ind.model_family,
+        },
+        args.json,
+        "\n".join(lines),
+    )
+    return EXIT_OK if ind.ok else EXIT_FAIL
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""
     s = _settings(args.root)
@@ -457,6 +682,17 @@ def cmd_status(args: argparse.Namespace) -> int:
             f"  ⚑ {kind} #{d.get('seq')}: gates={','.join(d.get('gates', []))} "
             f"by {d.get('approver', '?')}{tag}"
         )
+    # Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).
+    for e in ledger_entries:
+        if e.get("type") != "oracle" or (e.get("payload") or {}).get("kind") != "record":
+            continue
+        p = e["payload"]
+        print(
+            f"  ⚖ oracle record #{e.get('seq')} {e.get('spec_id', '') or '(global)'}: "
+            f"model={p.get('model', '?')} family={p.get('model_family', '?')}"
+        )
+        for finding in p.get("advisory_findings", []):
+            print(f"      ⚑ advisory (not a blocker): {finding}")
     return EXIT_OK
 
 
@@ -824,6 +1060,27 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--role-a", dest="role_a", default="oracle")
     rp.add_argument("--role-b", dest="role_b", default="coder")
     rp.set_defaults(func=cmd_roles_check)
+
+    orp = sub.add_parser(
+        "oracle", help="oracle independence: seal / record / verify (FR-020/021/022/062)"
+    )
+    osub = orp.add_subparsers(dest="oracle_cmd", required=True)
+    osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle (FR-020)"))
+    osl.add_argument("--spec", help="path to the governing spec.md")
+    osl.add_argument("--spec-id", dest="spec_id")
+    osl.set_defaults(func=cmd_oracle_seal)
+    orc = common(
+        osub.add_parser("record", help="record oracle authoring; refuse same family (FR-022/062)")
+    )
+    orc.add_argument("--spec-id", dest="spec_id", required=True)
+    orc.add_argument("--model", required=True, help="oracle model as <family/model> (FR-022)")
+    orc.add_argument("--tests", nargs="+", required=True, help="oracle test file(s)")
+    orc.add_argument("--base", help="git ref for the touched-implementation advisory scan")
+    orc.set_defaults(func=cmd_oracle_record)
+    ovf = common(osub.add_parser("verify", help="verify oracle independence (FR-020/021/022/062)"))
+    ovf.add_argument("--spec-id", dest="spec_id", required=True)
+    ovf.add_argument("--tests", nargs="*", help="oracle test roots (default: from the record)")
+    ovf.set_defaults(func=cmd_oracle_verify)
 
     return p
 

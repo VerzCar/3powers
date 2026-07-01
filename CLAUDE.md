@@ -34,6 +34,10 @@ Implemented and committed (not yet merged to `main`):
 - **Plan 007** (`plan/007-emergency-and-deviation.md`) — **emergency & deviation paths** (§14, FR-056/057):
   `3pwr deviation` (signed, reversible, named-gate relaxation; sanctioned `gate_gaming` acceptance) and
   `3pwr emergency` (defer only mutation+coverage; overdue cleanup blocks `advance`).
+- **Plan 008** (`plan/008-oracle-independence.md`) — **structural oracle independence** (§7, FR-020/021/022/062):
+  `3pwr oracle seal` (spec-only sealed bundle), `oracle record` (actual model + signer + test hashes; refuses
+  the coder's family), `oracle verify`; High-risk `advance` proves independence from the ledger seq, and
+  peeking/touching the implementation is an **advisory** flag (never a blocker).
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -41,18 +45,20 @@ suite** cheapest-first (floor + tests/diff-coverage + **mutation** + **SAST** + 
 gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**,
 **two-way coverage**, **scope discipline**, **residual review**, the **prompt/constitution eval harness
 (FR-050)**, **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
-FR-053), and **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`). **NFR-006 is met:**
+FR-053), **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`), and **structural oracle
+independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk `advance`). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. Next → rest of **v1.0**: **structural** oracle independence (A3 headless dispatch),
-observe §13, catalog distribution, and a third adapter. Known approximations (command/harness-level in a Copilot-only setting): work-kind
-inference (FR-058), context strategy (FR-060/061), structural oracle isolation (FR-021).
+`--tier High-risk`. Next → rest of **v1.0**: **A3 headless dispatch** (the *physical* oracle read-path
+isolation that completes FR-021), observe §13, catalog distribution, and a third adapter. Known approximations
+(command/harness-level in a Copilot-only setting): work-kind inference (FR-058), context strategy
+(FR-060/061), physical oracle read-path isolation (FR-021, → A3 headless dispatch).
 
 ## Repository layout
 
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
-  src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff,
+  src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
                             #   adapters, scanners, ledger, verify, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
@@ -82,6 +88,12 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr verify                         # recompute ledger chain + signatures, offline
 3pwr signoff --approver <you> --stage review --spec-id <ID>
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
+
+# Oracle independence (Phase A, §7): seal a spec-only bundle, author from it, then record + verify.
+# At High-risk, `advance` refuses unless independence holds (FR-020/021/022/062).
+3pwr oracle seal   --spec specs/<feature>/spec.md --spec-id <ID>
+3pwr oracle record --spec-id <ID> --model <family/model> --tests <oracle-test-paths>  # refuses coder's family
+3pwr oracle verify --spec-id <ID>   # seal-binding + diversity + Phase-A/B ordering + coverage; advisory peek/touch
 
 # Self-application (3Powers gating its own engine), Standard tier:
 3pwr gate run --path engine --adapter python --spec specs/002-engine-trust-spine/spec.md \
@@ -115,8 +127,12 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
 1. **Oracle independence (§7).** Oracle tests are authored from the spec's acceptance criteria by a
    *judiciary* role pinned to a **different model family** than the coder, forbidden from reading the
    implementation (**Phase A**). The coder's tests (**Phase B**) may self-verify but never replace the
-   oracle. *As built:* the `/3pwr.oracle` command + `roles.yaml` + `3pwr roles-check` (engine refuses
-   same family); full structural isolation is a known approximation in a Copilot-only setting.
+   oracle. *As built:* `/3pwr.oracle` authors from a **sealed spec-only bundle** (`3pwr oracle seal`);
+   `oracle record` captures the actual model + signer + test hashes and refuses the coder's family (FR-022);
+   `oracle verify` and a **High-risk `advance`** prove independence from the signed ledger seq — seal-binding,
+   diversity, Phase-A-before-B ordering, and per-criterion coverage (FR-020/062). Reading/touching the
+   implementation is surfaced as an **advisory** flag, never a blocker; *physical* read-path isolation
+   remains an A3 headless-dispatch follow-up (FR-021).
 
 2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
    mutation → SAST → dependency → secret → gate-gaming → spec-conformance. Language support is a

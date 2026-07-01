@@ -15,16 +15,23 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 ## Non-Goals *(mandatory)*
 
-- Does **not** cover the v1.0 work still ahead — observe/feedback (§13), emergency/deviation (§14),
-  structural oracle isolation (A3 headless dispatch), catalog distribution, or a third adapter.
+- Does **not** cover the v1.0 work still ahead — observe/feedback (§13), **physical** oracle
+  read-path isolation via A3 headless dispatch (only ledger-anchored Phase-A/B independence is
+  enforced here), catalog distribution, or a third adapter.
 - Does **not** re-state the whole epic; only the FRs/NFRs the engine implements today are listed here.
 
 ## Requirements *(the implemented subset — each is referenced by ≥1 engine test)*
 
 ### Functional Requirements
 
-- **3PWR-FR-022**: The engine shall refuse to proceed when the oracle and coder roles resolve to the same model family.
-  - *Acceptance*: `roles-check` of two same-family roles exits non-zero; different families exit zero.
+- **3PWR-FR-020**: The engine shall seal a spec-only oracle bundle (acceptance criteria only) that the judiciary authors from, and bind the authoring record to that bundle's content hash.
+  - *Acceptance*: `oracle seal` writes a content-addressed bundle whose hash is stable across re-seals; `oracle verify` fails a record bound to a stale/mismatched bundle hash.
+- **3PWR-FR-021**: The engine shall record and surface, as a non-blocking advisory, signals that the oracle author read or touched the implementation, without weakening the deterministic verdict.
+  - *Acceptance*: an oracle record whose tests reference implementation internals carries advisory findings shown by `status`; `advance` still proceeds on an advisory alone.
+- **3PWR-FR-022**: The engine shall refuse to proceed when the oracle and coder roles resolve to the same model family, checking the model actually recorded.
+  - *Acceptance*: `roles-check` of two same-family roles exits non-zero; `oracle record` in the coder's family is refused; a different family is recorded.
+- **3PWR-FR-062**: The engine shall separate Phase A (oracle authoring) from Phase B (implementation) and prove, from the ledger sequence, that the oracle was authored before the implementation verdict.
+  - *Acceptance*: a High-risk `advance` refuses when the oracle record's ledger seq is at or after the implementation verdict's, and proceeds when it precedes it.
 - **3PWR-FR-026**: The engine shall run the gate suite cheapest-first (format → lint → types → tests → diff-coverage → mutation → spec-conformance).
   - *Acceptance*: a verdict's gates appear in canonical order.
 - **3PWR-FR-029**: The engine shall measure coverage on changed lines, not the whole repository.

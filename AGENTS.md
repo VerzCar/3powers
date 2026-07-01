@@ -4,13 +4,14 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-**v0.5 complete; v1.0 in progress** (through plan [`007`](plan/007-emergency-and-deviation.md)). The `3pwr`
+**v0.5 complete; v1.0 in progress** (through plan [`008`](plan/008-oracle-independence.md)). The `3pwr`
 engine drives the full gate suite (floor → tests/diff-coverage → **mutation** → SAST → dependency →
 secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
 enforcement, provenance/deploy-gate, residual review, the eval harness, **brownfield Stage Zero**
-(report-only, diff-scoped gating, `characterize`), and **emergency & deviation paths** (`emergency` +
-`deviation`). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar (mutation ≈89% ≥
-70%). Two reference adapters (TypeScript + Python). Built on GitHub Spec Kit. See
+(report-only, diff-scoped gating, `characterize`), **emergency & deviation paths** (`emergency` +
+`deviation`), and **structural oracle independence** (`oracle seal`/`record`/`verify`, enforced at
+High-risk `advance`). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar
+(mutation ≈89% ≥ 70%). Two reference adapters (TypeScript + Python). Built on GitHub Spec Kit. See
 [`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and the guides in [`docs/`](docs/).
 
 ## Commands
@@ -45,6 +46,9 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Verify provenance (deploy gate) | `3pwr deploy-gate --artifact <path>` |
 | Run the prompt/constitution eval set | `3pwr eval [--cases <cases.yaml>]` |
 | Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
+| Oracle: seal a spec-only bundle | `3pwr oracle seal --spec <spec.md> --spec-id <ID>` (`3PWR-FR-020`) |
+| Oracle: record authoring (Phase A) | `3pwr oracle record --spec-id <ID> --model <family/model> --tests <paths…>` (`3PWR-FR-022/062`; refuses coder's family) |
+| Oracle: verify independence | `3pwr oracle verify --spec-id <ID>` (seal-binding/diversity/ordering/coverage; advisory peek/touch) |
 | Sample: lint+format / types / tests | `npm run check` · `npm run typecheck` · `npm test` (in `examples/validation-utils/`) |
 | Sample: a single test | `npx vitest run tests/unit/validate.test.ts` |
 

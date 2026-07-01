@@ -33,6 +33,7 @@ ENTRY_TYPES = (
     "abort",
     "provenance",
     "deviation",
+    "oracle",
 )
 
 
