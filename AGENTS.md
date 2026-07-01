@@ -4,14 +4,15 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-**v0.5 complete; v1.0 in progress** (through plan [`009`](plan/009-portability-and-dependencies.md)). The `3pwr`
+**v0.5 complete; v1.0 in progress** (through plan [`010`](plan/010-observe-and-feedback.md)). The `3pwr`
 engine drives the full gate suite (floor → tests/diff-coverage → **mutation** → SAST → dependency →
 secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
 enforcement, provenance/deploy-gate, residual review, the eval harness, **brownfield Stage Zero**
 (report-only, diff-scoped gating, `characterize`), **emergency & deviation paths** (`emergency` +
 `deviation`), **structural oracle independence** (`oracle seal`/`record`/`verify`, enforced at
 High-risk `advance`), and **portability & dependency stability** (`deps-check` + a provider-agnostic Spec
-Kit extension). **NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar
+Kit extension), and the **observe & feedback loop** (`observe signal`/`coverage`/`log-action`, §13).
+**NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar
 (mutation ≈89% ≥ 70%). Two reference adapters (TypeScript + Python). Built on GitHub Spec Kit. See
 [`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and the guides in [`docs/`](docs/).
 
@@ -47,6 +48,9 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Verify provenance (deploy gate) | `3pwr deploy-gate --artifact <path>` |
 | Run the prompt/constitution eval set | `3pwr eval [--cases <cases.yaml>]` |
 | Check third-party version compatibility | `3pwr deps-check [--manifest <deps.yaml>] [--strict]` (`3PWR-FR-048`; preflight, not a verdict gate) |
+| Observe: route a production signal to new intent | `3pwr observe signal --spec-id <ID> --kind incident\|missed-nfr\|usage --note "<lesson>"` (`3PWR-FR-054`) |
+| Observe: NFR-instrumentation coverage | `3pwr observe coverage --spec <spec.md>` (`3PWR-FR-054`) |
+| Observe: tamper-evident agent-action log | `3pwr observe log-action --agent <id> --action "<act>"` · `3pwr observe verify-actions` (`3PWR-FR-055`) |
 | Check model-family diversity | `3pwr roles-check --role-a oracle --role-b coder` |
 | Oracle: seal a spec-only bundle | `3pwr oracle seal --spec <spec.md> --spec-id <ID>` (`3PWR-FR-020`) |
 | Oracle: record authoring (Phase A) | `3pwr oracle record --spec-id <ID> --model <family/model> --tests <paths…>` (`3PWR-FR-022/062`; refuses coder's family) |

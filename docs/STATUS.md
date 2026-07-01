@@ -3,7 +3,7 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 009**.
+> single source of truth; this document is checked against it. Last updated after **plan 010**.
 
 ---
 
@@ -29,7 +29,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 167 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 175 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -78,7 +78,7 @@ plan/                       # the continuous plan series 001..007 (007 = emergen
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); remaining: observe §13, A3 live headless dispatch, catalog publishing, 3rd adapter) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; remaining: A3 live headless dispatch, catalog publishing, 3rd adapter) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -124,7 +124,11 @@ block; `advance` ignores advisory verdicts), **FR-053 ✅** (`3pwr characterize`
 security/secret gates, sign-off, or provenance, and whose overdue one-day cleanup blocks `advance`),
 **FR-057 ✅** (`3pwr deviation` — a signed, reversible relaxation of named gates with a reason + a way back;
 `advance` accepts a red gate only when an active deviation covers it; also the sanctioned acceptance of a
-`gate_gaming` flag) · FR-054/055 ⬜ (observe).
+`gate_gaming` flag) · **FR-054 ✅** (observe: `observe signal` routes a production signal to a
+new-requirement backlog + moves the spec to the Observe stage; `observe coverage` reports NFR
+instrumentation), **FR-055 ✅** (`observe log-action`/`verify-actions` — a tamper-evident, attributable
+runtime agent-action log). The engine records signals + instrumentation *declarations* (it is offline; it
+does not run the target's live production system).
 
 **NFRs:** NFR-001 ✅, NFR-004 ✅, NFR-005 ✅, NFR-007 ✅, NFR-008 ✅, NFR-010 ✅, NFR-011 ✅,
 NFR-013 ✅, NFR-014 ✅ ·
@@ -162,10 +166,11 @@ Harden these before adding breadth:
    non-Copilot agent) — verifiable only with the Spec Kit runtime, and tied to the A3 read-path isolation in #1.
 
 Neither blocks use today; they are the difference between "works, self-applies at High-risk" and "fully
-delivers the spec's guarantees." **Recommendation:** the thesis-level judiciary (#1) and packaging (#2) are
-now built to the limit of this repo; the two remaining items are the **observe loop (§13)** — fully
-engine-buildable, do it next — and the **A3 live headless dispatch**, when a Spec Kit dispatch runtime is
-available.
+delivers the spec's guarantees." **Recommendation:** the thesis-level judiciary (#1), packaging (#2), and
+the observe loop (§13) are now built to the limit of this repo. The one remaining spec-level item is the
+**A3 live headless dispatch** (completes FR-021 + true multi-integration portability), which needs a Spec
+Kit dispatch runtime; after that it's hardening (defect-flow FR-008, design oracles FR-009, a `LICENSE`,
+cross-platform).
 
 ## 6. What's next (roadmap)
 
@@ -191,8 +196,13 @@ supported third-party versions (incl. Spec Kit) and flags drift; 3Powers ships a
 Spec Kit extension** (`.specify/extensions/3powers/`) with substrate-neutral, eval-gated role config. Live
 multi-integration headless dispatch stays the residual.
 
+**Plan 010 is done** ([`plan/010-observe-and-feedback.md`](../plan/010-observe-and-feedback.md)):
+✅ **observe & feedback loop (§13, FR-054/055)** — `observe signal` routes a production signal to a
+new-requirement backlog (not a patch) + moves the spec to the Observe stage; `observe coverage` reports
+NFR instrumentation; `observe log-action`/`verify-actions` is a tamper-evident, attributable runtime
+agent-action log. The 8th lifecycle stage is now reachable.
+
 Next, in priority order (the rest of v1.0 + the hardening track):
-- Observe / feedback loop (§13, FR-054/055) — fully engine-buildable; completes the 8th lifecycle stage.
 - **A3 live headless dispatch** — physical oracle read-path isolation (completes FR-021) + verified
   multi-integration `workflow run`; needs the Spec Kit dispatch runtime.
 - Catalog *publishing* of the `3powers` extension + a **third adapter** (e.g. Go/Rust/Java).

@@ -15,9 +15,10 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 ## Non-Goals *(mandatory)*
 
-- Does **not** cover the v1.0 work still ahead — observe/feedback (§13), **physical** oracle
-  read-path isolation via A3 headless dispatch (only ledger-anchored Phase-A/B independence is
-  enforced here), catalog distribution, or a third adapter.
+- Does **not** cover the v1.0 work still ahead — **physical** oracle read-path isolation via A3
+  headless dispatch (only ledger-anchored Phase-A/B independence is enforced here), the *live*
+  production instrumentation runtime (observe records signals + declarations, §13), catalog
+  publishing, or a third adapter.
 - Does **not** re-state the whole epic; only the FRs/NFRs the engine implements today are listed here.
 
 ## Requirements *(the implemented subset — each is referenced by ≥1 engine test)*
@@ -82,6 +83,10 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
   - *Acceptance*: `eval` fails when a required phrase is missing from a constitution/command file.
 - **3PWR-FR-048**: The engine shall treat supported third-party versions as configurable and detect drift of the installed toolchain (including Spec Kit) from the supported range.
   - *Acceptance*: `deps-check` reports each component ok/drift/missing against `.3powers/config/dependencies.yaml` and fails a `block`-policy drift or absence.
+- **3PWR-FR-054**: The engine shall record a production signal and route it back to the legislature as a new requirement (not an in-place patch), and report which of a spec's NFRs have a live check.
+  - *Acceptance*: `observe signal` appends a signed entry + a `<SPEC>-FB-###` new-requirement candidate and moves the spec to the Observe stage; `observe coverage` flags an NFR with no registered live check.
+- **3PWR-FR-055**: The engine shall record runtime agent actions in a tamper-evident, attributable log.
+  - *Acceptance*: `observe log-action` appends a signed, agent-attributed entry to a hash-chained log; `observe verify-actions` fails on any tamper, gap, or break.
 - **3PWR-FR-051**: The engine shall hold only new/changed code to the full process, leaving existing code untouched until modified.
   - *Acceptance*: with `--paths`/`--diff-scope`, diff-coverage and the file-based scanners count only the in-scope files.
 - **3PWR-FR-052**: The engine shall support running gates in report-only mode that emits a verdict but does not block.

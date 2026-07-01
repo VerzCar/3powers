@@ -13,6 +13,8 @@ Subcommands:
   oracle        structural oracle independence: seal a spec-only bundle, record authoring
                 (refusing the coder's model family), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
+  observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
+                coverage, and a tamper-evident, attributable runtime agent-action log
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
@@ -39,6 +41,7 @@ from . import (
     deviations,
     keys,
     lifecycle,
+    observe,
     oracle,
     provenance,
     scope,
@@ -644,6 +647,114 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
     return EXIT_OK if ind.ok else EXIT_FAIL
 
 
+def cmd_observe_signal(args: argparse.Namespace) -> int:
+    """Record a production signal and route it to the legislature as new intent (3PWR-FR-054)."""
+    s = _settings(args.root)
+    if args.kind not in observe.SIGNAL_KINDS:
+        print(f"error: --kind must be one of {', '.join(observe.SIGNAL_KINDS)}", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.note:
+        print("error: --note is required — describe the production lesson", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    backlog = s.dir / "feedback" / f"{args.spec_id}.md"
+    fb_id = observe.route_to_backlog(backlog, args.spec_id, args.kind, args.nfr or "", args.note)
+    entry = Ledger(s.ledger_path).append(
+        "observe",
+        observe.signal_payload(args.kind, args.note, args.nfr, fb_id),
+        sk,
+        spec_id=args.spec_id,
+        requirement_ids=[args.nfr] if args.nfr else [],
+    )
+    _print(
+        {
+            "kind": args.kind,
+            "routed_to": fb_id,
+            "backlog": str(backlog),
+            "ledger_seq": entry["seq"],
+        },
+        args.json,
+        f"observed [{args.kind}] for {args.spec_id} → routed to the legislature as new intent {fb_id}\n"
+        f"  backlog: {backlog} (take it into /speckit.specify — not an in-place patch)\n"
+        f"  spec now at the Observe stage; ledger seq={entry['seq']}",
+    )
+    return EXIT_OK
+
+
+def cmd_observe_coverage(args: argparse.Namespace) -> int:
+    """Report NFR-instrumentation coverage — which NFRs have a live check (3PWR-FR-054)."""
+    s = _settings(args.root)
+    spec_path = _resolve_spec(s, args.spec)
+    reg_path = (
+        Path(args.registry).resolve() if args.registry else s.dir / "config" / "observability.yaml"
+    )
+    observability: dict = {}
+    if reg_path.exists():
+        observability = yaml.safe_load(reg_path.read_text(encoding="utf-8")) or {}
+    cov = observe.nfr_coverage(spec_path, observability)
+    lines = [
+        f"NFR instrumentation ({cov.spec_id}): "
+        f"{len(cov.instrumented)}/{len(cov.nfrs)} NFR(s) have a live check"
+    ]
+    for m in cov.missing:
+        lines.append(f"  ✗ {m}: no live production check registered")
+    _print(
+        {
+            "spec_id": cov.spec_id,
+            "nfrs": cov.nfrs,
+            "instrumented": cov.instrumented,
+            "missing": cov.missing,
+        },
+        args.json,
+        "\n".join(lines),
+    )
+    return EXIT_OK if cov.ok else EXIT_FAIL
+
+
+def _actions_path(s: Settings) -> Path:
+    return s.dir / "runtime" / "actions.jsonl"
+
+
+def cmd_observe_log_action(args: argparse.Namespace) -> int:
+    """Append a tamper-evident, attributable runtime agent action (3PWR-FR-055)."""
+    s = _settings(args.root)
+    if not args.agent or not args.action:
+        print("error: --agent and --action are required", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    entry = Ledger(_actions_path(s)).append(
+        "agent_action",
+        observe.action_payload(args.agent, args.action),
+        sk,
+        spec_id=args.spec_id or "",
+    )
+    _print(
+        {"agent": args.agent, "seq": entry["seq"]},
+        args.json,
+        f"logged runtime action by {args.agent} (runtime log seq={entry['seq']}; "
+        "tamper-evident — check with `3pwr observe verify-actions`)",
+    )
+    return EXIT_OK
+
+
+def cmd_observe_verify_actions(args: argparse.Namespace) -> int:
+    """Verify the runtime agent-action log's chain + signatures (3PWR-FR-055/040)."""
+    s = _settings(args.root)
+    res = verify_ledger(_actions_path(s), s.pubkey_path)
+    _print(
+        {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
+    )
+    return EXIT_OK if res.ok else EXIT_FAIL
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""
     s = _settings(args.root)
@@ -1148,6 +1259,38 @@ def build_parser() -> argparse.ArgumentParser:
     ovf.add_argument("--spec-id", dest="spec_id", required=True)
     ovf.add_argument("--tests", nargs="*", help="oracle test roots (default: from the record)")
     ovf.set_defaults(func=cmd_oracle_verify)
+
+    obp = sub.add_parser(
+        "observe", help="observe & feedback (§13): signal / coverage / log-action / verify-actions"
+    )
+    obsub = obp.add_subparsers(dest="observe_cmd", required=True)
+    osig = common(
+        obsub.add_parser("signal", help="record a production signal → route to new intent (FR-054)")
+    )
+    osig.add_argument("--spec-id", dest="spec_id", required=True)
+    osig.add_argument("--kind", required=True, help="incident | missed-nfr | usage")
+    osig.add_argument("--nfr", help="the NFR id the signal relates to (optional)")
+    osig.add_argument("--note", help="the production lesson (required)")
+    osig.set_defaults(func=cmd_observe_signal)
+    ocov = common(obsub.add_parser("coverage", help="NFR-instrumentation coverage (FR-054)"))
+    ocov.add_argument("--spec", help="path to the governing spec.md")
+    ocov.add_argument(
+        "--registry", help="observability.yaml (default: .3powers/config/observability.yaml)"
+    )
+    ocov.set_defaults(func=cmd_observe_coverage)
+    olog = common(
+        obsub.add_parser(
+            "log-action", help="log a tamper-evident, attributable agent action (FR-055)"
+        )
+    )
+    olog.add_argument("--agent", required=True, help="the acting agent's identity")
+    olog.add_argument("--action", required=True, help="the action taken")
+    olog.add_argument("--spec-id", dest="spec_id")
+    olog.set_defaults(func=cmd_observe_log_action)
+    over = common(
+        obsub.add_parser("verify-actions", help="verify the runtime agent-action log (FR-055)")
+    )
+    over.set_defaults(func=cmd_observe_verify_actions)
 
     return p
 

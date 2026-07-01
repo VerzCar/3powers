@@ -192,6 +192,39 @@ Active deviations and overdue cleanups are surfaced by `3pwr status`.
 
 ---
 
+## Observe & feedback (§13)
+
+Closing the loop: production lessons return to the **spec as new intent**, not ad-hoc patches. These are
+standalone commands (like `verify` / `deps-check`), never folded into the deterministic verdict.
+
+### `observe signal` — record a production signal → route to new intent
+Records a signed, attributed `observe` ledger entry, appends a `<SPEC>-FB-###` new-requirement candidate to
+`.3powers/feedback/<spec>.md` (to take into `/speckit.specify` — never an in-place patch), and moves the
+spec to the **Observe** stage (`3PWR-FR-054`).
+- `--spec-id SPEC_ID` (required) · `--kind incident|missed-nfr|usage` (required) · `--nfr NFR_ID` · `--note NOTE` (required).
+```bash
+3pwr observe signal --spec-id VUTIL --kind incident --nfr VUTIL-NFR-002 --note "p99 latency regressed under load"
+```
+
+### `observe coverage` — NFR-instrumentation coverage
+Reports which of a spec's NFRs have a declared live check in `.3powers/config/observability.yaml` (§13
+acceptance: "a specified NFR has a live check"). Exit `1` if any NFR is uninstrumented (`3PWR-FR-054`).
+- `--spec SPEC` · `--registry REGISTRY` (default `.3powers/config/observability.yaml`).
+```bash
+3pwr observe coverage --spec specs/002-engine-trust-spine/spec.md
+```
+
+### `observe log-action` / `observe verify-actions` — tamper-evident agent log
+Appends a signed, agent-attributed entry to a separate hash-chained log (`.3powers/runtime/actions.jsonl`)
+for a target system's runtime agents, and verifies it — the same tamper-evidence as the ledger (`3PWR-FR-055`).
+- `log-action`: `--agent ID` (required) · `--action TEXT` (required) · `--spec-id SPEC_ID`. `verify-actions`: no flags.
+```bash
+3pwr observe log-action --agent ops-bot --action "scaled replicas 3→6"
+3pwr observe verify-actions
+```
+
+---
+
 ## Planning discipline
 
 ### `coverage-check` — two-way requirement↔task coverage

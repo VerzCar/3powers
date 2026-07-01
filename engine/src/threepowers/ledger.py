@@ -34,6 +34,8 @@ ENTRY_TYPES = (
     "provenance",
     "deviation",
     "oracle",
+    "observe",
+    "agent_action",
 )
 
 

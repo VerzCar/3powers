@@ -42,6 +42,10 @@ Implemented and committed (not yet merged to `main`):
   (A1/A3, FR-044/046/048, NFR-014): `3pwr deps-check` (a supported-versions manifest + drift detection,
   incl. Spec Kit) and a **provider-agnostic Spec Kit extension** (`.specify/extensions/3powers/`) with
   substrate-neutral, eval-gated role config. Live multi-integration dispatch stays the residual.
+- **Plan 010** (`plan/010-observe-and-feedback.md`) — **observe & feedback loop** (§13, FR-054/055):
+  `3pwr observe signal` routes a production signal to a new-requirement backlog (not a patch) + moves the
+  spec to the Observe stage; `observe coverage` reports NFR instrumentation; `observe log-action`/
+  `verify-actions` is a tamper-evident, attributable runtime agent-action log. Closes the 8th stage.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -50,12 +54,13 @@ gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), *
 **two-way coverage**, **scope discipline**, **residual review**, the **prompt/constitution eval harness
 (FR-050)**, **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
 FR-053), **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`), **structural oracle
-independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk `advance`), and **portability
-& dependency stability** (FR-048/A1/A3: `deps-check` + a provider-agnostic Spec Kit extension). **NFR-006 is met:**
+independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk `advance`), **portability
+& dependency stability** (FR-048/A1/A3: `deps-check` + a provider-agnostic Spec Kit extension), and the
+**observe & feedback loop** (FR-054/055: `observe signal`/`coverage`/`log-action`). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. Next → rest of **v1.0**: observe §13, **A3 live headless dispatch** (physical oracle
-read-path isolation, FR-021), catalog publishing, and a third adapter. Known approximations
+`--tier High-risk`. Next → rest of **v1.0**: **A3 live headless dispatch** (physical oracle read-path
+isolation, FR-021), catalog publishing, and a third adapter. Known approximations
 (command/harness-level in a Copilot-only setting): work-kind inference (FR-058), context strategy
 (FR-060/061), physical oracle read-path isolation (FR-021, → A3 headless dispatch).
 
@@ -64,11 +69,11 @@ read-path isolation, FR-021), catalog publishing, and a third adapter. Known app
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
-                            #   deps, adapters, scanners, ledger, verify, keys, verdict, config, canonical
+                            #   observe, deps, adapters, scanners, ledger, verify, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
-  config/{risk-tiers,roles,dependencies}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}
-  ledger.jsonl  keys/ledger.pub    (private key lives OUTSIDE the repo — NFR-005)
+  config/{risk-tiers,roles,dependencies,observability}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}
+  ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
 .specify/                   # Spec Kit; constitution + templates OVERRIDDEN by 3Powers; extensions/3powers/ (A1)
 .github/{prompts,agents}/   # Spec Kit /speckit.* commands + custom /3pwr.{oracle,verify,review,signoff,advance,characterize}
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs
@@ -101,6 +106,11 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr oracle verify --spec-id <ID>   # seal-binding + diversity + Phase-A/B ordering + coverage; advisory peek/touch
 
 3pwr deps-check                     # probe installed third-party versions (incl. Spec Kit) vs supported ranges (FR-048)
+
+# Observe & feedback (§13): route a production signal to new intent; NFR coverage; tamper-evident agent log.
+3pwr observe signal --spec-id <ID> --kind incident|missed-nfr|usage --note "..."   # FR-054 → new-requirement backlog
+3pwr observe coverage --spec specs/<feature>/spec.md                               # FR-054 NFR instrumentation
+3pwr observe log-action --agent <id> --action "..."   # FR-055; then: 3pwr observe verify-actions
 
 # Self-application (3Powers gating its own engine), Standard tier:
 3pwr gate run --path engine --adapter python --spec specs/002-engine-trust-spine/spec.md \

@@ -77,4 +77,7 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
             st.aborted = False
         elif etype == "abort":
             st.aborted = True
+        elif etype == "observe":
+            # A production signal means the spec reached the Observe stage (§13, 3PWR-FR-054).
+            st.stage = "Observe"
     return states
