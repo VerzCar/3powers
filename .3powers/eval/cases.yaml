@@ -30,3 +30,20 @@ cases:
       - "model_family"
       - "oracle"
       - "coder"
+
+  # Portability (3PWR-A1/A3): 3Powers must run under any Spec Kit-dispatchable integration, not
+  # Copilot-only. These block a regression to a provider-specific assumption (3PWR-FR-044/046).
+  - name: roles-provider-agnostic
+    file: .3powers/config/roles.yaml
+    must_contain:
+      - "any agent Spec Kit can dispatch"
+
+  - name: extension-provider-agnostic
+    file: .specify/extensions/3powers/extension.yml
+    must_contain:
+      - "3pwr.oracle"
+      - "3pwr.verify"
+      - "provider-agnostic"
+      - "speckit_version"
+    must_not_contain:
+      - "integration: copilot"

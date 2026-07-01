@@ -260,6 +260,17 @@ Treats prompts/commands/constitution as versioned software; blocks on regression
 3pwr eval
 ```
 
+### `deps-check` — third-party version compatibility (preflight)
+Probes the installed versions (Spec Kit, scanners, adapter toolchains) against the supported ranges in
+`.3powers/config/dependencies.yaml` and reports each `ok | drift | missing | unknown`; a `block`-policy
+drift or absence fails. A **preflight** command, *not* a verdict gate — installed versions are
+environment-dependent, so they stay out of the verdict to preserve determinism (`3PWR-NFR-001`). Pins a
+known-good Spec Kit and flags an upstream release that needs adaptation (`3PWR-FR-048`, `NFR-014`).
+- `--manifest MANIFEST` (default `.3powers/config/dependencies.yaml`) · `--strict` (treat `warn` as blocking).
+```bash
+3pwr deps-check
+```
+
 ### `roles-check` — model-family diversity between two roles
 Fails if two roles resolve to the same model family (enforces oracle independence, `3PWR-FR-022`).
 - `--role-a ROLE_A` (default `oracle`) · `--role-b ROLE_B` (default `coder`).

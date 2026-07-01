@@ -80,6 +80,8 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
   - *Acceptance*: provenance verifies against the committed ledger public key.
 - **3PWR-FR-050**: The engine shall treat prompts/commands/constitution as versioned software with an eval set and block on regression.
   - *Acceptance*: `eval` fails when a required phrase is missing from a constitution/command file.
+- **3PWR-FR-048**: The engine shall treat supported third-party versions as configurable and detect drift of the installed toolchain (including Spec Kit) from the supported range.
+  - *Acceptance*: `deps-check` reports each component ok/drift/missing against `.3powers/config/dependencies.yaml` and fails a `block`-policy drift or absence.
 - **3PWR-FR-051**: The engine shall hold only new/changed code to the full process, leaving existing code untouched until modified.
   - *Acceptance*: with `--paths`/`--diff-scope`, diff-coverage and the file-based scanners count only the in-scope files.
 - **3PWR-FR-052**: The engine shall support running gates in report-only mode that emits a verdict but does not block.

@@ -12,6 +12,7 @@ Subcommands:
                 at High-risk)
   oracle        structural oracle independence: seal a spec-only bundle, record authoring
                 (refusing the coder's model family), verify from the ledger
+  deps-check    probe installed third-party versions against the supported ranges (preflight)
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
@@ -27,11 +28,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from . import (
     __version__,
     canonical,
     config,
     covdiff,
+    deps,
     deviations,
     keys,
     lifecycle,
@@ -907,6 +911,58 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
 
 
+def cmd_deps_check(args: argparse.Namespace) -> int:
+    """Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).
+
+    A preflight command, not a verdict gate — installed versions are environment-dependent, so
+    keeping them out of the verdict preserves determinism (3PWR-NFR-001)."""
+    s = _settings(args.root)
+    manifest_path = (
+        Path(args.manifest).resolve() if args.manifest else s.dir / "config" / "dependencies.yaml"
+    )
+    if not manifest_path.exists():
+        print(f"error: no dependencies manifest at {manifest_path}", file=sys.stderr)
+        return EXIT_USAGE
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    report = deps.check_dependencies(manifest, probe=lambda cmd: deps.run_probe(cmd, s.root))
+
+    lines = [f"dependency compatibility ({manifest_path})"]
+    for c in report.checks:
+        if c.status == deps.OK:
+            sym = "✓"
+        elif c.status == deps.UNKNOWN:
+            sym = "ℹ"
+        else:
+            sym = "✗" if c.policy == "block" else "⚠"
+        note = "" if c.status == deps.OK else f" — {c.status} [{c.policy}]"
+        lines.append(
+            f"  {sym} {c.name:<14} installed={c.installed or '—':<14} "
+            f"supported={c.supported or '(any)'}{note}"
+        )
+    strict_block = bool(args.strict and report.drifted)
+    ok = report.ok and not strict_block
+    if not ok:
+        lines.append("  → deps-check FAILED: a blocking dependency is out of range or absent")
+    _print(
+        {
+            "ok": ok,
+            "checks": [
+                {
+                    "name": c.name,
+                    "installed": c.installed,
+                    "supported": c.supported,
+                    "status": c.status,
+                    "policy": c.policy,
+                }
+                for c in report.checks
+            ],
+        },
+        args.json,
+        "\n".join(lines),
+    )
+    return EXIT_OK if ok else EXIT_FAIL
+
+
 # --------------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="3pwr", description="3Powers judiciary engine.")
@@ -1048,6 +1104,17 @@ def build_parser() -> argparse.ArgumentParser:
     evp = common(sub.add_parser("eval", help="run the prompt/constitution eval set (FR-050)"))
     evp.add_argument("--cases", help="eval cases.yaml (default: .3powers/eval/cases.yaml)")
     evp.set_defaults(func=cmd_eval)
+
+    dcp = common(
+        sub.add_parser(
+            "deps-check", help="check installed third-party versions vs supported (FR-048)"
+        )
+    )
+    dcp.add_argument(
+        "--manifest", help="dependencies.yaml (default: .3powers/config/dependencies.yaml)"
+    )
+    dcp.add_argument("--strict", action="store_true", help="treat warn-policy drift as blocking")
+    dcp.set_defaults(func=cmd_deps_check)
 
     lp = sub.add_parser("ledger", help="ledger operations")
     lsub = lp.add_subparsers(dest="ledger_cmd", required=True)

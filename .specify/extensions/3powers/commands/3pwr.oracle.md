@@ -1,0 +1,24 @@
+---
+description: "Phase A judiciary — author the independent oracle from a sealed, spec-only bundle; a different model family than the coder (3PWR-FR-020/021/022/062)."
+---
+
+## User Input
+
+```text
+$ARGUMENTS
+```
+
+## Author the oracle (Phase A)
+
+You are the judiciary. Author the answer key from the **spec alone**, using a model from a **different
+model family** than the coder (3PWR-FR-022). Switch the model in whatever Spec Kit integration you
+initialized (copilot, claude, gemini, …) — 3Powers assumes no single provider (3PWR-A3).
+
+1. `3pwr oracle seal --spec specs/<feature>/spec.md` — write the spec-only bundle you author from
+   (`.3powers/oracle/<SPECID>/sealed.json`, 3PWR-FR-020). Read only that bundle.
+2. Author ≥1 test per acceptance criterion, each named with its requirement ID; add a property-based test
+   wherever input is parsed/validated/transformed (3PWR-FR-023/024). Route any unmeasurable criterion back
+   to `/speckit.clarify` (3PWR-FR-025).
+3. `3pwr oracle record --spec-id <ID> --model <family>/<model> --tests <paths>` — refused if the family
+   matches the coder (3PWR-FR-022); records the actual model, signer, and test hashes.
+4. `3pwr oracle verify --spec-id <ID>` — confirm **PASS**, then hand off to `/3pwr.verify`.

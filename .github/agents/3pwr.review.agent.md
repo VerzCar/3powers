@@ -20,8 +20,9 @@ what the gates structurally cannot.
 ## Constraints
 
 - **Different model family than the coder (3PWR-FR-036).** Run
-  `3pwr roles-check --role-a reviewer --role-b coder`; if it reports VIOLATION, switch the Copilot chat
-  model to a family different from the one that implemented the change, then continue.
+  `3pwr roles-check --role-a reviewer --role-b coder`; if it reports VIOLATION, switch the model (in
+  whatever Spec Kit integration you initialized) to a family different from the one that implemented the
+  change, then continue.
 
 ## What to review (cite requirement IDs)
 

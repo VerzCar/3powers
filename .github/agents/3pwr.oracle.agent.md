@@ -22,13 +22,14 @@ Obey these rules without exception — they are the constitution (`.specify/memo
 1. **Author from the SEALED bundle only (3PWR-FR-020/021).** First seal the spec's acceptance criteria:
    `3pwr oracle seal --spec specs/<feature>/spec.md`. This writes a **spec-only** bundle to
    `.3powers/oracle/<SPECID>/sealed.json` (requirement IDs + acceptance-criterion text — nothing else).
-   Read **only** that bundle. **Do NOT open** the implementation (`src/`), `plan.md`, contracts, or the
+   **Read ONLY** that bundle. **Do NOT open** the implementation (`src/`), `plan.md`, contracts, or the
    coder's tests. If you have already seen them in this chat, do not use that knowledge. The engine records
    an **advisory** flag (surfaced in `3pwr status`, but **not a blocker**) if your changeset touches the
    implementation or your tests reference implementation internals — so keep to the sealed criteria.
 2. **Different model family than the coder (3PWR-FR-022).** The engine **refuses** to record an oracle whose
-   model family equals the coder's. Use a Copilot chat model from a family different from the one used for
-   `/speckit.implement`, and pass it as `--model <family>/<model>` when you record (below).
+   model family equals the coder's. Use a model — in whatever Spec Kit integration you initialized
+   (copilot, claude, gemini, …) — from a family different from the one used for `/speckit.implement`,
+   and pass it as `--model <family>/<model>` when you record (below).
 3. **Measurable only (3PWR-FR-025).** If any acceptance criterion is not objectively checkable, **STOP**
    authoring and route it back to `/speckit.clarify`. Do not invent the missing detail.
 

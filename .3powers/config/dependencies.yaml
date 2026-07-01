@@ -1,0 +1,71 @@
+# Supported third-party versions 3Powers is known-good against (3PWR-FR-048, 3PWR-NFR-014).
+#
+# `3pwr deps-check` probes the INSTALLED versions and reports drift from the supported range.
+# Policy per component:
+#   warn   — surface drift/absence, do not fail (default)
+#   block  — fail deps-check on drift/absence
+#   ignore — never blocks (still shown)
+# This is a PREFLIGHT check, never a verdict gate: installed versions are environment-dependent,
+# so keeping them out of the verdict preserves determinism (3PWR-NFR-001). Absent tools are
+# reported (like the scanner quarantine, 3PWR-NFR-015), never silently passed. Pin to a stable
+# version that works with 3Powers; when an upstream release drifts, this flags it for adaptation.
+#
+# Exact transitive pins still live in the lockfiles (engine/uv.lock,
+# examples/validation-utils/package-lock.json); this file governs the *supported ranges*.
+version: 1
+
+components:
+  # Substrate (A1): the CLI 3Powers layers on. Adaptations may be needed on a new Spec Kit minor.
+  - name: spec-kit
+    probe: "specify version"
+    supported: ">=0.11,<0.12"
+    known_good: "0.11.6.dev0"
+    on_drift: warn
+  - name: uv
+    probe: "uv --version"
+    supported: ">=0.4"
+    on_drift: warn
+  - name: node
+    probe: "node --version"
+    supported: ">=20"
+    known_good: "23.3.0"
+    on_drift: warn
+
+  # Supply-chain scanners (language-agnostic core gates; the gate engine quarantines them if
+  # absent — 3PWR-NFR-015 — so these stay `warn` here).
+  - name: gitleaks
+    probe: "gitleaks version"
+    supported: ">=8,<9"
+    known_good: "8.30"
+    on_drift: warn
+  - name: osv-scanner
+    probe: "osv-scanner --version"
+    supported: ">=2,<3"
+    known_good: "2.4"
+    on_drift: warn
+  - name: semgrep
+    probe: "semgrep --version"
+    supported: ">=1"
+    on_drift: warn
+
+  # Python reference adapter toolchain (probed inside the engine's own uv env).
+  - name: ruff
+    adapter: python
+    probe: "uv run --directory engine ruff --version"
+    supported: ">=0.6,<1"
+    known_good: "0.15.20"
+    on_drift: warn
+  - name: mypy
+    adapter: python
+    probe: "uv run --directory engine mypy --version"
+    supported: ">=1.10"
+    on_drift: warn
+  - name: pytest
+    adapter: python
+    probe: "uv run --directory engine pytest --version"
+    supported: ">=8"
+    on_drift: warn
+
+  # TypeScript reference adapter toolchain is pinned by examples/validation-utils/package-lock.json
+  # (Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6). `node` above covers its runtime; per-tool
+  # probes are project-local (run via `npx` inside the sample) and omitted here to avoid false misses.

@@ -3,7 +3,7 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 008**.
+> single source of truth; this document is checked against it. Last updated after **plan 009**.
 
 ---
 
@@ -29,7 +29,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 147 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 167 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -78,7 +78,7 @@ plan/                       # the continuous plan series 001..007 (007 = emergen
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; remaining: observe §13, A3 headless read-path isolation, catalog, 3rd adapter) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); remaining: observe §13, A3 live headless dispatch, catalog publishing, 3rd adapter) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -111,7 +111,10 @@ FR-042 ✅, FR-066 ✅, FR-067 ✅, FR-068 ✅, FR-069 ✅, FR-070 ✅, FR-071 �
 FR-043 ⬜ (CI re-validation — optional per A4).
 
 **Agnosticism / config (§10–11):** FR-044 ✅, FR-045 ✅, FR-046 ✅, FR-047 ✅, FR-048 ✅, FR-049 ✅,
-FR-050 ✅ (deterministic eval set; model-driven layer is future).
+FR-050 ✅ (deterministic eval set; model-driven layer is future). · **Plan 009** operationalized FR-048
+(`3pwr deps-check` flags installed-toolchain drift incl. Spec Kit vs `.3powers/config/dependencies.yaml`)
+and strengthened FR-044/046/A1 (a **provider-agnostic** Spec Kit extension + substrate-neutral role config,
+eval-gated); live multi-integration headless dispatch stays the residual (FR-012/013 ◑).
 
 **v1.0 (§12–14):** **FR-051 ✅** (diff-scoped gating — `--paths`/`--diff-scope` hold only changed files;
 scanners + diff-coverage honor the scope), **FR-052 ✅** (`gate run --report-only` emits but does not
@@ -151,15 +154,18 @@ Harden these before adding breadth:
    the implementation (FR-020/062). Peeking/touching the implementation is now **flagged as an advisory,
    never a blocker**. What remains is *physically* preventing the read: running the judiciary as an isolated
    **Spec Kit headless dispatch (A3)** step with no filesystem path to the implementation.
-2. **A1 packaging drift.** The spec says 3Powers ships as Spec Kit **preset(s)/extension(s)/workflow(s)**
-   via catalogs and reuses Spec Kit's `workflow run` dispatch. We layered via confirmed primitives
-   (templates + custom commands + a standalone `3pwr` engine) and drive it interactively in Copilot.
-   That was the right call to get a working spine fast, but catalog/workflow packaging (and the headless
-   dispatch in #1) remain to make it truly portable and to enable structural oracle isolation.
+2. **A1 packaging — now a real extension; live dispatch is the residual.** Plan 009 packaged 3Powers as a
+   **provider-agnostic Spec Kit extension** (`.specify/extensions/3powers/`: the `/3pwr.*` commands + gate
+   hooks, `integration: auto`, no hardcoded Copilot) and made the role config + agents substrate-neutral,
+   eval-gated; `3pwr deps-check` pins the supported Spec Kit range and flags drift. What remains is the
+   *live* cross-integration headless `workflow run` dispatch (running the judiciary isolated under a
+   non-Copilot agent) — verifiable only with the Spec Kit runtime, and tied to the A3 read-path isolation in #1.
 
 Neither blocks use today; they are the difference between "works, self-applies at High-risk" and "fully
-delivers the spec's guarantees." **Recommendation:** do **structural oracle independence (#1)** next —
-it is now the clearest gap on the spec's thesis, and it is sequenced with the A3 headless-dispatch work.
+delivers the spec's guarantees." **Recommendation:** the thesis-level judiciary (#1) and packaging (#2) are
+now built to the limit of this repo; the two remaining items are the **observe loop (§13)** — fully
+engine-buildable, do it next — and the **A3 live headless dispatch**, when a Spec Kit dispatch runtime is
+available.
 
 ## 6. What's next (roadmap)
 
@@ -179,11 +185,17 @@ mutation+coverage, never security/secret/sign-off/provenance, overdue cleanup bl
 High-risk `advance` now proves oracle independence from the ledger seq, while peeking/touching the
 implementation is an **advisory** flag, never a blocker.
 
+**Plan 009 is done** ([`plan/009-portability-and-dependencies.md`](../plan/009-portability-and-dependencies.md)):
+✅ **portability & dependency stability (A1/A3, FR-044/046/048, NFR-014)** — `3pwr deps-check` pins the
+supported third-party versions (incl. Spec Kit) and flags drift; 3Powers ships as a **provider-agnostic
+Spec Kit extension** (`.specify/extensions/3powers/`) with substrate-neutral, eval-gated role config. Live
+multi-integration headless dispatch stays the residual.
+
 Next, in priority order (the rest of v1.0 + the hardening track):
-- Observe / feedback loop (§13, FR-054/055).
-- **A3 headless dispatch** — the *physical* oracle read-path isolation that completes FR-021 (run the
-  judiciary as an isolated Spec Kit `workflow run` step with no path to the implementation).
-- Catalog distribution as a Spec Kit extension/preset (A1; direction risk #2) + a **third adapter** (e.g. Go/Rust/Java).
+- Observe / feedback loop (§13, FR-054/055) — fully engine-buildable; completes the 8th lifecycle stage.
+- **A3 live headless dispatch** — physical oracle read-path isolation (completes FR-021) + verified
+  multi-integration `workflow run`; needs the Spec Kit dispatch runtime.
+- Catalog *publishing* of the `3powers` extension + a **third adapter** (e.g. Go/Rust/Java).
 - Loose ends: defect-flow (FR-008) & design oracles (FR-009); tier-required test layers (FR-064);
   a root `LICENSE` file (NFR-012); model-driven eval layer (FR-050); cross-platform validation (NFR-003).
 
