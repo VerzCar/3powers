@@ -22,3 +22,11 @@ initialized (copilot, claude, gemini, …) — 3Powers assumes no single provide
 3. `3pwr oracle record --spec-id <ID> --model <family>/<model> --tests <paths>` — refused if the family
    matches the coder (3PWR-FR-022); records the actual model, signer, and test hashes.
 4. `3pwr oracle verify --spec-id <ID>` — confirm **PASS**, then hand off to `/3pwr.verify`.
+
+**High-risk (physical read-path isolation, 3PWR-FR-021/A3):** instead of steps 1–3 by hand, run
+`3pwr oracle dispatch --spec-id <ID> --integration <non-coder, e.g. claude>`. It builds a **sanitized git
+worktree** (the implementation/plan/tasks/contracts are physically absent), authors the oracle there
+headlessly via `specify workflow run` under that integration, and records the seal-bound record **plus** a
+signed isolation attestation. One-time setup: `specify integration install claude`. Then
+`3pwr oracle verify --spec-id <ID> --require-dispatch`. This is opt-in; the manual model-switch flow above
+stays valid for Standard/Cosmetic work.

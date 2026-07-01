@@ -23,6 +23,7 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -128,17 +129,48 @@ def default_private_path(repo_root: Path) -> Path:
     return base / (repo_root.name + ".key")
 
 
-def resolve_signing_key(repo_root: Path) -> SigningKey:
-    """Load the private signing key from outside the repository (3PWR-NFR-005)."""
-    env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
+def default_oracle_private_path(repo_root: Path) -> Path:
+    """The distinct judiciary (oracle) signer's default path — also OUTSIDE the repo (3PWR-NFR-005)."""
+    base = Path(os.path.expanduser("~")) / ".config" / "3powers"
+    return base / (repo_root.name + ".oracle.key")
+
+
+def _resolve(file_env: str, seed_env: str, default_path: Path) -> Optional[SigningKey]:
+    """Custody resolution: env file → env seed → default path (outside the repo). None if none set."""
+    env_file = os.environ.get(file_env)
     if env_file:
         return SigningKey.from_line(Path(env_file).read_text(encoding="utf-8"))
-    env_seed = os.environ.get("THREEPOWERS_SIGNING_KEY")
+    env_seed = os.environ.get(seed_env)
     if env_seed:
         return SigningKey(seed=base64.b64decode(env_seed))
-    default = default_private_path(repo_root)
-    if default.exists():
-        return SigningKey.from_line(default.read_text(encoding="utf-8"))
+    if default_path.exists():
+        return SigningKey.from_line(default_path.read_text(encoding="utf-8"))
+    return None
+
+
+def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
+    """Load the private signing key from outside the repository (3PWR-NFR-005).
+
+    ``role="oracle"`` prefers a distinct judiciary identity
+    (``$THREEPOWERS_ORACLE_SIGNING_KEY_FILE`` / ``$THREEPOWERS_ORACLE_SIGNING_KEY`` /
+    ``~/.config/3powers/<repo>.oracle.key``), **falling back to the primary signer** when unset — so
+    a distinct oracle key is optional and fully backward-compatible (3PWR-FR-039)."""
+    if role == "oracle":
+        sk = _resolve(
+            "THREEPOWERS_ORACLE_SIGNING_KEY_FILE",
+            "THREEPOWERS_ORACLE_SIGNING_KEY",
+            default_oracle_private_path(repo_root),
+        )
+        if sk is not None:
+            return sk
+        # fall through to the primary signer (a distinct oracle identity is optional)
+    sk = _resolve(
+        "THREEPOWERS_SIGNING_KEY_FILE",
+        "THREEPOWERS_SIGNING_KEY",
+        default_private_path(repo_root),
+    )
+    if sk is not None:
+        return sk
     raise FileNotFoundError(
         "No signing key found. Run `3pwr keygen` or set $THREEPOWERS_SIGNING_KEY_FILE. "
         "The private key must live OUTSIDE the repository (3PWR-NFR-005)."

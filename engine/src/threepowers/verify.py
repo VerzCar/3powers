@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from .canonical import GENESIS_PREV_HASH, canonical_bytes, hash_payload
 from .keys import VerifyKey, load_public
@@ -32,7 +33,16 @@ class VerifyResult:
         )
 
 
-def verify_ledger(ledger_path: Path, pubkey_path: Path) -> VerifyResult:
+def verify_ledger(
+    ledger_path: Path,
+    pubkey_path: Path,
+    extra_pubkey_paths: Optional[list[Path]] = None,
+) -> VerifyResult:
+    """Recompute the chain and verify each entry's signature against *any* committed public key.
+
+    ``extra_pubkey_paths`` lets a repo carry more than one independent signer — e.g. a distinct
+    judiciary (oracle) identity that signs the isolated-dispatch attestation (3PWR-FR-021/039).
+    Absent extra keys are simply skipped, so single-key repos verify unchanged (3PWR-NFR-004)."""
     res = VerifyResult(ok=True)
     entries = Ledger(ledger_path).entries()
     res.entries = len(entries)
@@ -40,11 +50,16 @@ def verify_ledger(ledger_path: Path, pubkey_path: Path) -> VerifyResult:
     if not entries:
         return res  # an empty ledger trivially verifies
 
-    if not pubkey_path.exists():
+    vks: list[VerifyKey] = []
+    if pubkey_path.exists():
+        vks.append(load_public(pubkey_path))
+    for extra in extra_pubkey_paths or []:
+        if extra.exists():
+            vks.append(load_public(extra))
+    if not vks:
         return VerifyResult(
             ok=False, entries=len(entries), problems=[f"public key not found at {pubkey_path}"]
         )
-    vk: VerifyKey = load_public(pubkey_path)
 
     expected_prev = GENESIS_PREV_HASH
     for idx, entry in enumerate(entries):
@@ -63,10 +78,11 @@ def verify_ledger(ledger_path: Path, pubkey_path: Path) -> VerifyResult:
         if recomputed != entry.get("entry_hash"):
             res.problems.append(f"{loc}: content tampered — entry_hash mismatch")
 
-        # 4. Signature verifies against the committed public key.
+        # 4. Signature verifies against any committed public key (primary or a distinct oracle key).
         try:
             sig = base64.b64decode(entry["signature"])
-            if not vk.verify(sig, canonical_bytes(core_of(entry))):
+            signed = canonical_bytes(core_of(entry))
+            if not any(vk.verify(sig, signed) for vk in vks):
                 res.problems.append(f"{loc}: invalid signature")
         except (KeyError, ValueError):
             res.problems.append(f"{loc}: missing or malformed signature")

@@ -46,6 +46,14 @@ Implemented and committed (not yet merged to `main`):
   `3pwr observe signal` routes a production signal to a new-requirement backlog (not a patch) + moves the
   spec to the Observe stage; `observe coverage` reports NFR instrumentation; `observe log-action`/
   `verify-actions` is a tamper-evident, attributable runtime agent-action log. Closes the 8th stage.
+- **Plan 011** (`plan/011-a3-live-headless-dispatch.md`) — **A3 live headless dispatch + physical oracle
+  read-path isolation** (FR-021; oracle leg of FR-012/013): `3pwr oracle dispatch` authors the oracle
+  headlessly via `specify workflow run` under a non-coder integration (default `claude`), inside a
+  **sanitized git worktree** with the implementation/plan/tasks/contracts physically absent — attested by a
+  worktree manifest hash in the ledger. A High-risk `advance` blocks a missing/non-isolated dispatch when
+  `roles.oracle.require_dispatch` is on; the 008 peek/touch signal stays advisory; dispatch never enters
+  `gate run` (NFR-001). Optional distinct oracle signer key + two-key `verify` (NFR-005). Runs in-IDE by
+  default (opt-in, High-risk only); the fuller dual-headless (coder leg) proof is the residual.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -56,13 +64,17 @@ gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), *
 FR-053), **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`), **structural oracle
 independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk `advance`), **portability
 & dependency stability** (FR-048/A1/A3: `deps-check` + a provider-agnostic Spec Kit extension), and the
-**observe & feedback loop** (FR-054/055: `observe signal`/`coverage`/`log-action`). **NFR-006 is met:**
+**observe & feedback loop** (FR-054/055: `observe signal`/`coverage`/`log-action`), and **A3 live headless
+dispatch** (FR-021 physical oracle read-path isolation + oracle leg of FR-012/013: `oracle dispatch` runs
+the judiciary headlessly in a sanitized worktree, attested in the ledger, blocking at High-risk when
+`require_dispatch` is on). **NFR-006 is met:**
 the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
 70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. Next → rest of **v1.0**: **A3 live headless dispatch** (physical oracle read-path
-isolation, FR-021), catalog publishing, and a third adapter. Known approximations
-(command/harness-level in a Copilot-only setting): work-kind inference (FR-058), context strategy
-(FR-060/061), physical oracle read-path isolation (FR-021, → A3 headless dispatch).
+`--tier High-risk`. Next → rest of **v1.0**: **recommend-not-force model diversity** (plan 012 — relax the
+same-family refusal via a signed `deviation` so single-model users are never walled off), the **fuller A3**
+(coder leg also headless under a second, different-family CLI + a live non-Copilot end-to-end run), catalog
+publishing, and a third adapter. Known approximations (command/harness-level): work-kind inference (FR-058),
+context strategy (FR-060/061); the fuller dual-headless dispatch (the **oracle** leg is delivered).
 
 ## Repository layout
 
@@ -103,7 +115,10 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 # At High-risk, `advance` refuses unless independence holds (FR-020/021/022/062).
 3pwr oracle seal   --spec specs/<feature>/spec.md --spec-id <ID>
 3pwr oracle record --spec-id <ID> --model <family/model> --tests <oracle-test-paths>  # refuses coder's family
-3pwr oracle verify --spec-id <ID>   # seal-binding + diversity + Phase-A/B ordering + coverage; advisory peek/touch
+# A3 (physical FR-021): author the oracle HEADLESSLY, read-path isolated — the implementation is absent from
+# a sanitized git worktree. One-time: `specify integration install claude` (a non-coder, headless integration).
+3pwr oracle dispatch --spec-id <ID> --integration claude   # + `--dry-run` to build/attest isolation offline
+3pwr oracle verify --spec-id <ID> [--require-dispatch]   # seal-binding + diversity + ordering + coverage (+ isolation); advisory peek/touch
 
 3pwr deps-check                     # probe installed third-party versions (incl. Spec Kit) vs supported ranges (FR-048)
 
@@ -147,9 +162,13 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    oracle. *As built:* `/3pwr.oracle` authors from a **sealed spec-only bundle** (`3pwr oracle seal`);
    `oracle record` captures the actual model + signer + test hashes and refuses the coder's family (FR-022);
    `oracle verify` and a **High-risk `advance`** prove independence from the signed ledger seq — seal-binding,
-   diversity, Phase-A-before-B ordering, and per-criterion coverage (FR-020/062). Reading/touching the
-   implementation is surfaced as an **advisory** flag, never a blocker; *physical* read-path isolation
-   remains an A3 headless-dispatch follow-up (FR-021).
+   diversity, Phase-A-before-B ordering, and per-criterion coverage (FR-020/062). **Physical read-path
+   isolation is delivered (FR-021, A3):** `3pwr oracle dispatch` authors the oracle *headlessly* via
+   `specify workflow run` under a non-coder integration, inside a **sanitized git worktree** with the
+   implementation/plan/tasks/contracts physically absent — attested by a worktree manifest hash and enforced
+   at a High-risk `advance` (`roles.oracle.require_dispatch`). Reading/touching heuristics stay **advisory**,
+   never a blocker (NFR-001). Opt-in and High-risk-only — the default flow stays in-IDE and watchable; the
+   coder leg also running headless (the fuller dispatch) is the residual.
 
 2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
    mutation → SAST → dependency → secret → gate-gaming → spec-conformance. Language support is a

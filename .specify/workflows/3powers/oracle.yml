@@ -1,0 +1,48 @@
+schema_version: "1.0"
+workflow:
+  id: "3powers-oracle"
+  name: "3Powers Phase-A Oracle Authoring"
+  version: "0.1.0"
+  author: "3Powers"
+  description: >
+    Author the independent oracle from a sealed, spec-only bundle — headlessly, under a non-coder
+    integration, in a sanitized worktree from which the implementation/plan/tasks/contracts are
+    physically absent (3PWR-FR-020/021/022/062; A3). Invoked by `3pwr oracle dispatch`, which builds
+    the worktree, runs this workflow with the worktree as cwd, then records a signed dispatch
+    attestation (integration + resolved model + worktree isolation manifest) in the ledger.
+
+requires:
+  # 3Powers is known-good against Spec Kit 0.11.x (see .3powers/config/dependencies.yaml).
+  speckit_version: ">=0.11,<0.12"
+  integrations:
+    # Advisory, non-exhaustive compatibility hint (the documented `any: [...]` schema). The oracle
+    # step must run under a HEADLESS integration in a family DIFFERENT from the coder — so NOT
+    # `copilot` (IDE/interactive) when the coder is a GPT model. `3pwr oracle dispatch` enforces the
+    # family-diversity refusal (3PWR-FR-022) before spending a dispatch.
+    any:
+      - "claude"
+      - "gemini"
+      - "codex"
+      - "opencode"
+
+inputs:
+  spec_id:
+    type: string
+    required: true
+    prompt: "Spec id to author the oracle for"
+  integration:
+    type: string
+    default: "claude"
+    prompt: "Integration for the oracle step (a non-coder model family; e.g. claude, gemini, codex)"
+
+steps:
+  - id: author-oracle
+    command: 3pwr.oracle
+    integration: "{{ inputs.integration }}"
+    input:
+      args: >
+        Author the independent oracle for {{ inputs.spec_id }} from the sealed, spec-only bundle
+        `ORACLE_BUNDLE.json` present in this working directory. You are the judiciary (Phase A):
+        write oracle tests ONLY into `./oracle-tests/`, one per acceptance criterion, each named with
+        its requirement id. The implementation, plan, tasks, and contracts are intentionally absent —
+        do not attempt to reconstruct or infer them; author strictly from the acceptance criteria.

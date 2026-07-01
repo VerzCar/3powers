@@ -3,6 +3,7 @@
 .3powers/runs/
 .3powers/verdicts/
 .3powers/provenance/
+.3powers/worktrees/
 .3powers/keys/*.key
 *.key
 

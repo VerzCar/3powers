@@ -10,23 +10,30 @@ that independence **structural and traceable** rather than merely procedural:
   that actually authored, the oracle test files and their content hashes, and (via the ledger)
   the signer identity. It refuses when the oracle resolves to the coder's model family
   (3PWR-FR-022, on the *actual* model — not just the declared config).
+* ``dispatch`` (3PWR-A3) authors the oracle *headlessly* under a non-coder integration (Spec Kit
+  ``workflow run``) inside a **sanitized git worktree** from which the implementation, plan, tasks,
+  and contracts are physically **absent** — the full letter of 3PWR-FR-021. It attests the isolation
+  with a worktree manifest hash recorded in the ledger, and records the actual integration + model.
 * ``independence`` proves, from the ledger's monotonic signed ``seq`` (never from spoofable git
   timestamps), that Phase A preceded Phase B (3PWR-FR-062), the oracle was bound to the active
   seal (3PWR-FR-020/021), the families diverge (3PWR-FR-022), and every acceptance criterion has
-  an oracle test (3PWR-FR-023). These bind at ``advance`` at the High-risk tier (spec §4).
+  an oracle test (3PWR-FR-023). When a dispatch attestation is present (or required by the tier
+  policy) it also proves **physical read-path isolation** (3PWR-FR-021). These bind at ``advance``
+  at the High-risk tier (spec §4).
 
-Physically preventing the oracle author from *reading* the implementation — the full letter of
-3PWR-FR-021 — requires isolated headless dispatch (3PWR-A3) and is out of reach in a Copilot-only
-setting. Here we (a) narrow the read path with the spec-only bundle and (b) surface **advisory,
-non-blocking** signals when the author appears to have touched the implementation — flagged for
-human review, never a gate (that heuristic is input-dependent and must not perturb the
-deterministic verdict, 3PWR-NFR-001).
+The worktree makes read-path isolation *physical*, not merely policy: the dispatched agent's cwd
+does not contain the implementation. The 008 peek/touch signals remain **advisory, non-blocking**
+(that heuristic is input-dependent and must not perturb the deterministic verdict, 3PWR-NFR-001);
+network egress from the dispatched agent is out of scope here (read-path isolation only).
 """
 
 from __future__ import annotations
 
 import fnmatch
+import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -217,6 +224,10 @@ class Independence:
     covered: list[str] = field(default_factory=list)
     model_family: Optional[str] = None
     bundle_hash: Optional[str] = None
+    dispatch_ok: Optional[bool] = (
+        None  # None = no dispatch attestation; True/False = isolation proof
+    )
+    isolation_method: Optional[str] = None
 
 
 def independence(
@@ -226,18 +237,24 @@ def independence(
     *,
     repo_root: Path,
     test_roots: list[Path],
+    require_dispatch: bool = False,
 ) -> Independence:
     """Prove oracle independence from the ledger + roles + the recorded oracle tests.
 
     Structural (blocking) facts: an active seal exists; the authoring record is bound to it
     (FR-020/021); the recorded oracle family differs from the coder's (FR-022); the record
     precedes the implementation verdict by ledger ``seq`` (FR-062); every sealed acceptance
-    criterion has an oracle test (FR-023). Advisory (non-blocking) findings come from the record.
+    criterion has an oracle test (FR-023). When a dispatch attestation is present — or when
+    ``require_dispatch`` is set (the High-risk tier policy) — physical read-path isolation is also
+    proven (FR-021/A3): the dispatch is seal-bound, its worktree manifest shows the implementation
+    was absent, and the dispatched family differs from the coder's. Advisory (non-blocking)
+    findings come from the record and never enter ``reasons`` (3PWR-NFR-001).
     """
     reasons: list[str] = []
     covered: list[str] = []
     seal = active_seal(entries, spec_id)
     rec = authoring_record(entries, spec_id)
+    coder = coder_family(roles)
     label = spec_id or "(spec)"
 
     if seal is None:
@@ -262,7 +279,6 @@ def independence(
             )
 
         # model-family diversity on the ACTUAL model used (FR-022).
-        coder = coder_family(roles)
         if not model_family:
             reasons.append("oracle authoring record has no model family (FR-022)")
         elif not coder:
@@ -288,6 +304,34 @@ def independence(
                 f"acceptance criteria without an oracle test: {', '.join(missing)} (FR-023)"
             )
 
+    # physical read-path isolation via headless dispatch (3PWR-FR-021, A3). Advisory→blocking when a
+    # dispatch attestation exists, or when the tier policy requires one (require_dispatch). Every fact
+    # is ledger-derived, so this stays deterministic (3PWR-NFR-001).
+    disp = active_dispatch(entries, spec_id)
+    dispatch_ok: Optional[bool] = None
+    isolation_method: Optional[str] = None
+    if require_dispatch and disp is None:
+        reasons.append(
+            f"no isolated oracle dispatch recorded for {label} — run `3pwr oracle dispatch` (FR-021/A3)"
+        )
+    if disp is not None:
+        dp = disp["payload"]
+        iso = dp.get("isolation") or {}
+        isolation_method = iso.get("method")
+        dispatch_ok = True
+        if seal is not None and dp.get("bundle_hash") != seal_hash:
+            reasons.append("oracle dispatch bound to a stale/mismatched bundle (FR-020/021)")
+            dispatch_ok = False
+        if not iso.get("excluded_absent") or not iso.get("manifest_hash"):
+            reasons.append("oracle dispatch did not prove read-path isolation (FR-021)")
+            dispatch_ok = False
+        disp_family = dp.get("model_family")
+        if disp_family and coder and disp_family == coder:
+            reasons.append(
+                f"oracle dispatch model family '{disp_family}' equals the coder family (FR-022)"
+            )
+            dispatch_ok = False
+
     return Independence(
         ok=not reasons,
         reasons=reasons,
@@ -295,4 +339,170 @@ def independence(
         covered=covered,
         model_family=model_family,
         bundle_hash=seal_hash,
+        dispatch_ok=dispatch_ok,
+        isolation_method=isolation_method,
     )
+
+
+# --------------------------------------------------------------------------- headless dispatch (FR-021/012/013, A3)
+def active_dispatch(entries: list[dict], spec_id: str) -> Optional[dict]:
+    """The latest isolated-dispatch attestation for the spec, if any."""
+    recs = _oracle_entries(entries, spec_id, "dispatch")
+    return recs[-1] if recs else None
+
+
+# Best-effort model *family* for a Spec Kit integration key — the fast-fail FR-022 precheck only.
+# The authoritative family is the resolved model recorded post-dispatch; "" means "unknown, skip".
+INTEGRATION_FAMILY = {
+    "claude": "anthropic",
+    "gemini": "google",
+    "codex": "openai",
+    "copilot": "",  # in-IDE model picker — family depends on the chosen model, not the integration
+    "opencode": "",
+}
+
+
+def integration_family(integration: str) -> str:
+    return INTEGRATION_FAMILY.get(integration, "")
+
+
+def parse_dispatched_model(stdout: str) -> Optional[str]:
+    """Best-effort ``<family>/<model>`` the dispatch reported (schema-tolerant). Unknown → None,
+    and the caller falls back to the integration's declared model."""
+    try:
+        data = json.loads(stdout)
+    except (ValueError, TypeError):
+        return None
+    stack = [data]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            m = cur.get("model")
+            if isinstance(m, str) and "/" in m:
+                return m
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
+# What the oracle author must never see — FR-021's exact scope: "the implementation, the plan,
+# contracts, or source code". Named planning/design docs + any non-test source file + contracts/.
+_EXCLUDED_BASENAMES = ("plan.md", "tasks.md", "research.md", "data-model.md")
+
+
+def _is_excluded_path(rel: str) -> bool:
+    """True iff a repo-relative path is implementation / plan / contracts / source (3PWR-FR-021)."""
+    parts = rel.split("/")
+    if parts[-1] in _EXCLUDED_BASENAMES:
+        return True
+    if "contracts" in parts[:-1]:  # any directory named `contracts` on the path
+        return True
+    return looks_like_impl(rel)  # a source-code file that is not a test (reuses the 008 predicate)
+
+
+@dataclass
+class WorktreeInfo:
+    path: Path
+    manifest: list[dict]
+    manifest_hash: str
+
+    @property
+    def file_count(self) -> int:
+        return len(self.manifest)
+
+
+def worktree_manifest(root: Path) -> list[dict]:
+    """Sorted ``[{"path": rel, "hash": sha256}]`` of every file under ``root`` (excluding ``.git``).
+    Deterministic — the evidence the implementation was absent at authoring time (3PWR-FR-021)."""
+    items: list[dict] = []
+    for p in sorted(root.rglob("*")):
+        rel_parts = p.relative_to(root).parts
+        if p.is_dir() or ".git" in rel_parts:
+            continue
+        try:
+            data = p.read_bytes()
+        except OSError:
+            continue
+        items.append({"path": p.relative_to(root).as_posix(), "hash": canonical.sha256_hex(data)})
+    return items
+
+
+def manifest_hash(manifest: list[dict]) -> str:
+    return canonical.hash_payload(manifest)
+
+
+def isolation_violations(manifest: list[dict]) -> list[str]:
+    """Excluded (implementation/plan/contracts/source) paths still present — must be empty (FR-021)."""
+    return sorted(m["path"] for m in manifest if _is_excluded_path(m["path"]))
+
+
+def _git_worktree(repo_root: Path, args: list[str]) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            ["git", "worktree", *args], cwd=repo_root, capture_output=True, text=True, check=False
+        )
+        return proc.returncode, (proc.stderr or proc.stdout)
+    except OSError as exc:
+        return 1, str(exc)
+
+
+def teardown_worktree(repo_root: Path, worktree_dir: Path) -> None:
+    """Remove the ephemeral worktree (best-effort; always safe to call)."""
+    if worktree_dir.exists():
+        _git_worktree(repo_root, ["remove", "--force", str(worktree_dir)])
+    _git_worktree(repo_root, ["prune"])
+    if worktree_dir.exists():
+        shutil.rmtree(worktree_dir, ignore_errors=True)
+
+
+def build_sanitized_worktree(
+    repo_root: Path,
+    worktree_dir: Path,
+    sealed_bundle_path: Path,
+    *,
+    base_ref: Optional[str] = None,
+) -> WorktreeInfo:
+    """Create an ephemeral git worktree pruned of implementation/plan/contracts/source (3PWR-FR-021).
+
+    The dispatched oracle runs with ``cwd=worktree_dir``; it cannot read the implementation because it
+    is not on disk there. The sealed bundle is copied in (it may be uncommitted) as
+    ``ORACLE_BUNDLE.json`` and an empty ``oracle-tests/`` output dir is created. Returns the manifest
+    computed *after* pruning — the isolation evidence recorded in the ledger. Raises ``RuntimeError``
+    if the worktree cannot be created."""
+    ref = base_ref or "HEAD"  # current state minus the implementation; --base for a specific ref
+    teardown_worktree(repo_root, worktree_dir)  # clear any stale worktree at this path
+    worktree_dir.parent.mkdir(parents=True, exist_ok=True)
+    rc, err = _git_worktree(repo_root, ["add", "--detach", "--force", str(worktree_dir), ref])
+    if rc != 0:
+        raise RuntimeError(f"git worktree add failed: {err.strip() or rc}")
+    # Prune the implementation / plan / contracts / source (3PWR-FR-021).
+    for p in sorted(worktree_dir.rglob("*")):
+        rel_parts = p.relative_to(worktree_dir).parts
+        if p.is_dir() or ".git" in rel_parts:
+            continue
+        if _is_excluded_path(p.relative_to(worktree_dir).as_posix()):
+            p.unlink()
+    # The judiciary authors from the sealed bundle only (copied in — it may be uncommitted).
+    if sealed_bundle_path.exists():
+        (worktree_dir / "ORACLE_BUNDLE.json").write_bytes(sealed_bundle_path.read_bytes())
+    (worktree_dir / "oracle-tests").mkdir(exist_ok=True)
+    manifest = worktree_manifest(worktree_dir)
+    return WorktreeInfo(path=worktree_dir, manifest=manifest, manifest_hash=manifest_hash(manifest))
+
+
+def dispatch_payload(bound_bundle_hash: str, integration: str, model: str, isolation: dict) -> dict:
+    """The ledger attestation for an isolated headless oracle dispatch (3PWR-FR-021/012/013, A3)."""
+    return {
+        "kind": "dispatch",
+        "bundle_hash": bound_bundle_hash,
+        "integration": integration,
+        "model": model,
+        "model_family": family_of(model),
+        "isolation": {
+            "method": isolation.get("method", "git-worktree"),
+            "manifest_hash": isolation["manifest_hash"],
+            "file_count": int(isolation.get("file_count", 0)),
+            "excluded_absent": bool(isolation.get("excluded_absent")),
+        },
+    }

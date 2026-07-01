@@ -11,7 +11,8 @@ Subcommands:
                 verifies + the tier-required sign-off is present (+ oracle independence
                 at High-risk)
   oracle        structural oracle independence: seal a spec-only bundle, record authoring
-                (refusing the coder's model family), verify from the ledger
+                (refusing the coder's model family), dispatch it headlessly + read-path
+                isolated (A3), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
@@ -26,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -46,6 +48,7 @@ from . import (
     provenance,
     scope,
 )
+from .adapters import run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger
@@ -115,19 +118,32 @@ def _format_verdict(verdict, appended: Optional[dict]) -> str:
 # --------------------------------------------------------------------------- commands
 def cmd_keygen(args: argparse.Namespace) -> int:
     s = _settings(args.root)
-    out = Path(args.out).resolve() if args.out else keys.default_private_path(s.root)
+    role = getattr(args, "role", "ledger")
+    if args.out:
+        out = Path(args.out).resolve()
+    elif role == "oracle":
+        out = keys.default_oracle_private_path(s.root)
+    else:
+        out = keys.default_private_path(s.root)
+    pub = s.oracle_pubkey_path if role == "oracle" else s.pubkey_path
+    env_var = (
+        "THREEPOWERS_ORACLE_SIGNING_KEY_FILE"
+        if role == "oracle"
+        else "THREEPOWERS_SIGNING_KEY_FILE"
+    )
     if out.exists() and not args.force:
         print(f"refusing to overwrite existing key at {out} (use --force)", file=sys.stderr)
         return EXIT_USAGE
     sk = keys.generate()
     keys.write_private(out, sk)
-    keys.write_public(s.pubkey_path, sk.verify_key)
-    print(f"signer identity created: {sk.key_id}")
+    keys.write_public(pub, sk.verify_key)
+    label = "judiciary (oracle) signer" if role == "oracle" else "signer"
+    print(f"{label} identity created: {sk.key_id}")
     print(f"  private key (keep OUTSIDE the repo): {out}")
-    print(f"  public key  (committed):             {s.pubkey_path}")
+    print(f"  public key  (committed):             {pub}")
     print()
     print("Point the engine at the private key with:")
-    print(f'  export THREEPOWERS_SIGNING_KEY_FILE="{out}"')
+    print(f'  export {env_var}="{out}"')
     return EXIT_OK
 
 
@@ -213,7 +229,7 @@ def cmd_conformance(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     s = _settings(args.root)
-    res = verify_ledger(s.ledger_path, s.pubkey_path)
+    res = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
     _print(
         {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
     )
@@ -243,8 +259,8 @@ def cmd_advance(args: argparse.Namespace) -> int:
     reasons: list[str] = []
     deviations_applied: list[int] = []
 
-    # 1. Ledger must verify.
-    vres = verify_ledger(s.ledger_path, s.pubkey_path)
+    # 1. Ledger must verify (accepting the primary or a distinct oracle signer).
+    vres = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
     if not vres.ok:
         reasons.append("ledger fails verification")
 
@@ -299,18 +315,29 @@ def cmd_advance(args: argparse.Namespace) -> int:
     #    from the spec, with a different model family, before the implementation. This binds at the
     #    High-risk tier only (oracle separation IS High-risk, spec §4); lower tiers stay advisory.
     #    Detection that the author *touched* the implementation is advisory — surfaced, never blocking.
+    #    At High-risk, physical read-path isolation (FR-021, A3) is also proven when a dispatch
+    #    attestation is present — and *required* when the repo opts in (roles.oracle.require_dispatch).
     oracle_ok: Optional[bool] = None
     oracle_advisory: list[str] = []
+    oracle_dispatch_ok: Optional[bool] = None
+    oracle_isolation: Optional[str] = None
     spec_for_oracle = args.spec_id or (last_verdict.get("spec_id") if last_verdict else "") or ""
     tier = (last_verdict.get("payload", {}) if last_verdict else {}).get("tier")
     if tier == "High-risk":
         rec = oracle.authoring_record(entries, spec_for_oracle)
         test_roots = [s.root / p for p in rec["payload"].get("test_paths", [])] if rec else []
         ind = oracle.independence(
-            entries, s.load_roles(), spec_for_oracle, repo_root=s.root, test_roots=test_roots
+            entries,
+            s.load_roles(),
+            spec_for_oracle,
+            repo_root=s.root,
+            test_roots=test_roots,
+            require_dispatch=s.oracle_require_dispatch(),
         )
         oracle_ok = ind.ok
         oracle_advisory = ind.advisory
+        oracle_dispatch_ok = ind.dispatch_ok
+        oracle_isolation = ind.isolation_method
         if not ind.ok:
             reasons += [f"oracle independence — {r}" for r in ind.reasons]
 
@@ -335,6 +362,10 @@ def cmd_advance(args: argparse.Namespace) -> int:
         payload["deviations_applied"] = deviations_applied
     if oracle_ok is not None:
         payload["oracle_ok"] = oracle_ok
+    if oracle_dispatch_ok is not None:
+        payload["dispatch_ok"] = oracle_dispatch_ok
+    if oracle_isolation:
+        payload["isolation_method"] = oracle_isolation
     try:
         sk = keys.resolve_signing_key(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
@@ -622,11 +653,21 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
     else:
         test_roots = []
     ind = oracle.independence(
-        entries, s.load_roles(), args.spec_id, repo_root=s.root, test_roots=test_roots
+        entries,
+        s.load_roles(),
+        args.spec_id,
+        repo_root=s.root,
+        test_roots=test_roots,
+        require_dispatch=args.require_dispatch,
     )
     lines = [f"oracle independence for {args.spec_id}: {'PASS' if ind.ok else 'FAIL'}"]
     if ind.model_family:
         lines.append(f"  oracle model family: {ind.model_family}")
+    if ind.isolation_method:
+        lines.append(
+            f"  read-path isolation: {ind.isolation_method} "
+            f"({'PASS' if ind.dispatch_ok else 'FAIL'})"
+        )
     if ind.covered:
         lines.append(f"  covered: {', '.join(ind.covered)}")
     for r in ind.reasons:
@@ -640,11 +681,203 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
             "advisory": ind.advisory,
             "covered": ind.covered,
             "model_family": ind.model_family,
+            "dispatch_ok": ind.dispatch_ok,
+            "isolation_method": ind.isolation_method,
         },
         args.json,
         "\n".join(lines),
     )
     return EXIT_OK if ind.ok else EXIT_FAIL
+
+
+def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
+    """Author the oracle headlessly under a non-coder integration, in a sanitized worktree from
+    which the implementation is physically absent (3PWR-FR-021/012/013; A3).
+
+    Dispatch is Phase-A provisioning, recorded in the ledger — it never enters the deterministic
+    gate verdict (3PWR-NFR-001). The blocking isolation check binds at ``advance`` (High-risk)."""
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    seal = oracle.active_seal(ledger.entries(), args.spec_id)
+    if seal is None:
+        print(
+            f"error: no sealed bundle for {args.spec_id} — run `3pwr oracle seal` first",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+
+    # Resolve the oracle model/family and refuse the coder's family up front (3PWR-FR-022).
+    coder = oracle.coder_family(s.load_roles())
+    intg_family = oracle.integration_family(args.integration)
+    model = args.model or (f"{intg_family}/{args.integration}" if intg_family else "")
+    if not model:
+        print(
+            f"error: cannot resolve a model family for integration '{args.integration}'; "
+            "pass --model <family/model>",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    fam = oracle.family_of(model)
+    if coder and fam == coder:
+        _print(
+            {
+                "dispatched": False,
+                "reason": "same_model_family",
+                "oracle_family": fam,
+                "coder_family": coder,
+            },
+            args.json,
+            f"REFUSED: dispatch integration '{args.integration}' resolves to the coder family "
+            f"'{fam}' — the judiciary must differ (3PWR-FR-022)",
+        )
+        return EXIT_FAIL
+
+    sealed_bundle = s.dir / "oracle" / args.spec_id / "sealed.json"
+    worktree_dir = s.dir / "worktrees" / args.spec_id
+    advisory: list[str] = []
+    try:
+        try:
+            info = oracle.build_sanitized_worktree(
+                s.root, worktree_dir, sealed_bundle, base_ref=args.base
+            )
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_FAIL
+        violations = oracle.isolation_violations(info.manifest)
+        if violations:
+            print(
+                "error: worktree isolation failed — implementation still present: "
+                + ", ".join(violations[:5]),
+                file=sys.stderr,
+            )
+            return EXIT_FAIL
+
+        # Dispatch the authoring step through the substrate (never a direct API call — A3).
+        dispatched_model = model
+        if not args.dry_run:
+            if shutil.which("specify") is None:
+                print(
+                    "error: `specify` (Spec Kit) not found — install it to dispatch headlessly, "
+                    "or use --dry-run",
+                    file=sys.stderr,
+                )
+                return EXIT_USAGE
+            workflow = args.workflow or str(
+                s.root / ".specify" / "workflows" / "3powers" / "oracle.yml"
+            )
+            cmd = (
+                f"specify workflow run {workflow} "
+                f"-i integration={args.integration} -i spec_id={args.spec_id} --json"
+            )
+            res = run_cmd(cmd, cwd=info.path)
+            if res.returncode != 0:
+                print(
+                    "error: dispatch failed (`specify workflow run`):\n  "
+                    + "\n  ".join(res.tail(10)),
+                    file=sys.stderr,
+                )
+                return EXIT_FAIL
+            dispatched_model = oracle.parse_dispatched_model(res.stdout) or model
+
+        # Collect authored oracle tests (from the worktree, or --tests for --dry-run / manual).
+        dest_root = s.root / "tests" / "oracle" / args.spec_id
+        if args.tests:
+            sources = [Path(t).resolve() for t in args.tests]
+        else:
+            out_dir = info.path / "oracle-tests"
+            sources = (
+                sorted(f for f in out_dir.rglob("*") if f.is_file()) if out_dir.is_dir() else []
+            )
+        test_paths: list[str] = []
+        test_hashes: dict[str, str] = {}
+        test_texts: dict[str, str] = {}
+        for src in sources:
+            if not src.exists():
+                print(f"error: oracle test not found: {src}", file=sys.stderr)
+                return EXIT_USAGE
+            text = src.read_text(encoding="utf-8")
+            dest = dest_root / src.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(text, encoding="utf-8")
+            rel = os.path.relpath(dest, s.root)
+            test_paths.append(rel)
+            test_hashes[rel] = canonical.sha256_hex(text.encode("utf-8"))
+            test_texts[rel] = text
+
+        # Advisory (non-blocking) peek/touch signals, unchanged from plan 008 (3PWR-FR-021).
+        criteria_text = ""
+        if sealed_bundle.exists():
+            data = json.loads(sealed_bundle.read_text(encoding="utf-8"))
+            criteria_text = " ".join(c.get("text", "") for c in data.get("criteria", []))
+        advisory = oracle.scan_touched_impl(
+            covdiff.changed_files(s.root, args.base), set(test_paths)
+        ) + oracle.scan_symbol_leakage(test_texts, criteria_text)
+
+        # Sign the record + dispatch attestation with the (optional) distinct oracle identity.
+        try:
+            osk = keys.resolve_signing_key(s.root, role="oracle")
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_USAGE
+        seal_hash = seal["payload"]["bundle_hash"]
+        req_ids = seal["payload"].get("requirement_ids", [])
+        rec_entry = ledger.append(
+            "oracle",
+            oracle.record_payload(seal_hash, dispatched_model, test_paths, test_hashes, advisory),
+            osk,
+            spec_id=args.spec_id,
+            requirement_ids=req_ids,
+        )
+        disp_entry = ledger.append(
+            "oracle",
+            oracle.dispatch_payload(
+                seal_hash,
+                args.integration,
+                dispatched_model,
+                {
+                    "method": "git-worktree",
+                    "manifest_hash": info.manifest_hash,
+                    "file_count": info.file_count,
+                    "excluded_absent": True,
+                },
+            ),
+            osk,
+            spec_id=args.spec_id,
+            requirement_ids=req_ids,
+        )
+
+        human = (
+            f"dispatched oracle authoring for {args.spec_id} under '{args.integration}' "
+            f"(family={fam}; {len(test_paths)} test file(s)); read-path isolation via git-worktree "
+            f"({info.file_count} files, implementation absent)\n"
+            f"  record seq={rec_entry['seq']}, dispatch seq={disp_entry['seq']}; "
+            f"manifest {info.manifest_hash}"
+        )
+        if args.dry_run:
+            human += "\n  ⓘ dry-run: worktree isolation built + attested; no live agent dispatched"
+        for a in advisory:
+            human += f"\n  ⚑ advisory (not a blocker): {a}"
+        _print(
+            {
+                "dispatched": True,
+                "integration": args.integration,
+                "model": dispatched_model,
+                "model_family": fam,
+                "test_paths": test_paths,
+                "manifest_hash": info.manifest_hash,
+                "file_count": info.file_count,
+                "excluded_absent": True,
+                "advisory_findings": advisory,
+                "record_seq": rec_entry["seq"],
+                "dispatch_seq": disp_entry["seq"],
+            },
+            args.json,
+            human,
+        )
+        return EXIT_OK
+    finally:
+        if not args.keep_worktree:
+            oracle.teardown_worktree(s.root, worktree_dir)
 
 
 def cmd_observe_signal(args: argparse.Namespace) -> int:
@@ -1088,6 +1321,12 @@ def build_parser() -> argparse.ArgumentParser:
     kp = common(sub.add_parser("keygen", help="create the independent signer identity"))
     kp.add_argument("--out", help="private key path (default: outside the repo)")
     kp.add_argument("--force", action="store_true")
+    kp.add_argument(
+        "--role",
+        choices=["ledger", "oracle"],
+        default="ledger",
+        help="which signer to mint: the primary ledger key or a distinct judiciary oracle key",
+    )
     kp.set_defaults(func=cmd_keygen)
 
     ip = common(sub.add_parser("init", help="ensure the .3powers/ layout exists"))
@@ -1240,7 +1479,8 @@ def build_parser() -> argparse.ArgumentParser:
     rp.set_defaults(func=cmd_roles_check)
 
     orp = sub.add_parser(
-        "oracle", help="oracle independence: seal / record / verify (FR-020/021/022/062)"
+        "oracle",
+        help="oracle independence: seal / record / dispatch / verify (FR-020/021/022/062, A3)",
     )
     osub = orp.add_subparsers(dest="oracle_cmd", required=True)
     osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle (FR-020)"))
@@ -1258,7 +1498,47 @@ def build_parser() -> argparse.ArgumentParser:
     ovf = common(osub.add_parser("verify", help="verify oracle independence (FR-020/021/022/062)"))
     ovf.add_argument("--spec-id", dest="spec_id", required=True)
     ovf.add_argument("--tests", nargs="*", help="oracle test roots (default: from the record)")
+    ovf.add_argument(
+        "--require-dispatch",
+        dest="require_dispatch",
+        action="store_true",
+        help="require an isolated headless-dispatch attestation (3PWR-FR-021/A3)",
+    )
     ovf.set_defaults(func=cmd_oracle_verify)
+    odp = common(
+        osub.add_parser(
+            "dispatch", help="author the oracle headlessly, read-path isolated (FR-021/A3)"
+        )
+    )
+    odp.add_argument("--spec-id", dest="spec_id", required=True)
+    odp.add_argument(
+        "--integration",
+        default="claude",
+        help="Spec Kit integration for the oracle step (a non-coder family; default: claude)",
+    )
+    odp.add_argument("--model", help="override the resolved oracle model as <family/model>")
+    odp.add_argument(
+        "--workflow", help="oracle workflow yaml (default: .specify/workflows/3powers/oracle.yml)"
+    )
+    odp.add_argument("--base", help="clean git ref for the sanitized worktree (default: HEAD)")
+    odp.add_argument(
+        "--tests",
+        nargs="*",
+        help="treat these as the authored oracle tests (for --dry-run / manual authoring)",
+    )
+    odp.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="build + attest worktree isolation without a live agent dispatch",
+    )
+    odp.add_argument(
+        "--keep-worktree",
+        dest="keep_worktree",
+        action="store_true",
+        help="do not tear down the worktree (debugging)",
+    )
+    odp.set_defaults(func=cmd_oracle_dispatch)
 
     obp = sub.add_parser(
         "observe", help="observe & feedback (§13): signal / coverage / log-action / verify-actions"

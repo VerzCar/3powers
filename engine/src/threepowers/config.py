@@ -34,6 +34,11 @@ class Settings:
         return self.dir / "keys" / "ledger.pub"
 
     @property
+    def oracle_pubkey_path(self) -> Path:
+        """The distinct judiciary (oracle) public key, if one was minted (3PWR-FR-021/039)."""
+        return self.dir / "keys" / "oracle.pub"
+
+    @property
     def verdicts_dir(self) -> Path:
         return self.dir / "verdicts"
 
@@ -54,6 +59,15 @@ class Settings:
 
     def load_roles(self) -> dict[str, Any]:
         return _load_yaml(self.roles_path)
+
+    def oracle_require_dispatch(self) -> bool:
+        """Policy: require an isolated headless-dispatch attestation at High-risk (3PWR-FR-021/A3).
+
+        Default False — the manual/in-IDE oracle flow (model-switch in the agent window) stays valid;
+        a repo opts in by setting ``roles.oracle.require_dispatch: true`` once it adopts the workflow."""
+        roles = self.load_roles()
+        oracle = (roles.get("roles") or {}).get("oracle") or {}
+        return bool(oracle.get("require_dispatch", False))
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

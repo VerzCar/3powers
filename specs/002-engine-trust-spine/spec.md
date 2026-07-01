@@ -15,9 +15,10 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 ## Non-Goals *(mandatory)*
 
-- Does **not** cover the v1.0 work still ahead — **physical** oracle read-path isolation via A3
-  headless dispatch (only ledger-anchored Phase-A/B independence is enforced here), the *live*
-  production instrumentation runtime (observe records signals + declarations, §13), catalog
+- Does **not** cover the *fuller* A3 work still ahead — the **coder** leg also running headless under a
+  different-family CLI, and end-to-end verification of a live non-Copilot `workflow run` dispatch (the
+  **oracle** leg's *physical* read-path isolation IS delivered here via `oracle dispatch`); nor the
+  *live* production instrumentation runtime (observe records signals + declarations, §13), catalog
   publishing, or a third adapter.
 - Does **not** re-state the whole epic; only the FRs/NFRs the engine implements today are listed here.
 
@@ -27,8 +28,8 @@ actually implements (the full 71-FR epic lives in `3Powers_Spec_v0.2.md`).
 
 - **3PWR-FR-020**: The engine shall seal a spec-only oracle bundle (acceptance criteria only) that the judiciary authors from, and bind the authoring record to that bundle's content hash.
   - *Acceptance*: `oracle seal` writes a content-addressed bundle whose hash is stable across re-seals; `oracle verify` fails a record bound to a stale/mismatched bundle hash.
-- **3PWR-FR-021**: The engine shall record and surface, as a non-blocking advisory, signals that the oracle author read or touched the implementation, without weakening the deterministic verdict.
-  - *Acceptance*: an oracle record whose tests reference implementation internals carries advisory findings shown by `status`; `advance` still proceeds on an advisory alone.
+- **3PWR-FR-021**: The engine shall structurally forbid the oracle author from reading the implementation — authoring it headlessly in a sanitized worktree from which the implementation, plan, tasks, and contracts are physically absent (`oracle dispatch`, A3) — and shall additionally record, as a non-blocking advisory, any signal that the author touched the implementation, without weakening the deterministic verdict.
+  - *Acceptance*: `oracle dispatch` builds a worktree whose isolation manifest contains no implementation/plan/contracts path and records a signed dispatch attestation; a High-risk `advance` with `require_dispatch` on refuses when no isolated dispatch is recorded or its manifest fails to prove isolation, and proceeds when isolation holds; the peek/touch heuristic stays advisory (`advance` proceeds on an advisory alone).
 - **3PWR-FR-022**: The engine shall refuse to proceed when the oracle and coder roles resolve to the same model family, checking the model actually recorded.
   - *Acceptance*: `roles-check` of two same-family roles exits non-zero; `oracle record` in the coder's family is refused; a different family is recorded.
 - **3PWR-FR-062**: The engine shall separate Phase A (oracle authoring) from Phase B (implementation) and prove, from the ledger sequence, that the oracle was authored before the implementation verdict.

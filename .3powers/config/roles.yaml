@@ -7,11 +7,17 @@
 # (/speckit.implement) and the oracle step (/3pwr.oracle) in whatever Spec Kit
 # integration you initialized (copilot, claude, gemini, …) — 3Powers assumes no
 # single provider — and record the model actually used via `3pwr oracle record`.
+#
+# `oracle.require_dispatch` (default false) is the High-risk policy for 3PWR-FR-021/A3:
+# when true, a High-risk `advance` requires an isolated *headless* dispatch attestation
+# (`3pwr oracle dispatch` — the oracle authored under a non-coder integration in a
+# sanitized worktree with the implementation physically absent), not just the manual
+# in-IDE record. Leave it false to keep the watchable, model-switch-in-the-IDE flow.
 version: 1
 diversity_enforced: true
 
 roles:
   planner:  { model_family: "" }            # set per project / per run
   coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot
-  oracle:   { model_family: "anthropic" }   # judiciary — MUST differ from `coder`
+  oracle:   { model_family: "anthropic", require_dispatch: false }  # judiciary — MUST differ from `coder`
   reviewer: { model_family: "google" }      # residual review (3PWR-FR-036, arrives v0.5)

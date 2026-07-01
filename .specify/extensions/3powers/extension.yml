@@ -18,11 +18,14 @@ requires:
 # Provider-agnostic: no integration is hardcoded. Spec Kit renders these commands into whichever
 # integration the project was initialized with (copilot, claude, gemini, codex, …) — the same
 # `integration: "auto"` model used by .specify/workflows/speckit/workflow.yml.
+# The A3 oracle-dispatch workflow (.specify/workflows/3powers/oracle.yml) runs the Phase-A step
+# headlessly under a non-coder integration; `3pwr oracle dispatch` wraps it with a sanitized worktree
+# (implementation absent) and records the isolation attestation in the ledger (3PWR-FR-021/012/013).
 provides:
   commands:
     - name: 3pwr.oracle
       file: commands/3pwr.oracle.md
-      description: "Phase A — author the independent oracle from a sealed, spec-only bundle; different model family than the coder (3PWR-FR-020/021/022/062)."
+      description: "Phase A — author the independent oracle from a sealed, spec-only bundle; different model family than the coder; at High-risk run it headlessly + read-path isolated via `3pwr oracle dispatch` (3PWR-FR-020/021/022/062, A3)."
     - name: 3pwr.verify
       file: commands/3pwr.verify.md
       description: "Run the deterministic gate suite and verify the signed verdict ledger (3PWR-FR-026/040)."

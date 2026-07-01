@@ -21,6 +21,13 @@ components:
     supported: ">=0.11,<0.12"
     known_good: "0.11.6.dev0"
     on_drift: warn
+  # Oracle headless dispatch (3PWR-A3): a non-coder, headless integration for `3pwr oracle dispatch`.
+  # Optional (only the isolated High-risk path uses it), so `warn`, not `block`. Register it with
+  # `specify integration install claude` before running an isolated dispatch under it.
+  - name: claude
+    probe: "claude --version"
+    supported: ">=1"
+    on_drift: warn
   - name: uv
     probe: "uv --version"
     supported: ">=0.4"
