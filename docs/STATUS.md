@@ -3,7 +3,8 @@
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
-> single source of truth; this document is checked against it. Last updated after **plan 014**.
+> single source of truth; this document is checked against it. It is a maintainer-facing status matrix —
+> the requirement IDs below are the point. Last updated after **plan 015**.
 
 ---
 
@@ -29,7 +30,7 @@ uv tool install ./engine
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 # engine dev loop
-(cd engine && uv sync --extra dev && uv run pytest)          # 231 tests
+(cd engine && uv sync --extra dev && uv run pytest)          # 251 tests
 (cd engine && uv run ruff check . && uv run mypy src)        # lint + types
 
 # self-application at STANDARD (fast — whole engine)
@@ -285,10 +286,11 @@ Next, in priority order (breadth + the remaining hardening track):
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) · **Constitution:** [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→014 done; 015 = next) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→015 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/speckit.md`](references/speckit.md), [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
-- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-014-hardening-core`,
-  none merged to `main`, no remote configured (PRs need a GitHub repo + push first).
+- **Git:** stacked local branches `plan-001-base-setup` → … → `plan-015-defect-design-go-adapter`
+  (015 committed), plus a `docs/open-source-readiness` branch for this documentation pass; none merged to
+  `main` yet.
 - **External tools used by some gates** (optional; gates quarantine if absent): `gitleaks`, `osv-scanner`,
   `semgrep`; the TS adapter uses `biome`, `tsc`, `vitest`, `stryker`, `fast-check` via `npm`.

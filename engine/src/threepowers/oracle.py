@@ -283,10 +283,10 @@ def independence(
     label = spec_id or "(spec)"
 
     if seal is None:
-        reasons.append(f"no sealed oracle bundle for {label} — run `3pwr oracle seal` (FR-020)")
+        reasons.append(f"no sealed oracle bundle for {label} — run `3pwr oracle seal`")
     if rec is None:
         reasons.append(
-            f"no oracle authoring record for {label} — run `3pwr oracle record` (FR-062)"
+            f"no oracle authoring record for {label} — run `3pwr oracle record`"
         )
 
     advisory = list((rec or {}).get("payload", {}).get("advisory_findings", []))
@@ -300,25 +300,25 @@ def independence(
         # seal-binding (FR-020/021): the oracle was authored against the active spec-only bundle.
         if rp.get("bundle_hash") != seal_hash:
             reasons.append(
-                "oracle authored against a stale/mismatched bundle — re-seal or re-record (FR-020/021)"
+                "oracle authored against a stale/mismatched bundle — re-seal or re-record"
             )
 
         # diversity on the ACTUAL model used, at the configured granularity (FR-022). A same
         # family/model is blocking unless a signed model_diversity deviation relaxes it (FR-057).
         oracle_model = rp.get("model") or ""
         if not model_family:
-            reasons.append("oracle authoring record has no model family (FR-022)")
+            reasons.append("oracle authoring record has no model family")
         elif not coder:
-            reasons.append("coder model family is unset in roles.yaml (FR-022)")
+            reasons.append("coder model family is unset in roles.yaml")
         elif not diverse(coder_side, oracle_model or model_family, diversity_level):
             model_lvl = diversity_level == "model" and "/" in oracle_model and "/" in coder_side
             msg = (
-                f"oracle model '{oracle_model}' equals the coder model (FR-022)"
+                f"oracle model '{oracle_model}' equals the coder model"
                 if model_lvl
-                else f"oracle model family '{model_family}' equals the coder family (FR-022)"
+                else f"oracle model family '{model_family}' equals the coder family"
             )
             if diversity_relaxed:
-                advisory.append(msg + " — relaxed by an active model_diversity deviation (FR-057)")
+                advisory.append(msg + " — relaxed by an active model_diversity deviation")
             else:
                 reasons.append(msg)
 
@@ -327,7 +327,7 @@ def independence(
         if impl is not None and rec.get("seq", -1) >= impl.get("seq", 0):
             reasons.append(
                 "oracle authored at or after the implementation verdict — "
-                "Phase A must precede Phase B (FR-062)"
+                "Phase A must precede Phase B"
             )
 
         # coverage (FR-023): each sealed acceptance criterion has ≥1 oracle test.
@@ -337,7 +337,7 @@ def independence(
         missing = sorted(req_ids - set(refs))
         if missing:
             reasons.append(
-                f"acceptance criteria without an oracle test: {', '.join(missing)} (FR-023)"
+                f"acceptance criteria without an oracle test: {', '.join(missing)}"
             )
 
     # physical read-path isolation via headless dispatch (3PWR-FR-021, A3). Advisory→blocking when a
@@ -348,7 +348,7 @@ def independence(
     isolation_method: Optional[str] = None
     if require_dispatch and disp is None:
         reasons.append(
-            f"no isolated oracle dispatch recorded for {label} — run `3pwr oracle dispatch` (FR-021/A3)"
+            f"no isolated oracle dispatch recorded for {label} — run `3pwr oracle dispatch`"
         )
     if disp is not None:
         dp = disp["payload"]
@@ -356,10 +356,10 @@ def independence(
         isolation_method = iso.get("method")
         dispatch_ok = True
         if seal is not None and dp.get("bundle_hash") != seal_hash:
-            reasons.append("oracle dispatch bound to a stale/mismatched bundle (FR-020/021)")
+            reasons.append("oracle dispatch bound to a stale/mismatched bundle")
             dispatch_ok = False
         if not iso.get("excluded_absent") or not iso.get("manifest_hash"):
-            reasons.append("oracle dispatch did not prove read-path isolation (FR-021)")
+            reasons.append("oracle dispatch did not prove read-path isolation")
             dispatch_ok = False
         disp_family = dp.get("model_family")
         disp_model = dp.get("model") or ""
@@ -370,12 +370,12 @@ def independence(
         ):
             model_lvl = diversity_level == "model" and "/" in disp_model and "/" in coder_side
             msg = (
-                f"oracle dispatch model '{disp_model}' equals the coder model (FR-022)"
+                f"oracle dispatch model '{disp_model}' equals the coder model"
                 if model_lvl
-                else f"oracle dispatch model family '{disp_family}' equals the coder family (FR-022)"
+                else f"oracle dispatch model family '{disp_family}' equals the coder family"
             )
             if diversity_relaxed:
-                advisory.append(msg + " — relaxed by an active model_diversity deviation (FR-057)")
+                advisory.append(msg + " — relaxed by an active model_diversity deviation")
             else:
                 reasons.append(msg)
                 dispatch_ok = False

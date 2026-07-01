@@ -33,7 +33,7 @@ def _quarantine(reason: str, tool: str) -> GateResult:
         gate="mutation",
         status=STATUS_SKIP,
         tool=tool,
-        findings=[f"quarantined: {reason} — gate not enforced (3PWR-NFR-015)"],
+        findings=[f"quarantined: {reason} — gate not enforced"],
     )
 
 

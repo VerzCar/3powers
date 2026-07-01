@@ -164,7 +164,7 @@ def run_gates(
                             gate="mutation",
                             status=STATUS_SKIP,
                             tool="mutation",
-                            findings=["mutation wired; pass --mutation to enforce (3PWR-NFR-002)"],
+                            findings=["mutation wired; pass --mutation to enforce"],
                         )
                     )
                     continue
@@ -299,7 +299,7 @@ def run_gates(
                     "missing_regression_test",
                     gate=g.gate,
                     detail="; ".join(g.findings[:1])
-                    or "a defect fix requires a failing regression test (3PWR-FR-008)",
+                    or "a defect fix requires a failing regression test",
                 )
             )
         elif g.gate in _DESIGN_FAILURE_CLASS:

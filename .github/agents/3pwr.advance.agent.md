@@ -1,5 +1,5 @@
 ---
-description: "Local, CI-independent enforcement (3PWR-FR-041/042): refuse to advance a stage unless required gates are green, the ledger verifies, and the tier-required human sign-off is present."
+description: "Local, CI-independent enforcement: refuse to advance a stage unless required gates are green, the ledger verifies, and the tier-required human sign-off is present."
 ---
 
 ## User Input
@@ -25,8 +25,8 @@ $ARGUMENTS
 
 ## Rules
 
-- Enforcement is **uniform** — there is no fast path for agent-authored or administrator changes
-  (3PWR-FR-042). Do not attempt to bypass a refusal.
+- Enforcement is **uniform** — there is no fast path for agent-authored or administrator changes.
+  Do not attempt to bypass a refusal.
 
 ## Done When
 

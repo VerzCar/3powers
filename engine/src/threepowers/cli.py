@@ -208,7 +208,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
 
     human = _format_verdict(verdict, appended)
     if args.report_only and verdict.result != STATUS_PASS:
-        human += "\n  ⓘ report-only: verdict emitted but not enforced (3PWR-FR-052)"
+        human += "\n  ⓘ report-only: verdict emitted but not enforced"
     _print(
         {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")}, args.json, human
     )
@@ -525,7 +525,7 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
     human = f"model diversity ({level}) {args.role_a} vs {args.role_b}: {verdict}"
     if dev_seq is not None:
         human += (
-            f"\n  ⚑ relaxed by model_diversity deviation #{dev_seq} (FR-057) — "
+            f"\n  ⚑ relaxed by model_diversity deviation #{dev_seq} — "
             f"a different {level} is recommended, not required"
         )
     _print(
@@ -604,7 +604,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         print("error: --model must be <family/model> (e.g. anthropic/claude-...)", file=sys.stderr)
         return EXIT_USAGE
     if not coder:
-        print("error: coder model family is unset in roles.yaml (3PWR-FR-022)", file=sys.stderr)
+        print("error: coder model family is unset in roles.yaml", file=sys.stderr)
         return EXIT_USAGE
     # Diversity is recommended, not forced (3PWR-FR-022): a same-family/model setup proceeds only under
     # a signed model_diversity deviation (3PWR-FR-057) — warned and recorded, never a silent drop.
@@ -624,7 +624,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
                 },
                 args.json,
                 f"REFUSED: oracle model '{args.model}' is not diverse from the coder at {level} level — "
-                "the judiciary must differ (3PWR-FR-022). Diversity is recommended, not forced: record a "
+                "the judiciary must differ. Diversity is recommended, not forced: record a "
                 "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
             )
             return EXIT_FAIL
@@ -674,7 +674,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
     )
     if diversity_dev is not None:
         human += (
-            f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} (FR-057) — "
+            f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} — "
             f"same {level} as the coder; not the recommended posture"
         )
     for a in advisory:
@@ -795,7 +795,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
                 },
                 args.json,
                 f"REFUSED: dispatch integration '{args.integration}' (model '{model}') is not diverse "
-                f"from the coder at {level} level — the judiciary must differ (3PWR-FR-022). Record a "
+                f"from the coder at {level} level — the judiciary must differ. Record a "
                 "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
             )
             return EXIT_FAIL
@@ -925,7 +925,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
         )
         if diversity_dev is not None:
             human += (
-                f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} (FR-057) — "
+                f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} — "
                 f"same {level} as the coder; not the recommended posture"
             )
         if args.dry_run:
@@ -1318,7 +1318,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         human = (
             f"{orchestrate.render_tracker(result.stage)}\n  ✗ gates red. Fix + re-run, or route the "
             f"lesson to a new spec round:\n    "
-            f'`3pwr observe signal --spec-id {spec_id} --kind incident --note "..."` (FR-054).'
+            f'`3pwr observe signal --spec-id {spec_id} --kind incident --note "..."`.'
         )
         _print({"status": "failed", "stage": result.stage, "spec_id": spec_id}, args.json, human)
         return EXIT_FAIL
@@ -1331,7 +1331,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     _notify(args.notify, f"3pwr run {spec_id}: lifecycle complete")
     human = (
         f"{orchestrate.render_tracker('Observe')}\n  ✓ lifecycle complete — advanced to Ship; "
-        "observe feeds new intent (FR-054)"
+        "observe feeds new intent"
     )
     _print({"status": "done", "spec_id": spec_id}, args.json, human)
     return EXIT_OK
@@ -1637,24 +1637,24 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument(
         "--paths",
         nargs="*",
-        help="scope diff-coverage + mutation to these files (per-capability tier, spec §4)",
+        help="scope diff-coverage + mutation to these files",
     )
     gr.add_argument(
         "--report-only",
         action="store_true",
-        help="emit the verdict but do not block (brownfield adoption, 3PWR-FR-052)",
+        help="emit the verdict but do not block (for adopting 3Powers in an existing repo)",
     )
     gr.add_argument(
         "--diff-scope",
         action="store_true",
-        help="block only on files changed vs --base (brownfield, 3PWR-FR-051)",
+        help="block only on files changed vs --base (for adopting 3Powers in an existing repo)",
     )
     gr.add_argument(
         "--work-kind",
         action="append",
         choices=list(workkind.KINDS),
-        help="shape the gate set for an inferred kind (repeatable): defect adds a regression gate "
-        "(3PWR-FR-008), design adds the design oracles (3PWR-FR-009); never weakens a tier gate",
+        help="shape the gate set for an inferred kind (repeatable): defect adds a regression gate, "
+        "design adds the design oracles; never weakens a tier gate",
     )
     gr.add_argument("--no-ledger", action="store_true", help="do not append to the ledger")
     gr.set_defaults(func=cmd_gate_run)
@@ -1680,13 +1680,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.set_defaults(func=cmd_advance)
 
     dvp = common(
-        sub.add_parser("deviation", help="record/revoke a reversible gate deviation (FR-057)")
+        sub.add_parser("deviation", help="record/revoke a signed, reversible gate exception")
     )
     dvp.add_argument(
         "--gate",
         action="append",
-        help="gate or requirement to relax (repeatable), e.g. a gate name or `model_diversity` "
-        "(3PWR-FR-022); required unless --revoke",
+        help="gate or requirement to relax (repeatable), e.g. a gate name or `model_diversity`; "
+        "required unless --revoke",
     )
     dvp.add_argument("--approver", help="human who accepts the deviation (required to record)")
     dvp.add_argument("--note", help="recorded reason")
@@ -1695,7 +1695,7 @@ def build_parser() -> argparse.ArgumentParser:
     dvp.add_argument("--spec-id", dest="spec_id", help="scope to a spec (default: global)")
     dvp.set_defaults(func=cmd_deviation)
 
-    emp = common(sub.add_parser("emergency", help="open the emergency fast path (FR-056)"))
+    emp = common(sub.add_parser("emergency", help="open the constrained emergency fast path"))
     emp.add_argument("--approver", help="human who opens the emergency path")
     emp.add_argument("--note", help="recorded reason")
     emp.add_argument("--cleanup-hours", dest="cleanup_hours", type=int, help="cleanup window (24)")
@@ -1708,14 +1708,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     clp = common(
         sub.add_parser(
-            "classify", help="infer work kind(s) + a suggested tier from intent (FR-058)"
+            "classify", help="infer the kind(s) of change + a suggested risk tier from your intent"
         )
     )
     clp.add_argument("intent", help="the free-form intent to classify")
     clp.set_defaults(func=cmd_classify)
 
     rnp = common(
-        sub.add_parser("run", help="drive the full lifecycle loop (auto/commit; §6, FR-011)")
+        sub.add_parser("run", help="drive the full lifecycle loop (auto/commit modes)")
     )
     rnp.add_argument(
         "intent", nargs="?", help="the human's one-paragraph intent (omit with --resume/--status)"
@@ -1724,12 +1724,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["auto", "commit"],
         default="auto",
-        help="auto = stop only at the two human gates (FR-006/FR-037); commit = stop at every gate",
+        help="auto = stop only at the two human gates (spec approval, sign-off); commit = stop at every gate",
     )
     rnp.add_argument(
         "--integration",
         default="auto",
-        help="executive integration (coder); the oracle should differ (FR-022)",
+        help="the coder integration; the oracle should use a different model family",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
     rnp.add_argument(
@@ -1810,20 +1810,20 @@ def build_parser() -> argparse.ArgumentParser:
     rsp.set_defaults(func=cmd_residual)
 
     chp = common(
-        sub.add_parser("characterize", help="reconstruct a spec + pin a legacy module (FR-053)")
+        sub.add_parser("characterize", help="reconstruct a spec + pin a legacy module's behavior")
     )
     chp.add_argument("--module", required=True, help="path to the legacy module to characterize")
     chp.add_argument("--specs", help="specs/ directory (default: <root>/specs)")
     chp.add_argument("--tests", help="tests output dir (default: alongside the module)")
     chp.set_defaults(func=cmd_characterize)
 
-    evp = common(sub.add_parser("eval", help="run the prompt/constitution eval set (FR-050)"))
+    evp = common(sub.add_parser("eval", help="run the prompt/constitution eval set"))
     evp.add_argument("--cases", help="eval cases.yaml (default: .3powers/eval/cases.yaml)")
     evp.set_defaults(func=cmd_eval)
 
     dcp = common(
         sub.add_parser(
-            "deps-check", help="check installed third-party versions vs supported (FR-048)"
+            "deps-check", help="check installed third-party versions vs supported ranges"
         )
     )
     dcp.add_argument(
@@ -1846,34 +1846,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     orp = sub.add_parser(
         "oracle",
-        help="oracle independence: seal / record / dispatch / verify (FR-020/021/022/062, A3)",
+        help="oracle independence: seal / record / dispatch / verify",
     )
     osub = orp.add_subparsers(dest="oracle_cmd", required=True)
-    osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle (FR-020)"))
+    osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle"))
     osl.add_argument("--spec", help="path to the governing spec.md")
     osl.add_argument("--spec-id", dest="spec_id")
     osl.set_defaults(func=cmd_oracle_seal)
     orc = common(
-        osub.add_parser("record", help="record oracle authoring; refuse same family (FR-022/062)")
+        osub.add_parser("record", help="record oracle authoring; refuse the coder's model family")
     )
     orc.add_argument("--spec-id", dest="spec_id", required=True)
-    orc.add_argument("--model", required=True, help="oracle model as <family/model> (FR-022)")
+    orc.add_argument("--model", required=True, help="oracle model as <family/model>")
     orc.add_argument("--tests", nargs="+", required=True, help="oracle test file(s)")
     orc.add_argument("--base", help="git ref for the touched-implementation advisory scan")
     orc.set_defaults(func=cmd_oracle_record)
-    ovf = common(osub.add_parser("verify", help="verify oracle independence (FR-020/021/022/062)"))
+    ovf = common(osub.add_parser("verify", help="verify oracle independence"))
     ovf.add_argument("--spec-id", dest="spec_id", required=True)
     ovf.add_argument("--tests", nargs="*", help="oracle test roots (default: from the record)")
     ovf.add_argument(
         "--require-dispatch",
         dest="require_dispatch",
         action="store_true",
-        help="require an isolated headless-dispatch attestation (3PWR-FR-021/A3)",
+        help="require an isolated headless-dispatch attestation",
     )
     ovf.set_defaults(func=cmd_oracle_verify)
     odp = common(
         osub.add_parser(
-            "dispatch", help="author the oracle headlessly, read-path isolated (FR-021/A3)"
+            "dispatch", help="author the oracle headlessly, read-path isolated"
         )
     )
     odp.add_argument("--spec-id", dest="spec_id", required=True)
@@ -1907,18 +1907,18 @@ def build_parser() -> argparse.ArgumentParser:
     odp.set_defaults(func=cmd_oracle_dispatch)
 
     obp = sub.add_parser(
-        "observe", help="observe & feedback (§13): signal / coverage / log-action / verify-actions"
+        "observe", help="observe & feedback: signal / coverage / log-action / verify-actions"
     )
     obsub = obp.add_subparsers(dest="observe_cmd", required=True)
     osig = common(
-        obsub.add_parser("signal", help="record a production signal → route to new intent (FR-054)")
+        obsub.add_parser("signal", help="record a production signal → route to new intent")
     )
     osig.add_argument("--spec-id", dest="spec_id", required=True)
     osig.add_argument("--kind", required=True, help="incident | missed-nfr | usage")
     osig.add_argument("--nfr", help="the NFR id the signal relates to (optional)")
     osig.add_argument("--note", help="the production lesson (required)")
     osig.set_defaults(func=cmd_observe_signal)
-    ocov = common(obsub.add_parser("coverage", help="NFR-instrumentation coverage (FR-054)"))
+    ocov = common(obsub.add_parser("coverage", help="report which NFRs have a live production check"))
     ocov.add_argument("--spec", help="path to the governing spec.md")
     ocov.add_argument(
         "--registry", help="observability.yaml (default: .3powers/config/observability.yaml)"
@@ -1926,7 +1926,7 @@ def build_parser() -> argparse.ArgumentParser:
     ocov.set_defaults(func=cmd_observe_coverage)
     olog = common(
         obsub.add_parser(
-            "log-action", help="log a tamper-evident, attributable agent action (FR-055)"
+            "log-action", help="log a tamper-evident, attributable agent action"
         )
     )
     olog.add_argument("--agent", required=True, help="the acting agent's identity")
@@ -1934,7 +1934,7 @@ def build_parser() -> argparse.ArgumentParser:
     olog.add_argument("--spec-id", dest="spec_id")
     olog.set_defaults(func=cmd_observe_log_action)
     over = common(
-        obsub.add_parser("verify-actions", help="verify the runtime agent-action log (FR-055)")
+        obsub.add_parser("verify-actions", help="verify the runtime agent-action log")
     )
     over.set_defaults(func=cmd_observe_verify_actions)
 

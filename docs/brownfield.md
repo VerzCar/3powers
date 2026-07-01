@@ -1,8 +1,8 @@
 # Brownfield Adoption (Stage Zero)
 
 Most teams don't start from a clean repo. 3Powers is designed to **spread through an existing codebase
-service by service** — no stop-the-world migration. This guide is the adoption path for a legacy project
-(spec §12, `3PWR-FR-051/052/053`). Commands and output below are real.
+service by service** — no stop-the-world migration. This guide is the adoption path for a legacy project.
+Commands and output below are real.
 
 > **The core idea:** hold only **new and changed** code to the full process, leave existing code untouched
 > until you modify it, and **pin** the behavior of any legacy module *before* you change it.
@@ -25,24 +25,24 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 ```
 
 You'll also need a language **adapter** manifest for your stack (see
-[`CONTRACT.md`](../.3powers/adapters/CONTRACT.md); the Python and TypeScript reference adapters are good
-templates) and a `risk-tiers.yaml` (copy the one in this repo).
+[`CONTRACT.md`](../.3powers/adapters/CONTRACT.md); the Python, TypeScript, and Go reference adapters are
+good templates) and a `risk-tiers.yaml` (copy the one in this repo).
 
 ## 2. See the debt without blocking anyone (`--report-only`)
 
 Run the full suite in **report-only** mode. It emits a complete verdict and records it, but **never
-blocks** — so legacy debt doesn't wall off every merge on day one (`3PWR-FR-052`):
+blocks** — so legacy debt doesn't wall off every merge on day one:
 
 ```bash
 3pwr gate run --path . --tier Standard --report-only
 ```
 ```
-  ✓ secret_scan · gitleaks
+  ✓ secret_scan · betterleaks
   ✓ gate_gaming · 3pwr-gaming
   ✓ spec_conformance · 3pwr-conformance  (5 requirements traced)
   failures:
     • vulnerable_dependency: GHSA-4x5r-pxfx-6jf8 in @babel/core; ...
-  ⓘ report-only: verdict emitted but not enforced (3PWR-FR-052)
+  ⓘ report-only: verdict emitted but not enforced
 ```
 ```bash
 echo $?      # → 0  (report-only never fails the run)
@@ -55,8 +55,8 @@ recorded in the ledger but `advance` ignores it, so it can't be used to ship.
 ## 3. Pin a legacy module before you touch it (`characterize`)
 
 Before you change an un-specified module, **reconstruct the spec it implicitly satisfies** and lock its
-current behavior with characterization tests that serve as its oracle (`3PWR-FR-053`). The module is
-parsed statically — never executed at generation time — so this is safe on untrusted legacy code:
+current behavior with characterization tests that serve as its oracle. The module is parsed statically —
+never executed at generation time — so this is safe on untrusted legacy code:
 
 ```bash
 3pwr characterize --module src/legacy/money.py
@@ -74,11 +74,11 @@ tier, and a non-goals section that's honest about what it is:
 # Characterization Specification: src/money.py
 **Spec ID**: MONEY
 **Risk Tier**: Standard
-**Status**: Reconstructed (3PWR-FR-053)
+**Status**: Reconstructed
 
 ## Non-Goals
 - This spec does **not** define *desired* behavior; it freezes the module's **observed** behavior
-  as an oracle so the code can be safely changed later (3PWR-FR-051).
+  as an oracle so the code can be safely changed later.
 
 ### Functional Requirements
 - **MONEY-FR-001**: The system shall preserve the observed behavior of `canonical_bytes` in `src/money.py`…
@@ -103,9 +103,9 @@ return value. Now any change that alters behavior is caught — you can refactor
 ## 4. Block only the diff (`--diff-scope`)
 
 Once you're ready to *enforce* on changed code, ratchet from report-only to **blocking, but scoped to the
-diff** (`3PWR-FR-051`). With `--base` and `--diff-scope`, diff-coverage measures only changed lines and
-the file-based scanners (SAST, secret) only count findings in changed files — pre-existing legacy issues
-don't block your merge:
+diff**. With `--base` and `--diff-scope`, diff-coverage measures only changed lines and the file-based
+scanners (SAST, secret) only count findings in changed files — pre-existing legacy issues don't block your
+merge:
 
 ```bash
 3pwr gate run --path . --tier Standard --base main --diff-scope
@@ -118,7 +118,7 @@ file**, while the untouched legacy is left alone until someone modifies it.
 
 For genuinely new code, run the full suite blocking (no `--report-only`). For the most trust-critical
 capability areas, scope a **High-risk** run (mutation included) to just those files, exactly as 3Powers
-does to its own trust spine (`3PWR-FR-031`, spec §4):
+does to its own trust spine (risk-tier scoping per capability):
 
 ```bash
 3pwr gate run --path . --tier High-risk --mutation \

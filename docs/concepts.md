@@ -30,7 +30,7 @@ change.** The model that wrote the code does not get to write the answer key.
 - **Legislative — the spec is law.** Requirements live versioned in [`specs/`](../specs/), in
   [EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `VUTIL-FR-001`. Every spec
   declares a **risk tier** and an explicit **non-goals** section *before* planning starts. Implementation
-  detail (a database, a framework) does **not** belong in a spec and is flagged out (`3PWR-FR-007`).
+  detail (a database, a framework) does **not** belong in a spec and is flagged out.
 - **Executive — agents build.** Agents turn the spec into a plan, tasks, and code. They may write their
   own tests to self-check, but those tests can never *replace* the independent oracle.
 - **Judicial — independent judgement.** Three judges, none of which the coder controls: an **oracle**
@@ -40,7 +40,7 @@ change.** The model that wrote the code does not get to write the answer key.
 ## Oracle independence (the heart of it)
 
 The oracle is the **answer key**: acceptance tests authored *from the spec's acceptance criteria alone*.
-Two rules make it independent (constitution, Principle III; `3PWR-FR-020/021/022`):
+Two rules make it independent (constitution, Principle III):
 
 1. **Different mind.** The oracle is pinned to a **different model family** than the coder. The engine
    refuses to proceed when they match (`3pwr roles-check`).
@@ -48,17 +48,18 @@ Two rules make it independent (constitution, Principle III; `3PWR-FR-020/021/022
    *without reading* the implementation. The coder (**Phase B**) then implements and must satisfy both
    their own tests and the oracle's.
 
-> **Honest status:** today this separation is enforced *procedurally* — by the `/3pwr.oracle` prompt,
-> the `roles-check` gate, authoring order, and the ledger record. Making it *structural* (the oracle
-> literally cannot read the implementation, via headless dispatch) is the project's top remaining
-> hardening item. See [STATUS](STATUS.md).
+> **How it's enforced:** the `/3pwr.oracle` prompt, the `roles-check` gate, authoring order, and the
+> ledger record enforce this procedurally. At the **High-risk** tier the engine also proves it
+> *structurally*: `3pwr oracle dispatch` authors the oracle headlessly inside a sanitized Git worktree
+> where the implementation is physically absent, and `advance` refuses to proceed without that signed
+> isolation proof. See [STATUS](STATUS.md).
 
 ## Risk tiers — one knob for every threshold
 
 Not all code carries the same blast radius. A bug in the trust spine lets bad code through *everywhere*;
 a typo in a CLI banner does not. So every capability declares a **risk tier**, and that tier is the
-**single source** of every gate threshold — coverage %, mutation score, model diversity (`3PWR-FR-032`,
-[`risk-tiers.yaml`](../.3powers/config/risk-tiers.yaml)):
+**single source** of every gate threshold — coverage %, mutation score, model diversity
+([`risk-tiers.yaml`](../.3powers/config/risk-tiers.yaml)):
 
 | Tier | What it's for | Gates |
 |---|---|---|
@@ -68,12 +69,11 @@ a typo in a CLI banner does not. So every capability declares a **risk tier**, a
 
 **The golden rule: a gate is never satisfied by weakening it.** If a change needs a higher bar, you raise
 its tier — you never lower the gate. Attempts to game a gate (an inline lint-disable, a `# type: ignore`,
-a deleted assertion, a weakened config) are flagged for **mandatory human review**, not silently absorbed
-(`3PWR-FR-035`).
+a deleted assertion, a weakened config) are flagged for **mandatory human review**, not silently absorbed.
 
 ## The deterministic gate suite
 
-The judiciary's tireless half. Gates run **cheapest-first** so failures surface fast (`3PWR-FR-026`):
+The judiciary's tireless half. Gates run **cheapest-first** so failures surface fast:
 
 ```
 format → lint → types → tests (+ diff-coverage) → mutation → SAST → dependency → secret → gate-gaming → spec-conformance
@@ -81,60 +81,70 @@ format → lint → types → tests (+ diff-coverage) → mutation → SAST → 
 
 Two properties matter:
 
-- **Deterministic** (`3PWR-NFR-001`): the same code yields the same verdict no matter which model wrote
+- **Deterministic**: the same code yields the same verdict no matter which model wrote
   it. There is no judgement in a gate for an agent to argue with.
-- **Polyglot by contract** (`3PWR-FR-027`): each language plugs in a declarative *adapter* manifest that
+- **Polyglot by contract**: each language plugs in a declarative *adapter* manifest that
   supplies its own format/lint/type/test/coverage/mutation tools. The core never assumes a language;
   language-agnostic gates (diff-coverage, conformance, secret, dependency, SAST) live in the core.
 
-Every run emits **one normalized verdict** (`3PWR-FR-033`) whose every failure is **actionable** — it
+Every run emits **one normalized verdict** whose every failure is **actionable** — it
 names the failing gate, the failure class, and the offending requirement or file, so a human can act on
-it without opening an agent transcript (`3PWR-FR-034/NFR-011`). See
+it without opening an agent transcript. See
 [Engine Architecture](engine-architecture.md) for how each gate works.
+
+### The suite adapts to the kind of change
+
+Before the gates run, 3Powers can infer what *kind* of change you're making — a defect fix, design work, a
+feature — and shape the suite accordingly (`3pwr classify`, or automatically inside `3pwr run`). A **defect
+fix** must ship a **failing regression test** that reproduces the bug before the fix lands, so the bug can
+never quietly come back. **Design work** is judged by *design oracles* — visual-regression, accessibility,
+and API/component-contract checks — because the code gates alone can't tell whether an interface is right;
+where your language adapter doesn't supply a tool for one, that oracle is **quarantined** (surfaced as
+skipped), never silently passed. Inference only ever *adds* gates for a change; it never removes one a tier
+requires, and it never touches the human sign-off.
 
 ## The trust spine — recovering trust locally
 
-3Powers deliberately has **no mandatory CI/CD enforcer** (`3PWR-NFR-004`). That raises a question: if
+3Powers deliberately has **no mandatory CI/CD enforcer**. That raises a question: if
 there's no central gatekeeper, what stops someone from just ignoring a red gate? The answer is a local,
 tamper-**evident** record (constitution, Principle VI):
 
 - An append-only, **hash-chained, Ed25519-signed verdict ledger** ([`.3powers/ledger.jsonl`](../.3powers/)).
   Each entry chains to its predecessor's hash and is signed by an **independent identity** whose private
-  key never lives in the repo (`3PWR-FR-038/039`, `NFR-005`).
+  key never lives in the repo.
 - A `3pwr verify` that recomputes the chain + signatures **offline** and fails on any tamper, gap, or
-  break (`3PWR-FR-040`).
+  break.
 - A local `3pwr advance` enforcement gate that refuses to proceed unless the gates are green, the ledger
-  verifies, and a **human sign-off** is present (`3PWR-FR-041`) — uniformly, with no fast path
-  (`3PWR-FR-042`).
-- **Build provenance + SBOM** signed by the same identity and verified at a **deploy gate**
-  (`3PWR-FR-066/067/068`), plus full **reversibility** (`3pwr revert`, `3PWR-FR-070`).
+  verifies, and a **human sign-off** is present — uniformly, with no fast path.
+- **Build provenance + SBOM** signed by the same identity and verified at a **deploy gate**,
+  plus full **reversibility** (`3pwr revert`).
 
-It guarantees tamper-**evidence**, not tamper-**proofing** (`3PWR-NFR-013`): someone *can* bypass local
+It guarantees tamper-**evidence**, not tamper-**proofing**: someone *can* bypass local
 enforcement, but the ledger and provenance make it **detectable**. The whole record reconstructs from the
-repository alone, offline (`3PWR-NFR-010`).
+repository alone, offline.
 
 ## Off the happy path — emergencies & deviations
 
 A process that cannot bend under fire gets abandoned; one that bends without discipline rots. So both
-ways off the happy path are **pre-agreed, signed, and reversible** (spec §14):
+ways off the happy path are **pre-agreed, signed, and reversible**:
 
-- A **deviation** (`3pwr deviation`, `3PWR-FR-057`) relaxes *named gates* with a recorded reason, a human
+- A **deviation** (`3pwr deviation`) relaxes *named gates* with a recorded reason, a human
   approver, and a **way back** (an expiry or an explicit revoke). `advance` will accept a red gate **only**
   when an active deviation covers it — recorded and surfaced, never silent. This is also the sanctioned way
   to **accept a `gate_gaming` flag** (a refactor that legitimately removed an assertion): you don't weaken
   the gate, you record a reversible deviation that a human signed.
-- An **emergency fast path** (`3pwr emergency`, `3PWR-FR-056`) is a *constrained* deviation: it may defer
+- An **emergency fast path** (`3pwr emergency`) is a *constrained* deviation: it may defer
   only **mutation** and **coverage**, never the security/secret gates, the human sign-off, or provenance —
   and it requires a **cleanup within one working day** (file the follow-up requirement and revoke it), or
   `advance` blocks.
 
 Crucially, deviations act at the **enforcement boundary**, not in the verdict: gates always run honestly,
-so the verdict stays deterministic (`3PWR-NFR-001`). The deviation is an explicit, ledgered override —
+so the verdict stays deterministic. The deviation is an explicit, ledgered override —
 exactly the discipline the constitution's "never satisfy a gate by weakening it" demands.
 
 ## The eight-stage lifecycle
 
-Every change flows through eight stages with explicit human gates (`3PWR-FR-011`, spec §6):
+Every change flows through eight stages with explicit human gates:
 
 ```
 Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe
@@ -147,14 +157,14 @@ judiciary (`/3pwr.*`). See [Getting Started](getting-started.md#driving-the-full
 
 ## Agnostic by construction
 
-No required dependency on any single LLM provider, model vendor, language toolchain, or CI/CD platform
-(`3PWR-NFR-014`). Roles bind to model *families* in config so you can swap models without touching the
-workflow; languages plug in via the adapter contract with **zero core changes** (`3PWR-NFR-007`). It
-layers on **GitHub Spec Kit** (constraint A1) and uses **Git** as its substrate (A2).
+No required dependency on any single LLM provider, model vendor, language toolchain, or CI/CD platform.
+Roles bind to model *families* in config so you can swap models without touching the
+workflow; languages plug in via the adapter contract with **zero core changes**. It
+layers on **GitHub Spec Kit** and uses **Git** as its substrate.
 
 ## Self-application
 
-3Powers is **built using 3Powers** (`3PWR-A6`, `NFR-006`). The `3pwr` engine gates its own code, and its
+3Powers is **built using 3Powers**. The `3pwr` engine gates its own code, and its
 trust-spine modules are held to the **High-risk** tier — they pass their own mutation bar. If the
 framework's own crown-jewel code couldn't survive its own gates, why would you trust it on yours?
 

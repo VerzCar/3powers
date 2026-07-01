@@ -1,5 +1,5 @@
 ---
-description: "Automated residual review on a different model family than the coder (3PWR-FR-036) — scoped to what the deterministic gates cannot catch. Records a signed residual entry."
+description: "Automated residual review on a different model family than the coder — scoped to what the deterministic gates cannot catch. Records a signed residual entry."
 handoffs:
   - label: Record human sign-off
     agent: 3pwr.signoff
@@ -19,7 +19,7 @@ what the gates structurally cannot.
 
 ## Constraints
 
-- **Different model family than the coder (3PWR-FR-036).** Run
+- **Different model family than the coder.** Run
   `3pwr roles-check --role-a reviewer --role-b coder`; if it reports VIOLATION, switch the model (in
   whatever Spec Kit integration you initialized) to a family different from the one that implemented the
   change, then continue.
@@ -34,7 +34,7 @@ Scope the review to what gates miss:
 4. **Security design** — authz, input trust, secret handling, unsafe defaults.
 
 For each finding, cite the requirement ID. **Flag any intent gap as a *new requirement*** routed back to
-`/speckit.specify` — not as a quiet code fix (3PWR-FR-036).
+`/speckit.specify` — not as a quiet code fix.
 
 ## Record it
 
@@ -46,7 +46,7 @@ Append a signed residual entry to the ledger:
 ```
 
 Then hand off to `/3pwr.signoff` — the human approver signs off on the **evidence and the residual**
-together (3PWR-FR-037).
+together.
 
 ## Done When
 

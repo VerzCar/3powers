@@ -22,7 +22,7 @@ def _quarantine(gate: str, tool: str) -> GateResult:
         gate=gate,
         status=STATUS_SKIP,
         tool=tool,
-        findings=[f"quarantined: '{tool}' not installed — gate not enforced (3PWR-NFR-015)"],
+        findings=[f"quarantined: '{tool}' not installed — gate not enforced"],
     )
 
 

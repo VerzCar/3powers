@@ -1,5 +1,5 @@
 ---
-description: "Record a human sign-off into the hash-chained, signed ledger (3PWR-FR-006/037). The approver is a person, not the agent."
+description: "Record a human sign-off into the hash-chained, signed ledger. The approver is a person, not the agent."
 handoffs:
   - label: Advance the stage
     agent: 3pwr.advance

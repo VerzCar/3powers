@@ -12,11 +12,11 @@ handoffs:
 $ARGUMENTS
 ```
 
-## Purpose (3PWR-FR-053, §12)
+## Purpose
 
 Bring an un-specified **legacy module** under the judiciary *before* it is changed: reconstruct the
 spec it implicitly already satisfies, and lock today's behavior with characterization tests that act
-as its oracle. This is the safe on-ramp for gradual adoption (3PWR-FR-051) — you do **not** modify
+as its oracle. This is the safe on-ramp for gradual adoption — you do **not** modify
 the module here.
 
 ## Steps

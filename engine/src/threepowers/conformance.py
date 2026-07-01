@@ -114,8 +114,7 @@ def run_conformance(
     findings = [f"requirement {rid} has no linked test" for rid in untested]
     if missing_layers:
         findings.append(
-            f"this change is missing tier-required test layer(s): {', '.join(missing_layers)} "
-            "(3PWR-FR-064)"
+            f"this change is missing tier-required test layer(s): {', '.join(missing_layers)}"
         )
     status = STATUS_FAIL if (untested or missing_layers) else STATUS_PASS
     return GateResult(
@@ -175,7 +174,7 @@ def regression_gate(spec_path: Path, test_roots: list[Path]) -> GateResult:
         if present
         else [
             "defect fix has no regression test: add a test named *regression*/*reproduce* that "
-            f"references a {spec_id or 'spec'} requirement id and fails before the fix (3PWR-FR-008)"
+            f"references a {spec_id or 'spec'} requirement id and fails before the fix"
         ]
     )
     return GateResult(
@@ -199,7 +198,7 @@ def conformance_failures(gate: GateResult) -> list[dict]:
     out += [
         failure(
             "untested_layer",
-            detail=f"the change lacks a '{layer}' test layer required at this tier (3PWR-FR-064)",
+            detail=f"the change lacks a '{layer}' test layer required at this tier",
         )
         for layer in gate.details.get("missing_layers", [])
     ]

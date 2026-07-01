@@ -1,6 +1,6 @@
 # GitHub Spec Kit — compacted reference
 
-> What 3Powers builds on (constraint A1). Verified against the installed CLI
+> What 3Powers builds on. Verified against the installed CLI
 > (`specify 0.11.6.dev0`, June 2026) and the scaffolding it produced in this repo.
 
 ## What it is

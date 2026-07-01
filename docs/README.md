@@ -22,10 +22,11 @@ the law; these docs explain and operationalize it.
 - [`../.specify/memory/constitution.md`](../.specify/memory/constitution.md) — the supreme, normative law (the principles `concepts.md` explains).
 - [`../.3powers/adapters/CONTRACT.md`](../.3powers/adapters/CONTRACT.md) — the language-adapter manifest schema.
 - [`../CLAUDE.md`](../CLAUDE.md) · [`../AGENTS.md`](../AGENTS.md) — guidance for agents working in the repo.
-- [`../plan/`](../plan/) — the continuous plan series (implementation history, 001 → 006).
+- [`../plan/`](../plan/) — the continuous plan series (implementation history, 001 → 015).
+- [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — how to set up the dev environment and contribute.
 
 ## Coming next
 
 A few docs are planned but not yet written: an **adapter-authoring walkthrough** (add a language,
-step-by-step, beyond the `CONTRACT.md` schema), a **CI/CD integration** guide, and per-example READMEs.
-Contributions welcome.
+step-by-step, beyond the `CONTRACT.md` schema) and a **CI/CD integration** guide.
+Contributions welcome — see [`CONTRIBUTING.md`](../CONTRIBUTING.md).

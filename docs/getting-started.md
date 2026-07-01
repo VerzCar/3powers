@@ -27,7 +27,7 @@ Installed 1 executable: 3pwr
 ## 2. Create the independent signer
 
 The trust spine signs every ledger entry with an identity that is **independent of the coding agents**.
-Its private key is written **outside** the repo; only the public key is committed (`3PWR-NFR-005`).
+Its private key is written **outside** the repo; only the public key is committed.
 
 ```bash
 3pwr keygen
@@ -75,26 +75,26 @@ verdict FAIL  spec=VUTIL tier=Standard adapter=typescript
   ↳ ledger entry #0 signed by ed25519:4fd71c543b0f499c
 ```
 
-**Read the verdict** (this is the whole point — `3PWR-NFR-011` says a human identifies the problem
+**Read the verdict** (this is the whole point — a human identifies the problem
 without opening any agent transcript):
 
-- Gates ran **cheapest-first** (`3PWR-FR-026`): the format/lint/type floor, then tests + diff-coverage,
+- Gates ran **cheapest-first**: the format/lint/type floor, then tests + diff-coverage,
   then the scanners and conformance.
-- The code itself is clean — **diff-coverage is 100%** on changed lines (`3PWR-FR-029`), and all five
-  `VUTIL` requirements trace to a test (**spec-conformance**, `3PWR-FR-030`).
+- The code itself is clean — **diff-coverage is 100%** on changed lines, and all five
+  `VUTIL` requirements trace to a test (**spec-conformance**).
 - But `dependency_scan` is **red**: `osv-scanner` found real, current advisories in the sample's
-  transitive dev dependencies. The failure is **actionable** (`3PWR-FR-034`) — it names the class
+  transitive dev dependencies. The failure is **actionable** — it names the class
   (`vulnerable_dependency`) and the exact advisory + package. That's the gate suite doing its job, not a
   bug in the sample.
-- The run appended **one signed entry** to the ledger (`#0`). One run → one normalized verdict
-  (`3PWR-FR-033`), written to `.3powers/verdicts/latest.json` and recorded in the ledger.
+- The run appended **one signed entry** to the ledger (`#0`). One run → one normalized verdict,
+  written to `.3powers/verdicts/latest.json` and recorded in the ledger.
 
-> Pass `--json` for the machine-readable verdict (the same artifact agents consume, `3PWR-NFR-008`).
+> Pass `--json` for the machine-readable verdict (the same artifact agents consume).
 > Pass `--no-ledger` to run the gates without recording an entry.
 
 ## 4. Inspect the trust spine
 
-Every verdict is signed and chained. Verify the chain **offline** (`3PWR-FR-040`, `3PWR-NFR-004`):
+Every verdict is signed and chained. Verify the chain **offline**:
 
 ```bash
 3pwr verify
@@ -104,7 +104,7 @@ ledger OK — 1 entry, chain and signatures intact
 ```
 
 See the ledger and the lifecycle stage it implies (the stage is *derived from the ledger*, not stored
-elsewhere — `3PWR-FR-011`):
+elsewhere):
 
 ```bash
 3pwr ledger show
@@ -133,11 +133,11 @@ REFUSED to advance to 'ship':
   - no human sign-off recorded
 ```
 
-It refuses for **both** reasons (`3PWR-FR-041`): the gates aren't green, and no human has signed off.
-Enforcement is uniform — there's no fast path for an agent or an admin (`3PWR-FR-042`).
+It refuses for **both** reasons: the gates aren't green, and no human has signed off.
+Enforcement is uniform — there's no fast path for an agent or an admin.
 
 To get to green here you'd remediate the advisory (update the dependency), or — if it's a dev-only
-false positive — record an explicit, reversible **deviation** (a roadmap item, `3PWR-FR-057`). You never
+false positive — record an explicit, reversible **deviation** (a signed, time-bound exception). You never
 reach green by deleting the gate.
 
 ## 6. The green happy path
@@ -167,7 +167,7 @@ advanced to 'ship' (ledger seq=3)
 ```
 
 Now the ledger holds the full, signed audit trail — spec → verdict → sign-off → advance — and it still
-verifies end to end (`3PWR-NFR-010`):
+verifies end to end:
 
 ```bash
 3pwr verify        # ledger OK — 4 entries, chain and signatures intact
@@ -181,12 +181,12 @@ verifies end to end (`3PWR-NFR-010`):
 ```
 
 If anyone edits a recorded entry, `3pwr verify` fails — the chain and signatures no longer line up. That
-is tamper-**evidence**: you can't quietly rewrite history (`3PWR-NFR-013`).
+is tamper-**evidence**: you can't quietly rewrite history.
 
 ## 7. Self-application at High-risk
 
-3Powers gates its own trust-spine code at the strictest tier — the proof that it eats its own dog food
-(`3PWR-NFR-006`). This run includes **mutation testing** scoped to the four trust-spine modules:
+3Powers gates its own trust-spine code at the strictest tier — the proof that it eats its own dog food.
+This run includes **mutation testing** scoped to the four trust-spine modules:
 
 ```bash
 (cd engine && uv run python -m threepowers.cli --root .. gate run --path . --adapter python \
@@ -204,7 +204,7 @@ verdict PASS  spec=3PWR tier=High-risk adapter=python
 ```
 
 Mutation testing injects faults into the trust-spine code and checks the tests catch them; a surviving
-mutant is reported as a missing assertion (`3PWR-FR-031`). The score (~89%) clears the High-risk
+mutant is reported as a missing assertion. The score (~89%) clears the High-risk
 threshold (70%). See [Engine Architecture](engine-architecture.md#mutation) for how it works.
 
 ## Driving the full lifecycle
@@ -221,8 +221,26 @@ commands. On a feature:
 ```
 
 The **model switch** is what makes the oracle independent: the judiciary authors the answer key with a
-different model family than the coder, from the spec alone (`3PWR-FR-022`). On an *existing* repo, start
+different model family than the coder, from the spec alone. On an *existing* repo, start
 with `/3pwr.characterize` — see [Brownfield Adoption](brownfield.md).
+
+## The whole lifecycle in one command
+
+You don't have to run the stages by hand. `3pwr run` drives the eight-stage lifecycle end to end — it
+composes the Spec Kit workflow and the judiciary gates, streams a live stage tracker, and in `auto` mode
+**stops only at the two human gates** (approving the spec, and the final sign-off):
+
+```bash
+# A quick, offline read on what you're about to build: the kind(s) of change + a suggested risk tier.
+3pwr classify "add rate limiting to the login endpoint"
+
+# Drive the lifecycle; it pauses for you at the spec-approval and sign-off gates.
+3pwr run "add rate limiting to the login endpoint" --mode auto
+3pwr run --status --spec-id RUN     # the live stage tracker, derived from the ledger
+```
+
+`3pwr classify` only *suggests* the kind and tier (it shapes which gates and oracle strategy apply); the
+human sign-off is always yours. The step-by-step slash-command flow above stays valid for a hands-on run.
 
 ## Next
 

@@ -62,7 +62,7 @@ def _quarantine(gate: str, tool: str, why: str) -> GateResult:
         gate=gate,
         status=STATUS_SKIP,
         tool=tool,
-        findings=[f"quarantined: {why} — design oracle not enforced (3PWR-NFR-015)"],
+        findings=[f"quarantined: {why} — design oracle not enforced"],
     )
 
 
