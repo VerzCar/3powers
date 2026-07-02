@@ -22,6 +22,10 @@ tiers:
     diff_coverage: 80
     mutation_score: 0
     model_diversity: true
+    # Opt-in machine-graded test quality (HARDN-FR-011): set `diff_mutation: true` (and a
+    # non-zero `mutation_score` to grade against) to run mutation over the CHANGED files
+    # whenever a --base is given. Off by default — enabling adds a gate, never weakens one.
+    diff_mutation: false
     required_layers: [unit]                   # every requirement needs ≥1 unit test (3PWR-FR-064)
     gates: [format, lint, types, spec_integrity, tests, diff_coverage, sast, dependency_scan, secret_scan, gate_gaming, spec_conformance]
 
