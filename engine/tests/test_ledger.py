@@ -146,3 +146,29 @@ def test_non_ascii_payload_round_trips_and_verifies(signed_ledger):
     assert "café-λ" in raw and "\\u" not in raw
     # And the chain/signatures still verify over the non-ASCII content.
     assert verify_ledger(ledger.path, pub).ok
+
+
+def test_entries_skips_blank_lines(signed_ledger):
+    """Blank lines (e.g. a stray newline from hand-editing) are ignored, not treated as entries.
+
+    Resilience of the offline-reconstructable record (3PWR-NFR-010): a blank line neither parses
+    as an entry nor breaks the chain."""
+    ledger, sk, pub = signed_ledger
+    ledger.append("verdict", {"r": "pass"}, sk)
+    ledger.path.write_text(ledger.path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert len(ledger.entries()) == 1  # the trailing blank line is skipped
+    assert verify_ledger(ledger.path, pub).ok
+
+
+def test_entries_raise_on_malformed_json_line_naming_the_line(signed_ledger):
+    """A non-JSON line is corruption: surfaced loud and locatable, never silently skipped.
+
+    The line number lets a human find the break; `verify_ledger` turns this into a named
+    'ledger corrupted' verdict rather than a crash (3PWR-FR-040/NFR-011)."""
+    ledger, sk, _pub = signed_ledger
+    ledger.append("verdict", {"r": "pass"}, sk)
+    with ledger.path.open("a", encoding="utf-8") as fh:
+        fh.write("{ this is not valid json\n")  # a truncated / corrupted second entry
+    with pytest.raises(ValueError) as exc:
+        ledger.entries()
+    assert "line 2" in str(exc.value) and "malformed" in str(exc.value)

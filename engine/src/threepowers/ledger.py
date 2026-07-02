@@ -58,10 +58,18 @@ class Ledger:
         if not self.path.exists():
             return []
         out: list[dict] = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
+        for lineno, raw in enumerate(self.path.read_text(encoding="utf-8").splitlines(), start=1):
+            line = raw.strip()
+            if not line:
+                continue
+            try:
                 out.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                # A line that is not valid JSON is corruption, not a parse quirk to swallow:
+                # fail loud and locatable. `verify_ledger` turns this into a named "ledger
+                # corrupted" problem so the keystone verify fails *closed* rather than raising
+                # (3PWR-FR-040/FR-034/NFR-011); the CLI catch-all covers other callers.
+                raise ValueError(f"malformed ledger entry at line {lineno}: {exc}") from exc
         return out
 
     def last(self) -> Optional[dict]:

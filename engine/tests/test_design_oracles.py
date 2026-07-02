@@ -52,7 +52,9 @@ def test_design_gate_quarantines_when_tool_absent(tmp_path):
 
 def test_design_gate_quarantines_when_command_missing(tmp_path):
     """A declared-but-command-less oracle is quarantined, not silently passed (3PWR-NFR-015)."""
-    g = design.design_gate("a11y_scan", {"gates": {"a11y_scan": {"parser": "axe"}}}, "web", tmp_path)
+    g = design.design_gate(
+        "a11y_scan", {"gates": {"a11y_scan": {"parser": "axe"}}}, "web", tmp_path
+    )
     assert g.status == STATUS_SKIP and "no command" in g.findings[0]
 
 

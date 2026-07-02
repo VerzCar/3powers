@@ -61,6 +61,24 @@ def test_sequence_gap_names_the_failure(tmp_path):
     assert any("entry seq=2" in p and "line 2" in p for p in seq_problems)
 
 
+def test_corrupt_ledger_line_fails_closed(tmp_path):
+    """A corrupt (non-JSON) ledger line makes verify fail CLOSED, not crash (3PWR-FR-040).
+
+    The keystone verify must classify corruption as tamper: it RETURNS ok=False with a named,
+    human-readable problem (3PWR-FR-034/NFR-011) — never raising — so the CLI reports a red
+    verdict (EXIT_FAIL) instead of a usage error on a tampered ledger."""
+    sk = keys.generate()
+    pub = tmp_path / "l.pub"
+    keys.write_public(pub, sk.verify_key)
+    ledger = Ledger(tmp_path / "l.jsonl")
+    ledger.append("verdict", {"r": "pass"}, sk)
+    with ledger.path.open("a", encoding="utf-8") as fh:
+        fh.write("}} truncated — not json\n")
+    res = verify_ledger(ledger.path, pub)  # must return, must not raise
+    assert res.ok is False
+    assert any(p and "corrupt" in p for p in res.problems)
+
+
 def test_broken_chain_names_the_failure(tmp_path):
     sk = keys.generate()
     pub = tmp_path / "l.pub"

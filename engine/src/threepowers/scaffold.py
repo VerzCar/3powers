@@ -146,6 +146,7 @@ def is_outside_repo(path: Path, root: Path) -> bool:
 
 # --------------------------------------------------------------------------- agent + Spec Kit readiness
 
+
 def seed_agents_md(root: Path) -> str:
     """Write a 3Powers-flavoured AGENTS.md starter if the repo has none (ONBRD-FR-016).
 
