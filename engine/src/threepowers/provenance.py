@@ -20,7 +20,7 @@ from pathlib import Path
 from . import SCHEMA_VERSION
 from .adapters import run_cmd
 from .canonical import canonical_bytes
-from .keys import SigningKey, VerifyKey
+from .keys import Signer, VerifyKey
 
 _DERIVED = ("signer_key_id", "signature")
 
@@ -83,7 +83,7 @@ def build_record(repo_root: Path, target: Path, artifact: Path) -> dict:
     }
 
 
-def sign_record(record: dict, signer: SigningKey) -> dict:
+def sign_record(record: dict, signer: Signer) -> dict:
     out = dict(record)
     out["signer_key_id"] = signer.key_id
     out["signature"] = base64.b64encode(signer.sign(canonical_bytes(record))).decode()

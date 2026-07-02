@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .canonical import GENESIS_PREV_HASH, hash_payload
-from .keys import SigningKey, VerifyKey
+from .keys import Signer, VerifyKey
 
 # Fields that are derived (hash/signature) and therefore excluded from the signed core.
 _DERIVED_FIELDS = ("entry_hash", "signer_key_id", "signature")
@@ -98,7 +98,7 @@ class Ledger:
         self,
         entry_type: str,
         payload: dict[str, Any],
-        signer: SigningKey,
+        signer: Signer,
         *,
         spec_id: str = "",
         requirement_ids: Optional[list[str]] = None,

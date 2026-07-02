@@ -252,7 +252,7 @@ def cmd_rotate_key(args: argparse.Namespace) -> int:
     """
     s = _settings(args.root)
     try:
-        old_sk = keys.resolve_signing_key(s.root)
+        old_sk = keys.resolve_signing_key(s.root)  # rotation needs the software key material
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -566,7 +566,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     appended = None
     if not args.no_ledger:
         try:
-            sk = keys.resolve_signing_key(s.root)
+            sk = keys.resolve_signer(s.root)
             appended = Ledger(s.ledger_path).append(
                 "verdict",
                 verdict.to_dict(),
@@ -659,7 +659,7 @@ def cmd_anchor(args: argparse.Namespace) -> int:
         print(f"error: {msg}", file=sys.stderr)
         return EXIT_FAIL
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
         receipt = ledger.append(
             "anchor",
             {
@@ -693,7 +693,7 @@ def cmd_anchor(args: argparse.Namespace) -> int:
 def cmd_signoff(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -935,7 +935,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
     if oracle_diversity_relaxed:
         payload["diversity_relaxed"] = True
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
@@ -963,7 +963,7 @@ def cmd_deviation(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1021,7 +1021,7 @@ def cmd_emergency(args: argparse.Namespace) -> int:
         print("error: --approver is required — a human opens the emergency path", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1109,7 +1109,7 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
         print("error: no requirement ids / acceptance criteria found in the spec", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1208,7 +1208,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
     ) + oracle.scan_symbol_leakage(test_texts, criteria_text)
 
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1437,7 +1437,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
 
         # Sign the record + dispatch attestation with the (optional) distinct oracle identity.
         try:
-            osk = keys.resolve_signing_key(s.root, role="oracle")
+            osk = keys.resolve_signer(s.root, role="oracle")
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_USAGE
@@ -1520,7 +1520,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
         print("error: --note is required — describe the production lesson", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1589,7 +1589,7 @@ def cmd_observe_log_action(args: argparse.Namespace) -> int:
         print("error: --agent and --action are required", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1778,7 +1778,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1912,7 +1912,7 @@ def cmd_revert(args: argparse.Namespace) -> int:
     state_at = lifecycle.derive([e for e in entries if e["seq"] <= args.to])
     to_stage = state_at[spec_id].stage if spec_id in state_at else lifecycle.STAGES[1]
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1935,7 +1935,7 @@ def cmd_abort(args: argparse.Namespace) -> int:
     """Record an abort for a spec's run (3PWR-FR-019)."""
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1981,7 +1981,7 @@ def cmd_provenance(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     target = Path(args.path).resolve() if args.path else s.root
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -2045,7 +2045,7 @@ def cmd_residual(args: argparse.Namespace) -> int:
     """Record a signed residual review (3PWR-FR-036/037)."""
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
