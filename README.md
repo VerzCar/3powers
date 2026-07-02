@@ -66,7 +66,7 @@ tireless, independent validation in between. Execution is the agents' job; *trus
 # Install the engine (provides the `3pwr` command). Needs `uv` (https://docs.astral.sh/uv/).
 #   Coming soon from PyPI:   uv tool install 3pwr
 # For now, install from source:
-git clone https://github.com/your-org/3powers.git
+git clone https://github.com/VerzCar/3powers.git
 cd 3powers
 uv tool install ./engine
 

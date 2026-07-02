@@ -14,8 +14,7 @@ silent or wrong, the fix is to change the spec, with sign-off.
 ## Roles
 
 - **Maintainers** review and merge contributions, triage issues, cut releases, and steward the roadmap.
-  The current lead maintainer is **Carlo Verzeri** ([@carlo-verzeri](https://github.com/your-org)).
-  <!-- Update the handle/list as maintainers are added. -->
+  The current lead maintainer is **Carlo Verzeri** ([@VerzCar](https://github.com/VerzCar)).
 - **Contributors** are anyone who opens an issue or a pull request. You don't need special permissions to
   contribute — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
