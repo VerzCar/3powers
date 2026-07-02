@@ -46,6 +46,7 @@ import yaml
 
 from . import (
     __version__,
+    anchor,
     canonical,
     config,
     covdiff,
@@ -614,12 +615,79 @@ def cmd_verify(args: argparse.Namespace) -> int:
     human = res.summary()
     for c in custody:
         human += f"\n  ✗ {c}"
+    anchored: Optional[dict] = None
+    if getattr(args, "anchored", False):
+        # Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest
+        # local anchor tag. Plain `verify` never reads an anchor (HARDN-NFR-001).
+        chk = anchor.check_anchored(Ledger(s.ledger_path).entries(), anchor.latest_anchor(s.root))
+        anchored = {"ok": chk.ok, "anchor_seq": chk.anchor_seq, "problems": chk.problems}
+        ok = ok and chk.ok
+        if chk.ok:
+            human += f"\n  anchor OK — chain extends the witnessed head (seq={chk.anchor_seq})"
+        for p in chk.problems:
+            human += f"\n  ✗ {p}"
     _print(
-        {"ok": ok, "entries": res.entries, "problems": res.problems, "key_custody": custody},
+        {
+            "ok": ok,
+            "entries": res.entries,
+            "problems": res.problems,
+            "key_custody": custody,
+            **({"anchored": anchored} if anchored is not None else {}),
+        },
         args.json,
         human,
     )
     return EXIT_OK if ok else EXIT_FAIL
+
+
+def cmd_anchor(args: argparse.Namespace) -> int:
+    """Record the ledger head with an external witness (HARDN-FR-005) — opt-in.
+
+    Creates the annotated git tag ``3powers/anchor/<seq>`` carrying the head's entry hash,
+    appends a local ``anchor`` receipt entry, and — only under ``--push`` — pushes the tag
+    (the sole network-capable operation, HARDN-NFR-001).
+    """
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    head = anchor.head_of(ledger.entries())
+    if head is None:
+        print("error: the ledger is empty — nothing to anchor", file=sys.stderr)
+        return EXIT_USAGE
+    seq, entry_hash = head
+    ok, msg = anchor.create_anchor(s.root, seq, entry_hash, push=args.push, remote=args.remote)
+    if not ok:
+        print(f"error: {msg}", file=sys.stderr)
+        return EXIT_FAIL
+    try:
+        sk = keys.resolve_signing_key(s.root)
+        receipt = ledger.append(
+            "anchor",
+            {
+                "anchored_seq": seq,
+                "anchored_hash": entry_hash,
+                "witness": "git-tag",
+                "ref": msg,
+                "pushed": bool(args.push),
+            },
+            sk,
+        )
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    _print(
+        {
+            "anchored_seq": seq,
+            "anchored_hash": entry_hash,
+            "ref": msg,
+            "pushed": bool(args.push),
+            "ledger_seq": receipt["seq"],
+        },
+        args.json,
+        f"anchored ledger head seq={seq} ({entry_hash}) as tag {msg}"
+        + (" — pushed" if args.push else " — local only; push it to complete the witness")
+        + f"\n  receipt: ledger seq={receipt['seq']}",
+    )
+    return EXIT_OK
 
 
 def cmd_signoff(args: argparse.Namespace) -> int:
@@ -2210,7 +2278,21 @@ def build_parser() -> argparse.ArgumentParser:
     cp.set_defaults(func=cmd_conformance)
 
     vp = common(sub.add_parser("verify", help="verify the ledger (offline)"))
+    vp.add_argument(
+        "--anchored",
+        action="store_true",
+        help="also cross-check the chain against the latest local anchor tag (HARDN-FR-005)",
+    )
     vp.set_defaults(func=cmd_verify)
+
+    anp = common(
+        sub.add_parser("anchor", help="record the ledger head with an external witness (opt-in)")
+    )
+    anp.add_argument(
+        "--push", action="store_true", help="push the anchor tag to the remote (network)"
+    )
+    anp.add_argument("--remote", default="origin", help="git remote for --push (default: origin)")
+    anp.set_defaults(func=cmd_anchor)
 
     sp = common(sub.add_parser("signoff", help="record a signed human sign-off"))
     sp.add_argument("--approver", required=True, help="approver identity (a person)")
