@@ -98,7 +98,9 @@ def test_getting_started_opens_with_tiered_prerequisites():
     t = _read(GETTING_STARTED)
     i_prereq = t.find("## Prerequisites")
     assert i_prereq != -1
-    assert i_prereq < t.find("uv tool install ./engine"), "install precedes the prerequisites section"
+    assert i_prereq < t.find("uv tool install ./engine"), (
+        "install precedes the prerequisites section"
+    )
     section = t[i_prereq : t.find("## 1.")]
     assert "Hard requirements" in section
     assert "Conditional requirements" in section
@@ -200,7 +202,9 @@ def test_install_story_documents_only_working_paths():
     t = _read(README)
     assert "coming soon" not in t.lower()
     first_block = t.split("```bash", 1)[1].split("```", 1)[0]
-    first_cmd = next(ln for ln in first_block.splitlines() if ln.strip() and not ln.lstrip().startswith("#"))
+    first_cmd = next(
+        ln for ln in first_block.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
+    )
     assert first_cmd.strip().startswith("git clone"), f"quickstart's first command is {first_cmd!r}"
 
 

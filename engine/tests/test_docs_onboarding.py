@@ -74,11 +74,11 @@ def test_readme_has_supported_languages_table_for_self_qualification():
     assert "Next.js" in t  # a TypeScript reader can confirm framework fit
     # the full tooling matrix resides under docs/ and the README links it
     assert "supported-languages--tooling-matrix" in t
-    matrix = _read(REPO / "docs" / "getting-started.md")
+    t = _read(REPO / "docs" / "getting-started.md")  # …same self-qualification holds there
     for lang in ("TypeScript", "Python", "Go"):
-        assert lang in matrix
+        assert lang in t
     for tool in ("Biome", "Ruff", "gofmt", "Vitest", "pytest", "Stryker", "mutmut"):
-        assert tool in matrix
+        assert tool in t
 
 
 # --------------------------------------------------------------------------- FR-014
