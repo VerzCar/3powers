@@ -44,7 +44,13 @@ def verify_ledger(
     judiciary (oracle) identity that signs the isolated-dispatch attestation (3PWR-FR-021/039).
     Absent extra keys are simply skipped, so single-key repos verify unchanged (3PWR-NFR-004)."""
     res = VerifyResult(ok=True)
-    entries = Ledger(ledger_path).entries()
+    try:
+        entries = Ledger(ledger_path).entries()
+    except ValueError as exc:
+        # A corrupt (non-JSON) ledger line is a tamper/corruption event, not a crash: the
+        # keystone verify fails *closed* with a named, locatable problem (3PWR-FR-040/NFR-011)
+        # so callers get ok=False (and the CLI a red EXIT_FAIL verdict), never an exception.
+        return VerifyResult(ok=False, problems=[f"ledger corrupted — {exc}"])
     res.entries = len(entries)
 
     if not entries:

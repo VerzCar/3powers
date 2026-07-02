@@ -15,16 +15,22 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 README = REPO / "README.md"
 
-pytestmark = pytest.mark.skipif(
-    not README.exists(), reason="repo docs tree not present (packaged engine)"
-)
-
 _GUIDES = [
     REPO / "README.md",
     REPO / "docs" / "cli-reference.md",
     REPO / "docs" / "getting-started.md",
     REPO / "docs" / "brownfield.md",
 ]
+
+# Run only against the real repo docs tree; skip cleanly otherwise. `README.exists()` alone is not
+# enough: under a copied layout (mutmut copies the tests into `mutants/`, so `parents[2]` resolves to
+# `engine/`) a *different* README.md exists and would make these tests FAIL instead of skip — which
+# silently breaks the mutation baseline, and with it self-application (3PWR-NFR-006). Requiring every
+# guide the tests actually read distinguishes the true repo root from a stray README.
+pytestmark = pytest.mark.skipif(
+    not all(p.exists() for p in _GUIDES),
+    reason="repo docs tree not present (packaged engine or copied layout)",
+)
 
 
 def _read(p: Path) -> str:

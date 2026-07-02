@@ -295,7 +295,9 @@ def cmd_init(args: argparse.Namespace) -> int:
                 interactive=interactive,
             )
             key_path = (
-                Path(_ask("Custom key path", str(default_key), interactive=interactive)).expanduser()
+                Path(
+                    _ask("Custom key path", str(default_key), interactive=interactive)
+                ).expanduser()
                 if pick == "custom"
                 else Path(pick).expanduser()
             )
@@ -405,17 +407,19 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append("  ✓ AGENTS.md: present — ensure it names `3pwr` as the main command")
     if ready["constitution"]:
         note = (
-            " (wrote the 3Powers overlay)"
-            if constitution_status in ("created", "overlaid")
-            else ""
+            " (wrote the 3Powers overlay)" if constitution_status in ("created", "overlaid") else ""
         )
         lines.append(f"  ✓ constitution: 3Powers separation-of-powers law in place{note}")
     elif ready["speckit_dir"]:
         lines.append("  ⚠ constitution: Spec Kit is set up but the 3Powers constitution is missing")
     else:
-        lines.append("  ✗ Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:")
+        lines.append(
+            "  ✗ Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:"
+        )
         if ready["specify_cli"]:
-            lines.append("      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it")
+            lines.append(
+                "      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it"
+            )
         else:
             lines.append(
                 "      install Spec Kit's `specify` CLI (https://github.com/github/spec-kit), then "
@@ -427,9 +431,15 @@ def cmd_init(args: argparse.Namespace) -> int:
     lines.append("")
     if brownfield:
         lines.append("Existing project detected — adopt gradually:")
-        lines.append("  3pwr gate run --path . --tier Standard --report-only     # see debt, block nothing")
-        lines.append("  3pwr characterize --module <path>                        # pin legacy behaviour")
-        lines.append("  3pwr gate run --path . --base main --diff-scope          # enforce on changes only")
+        lines.append(
+            "  3pwr gate run --path . --tier Standard --report-only     # see debt, block nothing"
+        )
+        lines.append(
+            "  3pwr characterize --module <path>                        # pin legacy behaviour"
+        )
+        lines.append(
+            "  3pwr gate run --path . --base main --diff-scope          # enforce on changes only"
+        )
     else:
         lines.append("Next — author your first spec and drive the lifecycle:")
         lines.append(f'  3pwr run "<what you want built>" --mode {mode}')
@@ -1890,7 +1900,9 @@ def build_parser() -> argparse.ArgumentParser:
     kp.set_defaults(func=cmd_keygen)
 
     ip = common(
-        sub.add_parser("init", help="guided onboarding: make a new or existing project 3Powers-ready")
+        sub.add_parser(
+            "init", help="guided onboarding: make a new or existing project 3Powers-ready"
+        )
     )
     ip.add_argument(
         "--yes",
@@ -2023,9 +2035,7 @@ def build_parser() -> argparse.ArgumentParser:
     clp.add_argument("intent", help="the free-form intent to classify")
     clp.set_defaults(func=cmd_classify)
 
-    rnp = common(
-        sub.add_parser("run", help="drive the full lifecycle loop (auto/commit modes)")
-    )
+    rnp = common(sub.add_parser("run", help="drive the full lifecycle loop (auto/commit modes)"))
     rnp.add_argument(
         "intent", nargs="?", help="the human's one-paragraph intent (omit with --resume/--status)"
     )
@@ -2182,9 +2192,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ovf.set_defaults(func=cmd_oracle_verify)
     odp = common(
-        osub.add_parser(
-            "dispatch", help="author the oracle headlessly, read-path isolated"
-        )
+        osub.add_parser("dispatch", help="author the oracle headlessly, read-path isolated")
     )
     odp.add_argument("--spec-id", dest="spec_id", required=True)
     odp.add_argument(
@@ -2228,24 +2236,22 @@ def build_parser() -> argparse.ArgumentParser:
     osig.add_argument("--nfr", help="the NFR id the signal relates to (optional)")
     osig.add_argument("--note", help="the production lesson (required)")
     osig.set_defaults(func=cmd_observe_signal)
-    ocov = common(obsub.add_parser("coverage", help="report which NFRs have a live production check"))
+    ocov = common(
+        obsub.add_parser("coverage", help="report which NFRs have a live production check")
+    )
     ocov.add_argument("--spec", help="path to the governing spec.md")
     ocov.add_argument(
         "--registry", help="observability.yaml (default: .3powers/config/observability.yaml)"
     )
     ocov.set_defaults(func=cmd_observe_coverage)
     olog = common(
-        obsub.add_parser(
-            "log-action", help="log a tamper-evident, attributable agent action"
-        )
+        obsub.add_parser("log-action", help="log a tamper-evident, attributable agent action")
     )
     olog.add_argument("--agent", required=True, help="the acting agent's identity")
     olog.add_argument("--action", required=True, help="the action taken")
     olog.add_argument("--spec-id", dest="spec_id")
     olog.set_defaults(func=cmd_observe_log_action)
-    over = common(
-        obsub.add_parser("verify-actions", help="verify the runtime agent-action log")
-    )
+    over = common(obsub.add_parser("verify-actions", help="verify the runtime agent-action log"))
     over.set_defaults(func=cmd_observe_verify_actions)
 
     return p

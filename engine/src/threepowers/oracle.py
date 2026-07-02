@@ -285,9 +285,7 @@ def independence(
     if seal is None:
         reasons.append(f"no sealed oracle bundle for {label} — run `3pwr oracle seal`")
     if rec is None:
-        reasons.append(
-            f"no oracle authoring record for {label} — run `3pwr oracle record`"
-        )
+        reasons.append(f"no oracle authoring record for {label} — run `3pwr oracle record`")
 
     advisory = list((rec or {}).get("payload", {}).get("advisory_findings", []))
     seal_hash = (seal or {}).get("payload", {}).get("bundle_hash")
@@ -336,9 +334,7 @@ def independence(
         covered = sorted(req_ids & set(refs))
         missing = sorted(req_ids - set(refs))
         if missing:
-            reasons.append(
-                f"acceptance criteria without an oracle test: {', '.join(missing)}"
-            )
+            reasons.append(f"acceptance criteria without an oracle test: {', '.join(missing)}")
 
     # physical read-path isolation via headless dispatch (3PWR-FR-021, A3). Advisory→blocking when a
     # dispatch attestation exists, or when the tier policy requires one (require_dispatch). Every fact
