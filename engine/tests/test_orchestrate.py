@@ -101,9 +101,9 @@ def test_parse_specify_outcome_tolerant():
 # --------------------------------------------------------------------------- CLI end-to-end (--dry-run)
 @pytest.fixture()
 def run_project(tmp_path, monkeypatch):
-    root = tmp_path
+    root = tmp_path / "repo"
     (root / ".3powers" / "config").mkdir(parents=True)
-    keyfile = root / "signer.key"
+    keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     return root

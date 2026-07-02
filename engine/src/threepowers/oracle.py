@@ -376,6 +376,25 @@ def independence(
                 reasons.append(msg)
                 dispatch_ok = False
 
+        # model attestation (HARDN-FR-007): the self-reported record model must not contradict
+        # the ledger-attested dispatch. Deterministic cross-check at family granularity; an
+        # integration with an unknown family ('', e.g. copilot's in-IDE picker) cannot contradict.
+        attested = integration_family(dp.get("integration") or "") or (disp_family or "")
+        if rec is not None and model_family and attested and model_family != attested:
+            reasons.append(
+                f"self-reported oracle model family '{model_family}' contradicts the "
+                f"ledger-attested dispatch (integration '{dp.get('integration')}' → "
+                f"'{attested}') — the model claim is not what actually ran"
+            )
+            dispatch_ok = False
+    elif rec is not None and model_family:
+        # No dispatch attestation exists: say so honestly — the claim is self-reported and
+        # nothing binds it to the process that ran (HARDN-FR-007). Advisory, never blocking.
+        advisory.append(
+            f"oracle model claim '{rec['payload'].get('model')}' is self-reported — "
+            "no dispatch attestation binds it to the process that authored the oracle"
+        )
+
     return Independence(
         ok=not reasons,
         reasons=reasons,

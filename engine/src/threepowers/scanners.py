@@ -9,7 +9,9 @@ finding — never silently passed (3PWR-NFR-015).
 from __future__ import annotations
 
 import json
+import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -50,14 +52,78 @@ def _secret_tool() -> str | None:
     return next((t for t in _SECRET_TOOLS if shutil.which(t)), None)
 
 
+# The engine's own private-key line format: ``ed25519-priv <base64-raw-seed-32>``. A real seed is
+# 44 base64 chars; requiring ≥40 avoids matching the format's *mention* in docs or source literals
+# while catching any actual committed key material (HARDN-FR-003).
+_PRIVATE_KEY_RE = re.compile(r"^ed25519-priv\s+[A-Za-z0-9+/=]{40,}\s*$")
+_MAX_CORE_SCAN_BYTES = 1_000_000
+
+
+def _scan_candidates(target: Path) -> list[Path]:
+    """Files the core secret check reads: git-tracked under ``target``, else a bounded walk."""
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=target, capture_output=True, text=True, check=False
+        )
+        if res.returncode == 0:
+            return [target / f for f in res.stdout.split("\0") if f]
+    except OSError:
+        pass
+    skip = {".git", "node_modules", ".venv", "__pycache__", "dist", "build"}
+    return [p for p in target.rglob("*") if p.is_file() and not (skip & set(p.parts))]
+
+
+def _core_private_key_findings(target: Path, changed: set[str] | None) -> list[str]:
+    """Core fallback scan for committed ``ed25519-priv`` material (HARDN-FR-003).
+
+    Runs with or without an external secret scanner installed — the engine's own key format
+    is never quarantined away. Deterministic, local, read-only.
+    """
+    findings: list[str] = []
+    for f in _scan_candidates(target):
+        if not _in_scope(target, str(f), changed):
+            continue
+        try:
+            if f.stat().st_size > _MAX_CORE_SCAN_BYTES:
+                continue
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if _PRIVATE_KEY_RE.match(line.strip()):
+                try:
+                    shown = str(f.relative_to(target))
+                except ValueError:
+                    shown = str(f)
+                findings.append(f"ed25519-priv private-key material in {shown}:{lineno}")
+                break  # one finding per file names it; no need to enumerate every line
+        if len(findings) >= 10:
+            break
+    return findings
+
+
 def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
     """Scan the working tree for committed secrets (3PWR-FR-026 §8).
 
-    Prefers betterleaks (the maintained Gitleaks successor), falls back to gitleaks — both share the
-    ``dir`` CLI and JSON schema. Quarantined when neither binary is installed (3PWR-NFR-015)."""
+    A core check for the engine's own ``ed25519-priv`` key material ALWAYS runs first
+    (HARDN-FR-003) — it needs no external binary and is never quarantined away. For the
+    broader ruleset the gate prefers betterleaks (the maintained Gitleaks successor), falling
+    back to gitleaks — both share the ``dir`` CLI and JSON schema. Only the external portion
+    is quarantined when neither binary is installed (3PWR-NFR-015)."""
+    core = _core_private_key_findings(target, changed)
     tool = _secret_tool()
     if tool is None:
-        return _quarantine("secret_scan", "betterleaks/gitleaks")
+        if core:
+            return GateResult(
+                gate="secret_scan",
+                status=STATUS_FAIL,
+                tool="3pwr-core",
+                details={"count": len(core)},
+                findings=core,
+            )
+        q = _quarantine("secret_scan", "betterleaks/gitleaks")
+        q.findings.append("core ed25519-priv private-key check ran clean (HARDN-FR-003)")
+        return q
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "secrets.json"
         res = run_cmd(
@@ -65,7 +131,7 @@ def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
             f"--report-format json --report-path {report}",
             cwd=target,
         )
-        findings: list[str] = []
+        findings: list[str] = list(core)
         if report.exists():
             try:
                 # betterleaks emits `null` for no findings; gitleaks emits `[]`. Coerce both to [].
@@ -81,10 +147,19 @@ def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
             except (ValueError, OSError, TypeError):
                 pass
         if res.returncode not in (0, 1):
-            # scanner error (not a clean pass/fail) → quarantine rather than block
+            # scanner error (not a clean pass/fail) → quarantine the external portion rather
+            # than block — but committed key material found by the core check still fails.
+            if core:
+                return GateResult(
+                    gate="secret_scan",
+                    status=STATUS_FAIL,
+                    tool="3pwr-core",
+                    details={"count": len(core)},
+                    findings=core,
+                )
             return _quarantine("secret_scan", tool)
         # When diff-scoped, only changed-file findings block (3PWR-FR-051).
-        in_scope = bool(findings) if changed is not None else res.returncode == 1
+        in_scope = bool(findings) if changed is not None else (res.returncode == 1 or bool(core))
         status = STATUS_FAIL if in_scope else STATUS_PASS
         return GateResult(
             gate="secret_scan",

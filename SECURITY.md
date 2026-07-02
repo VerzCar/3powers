@@ -39,7 +39,9 @@ This is a young, community-maintained project, so responses are best-effort:
   tamper-evidence and should be treated as a security incident — rotate it.
 - **Tamper-evidence, not tamper-proofing.** The ledger and build provenance make tampering *detectable*
   offline via `3pwr verify`; they do not physically prevent a local actor from bypassing enforcement. That
-  is by design. Reports of ways to tamper *without* detection are in scope and valued.
+  is by design. The **[threat model](docs/threat-model.md)** states exactly what each mechanism proves,
+  which tamper classes `verify` detects, and which residuals remain. Reports of ways to tamper *without*
+  detection are in scope and valued.
 - **Supply chain.** The engine and the sample rely on third-party tools and packages. Vulnerabilities in
   our own code or in how we invoke those tools are in scope; please report upstream issues to the
   respective projects.

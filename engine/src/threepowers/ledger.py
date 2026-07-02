@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .canonical import GENESIS_PREV_HASH, hash_payload
-from .keys import SigningKey
+from .keys import Signer, VerifyKey
 
 # Fields that are derived (hash/signature) and therefore excluded from the signed core.
 _DERIVED_FIELDS = ("entry_hash", "signer_key_id", "signature")
@@ -37,6 +37,8 @@ ENTRY_TYPES = (
     "observe",
     "agent_action",
     "run",
+    "key_rotation",  # signer succession, authored by the OUTGOING key (HARDN-FR-004)
+    "anchor",  # local receipt of an external ledger-head anchor (HARDN-FR-005)
 )
 
 
@@ -47,6 +49,21 @@ def _now_iso() -> str:
 def core_of(entry: dict) -> dict:
     """The signed/chained subset of an entry (excludes derived hash/sig fields)."""
     return {k: v for k, v in entry.items() if k not in _DERIVED_FIELDS}
+
+
+def rotation_payload(outgoing: VerifyKey, successor: VerifyKey, reason: str = "") -> dict:
+    """The ``key_rotation`` payload: the outgoing key names its successor (HARDN-FR-004).
+
+    Carrying the *previous* public key too makes every span of the ledger verifiable from
+    the ledger + the committed current key alone — no external state (3PWR-NFR-004/010).
+    """
+    return {
+        "previous_public_key": base64.b64encode(outgoing.raw).decode(),
+        "previous_key_id": outgoing.key_id,
+        "new_public_key": base64.b64encode(successor.raw).decode(),
+        "new_key_id": successor.key_id,
+        "reason": reason,
+    }
 
 
 class Ledger:
@@ -81,7 +98,7 @@ class Ledger:
         self,
         entry_type: str,
         payload: dict[str, Any],
-        signer: SigningKey,
+        signer: Signer,
         *,
         spec_id: str = "",
         requirement_ids: Optional[list[str]] = None,

@@ -139,9 +139,9 @@ def write_onboarding(settings: Settings, *, auto_mode: bool) -> None:
 
 def is_outside_repo(path: Path, root: Path) -> bool:
     """True iff ``path`` resolves OUTSIDE the repository working tree (ONBRD-NFR-001 / SC-003)."""
-    rp = path.expanduser().resolve()
-    rr = root.resolve()
-    return rr != rp and rr not in rp.parents
+    from .keys import inside_working_tree  # single custody source of truth (HARDN-FR-002)
+
+    return not inside_working_tree(root, path.expanduser())
 
 
 # --------------------------------------------------------------------------- agent + Spec Kit readiness

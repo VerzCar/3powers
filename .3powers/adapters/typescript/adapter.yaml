@@ -45,3 +45,14 @@ gates:
   component_contract:
     cmd: "npx --no-install pact-verifier"
     parser: pact
+
+# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# to a test declaration title (describe/it/test), and every requirement-bound test needs >=1
+# assertion. Absent patterns degrade to a visible quarantine (3PWR-NFR-015).
+conformance:
+  test_declarations:
+    - '\b(?:describe|it|test)(?:\.\w+)?\s*\('
+  assertion_patterns:
+    - '\bexpect\s*\('
+    - '\bassert\w*\s*\('
+    - '\.toThrow'

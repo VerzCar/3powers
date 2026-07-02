@@ -75,6 +75,34 @@ def _result_from_cmd(gate: str, spec: dict[str, Any], res: CmdResult) -> GateRes
     )
 
 
+_MUTABLE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".go"}
+
+
+def _is_test_file(rel: str) -> bool:
+    p = "/" + rel.replace("\\", "/")
+    name = Path(rel).name
+    return (
+        name.startswith("test_")
+        or Path(rel).stem.endswith("_test")
+        or ".test." in name
+        or ".spec." in name
+        or any(h in p for h in ("/tests/", "/e2e/", "/integration/"))
+    )
+
+
+def _diff_mutation_paths(settings: Settings, base: str | None, target: Path) -> list[str]:
+    """Changed *source* files to mutate under diff-scoped mutation (HARDN-FR-011).
+
+    Repo-relative changed files vs ``base``, kept when they are mutatable source (by
+    suffix) and not test files — mutating the tests themselves grades nothing.
+    """
+    return [
+        rel
+        for rel in sorted(covdiff.changed_files(settings.root, base, target))
+        if Path(rel).suffix in _MUTABLE_SUFFIXES and not _is_test_file(rel)
+    ]
+
+
 def _augment_gates(required: list[str], work_kind: list[str], settings: Settings) -> list[str]:
     """Union the gates an inferred work-kind pulls in onto the tier's list (3PWR-FR-058).
 
@@ -115,6 +143,14 @@ def run_gates(
     # tier gate (inference shapes, never weakens; 3PWR-FR-032).
     kinds = list(work_kind or [])
     required = _augment_gates(required, kinds, settings)
+
+    # Opt-in diff-scoped mutation (HARDN-FR-011): a tier configured with `diff_mutation: true`
+    # runs the mutation gate over the CHANGED files whenever a --base is given — machine-graded
+    # test quality on every change, without the full-sweep cost. Only ever ADDS a gate
+    # (3PWR-FR-032); with the knob unset, behavior is unchanged.
+    diff_mutation = bool(tcfg.get("diff_mutation")) and base is not None
+    if diff_mutation and "mutation" not in required:
+        required.append("mutation")
 
     # Brownfield diff-scope: block only on new/changed files (3PWR-FR-051). When set,
     # the file-based scanners count only findings in files changed vs. ``base``.
@@ -158,7 +194,7 @@ def run_gates(
                 )
                 continue
             if gate == "mutation":
-                if not allow_mutation:
+                if not allow_mutation and not diff_mutation:
                     # Expensive gate — opt in with --mutation; full sweep is scheduled
                     # (3PWR-NFR-002). Reported as skipped, never silently passed.
                     verdict.add(
@@ -170,12 +206,27 @@ def run_gates(
                         )
                     )
                     continue
+                mut_paths = paths
+                if diff_mutation and not paths:
+                    # Scope to the changed source files (HARDN-FR-011); the tier's
+                    # mutation_score stays the single source of the threshold (3PWR-FR-032).
+                    mut_paths = _diff_mutation_paths(settings, base, target)
+                    if not mut_paths:
+                        verdict.add(
+                            GateResult(
+                                gate="mutation",
+                                status=STATUS_SKIP,
+                                tool="mutation",
+                                findings=["diff mutation: no changed source files to mutate"],
+                            )
+                        )
+                        continue
                 verdict.add(
                     mutation.mutation_gate(
                         target,
                         spec,
                         threshold=float(tcfg.get("mutation_score", 0)),
-                        paths=paths,
+                        paths=mut_paths,
                     )
                 )
                 continue
@@ -229,7 +280,12 @@ def run_gates(
 
         elif gate == "spec_conformance":
             roots = _test_roots(manifest, target)
-            gr = run_conformance(spec_path, roots, required_layers=tcfg.get("required_layers"))
+            gr = run_conformance(
+                spec_path,
+                roots,
+                required_layers=tcfg.get("required_layers"),
+                conformance_cfg=manifest.get("conformance"),
+            )
             verdict.add(gr)
             verdict.failures.extend(conformance_failures(gr))
 

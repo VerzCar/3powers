@@ -41,7 +41,7 @@ SPEC = "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: The system shall work.\n"
 
 @pytest.fixture()
 def project(tmp_path, monkeypatch):
-    root = tmp_path
+    root = tmp_path / "repo"  # the key lives OUTSIDE this root (HARDN-FR-002)
     tp = root / ".3powers"
     (tp / "config").mkdir(parents=True)
     (tp / "adapters" / "fake").mkdir(parents=True)
@@ -61,7 +61,7 @@ def project(tmp_path, monkeypatch):
         "SF:src/x.py\nDA:1,1\nDA:2,1\nend_of_record\n", encoding="utf-8"
     )
 
-    keyfile = root / "signer.key"
+    keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     return root, proj

@@ -22,12 +22,34 @@ advance refused · `2` usage or environment error (e.g. no signing key, unknown 
 
 ### `keygen` — create the independent signer identity
 Creates an Ed25519 key pair. The **private key is written outside the repo**; the public key is committed.
+An output path *inside* the working tree is **refused** — an executive agent with repo access could read it.
 - `--role ROLE` — `ledger` (default) or `oracle` (a distinct signer for the judiciary).
-- `--out OUT` — private-key path (default: `~/.config/3powers/<repo>.key`).
+- `--out OUT` — private-key path (default: `~/.config/3powers/<repo>.key`); must be outside the repo.
 - `--force` — overwrite an existing key.
 ```bash
 3pwr keygen
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
+```
+
+### `rotate-key` — rotate the signer (key continuity)
+The **outgoing key signs its successor**: appends a `key_rotation` ledger entry authored by the current
+key and carrying the new public key, then installs the new key pair (private outside the repo, public
+committed). `verify` thereafter requires the committed public key to descend from the genesis key through
+exactly these recorded rotations — a bare pubkey swap becomes a named *unrotated key change* finding.
+- `--out OUT` — new private-key path (default: outside the repo); in-repo paths are refused.
+- `--reason REASON` — why (recorded in the ledger).
+```bash
+3pwr rotate-key --reason "annual rotation"
+```
+
+### External / hardware-backed signing
+Set `$THREEPOWERS_SIGNER_CMD` (or `$THREEPOWERS_ORACLE_SIGNER_CMD` for the judiciary identity) to a
+command that reads the bytes to sign on **stdin** and prints the **base64 Ed25519 signature** on stdout.
+The engine then never reads a private seed from any file or environment variable; verification is
+unchanged (standard Ed25519 against the committed public key). A misconfigured signer **fails loudly** —
+there is no silent fallback to a software key.
+```bash
+export THREEPOWERS_SIGNER_CMD="$HOME/bin/hsm-sign"   # e.g. a YubiKey/ssh-agent/enclave wrapper
 ```
 
 ### `init` — guided onboarding (new or existing project)
@@ -98,17 +120,43 @@ ledger seq. A spec with no recorded approval hash is **skipped, never blocked**.
 `3pwr spec diff`; the sanctioned ways forward are a fresh `signoff --stage spec` over the amended document
 or a signed, reversible `3pwr deviation --gate spec_integrity`.
 
+**Diff-scoped mutation (opt-in).** A tier configured with `diff_mutation: true` in
+`.3powers/config/risk-tiers.yaml` runs the mutation gate over the **changed source files** whenever a
+`--base` is given, graded against that tier's `mutation_score` — machine-graded test quality on every
+change without the full-sweep cost. Off by default; enabling it only ever *adds* a gate. A missing
+mutation tool quarantines, never silently passes.
+
 ### `conformance` — spec-conformance trace only
-Checks every requirement in a spec has a linked test, without running the full suite.
+Checks every requirement in a spec has a linked test, without running the full suite. Under `gate run`
+the trace is **anti-gamed**: a requirement counts as traced only when its ID is **bound to a test
+declaration** (the test's name/title line or its adjacent docstring — adapter-declared patterns), a
+comment-only mention fails as `untraced_requirement`, and every requirement-bound test needs ≥1
+assertion (`weak_test` otherwise). Adapters without patterns degrade to a visible quarantine.
 - `--spec SPEC` · `--tests [TESTS ...]` — test roots to scan.
 ```bash
 3pwr conformance --spec specs/002-engine-trust-spine/spec.md --tests engine/tests engine/src
 ```
 
 ### `verify` — verify the ledger (offline)
-Recomputes the hash chain + signatures; fails on any tamper, gap, or break. No flags.
+Recomputes the hash chain + signatures — including any recorded **key rotations** (the committed public
+key must descend from the genesis key) — and runs a **custody preflight** (a resolved private key inside
+the working tree, or readable by other users, is a failing `key_custody` finding). Fails on any tamper,
+gap, or break.
+- `--anchored` — also cross-check the chain against the latest local anchor tag (see `anchor`): a ledger
+  truncated or rewritten behind the anchored head fails, even if every signature verifies.
 ```bash
-3pwr verify        # → ledger OK — N entries, chain and signatures intact
+3pwr verify              # → ledger OK — N entries, chain and signatures intact
+3pwr verify --anchored   # → also: anchor OK — chain extends the witnessed head
+```
+
+### `anchor` — record the ledger head with an external witness (opt-in)
+Tags the current head (sequence + entry hash) as the annotated git tag `3powers/anchor/<seq>` and appends
+a local signed receipt. Pushing the tag to a remote is what makes the witness external — after that, even
+a holder of the signing key cannot silently rewrite the anchored history.
+- `--push` — push the tag to the remote (**the only network-capable operation**, explicit opt-in).
+- `--remote REMOTE` — git remote for `--push` (default: `origin`).
+```bash
+3pwr anchor --push       # anchor + publish the witness
 ```
 
 ---

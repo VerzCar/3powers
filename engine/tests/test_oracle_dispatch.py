@@ -336,7 +336,7 @@ SPEC = "**Spec ID**: ORAC\n\n- **ORAC-FR-001**: The system shall work.\n"
 
 @pytest.fixture()
 def dispatch_project(tmp_path, monkeypatch):
-    root = tmp_path
+    root = tmp_path / "dispatch-repo"
     tp = root / ".3powers"
     (tp / "config").mkdir(parents=True)
     (tp / "adapters" / "fake").mkdir(parents=True)
@@ -360,7 +360,7 @@ def dispatch_project(tmp_path, monkeypatch):
     otest = root / "authored_oracle_orac.py"
     otest.write_text("# oracle covers ORAC-FR-001\n", encoding="utf-8")
 
-    keyfile = root / "signer.key"
+    keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     _init_repo(root)  # so `git worktree add` works

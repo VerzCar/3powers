@@ -97,6 +97,24 @@ Implemented and committed (not yet merged to `main`):
   textual diff when the sign-off commit is known (SLOCK-FR-007). Hash tampering breaks the signature — the
   existing `verify` catches it with no new code (SLOCK-NFR-002). `speclock.py` joins the High-risk mutation
   scope (diff-coverage 97% ≥ 95, mutation ≈80% ≥ 70).
+- **Plan 017** (`plan/017-trust-hardening.md`) — **trust-spine hardening (HARDN; High-risk)**: a versioned
+  `docs/threat-model.md` (what the ledger proves / cannot prove, custody boundary, self-reported oracle
+  claim — HARDN-FR-001). Custody enforced: `keygen`/`rotate-key` refuse in-repo keys; `verify` runs a
+  custody preflight (`key_custody` on in-tree or group-readable keys, HARDN-FR-002); the secret gate's core
+  `ed25519-priv` check always runs (HARDN-FR-003). **Key continuity**: `3pwr rotate-key` appends a
+  `key_rotation` entry signed by the OUTGOING key; `verify` walks the succession and fails an *unrotated
+  key change* (HARDN-FR-004). **Anchoring (opt-in)**: `3pwr anchor` tags the head (`3powers/anchor/<seq>`,
+  `--push` = the only network op) + a local receipt; `verify --anchored` catches truncation/rewrite behind
+  the anchor even by a key holder (HARDN-FR-005). **External signing**: `$THREEPOWERS_SIGNER_CMD` pipes
+  bytes→stdin / b64 sig←stdout; seed never readable by the engine; loud failure, no fallback; verification
+  unchanged (HARDN-FR-006). **Oracle attestation**: the self-reported record family is cross-checked
+  against the attested dispatch integration — contradiction blocks a High-risk advance; no dispatch ⇒ the
+  claim is labelled self-reported (HARDN-FR-007). **Conformance anti-gaming**: IDs must be **bound to test
+  declarations** (comment-only mention ⇒ `untraced_requirement`), every bound test needs ≥1 assertion
+  (adapter-declared patterns; `weak_test`; pattern-less adapters quarantine — HARDN-FR-008/009);
+  `gate_gaming` flags newly added assertion-free requirement-referencing tests (HARDN-FR-010); per-tier
+  `diff_mutation: true` + `--base` runs mutation over changed files vs the tier threshold (HARDN-FR-011).
+  `anchor.py` joins the High-risk mutation scope.
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate

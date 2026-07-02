@@ -46,6 +46,7 @@ import yaml
 
 from . import (
     __version__,
+    anchor,
     canonical,
     config,
     covdiff,
@@ -65,7 +66,7 @@ from . import (
 from .adapters import run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
-from .ledger import Ledger
+from .ledger import Ledger, rotation_payload
 from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
@@ -217,6 +218,14 @@ def cmd_keygen(args: argparse.Namespace) -> int:
         if role == "oracle"
         else "THREEPOWERS_SIGNING_KEY_FILE"
     )
+    if keys.inside_working_tree(s.root, out):
+        print(
+            f"refusing to create a private key INSIDE the repository working tree: {out}\n"
+            "  an executive agent with repo access could read it (HARDN-FR-002 / 3PWR-NFR-005).\n"
+            f"  pass --out with a path outside the repo, e.g. {keys.default_private_path(s.root)}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     if out.exists() and not args.force:
         print(f"refusing to overwrite existing key at {out} (use --force)", file=sys.stderr)
         return EXIT_USAGE
@@ -230,6 +239,63 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     print()
     print("Point the engine at the private key with:")
     print(f'  export {env_var}="{out}"')
+    return EXIT_OK
+
+
+def cmd_rotate_key(args: argparse.Namespace) -> int:
+    """Rotate the ledger signer (HARDN-FR-004): the OUTGOING key signs its successor.
+
+    Appends a ``key_rotation`` entry authored by the current key and carrying the new public
+    key, then installs the successor (private key outside the repo, public key committed).
+    ``verify`` thereafter requires the committed key to descend from the genesis key through
+    exactly these recorded rotations — a bare pubkey swap becomes a named finding (SC-001).
+    """
+    s = _settings(args.root)
+    try:
+        old_sk = keys.resolve_signing_key(s.root)  # rotation needs the software key material
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    if s.pubkey_path.exists():
+        committed = keys.load_public(s.pubkey_path)
+        if committed.key_id != old_sk.key_id:
+            print(
+                f"error: the resolved signing key ({old_sk.key_id}) is not the committed "
+                f"public key ({committed.key_id}) — a rotation must be authored by the "
+                "current key, or verify would report a broken succession",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+    out = Path(args.out).resolve() if args.out else keys.default_private_path(s.root)
+    if keys.inside_working_tree(s.root, out):
+        print(
+            f"refusing to create a private key INSIDE the repository working tree: {out}\n"
+            "  pass --out with a path outside the repo (HARDN-FR-002 / 3PWR-NFR-005)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    new_sk = keys.generate()
+    payload = rotation_payload(old_sk.verify_key, new_sk.verify_key, args.reason or "")
+    entry = Ledger(s.ledger_path).append("key_rotation", payload, old_sk)
+    keys.write_private(out, new_sk)
+    keys.write_public(s.pubkey_path, new_sk.verify_key)
+    hint = ""
+    env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
+    if env_file and Path(env_file).resolve() != out:
+        hint = f'\n  update the pointer:  export THREEPOWERS_SIGNING_KEY_FILE="{out}"'
+    _print(
+        {
+            "rotated": True,
+            "previous_key_id": old_sk.key_id,
+            "new_key_id": new_sk.key_id,
+            "ledger_seq": entry["seq"],
+            "private_key": str(out),
+        },
+        args.json,
+        f"key rotated: {old_sk.key_id} → {new_sk.key_id} (ledger seq={entry['seq']})\n"
+        f"  new private key (OUTSIDE the repo): {out}\n"
+        f"  committed public key updated:       {s.pubkey_path}{hint}",
+    )
     return EXIT_OK
 
 
@@ -500,7 +566,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     appended = None
     if not args.no_ledger:
         try:
-            sk = keys.resolve_signing_key(s.root)
+            sk = keys.resolve_signer(s.root)
             appended = Ledger(s.ledger_path).append(
                 "verdict",
                 verdict.to_dict(),
@@ -542,16 +608,92 @@ def cmd_conformance(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     res = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
+    # Custody preflight (HARDN-FR-002): a private key inside the working tree or readable
+    # by other users is a custody violation — surfaced here, where trust is re-derived.
+    custody = keys.custody_findings(s.root)
+    ok = res.ok and not custody
+    human = res.summary()
+    for c in custody:
+        human += f"\n  ✗ {c}"
+    anchored: Optional[dict] = None
+    if getattr(args, "anchored", False):
+        # Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest
+        # local anchor tag. Plain `verify` never reads an anchor (HARDN-NFR-001).
+        chk = anchor.check_anchored(Ledger(s.ledger_path).entries(), anchor.latest_anchor(s.root))
+        anchored = {"ok": chk.ok, "anchor_seq": chk.anchor_seq, "problems": chk.problems}
+        ok = ok and chk.ok
+        if chk.ok:
+            human += f"\n  anchor OK — chain extends the witnessed head (seq={chk.anchor_seq})"
+        for p in chk.problems:
+            human += f"\n  ✗ {p}"
     _print(
-        {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
+        {
+            "ok": ok,
+            "entries": res.entries,
+            "problems": res.problems,
+            "key_custody": custody,
+            **({"anchored": anchored} if anchored is not None else {}),
+        },
+        args.json,
+        human,
     )
-    return EXIT_OK if res.ok else EXIT_FAIL
+    return EXIT_OK if ok else EXIT_FAIL
+
+
+def cmd_anchor(args: argparse.Namespace) -> int:
+    """Record the ledger head with an external witness (HARDN-FR-005) — opt-in.
+
+    Creates the annotated git tag ``3powers/anchor/<seq>`` carrying the head's entry hash,
+    appends a local ``anchor`` receipt entry, and — only under ``--push`` — pushes the tag
+    (the sole network-capable operation, HARDN-NFR-001).
+    """
+    s = _settings(args.root)
+    ledger = Ledger(s.ledger_path)
+    head = anchor.head_of(ledger.entries())
+    if head is None:
+        print("error: the ledger is empty — nothing to anchor", file=sys.stderr)
+        return EXIT_USAGE
+    seq, entry_hash = head
+    ok, msg = anchor.create_anchor(s.root, seq, entry_hash, push=args.push, remote=args.remote)
+    if not ok:
+        print(f"error: {msg}", file=sys.stderr)
+        return EXIT_FAIL
+    try:
+        sk = keys.resolve_signer(s.root)
+        receipt = ledger.append(
+            "anchor",
+            {
+                "anchored_seq": seq,
+                "anchored_hash": entry_hash,
+                "witness": "git-tag",
+                "ref": msg,
+                "pushed": bool(args.push),
+            },
+            sk,
+        )
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    _print(
+        {
+            "anchored_seq": seq,
+            "anchored_hash": entry_hash,
+            "ref": msg,
+            "pushed": bool(args.push),
+            "ledger_seq": receipt["seq"],
+        },
+        args.json,
+        f"anchored ledger head seq={seq} ({entry_hash}) as tag {msg}"
+        + (" — pushed" if args.push else " — local only; push it to complete the witness")
+        + f"\n  receipt: ledger seq={receipt['seq']}",
+    )
+    return EXIT_OK
 
 
 def cmd_signoff(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -793,7 +935,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
     if oracle_diversity_relaxed:
         payload["diversity_relaxed"] = True
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
@@ -821,7 +963,7 @@ def cmd_deviation(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -879,7 +1021,7 @@ def cmd_emergency(args: argparse.Namespace) -> int:
         print("error: --approver is required — a human opens the emergency path", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -967,7 +1109,7 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
         print("error: no requirement ids / acceptance criteria found in the spec", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1066,7 +1208,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
     ) + oracle.scan_symbol_leakage(test_texts, criteria_text)
 
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1295,7 +1437,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
 
         # Sign the record + dispatch attestation with the (optional) distinct oracle identity.
         try:
-            osk = keys.resolve_signing_key(s.root, role="oracle")
+            osk = keys.resolve_signer(s.root, role="oracle")
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_USAGE
@@ -1378,7 +1520,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
         print("error: --note is required — describe the production lesson", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1447,7 +1589,7 @@ def cmd_observe_log_action(args: argparse.Namespace) -> int:
         print("error: --agent and --action are required", file=sys.stderr)
         return EXIT_USAGE
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1636,7 +1778,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1770,7 +1912,7 @@ def cmd_revert(args: argparse.Namespace) -> int:
     state_at = lifecycle.derive([e for e in entries if e["seq"] <= args.to])
     to_stage = state_at[spec_id].stage if spec_id in state_at else lifecycle.STAGES[1]
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1793,7 +1935,7 @@ def cmd_abort(args: argparse.Namespace) -> int:
     """Record an abort for a spec's run (3PWR-FR-019)."""
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1839,7 +1981,7 @@ def cmd_provenance(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     target = Path(args.path).resolve() if args.path else s.root
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -1903,7 +2045,7 @@ def cmd_residual(args: argparse.Namespace) -> int:
     """Record a signed residual review (3PWR-FR-036/037)."""
     s = _settings(args.root)
     try:
-        sk = keys.resolve_signing_key(s.root)
+        sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
@@ -2042,6 +2184,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kp.set_defaults(func=cmd_keygen)
 
+    rk = common(
+        sub.add_parser("rotate-key", help="rotate the signer: the outgoing key signs its successor")
+    )
+    rk.add_argument("--out", help="new private key path (default: outside the repo)")
+    rk.add_argument("--reason", help="why the key is being rotated (recorded in the ledger)")
+    rk.set_defaults(func=cmd_rotate_key)
+
     ip = common(
         sub.add_parser(
             "init", help="guided onboarding: make a new or existing project 3Powers-ready"
@@ -2129,7 +2278,21 @@ def build_parser() -> argparse.ArgumentParser:
     cp.set_defaults(func=cmd_conformance)
 
     vp = common(sub.add_parser("verify", help="verify the ledger (offline)"))
+    vp.add_argument(
+        "--anchored",
+        action="store_true",
+        help="also cross-check the chain against the latest local anchor tag (HARDN-FR-005)",
+    )
     vp.set_defaults(func=cmd_verify)
+
+    anp = common(
+        sub.add_parser("anchor", help="record the ledger head with an external witness (opt-in)")
+    )
+    anp.add_argument(
+        "--push", action="store_true", help="push the anchor tag to the remote (network)"
+    )
+    anp.add_argument("--remote", default="origin", help="git remote for --push (default: origin)")
+    anp.set_defaults(func=cmd_anchor)
 
     sp = common(sub.add_parser("signoff", help="record a signed human sign-off"))
     sp.add_argument("--approver", required=True, help="approver identity (a person)")
