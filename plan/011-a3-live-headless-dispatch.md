@@ -1,7 +1,7 @@
 # Plan 011 — A3 live headless dispatch + physical oracle read-path isolation
 
 > **Cold start:** read [`docs/STATUS.md`](../docs/STATUS.md) then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) §3 (A1–A3), §6–§7 (oracle), §10–§11 (dispatch/agnosticism).
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) §3 (A1–A3), §6–§7 (oracle), §10–§11 (dispatch/agnosticism).
 > Builds on plan 008 (structural oracle independence) and plan 009 (provider-agnostic Spec Kit extension).
 
 ## Context

@@ -1,0 +1,47 @@
+# TypeScript reference adapter (built + exercised in plan 001).
+#
+# Biome covers BOTH formatting and linting via its `ci` check command (no writes,
+# non-zero exit on any issue); we map both gates to it for a unified, fast floor.
+# Vitest emits LCOV which the core uses for diff-coverage. Stryker is wired for the
+# mutation gate but stays non-blocking until plan 002.
+language: typescript
+detect: ["package.json", "tsconfig.json"]
+test_roots: ["tests", "src"]
+property_test_lib: fast-check
+
+gates:
+  format:
+    check_cmd: "npx --no-install @biomejs/biome ci ."
+    parser: biome
+  lint:
+    cmd: "npx --no-install @biomejs/biome ci ."
+    parser: biome
+  types:
+    cmd: "npx --no-install tsc --noEmit"
+    parser: tsc
+  tests:
+    cmd: "npx --no-install vitest run --coverage"
+    parser: vitest
+    coverage_format: lcov
+    coverage_path: "coverage/lcov.info"
+  mutation:
+    cmd: "npx --no-install stryker run"
+    parser: stryker
+    report_path: "reports/mutation/mutation.json"   # Stryker JSON report for scoring
+    tier_min: "High-risk"
+
+  # Optional design oracles (3PWR-FR-009) — run ONLY when work-kind inference tags a change `design`
+  # (3PWR-FR-058). These are illustrative TS wirings; when the tool isn't installed (or the project
+  # doesn't define the script) the gate is quarantined, never silently passed (3PWR-NFR-015).
+  visual_regression:
+    cmd: "npx --no-install playwright test --grep @visual"
+    parser: playwright
+  a11y_scan:
+    cmd: "npx --no-install axe ./dist"
+    parser: axe
+  contract_check:
+    cmd: "npx --no-install oasdiff breaking base.yaml revision.yaml"
+    parser: oasdiff
+  component_contract:
+    cmd: "npx --no-install pact-verifier"
+    parser: pact

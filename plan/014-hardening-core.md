@@ -1,7 +1,7 @@
 # Plan 014 — hardening core: betterleaks, work-kind inference, tier test-layers, richer TUI, LICENSE
 
 > **Cold start:** read [`docs/STATUS.md`](../docs/STATUS.md), then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) §4 (tiers), §5 (FR-058), §8 (FR-064/065), NFR-012.
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) §4 (tiers), §5 (FR-058), §8 (FR-064/065), NFR-012.
 
 ## Context
 

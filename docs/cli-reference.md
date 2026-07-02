@@ -30,11 +30,22 @@ Creates an Ed25519 key pair. The **private key is written outside the repo**; th
 export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 ```
 
-### `init` — ensure the `.3powers/` layout exists
-Creates the trust-spine directory skeleton (config, schemas, adapters, keys, verdicts, runs, empty ledger).
+### `init` — guided onboarding (new or existing project)
+Makes a project 3Powers-ready in one step: creates the `.3powers/` layout, an independent signer
+(**outside the repo**), the baseline config, and the adapter for your chosen language, then prints
+greenfield-vs-brownfield next steps. Interactive by default; falls back to defaults with no TTY.
+- `--yes` — non-interactive: prompt for nothing and apply the documented defaults (CI-friendly).
+- `--language LANG` — the language adapter to set up (default: auto-detected, else the first supported).
+- `--key-path PATH` — signing-key location; **must be outside the repo** (default: `~/.config/3powers/<repo>.key`, with `~/.ssh/` offered interactively).
+- `--auto-mode` / `--no-auto-mode` — record whether `3pwr run` defaults to autonomous mode (advisory; never bypasses a human gate).
+- `--force` — overwrite an existing signing key (default: keep it).
+- `--skeleton-only` — only create the directory layout (the pre-wizard behaviour).
+- `--json` — machine-readable summary of what was created vs kept.
 ```bash
-3pwr init
+3pwr init                       # guided
+3pwr init --yes --language typescript   # non-interactive, e.g. in CI
 ```
+`init` is idempotent — re-running preserves your ledger, keys, and hand-edited config.
 
 ---
 

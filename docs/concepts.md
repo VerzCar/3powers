@@ -1,7 +1,7 @@
 # Concepts — how 3Powers thinks
 
 > Plain-English tour of the ideas. The **normative** version lives in the
-> [constitution](../.specify/memory/constitution.md) and the [spec](../3Powers_Spec_v0.2.md)
+> [constitution](../.specify/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`); this page explains *why* they say what they say. New to the project? Read this,
 > then [Getting Started](getting-started.md).
 

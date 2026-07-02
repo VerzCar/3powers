@@ -2,7 +2,8 @@
 
 Subcommands:
   keygen        generate the independent Ed25519 signer identity (key kept outside repo)
-  init          ensure the in-repo ``.3powers/`` trust-spine layout exists
+  init          guided onboarding — make a new or existing project 3Powers-ready (layout +
+                signer outside the repo + baseline config + a language adapter); --yes for CI
   gate run      run the deterministic gate suite, emit a verdict, append it to the ledger
   conformance   run only the spec-conformance trace
   verify        recompute the ledger hash chain + signatures (offline)
@@ -34,7 +35,7 @@ import shlex
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -51,6 +52,7 @@ from . import (
     oracle,
     orchestrate,
     provenance,
+    scaffold,
     scope,
     workkind,
 )
@@ -91,6 +93,56 @@ def _print(obj: dict, as_json: bool, human: str) -> None:
         print(json.dumps(obj, indent=2))
     else:
         print(human)
+
+
+def _init_interactive(args: argparse.Namespace) -> bool:
+    """Onboarding is interactive only with a real TTY and neither --yes nor --json (ONBRD-FR-006)."""
+    return (
+        (not getattr(args, "json", False))
+        and (not getattr(args, "yes", False))
+        and sys.stdin.isatty()
+    )
+
+
+def _ask(prompt: str, default: str, *, interactive: bool) -> str:
+    """Free-text prompt with a default; returns the default unchanged when non-interactive."""
+    if not interactive:
+        return default
+    try:
+        ans = input(f"{prompt} [{default}]: ").strip()
+    except EOFError:
+        return default
+    return ans or default
+
+
+def _ask_choice(prompt: str, options: list[str], default: str, *, interactive: bool) -> str:
+    """Numbered single-select with a default; returns the default when non-interactive."""
+    if not interactive or not options:
+        return default
+    print(prompt)
+    for i, opt in enumerate(options, 1):
+        print(f"  {i}) {opt}{'  (default)' if opt == default else ''}")
+    di = options.index(default) + 1 if default in options else 1
+    try:
+        ans = input(f"select 1-{len(options)} [{di}]: ").strip()
+    except EOFError:
+        return default
+    if not ans:
+        return default
+    if ans.isdigit() and 1 <= int(ans) <= len(options):
+        return options[int(ans) - 1]
+    return ans if ans in options else default
+
+
+def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
+    """Yes/no prompt with a default; returns the default when non-interactive."""
+    if not interactive:
+        return default
+    try:
+        ans = input(f"{prompt} [{'Y/n' if default else 'y/N'}]: ").strip().lower()
+    except EOFError:
+        return default
+    return default if not ans else ans in ("y", "yes")
 
 
 def _format_verdict(verdict, appended: Optional[dict]) -> str:
@@ -153,9 +205,9 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def cmd_init(args: argparse.Namespace) -> int:
-    root = Path(args.root).resolve() if args.root else Path.cwd()
-    s = Settings(root=root)
+def _init_layout(s: Settings) -> str:
+    """Create the ``.3powers/`` skeleton idempotently (ONBRD-FR-009). Returns created|kept."""
+    status = "kept" if s.dir.exists() else "created"
     for d in (
         s.dir / "config",
         s.dir / "schemas",
@@ -167,7 +219,162 @@ def cmd_init(args: argparse.Namespace) -> int:
         d.mkdir(parents=True, exist_ok=True)
     if not s.ledger_path.exists():
         s.ledger_path.touch()
-    print(f"initialized 3Powers trust-spine layout under {s.dir}")
+    return status
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """Guided onboarding — make an existing or new project 3Powers-ready in one step (ONBRD-FR-001).
+
+    Interactive by default; with ``--yes``/``--json`` or no TTY it prompts for nothing and applies the
+    documented default for every choice (ONBRD-FR-006). It creates the signer OUTSIDE the repo
+    (ONBRD-NFR-001), seeds the baseline config + the selected language adapter without clobbering
+    (ONBRD-FR-008), records the autonomy default (ONBRD-FR-005), is idempotent on re-run
+    (ONBRD-FR-009), and prints greenfield-vs-brownfield next steps (ONBRD-FR-010). Fully offline
+    (ONBRD-NFR-002)."""
+    as_json = getattr(args, "json", False)
+    interactive = _init_interactive(args)
+
+    # 1) Target directory — default the current directory (ONBRD-FR-002).
+    default_dir = str(Path(args.root).resolve() if args.root else Path.cwd())
+    root = Path(_ask("Project directory", default_dir, interactive=interactive)).expanduser()
+    if not root.is_dir():
+        print(f"error: directory does not exist: {root}", file=sys.stderr)
+        return EXIT_USAGE
+    if not os.access(root, os.W_OK):
+        print(f"error: directory is not writable: {root}", file=sys.stderr)
+        return EXIT_USAGE
+    root = root.resolve()
+    s = Settings(root=root)
+
+    # 2) Trust-spine layout (idempotent).
+    layout_status = _init_layout(s)
+    if getattr(args, "skeleton_only", False):
+        _print(
+            {"root": str(root), "layout": layout_status},
+            as_json,
+            f"initialized 3Powers trust-spine layout under {s.dir}",
+        )
+        return EXIT_OK
+
+    # 3) Brownfield detection + a suggested default language (ONBRD-FR-010).
+    langs = scaffold.bundled_languages()
+    detected = scaffold.detect_language(root)
+    brownfield = scaffold.has_source(root)
+    git_present = (root / ".git").exists()
+
+    if args.language and args.language not in langs:
+        print(
+            f"error: unsupported language {args.language!r}; supported: {', '.join(langs)}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    default_lang = args.language or detected or (langs[0] if langs else "")
+    # 4) Language selection from the supported (adapter-backed) set (ONBRD-FR-003).
+    lang = args.language or _ask_choice(
+        "Which language adapter?", langs, default_lang, interactive=interactive
+    )
+
+    # 5) Signing key — a private location OUTSIDE the repo (ONBRD-FR-004/007, NFR-001).
+    env_key = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE") or os.environ.get(
+        "THREEPOWERS_SIGNING_KEY"
+    )
+    key_status = "env"
+    key_path: Optional[Path] = None
+    if env_key:
+        key_status = "env"
+    else:
+        default_key = keys.default_private_path(root)
+        alt_ssh = Path("~/.ssh").expanduser() / (root.name + "-3pwr.key")
+        if args.key_path:
+            key_path = Path(args.key_path).expanduser()
+        elif interactive:
+            pick = _ask_choice(
+                "Where should the signing key live (OUTSIDE the repo)?",
+                [str(default_key), str(alt_ssh), "custom"],
+                str(default_key),
+                interactive=interactive,
+            )
+            key_path = (
+                Path(_ask("Custom key path", str(default_key), interactive=interactive)).expanduser()
+                if pick == "custom"
+                else Path(pick).expanduser()
+            )
+        else:
+            key_path = default_key
+        if not scaffold.is_outside_repo(key_path, root):
+            print(
+                "error: the signing key must live OUTSIDE the repository "
+                f"(ONBRD-NFR-001 / 3PWR-NFR-005): {key_path}",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        _sk, key_status = scaffold.create_signer(key_path, s.pubkey_path, force=args.force)
+
+    # 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).
+    auto_mode = (
+        args.auto_mode
+        if args.auto_mode is not None
+        else _ask_yesno("Make autonomous mode the default?", True, interactive=interactive)
+    )
+    scaffold.write_onboarding(s, auto_mode=auto_mode)
+
+    # 7) Seed baseline config + the selected adapter, never clobbering (ONBRD-FR-008).
+    cfg = scaffold.seed_config(s)
+    scaffold.seed_gitignore(s)
+    scaffold.seed_contract(s)
+    adapter_status = scaffold.materialize_adapter(s, lang) if lang else "none"
+
+    # 8) Summary + next-step guidance (ONBRD-FR-010).
+    report: dict[str, Any] = {
+        "root": str(root),
+        "layout": layout_status,
+        "language": lang or None,
+        "adapter": adapter_status,
+        "config": cfg,
+        "key_path": str(key_path) if key_path else None,
+        "key": key_status,
+        "auto_mode": bool(auto_mode),
+        "brownfield": brownfield,
+        "detected_language": detected,
+        "git": git_present,
+    }
+    mode = "auto" if auto_mode else "commit"
+    if as_json:
+        print(json.dumps(report, indent=2))
+        return EXIT_OK
+
+    lines = [f"✓ 3Powers is ready under {s.dir}"]
+    if key_status == "created":
+        lines.append(f"  signer created (private key OUTSIDE the repo): {key_path}")
+        lines.append(f'  point the engine at it:  export THREEPOWERS_SIGNING_KEY_FILE="{key_path}"')
+    elif key_status == "kept":
+        lines.append(f"  signer: kept existing key at {key_path}")
+    else:
+        lines.append("  signer: using the key from your environment")
+    lines.append(
+        f"  language: {lang or '(none — no adapter selected)'} · "
+        f"adapter {adapter_status} · autonomous default: {'yes' if auto_mode else 'no'}"
+    )
+    if lang == "" and langs:
+        lines.append(
+            f"  note: choose a language next time from: {', '.join(langs)} "
+            "(or add one — see .3powers/adapters/CONTRACT.md)"
+        )
+    if not git_present:
+        lines.append(
+            "  note: no git repo detected — `git init` to unlock diff-scoped brownfield gating"
+        )
+    lines.append("")
+    if brownfield:
+        lines.append("Existing project detected — adopt gradually:")
+        lines.append("  3pwr gate run --path . --tier Standard --report-only     # see debt, block nothing")
+        lines.append("  3pwr characterize --module <path>                        # pin legacy behaviour")
+        lines.append("  3pwr gate run --path . --base main --diff-scope          # enforce on changes only")
+    else:
+        lines.append("Next — author your first spec and drive the lifecycle:")
+        lines.append(f'  3pwr run "<what you want built>" --mode {mode}')
+        lines.append("  (or step-by-step: /speckit.specify → … → /3pwr.advance)")
+    print("\n".join(lines))
     return EXIT_OK
 
 
@@ -1192,7 +1399,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     deterministic verdict (NFR-001)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
-    mode = args.mode
+    mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
     spec_id = args.spec_id or "RUN"
 
     if args.status:
@@ -1622,7 +1829,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kp.set_defaults(func=cmd_keygen)
 
-    ip = common(sub.add_parser("init", help="ensure the .3powers/ layout exists"))
+    ip = common(
+        sub.add_parser("init", help="guided onboarding: make a new or existing project 3Powers-ready")
+    )
+    ip.add_argument(
+        "--yes",
+        action="store_true",
+        help="non-interactive: prompt for nothing and apply the documented defaults",
+    )
+    ip.add_argument(
+        "--language",
+        help="language adapter to set up (default: auto-detected, else the first supported)",
+    )
+    ip.add_argument(
+        "--key-path", dest="key_path", help="signing-key location (must be OUTSIDE the repo)"
+    )
+    ip.add_argument(
+        "--auto-mode",
+        dest="auto_mode",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="make autonomous mode the recorded default (advisory; never bypasses a human gate)",
+    )
+    ip.add_argument(
+        "--force", action="store_true", help="overwrite an existing signing key (default: keep it)"
+    )
+    ip.add_argument(
+        "--skeleton-only",
+        dest="skeleton_only",
+        action="store_true",
+        help="only create the .3powers/ layout (the pre-wizard behaviour)",
+    )
     ip.set_defaults(func=cmd_init)
 
     gp = sub.add_parser("gate", help="gate engine")
@@ -1723,8 +1960,9 @@ def build_parser() -> argparse.ArgumentParser:
     rnp.add_argument(
         "--mode",
         choices=["auto", "commit"],
-        default="auto",
-        help="auto = stop only at the two human gates (spec approval, sign-off); commit = stop at every gate",
+        default=None,
+        help="auto = stop only at the two human gates (spec approval, sign-off); commit = stop at "
+        "every gate (default: the value recorded by `3pwr init`, else auto)",
     )
     rnp.add_argument(
         "--integration",

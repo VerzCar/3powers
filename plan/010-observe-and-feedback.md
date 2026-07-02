@@ -1,7 +1,7 @@
 # Plan 010 — Observe & feedback loop (§13, FR-054/055)
 
 > **Cold-start note.** Read [`docs/STATUS.md`](../docs/STATUS.md) first, then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (the law). Plans 001–009 delivered v0.1, v0.5, and most
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (the law). Plans 001–009 delivered v0.1, v0.5, and most
 > of v1.0 (through portability & dependency stability). This plan closes the lifecycle's **8th stage** —
 > Observe — the last fully-engine-buildable v1.0 piece.
 

@@ -16,17 +16,20 @@ Commands and output below are real.
 
 ## 1. Adopt the trust spine
 
-In the existing repo, lay down the `.3powers/` skeleton and create the independent signer:
+In the existing repo, run guided onboarding. It detects your stack, lays down the `.3powers/` skeleton,
+creates the independent signer (**outside the repo**), seeds the baseline config (`risk-tiers.yaml`,
+`roles.yaml`, …), and sets up the adapter for your language — then points you at exactly these brownfield
+steps:
 
 ```bash
-3pwr init
-3pwr keygen
-export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
+3pwr init                       # guided; detects an existing project and steers you here
+# or, non-interactively:  3pwr init --yes --language <typescript|python|go>
 ```
 
-You'll also need a language **adapter** manifest for your stack (see
-[`CONTRACT.md`](../.3powers/adapters/CONTRACT.md); the Python, TypeScript, and Go reference adapters are
-good templates) and a `risk-tiers.yaml` (copy the one in this repo).
+`init` prints the `export THREEPOWERS_SIGNING_KEY_FILE=…` line for the key it created (only needed if you
+chose a non-default location). Bringing a language 3Powers doesn't ship an adapter for yet? See the adapter
+contract at [`CONTRACT.md`](../.3powers/adapters/CONTRACT.md) — the Python, TypeScript, and Go reference
+adapters are good templates.
 
 ## 2. See the debt without blocking anyone (`--report-only`)
 
@@ -139,7 +142,7 @@ changing the module itself.
 
 | Goal | Command |
 |---|---|
-| Adopt the spine | `3pwr init` + `3pwr keygen` |
+| Adopt the spine | `3pwr init` (guided: signer + config + adapter) |
 | See the debt, block nothing | `3pwr gate run … --report-only` |
 | Pin a legacy module | `3pwr characterize --module <path>` |
 | Enforce on the diff only | `3pwr gate run … --base <ref> --diff-scope` |

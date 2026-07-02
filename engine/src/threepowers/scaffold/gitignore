@@ -1,0 +1,8 @@
+# 3Powers trust-spine: ignore transient state and any stray private key.
+# The ledger, public key, config, adapters, and schemas ARE committed.
+runs/
+verdicts/
+provenance/
+worktrees/
+keys/*.key
+*.key

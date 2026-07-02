@@ -1,7 +1,7 @@
 # Plan 012 — Model diversity: recommend, don't force (configurable granularity + deviation relief)
 
 > **Cold start:** read [`docs/STATUS.md`](../docs/STATUS.md), then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) §7 (oracle), §14 (emergency & deviation), §19
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) §7 (oracle), §14 (emergency & deviation), §19
 > (open question: *"What defines 'different model family'"*). Builds on plan 008 (structural oracle
 > independence), plan 011 (physical read-path isolation), and plan 007 (the signed `deviation`
 > mechanism, FR-057). This plan is a **markdown plan only** — no code is changed yet.
