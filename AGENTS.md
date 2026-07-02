@@ -4,21 +4,15 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-**v0.5 complete; v1.0 in progress** (through plan [`017`](plan/017-trust-hardening.md)). The `3pwr`
-engine drives the full gate suite (floor → **spec-integrity** → tests/diff-coverage → **mutation** → SAST → dependency →
-secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
-enforcement, provenance/deploy-gate, residual review, the eval harness, **brownfield Stage Zero**
-(report-only, diff-scoped gating, `characterize`), **emergency & deviation paths** (`emergency` +
-`deviation`), **structural oracle independence** (`oracle seal`/`record`/`verify`, enforced at
-High-risk `advance`) + **A3 physical read-path isolation** (`oracle dispatch` — headless authoring in a
-sanitized worktree, ledger-attested), **portability & dependency stability** (`deps-check` + a
-provider-agnostic Spec Kit extension), and the **observe & feedback loop**
-(`observe signal`/`coverage`/`log-action`, §13).
-**NFR-006 is met:** the trust-spine modules pass their own **High-risk** bar
-(mutation ≈89% ≥ 70%). Three reference adapters (TypeScript + Python + Go). Work-kind inference shapes the
-gate set (plan 015): a defect run adds a regression gate (FR-008), a design run adds the design oracles
-(FR-009). Built on GitHub Spec Kit. See
-[`docs/STATUS.md`](docs/STATUS.md) for the spec-validated state and the guides in [`docs/`](docs/).
+**Implementation status lives in exactly one place: [`docs/STATUS.md`](docs/STATUS.md)** — the current
+milestone, the validation date, and the open residuals, validated against the spec. Durable facts you can
+rely on here: the `3pwr` engine drives the full cheapest-first gate suite (`format → lint → types →
+spec_integrity → tests → diff_coverage → mutation → sast → dependency_scan → secret_scan → gate_gaming →
+spec_conformance`, plus work-kind-shaped gates) and the signed, hash-chained, offline-verifiable trust
+spine (`verify`/`advance`/provenance); the engine gates its own trust-spine code at **High-risk**
+(NFR-006); three reference adapters (TypeScript, Python, Go); built on GitHub Spec Kit — upstream
+[`github/spec-kit`](https://github.com/github/spec-kit), installed from a pinned tag (see the pinned
+versions below). The guides live in [`docs/`](docs/).
 
 ## Commands
 
@@ -36,7 +30,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Brownfield: block only the diff | `3pwr gate run … --base <ref> --diff-scope` (`3PWR-FR-051`) |
 | Characterize a legacy module | `3pwr characterize --module <path> [--specs <dir>] [--tests <dir>]` (`3PWR-FR-053`) |
 | Read the latest verdict | `.3powers/verdicts/latest.json` (or add `--json`) |
-| Spec-conformance only | `3pwr conformance --spec <spec.md> --tests <dir>` |
+| `spec_conformance` trace only | `3pwr conformance --spec <spec.md> --tests <dir>` |
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
 | Seal the approved spec at sign-off | `3pwr signoff --approver <you> --stage spec --spec-id <ID> --spec specs/<feature>/spec.md` (`SLOCK-FR-001`; the `spec_integrity` gate + `advance` enforce the hash thereafter) |
@@ -78,7 +72,7 @@ Confirmed in this environment:
 
 | Component | Version |
 |---|---|
-| Spec Kit (`specify`) | `0.11.6.dev0` (pin `uv tool install … @<tag>`); provides headless `workflow run` for the A3 oracle dispatch |
+| Spec Kit (`specify`) | `0.11.6.dev0` — upstream [`github/spec-kit`](https://github.com/github/spec-kit) (not a fork), pinned via `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<tag>`; provides headless `workflow run` for the A3 oracle dispatch |
 | Claude Code (`claude`) | headless, non-`openai` integration for `3pwr oracle dispatch` (A3); `specify integration install claude` |
 | Python (via `uv`) | 3.12 (engine `requires-python >=3.10`) |
 | Node | 23.3.0 |

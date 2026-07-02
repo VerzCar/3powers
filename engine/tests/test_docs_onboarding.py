@@ -61,15 +61,24 @@ def test_readme_states_enterprise_high_autonomy_positioning_near_top():
 
 # --------------------------------------------------------------------------- FR-013
 def test_readme_has_supported_languages_table_for_self_qualification():
-    """ONBRD-FR-013: a supported-languages table lets a reader confirm fit (incl. a Next.js answer)."""
+    """ONBRD-FR-013: a supported-languages table lets a reader confirm fit (incl. a Next.js answer).
+
+    Since OSSRD-NFR-003 the README carries the compact language/status table and links the full
+    per-language tooling matrix, which lives in the getting-started guide.
+    """
     t = _read(README)
     assert "## Supported languages & technology stack" in t
     assert "| Language | Detected by |" in t  # header row (also ONBRD-NFR-006)
     for lang in ("TypeScript", "Python", "Go"):
         assert lang in t
+    assert "Next.js" in t  # a TypeScript reader can confirm framework fit
+    # the full tooling matrix resides under docs/ and the README links it
+    assert "supported-languages--tooling-matrix" in t
+    t = _read(REPO / "docs" / "getting-started.md")  # …same self-qualification holds there
+    for lang in ("TypeScript", "Python", "Go"):
+        assert lang in t
     for tool in ("Biome", "Ruff", "gofmt", "Vitest", "pytest", "Stryker", "mutmut"):
         assert tool in t
-    assert "Next.js" in t  # a TypeScript reader can confirm framework fit
 
 
 # --------------------------------------------------------------------------- FR-014

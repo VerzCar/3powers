@@ -3,15 +3,25 @@
 All notable changes to 3Powers are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-3Powers is pre-1.0. Until the first tagged release, entries are grouped by the development milestones
-(v0.1 → v0.5 → v1.0) described in the spec's scope phasing and tracked in detail in
-[`docs/STATUS.md`](docs/STATUS.md). Each item notes the plan document under [`plan/`](plan/) that delivered
-it.
+3Powers is pre-1.0. Entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in
+the spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
+plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the first tagged
+release is **v0.5.0**, matching the latest released milestone below.
 
 ## [Unreleased] — v1.0 (in progress): lifecycle & ecosystem
 
 ### Added
 
+- **Open-source launch readiness (OSSRD).** A CI workflow gates every pull request to `main` (engine
+  lint, types, tests, and offline ledger verification, as required checks); a
+  [glossary](docs/glossary.md) defines every term of art (trust spine, oracle, Phase A/B, residual,
+  A1–A6, verdict, quarantine, work kind, the requirement-ID scheme); a
+  [troubleshooting guide](docs/troubleshooting.md) covers the common failures with exact fixes.
+  Entry docs were calibrated to what [STATUS](docs/STATUS.md) validates (the sanitized-headless claim is
+  scoped to the oracle leg; the autonomous path's Spec Kit + coding-agent dependency is stated up front),
+  the Spec Kit pin is sourced to upstream `github/spec-kit` everywhere it appears, prerequisites are
+  split hard / per-path / optional, gate names match the engine's canonical identifiers across all docs,
+  and implementation status lives only in STATUS. (plan 018)
 - **Trust-spine hardening (HARDN).** A versioned [`docs/threat-model.md`](docs/threat-model.md) states what
   the ledger proves, against whom, under which assumptions. Key custody is enforced (`keygen`/`rotate-key`
   refuse in-repo keys; `verify` fails a `key_custody` violation; the secret gate's core `ed25519-priv` check
@@ -21,11 +31,11 @@ it.
   regeneration by a key holder. `$THREEPOWERS_SIGNER_CMD` delegates signing to an external (hardware-capable)
   process boundary — no readable seed, loud failure, unchanged verification. The self-reported oracle model
   is cross-checked against the ledger-attested dispatch (contradiction blocks a High-risk advance; without a
-  dispatch the claim is labelled self-reported). Spec-conformance now requires requirement IDs **bound to
-  test declarations** (`untraced_requirement` for comment-only mentions) with ≥1 assertion per bound test
-  (`weak_test`), `gate_gaming` flags newly added assertion-free requirement-referencing tests, and a per-tier
-  `diff_mutation` knob runs mutation over changed files. (plan 017)
-- **Spec-integrity gate (spec-lock).** A Spec-stage `3pwr signoff` now seals the approved document's
+  dispatch the claim is labelled self-reported). The `spec_conformance` gate now requires requirement IDs
+  **bound to test declarations** (`untraced_requirement` for comment-only mentions) with ≥1 assertion per
+  bound test (`weak_test`), `gate_gaming` flags newly added assertion-free requirement-referencing tests,
+  and a per-tier `diff_mutation` knob runs mutation over changed files. (plan 017)
+- **Spec-lock (SLOCK): the `spec_integrity` gate.** A Spec-stage `3pwr signoff` now seals the approved document's
   raw-bytes SHA-256 inside the signed ledger entry; a new `spec_integrity` gate (cheapest-first, before any
   test, at every tier) and `advance` fail a spec silently modified after approval (`spec_modified`), unless
   a fresh Spec-stage sign-off supersedes it or a signed `spec_integrity` deviation covers it. The read-only
@@ -70,8 +80,8 @@ it.
 
 ### Added
 
-- The complete cheapest-first gate suite, including **mutation testing**, **SAST**, and the dependency,
-  secret, anti-gaming, and spec-conformance gates.
+- The complete cheapest-first gate suite, including **mutation testing**, **`sast`**, and the
+  `dependency_scan`, `secret_scan`, `gate_gaming`, and `spec_conformance` gates.
 - **Build provenance + SBOM**, signed by the independent identity and verified at a deploy gate.
 - Two-way requirement ↔ task coverage, scope discipline, residual review, and the prompt/constitution eval
   harness. (plans 004–005)
@@ -82,9 +92,10 @@ it.
 
 - The signed, hash-chained verdict **ledger**, offline `3pwr verify`, the local `3pwr advance` enforcement
   gate, and full reversibility via `3pwr revert`.
-- The deterministic gate runner with the format / lint / types / tests / diff-coverage floor, emitting one
+- The deterministic gate runner with the format / lint / types / tests / `diff_coverage` floor, emitting one
   normalized verdict.
 - Two reference language adapters (TypeScript, Python), self-application of the engine on its own code, and
   supply-chain scanners. (plans 001–003)
 
-[Unreleased]: https://github.com/VerzCar/3powers
+[Unreleased]: https://github.com/VerzCar/3powers/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/VerzCar/3powers/releases/tag/v0.5.0

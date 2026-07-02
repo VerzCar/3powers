@@ -3,7 +3,7 @@
 > Plain-English tour of the ideas. The **normative** version lives in the
 > [constitution](../.specify/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`); this page explains *why* they say what they say. New to the project? Read this,
-> then [Getting Started](getting-started.md).
+> then [Getting Started](getting-started.md). Terms of art are defined in the [glossary](glossary.md).
 
 ## The problem: validation goes circular
 
@@ -50,7 +50,8 @@ Two rules make it independent (constitution, Principle III):
 
 > **How it's enforced:** the `/3pwr.oracle` prompt, the `roles-check` gate, authoring order, and the
 > ledger record enforce this procedurally. At the **High-risk** tier the engine also proves it
-> *structurally*: `3pwr oracle dispatch` authors the oracle headlessly inside a sanitized Git worktree
+> *structurally* (per assumption [A3](glossary.md#assumptions-a1a6) — provider-agnostic headless
+> dispatch): `3pwr oracle dispatch` authors the oracle headlessly inside a sanitized Git worktree
 > where the implementation is physically absent, and `advance` refuses to proceed without that signed
 > isolation proof. See [STATUS](STATUS.md).
 
@@ -64,7 +65,7 @@ a typo in a CLI banner does not. So every capability declares a **risk tier**, a
 | Tier | What it's for | Gates |
 |---|---|---|
 | **Cosmetic** | docs, CLI formatting | format + lint + types only |
-| **Standard** | most app code; failures are visible & recoverable | + tests, diff-coverage, SAST, dependency, secret, gate-gaming, conformance |
+| **Standard** | most app code; failures are visible & recoverable | + tests, `diff_coverage`, `sast`, `dependency_scan`, `secret_scan`, `gate_gaming`, `spec_conformance` |
 | **High-risk** | the trust spine; a defect re-opens circular validation | + **mutation** + model diversity, at the strictest thresholds |
 
 **The golden rule: a gate is never satisfied by weakening it.** If a change needs a higher bar, you raise
@@ -76,7 +77,7 @@ a deleted assertion, a weakened config) are flagged for **mandatory human review
 The judiciary's tireless half. Gates run **cheapest-first** so failures surface fast:
 
 ```
-format → lint → types → tests (+ diff-coverage) → mutation → SAST → dependency → secret → gate-gaming → spec-conformance
+format → lint → types → spec_integrity → tests (+ diff_coverage) → mutation → sast → dependency_scan → secret_scan → gate_gaming → spec_conformance
 ```
 
 Two properties matter:
@@ -85,7 +86,8 @@ Two properties matter:
   it. There is no judgement in a gate for an agent to argue with.
 - **Polyglot by contract**: each language plugs in a declarative *adapter* manifest that
   supplies its own format/lint/type/test/coverage/mutation tools. The core never assumes a language;
-  language-agnostic gates (diff-coverage, conformance, secret, dependency, SAST) live in the core.
+  language-agnostic gates (`diff_coverage`, `spec_conformance`, `secret_scan`, `dependency_scan`, `sast`)
+  live in the core.
 
 Every run emits **one normalized verdict** whose every failure is **actionable** — it
 names the failing gate, the failure class, and the offending requirement or file, so a human can act on
@@ -97,8 +99,9 @@ it without opening an agent transcript. See
 Before the gates run, 3Powers can infer what *kind* of change you're making — a defect fix, design work, a
 feature — and shape the suite accordingly (`3pwr classify`, or automatically inside `3pwr run`). A **defect
 fix** must ship a **failing regression test** that reproduces the bug before the fix lands, so the bug can
-never quietly come back. **Design work** is judged by *design oracles* — visual-regression, accessibility,
-and API/component-contract checks — because the code gates alone can't tell whether an interface is right;
+never quietly come back. **Design work** is judged by *design oracles* — visual regression
+(`visual_regression`), accessibility (`a11y_scan`), and API/component contract checks (`contract_check`,
+`component_contract`) — because the code gates alone can't tell whether an interface is right;
 where your language adapter doesn't supply a tool for one, that oracle is **quarantined** (surfaced as
 skipped), never silently passed. Inference only ever *adds* gates for a change; it never removes one a tier
 requires, and it never touches the human sign-off.

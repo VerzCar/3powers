@@ -24,6 +24,10 @@ You need [`uv`](https://docs.astral.sh/uv/) (Python tooling) and `git`. The Type
 `npm`. Some gates shell out to optional tools (`betterleaks`/`gitleaks`, `osv-scanner`, `semgrep`); when
 one is absent its gate is *quarantined* (surfaced as skipped), never silently passed.
 
+**Platform support:** 3Powers is developed and tested on **macOS**; **Linux** is expected to work and is
+supported best-effort (CI runs on Linux); **Windows** is unsupported — use **WSL2**. If you hit a
+platform-specific issue on Linux, please report it.
+
 ```bash
 git clone https://github.com/VerzCar/3powers.git
 cd 3powers
@@ -31,12 +35,15 @@ cd 3powers
 # Install the CLI so you can dogfood it
 uv tool install ./engine
 
-# Set up the engine dev environment and run the checks it must always pass
+# Set up the engine dev environment and run the checks it must always pass.
+# These are exactly the checks CI runs on every pull request (.github/workflows/ci.yml):
 cd engine
 uv sync --extra dev
-uv run pytest                       # the test suite
-uv run ruff check .                 # lint
-uv run mypy src                     # types
+uv run ruff check .                 # lint (CI step)
+uv run mypy src                     # types (CI step)
+uv run pytest                       # the test suite (CI step)
+cd ..
+3pwr verify                         # offline ledger verification (CI step; needs no private key)
 ```
 
 Create an independent signer once (its private key is written **outside** the repo; only the public key is
@@ -97,6 +104,8 @@ are working references. No core code changes should be necessary.
 
 1. Branch off `main` (or the current working branch if directed on the issue).
 2. Make your change, keeping the engine green (`ruff` + `mypy` + `pytest`) and running the relevant gates.
+   A CI workflow runs the same lint / type / test / ledger-verification checks on every pull request to
+   `main` and blocks the merge on failure — passing locally means passing there.
 3. Write a clear PR description: what changed, why, and the requirement ID(s) it traces to. Reference the
    issue it closes.
 4. Be ready to iterate on review — a residual review may flag intent gaps as *new requirements* rather than

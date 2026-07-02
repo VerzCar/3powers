@@ -3,11 +3,44 @@
 A hands-on tour: install the engine, run the full gate suite on the bundled sample, read the verdict,
 and watch the local trust spine enforce a green-gate-plus-sign-off rule before anything "ships". Every
 command and its output below is real — you can reproduce it. New to the ideas? Skim
-[Concepts](concepts.md) first.
+[Concepts](concepts.md) first; terms of art are defined in the [glossary](glossary.md).
 
-> **Prerequisites:** [`uv`](https://docs.astral.sh/uv/) (Python tooling) and `git`. The TypeScript sample
-> additionally uses `npm`. Some gates shell out to optional tools (`betterleaks` or `gitleaks`, `osv-scanner`, `semgrep`);
-> when one is absent its gate is **quarantined** (surfaced as skipped) rather than silently passed.
+## Prerequisites
+
+What you need depends on the path you take. **Hard requirements**, every path:
+
+- [`uv`](https://docs.astral.sh/uv/) — installs and runs the Python engine.
+- `git` — the substrate the trust spine records against.
+
+**Conditional requirements — per path:**
+
+| Path | What you get | Additionally needs |
+|---|---|---|
+| **Gates-only (offline)** | the deterministic gate suite, signed ledger, `verify`, and `advance` — a signed verdict, no autonomy | nothing extra — no Spec Kit, no agent integration (the bundled TypeScript sample uses `npm`) |
+| **Slash commands (in-IDE)** | drive each lifecycle stage by hand | VS Code with GitHub Copilot |
+| **Autonomous (`3pwr run`)** | one command drives the whole lifecycle | GitHub Spec Kit (the `specify` CLI) **and** a coding-agent integration (e.g. Copilot) |
+
+Spec Kit is upstream [`github/spec-kit`](https://github.com/github/spec-kit) — not a fork — installed
+from a pinned tag:
+
+```bash
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<pinned-tag>
+```
+
+The currently supported pin lives in [`.3powers/config/dependencies.yaml`](../.3powers/config/dependencies.yaml)
+(check yours with `3pwr deps-check`); see the [Spec Kit reference](references/speckit.md#install--init).
+
+**Optional scanners.** Three gates shell out to external scanners. Each is **quarantined** when its tool
+is absent — surfaced as *skipped* in the verdict, never silently passed — so you can start without them:
+
+| Tool | Gate | When absent |
+|---|---|---|
+| `betterleaks` (or `gitleaks`) | `secret_scan` | gate quarantined — reported as skipped |
+| `osv-scanner` | `dependency_scan` | gate quarantined — reported as skipped |
+| `semgrep` | `sast` | gate quarantined — reported as skipped |
+
+Everything below through §7 is the **gates-only path**: it reaches a signed green verdict with none of
+the conditional or optional tools installed.
 
 ## 1. Install the engine
 
@@ -83,10 +116,10 @@ verdict FAIL  spec=VUTIL tier=Standard adapter=typescript
 **Read the verdict** (this is the whole point — a human identifies the problem
 without opening any agent transcript):
 
-- Gates ran **cheapest-first**: the format/lint/type floor, then tests + diff-coverage,
+- Gates ran **cheapest-first**: the format/lint/type floor, then tests + `diff_coverage`,
   then the scanners and conformance.
-- The code itself is clean — **diff-coverage is 100%** on changed lines, and all five
-  `VUTIL` requirements trace to a test (**spec-conformance**).
+- The code itself is clean — **diff_coverage is 100%** on changed lines, and all five
+  `VUTIL` requirements trace to a test (**spec_conformance**).
 - But `dependency_scan` is **red**: `osv-scanner` found real, current advisories in the sample's
   transitive dev dependencies. The failure is **actionable** — it names the class
   (`vulnerable_dependency`) and the exact advisory + package. That's the gate suite doing its job, not a
@@ -225,9 +258,9 @@ commands. On a feature:
    → /3pwr.verify → /3pwr.review → /3pwr.signoff → /3pwr.advance
 ```
 
-The **model switch** is what makes the oracle independent: the judiciary authors the answer key with a
-different model family than the coder, from the spec alone. On an *existing* repo, start
-with `/3pwr.characterize` — see [Brownfield Adoption](brownfield.md).
+The **model switch** is what makes the oracle independent: the judiciary authors the answer key
+([Phase A](glossary.md#phase-a--phase-b)) with a different model family than the coder, from the spec
+alone. On an *existing* repo, start with `/3pwr.characterize` — see [Brownfield Adoption](brownfield.md).
 
 ## The whole lifecycle in one command
 
@@ -247,8 +280,30 @@ composes the Spec Kit workflow and the judiciary gates, streams a live stage tra
 `3pwr classify` only *suggests* the kind and tier (it shapes which gates and oracle strategy apply); the
 human sign-off is always yours. The step-by-step slash-command flow above stays valid for a hands-on run.
 
+> `3pwr run` needs the **autonomous path** prerequisites — the `specify` CLI plus a coding-agent
+> integration (see [Prerequisites](#prerequisites)). Without them it fails fast naming the missing tool;
+> `--dry-run` simulates the loop offline. See [Troubleshooting](troubleshooting.md) if a run won't start.
+
+## Supported languages & tooling matrix
+
+A language plugs in through a declarative **adapter** (`.3powers/adapters/<lang>/adapter.yaml`) with zero
+changes to the core. A framework like **Next.js is covered by its language adapter (TypeScript)** — there
+is no framework-specific setup. `3pwr init` sets up the adapter for your chosen language (guided).
+
+| Language | Detected by | Format | Lint | Types | Test (coverage) | Mutation | Design oracles | Status |
+|---|---|---|---|---|---|---|---|---|
+| **TypeScript** | `package.json` + `tsconfig.json` | Biome | Biome | tsc | Vitest (LCOV) | Stryker | Playwright · Axe · oasdiff · Pact | Reference — exercised end-to-end |
+| **Python** | `pyproject.toml` | Ruff | Ruff | mypy | pytest (LCOV) | mutmut | — | Reference — gates the engine itself |
+| **Go** | `go.mod` | gofmt | go vet | go build | go test → gcov2lcov (LCOV) | go-mutesting | — | Reference — wired |
+
+The language-agnostic gates — `diff_coverage`, `spec_conformance`, `dependency_scan`, `secret_scan`, and
+`sast` — run the same way for every adapter. Adding a language is "write a manifest," not a core change —
+see the adapter contract at [`.3powers/adapters/CONTRACT.md`](../.3powers/adapters/CONTRACT.md).
+
 ## Next
 
 - **[CLI Reference](cli-reference.md)** — every command and flag.
 - **[Engine Architecture](engine-architecture.md)** — what each gate does and how the ledger works.
 - **[Concepts](concepts.md)** — the why behind the workflow.
+- **[Troubleshooting](troubleshooting.md)** — the common failures with their exact fixes.
+- **[Glossary](glossary.md)** — every term of art, defined once.

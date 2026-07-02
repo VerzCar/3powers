@@ -28,7 +28,7 @@ command and flag is documented in [docs/cli-reference.md](../docs/cli-reference.
 
 ```
 src/threepowers/
-  Trust spine (High-risk tier — held to ≥95% diff-coverage + mutation):
+  Trust spine (High-risk tier — held to ≥95% `diff_coverage` + mutation):
     canonical.py     # deterministic hashing
     keys.py          # Ed25519 key generation + loading
     ledger.py        # append-only, hash-chained, signed verdict ledger
@@ -38,11 +38,11 @@ src/threepowers/
     verdict.py       # the normalized verdict + canonical gate order
     gates.py         # the cheapest-first gate runner
     adapters.py      # declarative per-language adapter loading/invocation
-    conformance.py   # spec-conformance trace (+ defect regression, tier test-layers)
-    covdiff.py       # diff-coverage gate
+    conformance.py   # the spec_conformance trace (+ defect regression, tier test-layers)
+    covdiff.py       # the diff_coverage gate
     mutation.py      # mutation-testing gate
     scanners.py      # SAST / dependency / secret scanners
-    gaming.py        # gate-gaming detection
+    gaming.py        # gate_gaming detection
     design.py        # design-oracle gates (visual / a11y / contract)
     scope.py         # task requirement-ID + file-scope discipline
 

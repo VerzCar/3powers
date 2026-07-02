@@ -12,8 +12,8 @@ mandatory CI. Read [Concepts](concepts.md) first for the *why*; this page is the
 | `cli.py` | argparse entry point; one `cmd_*` per subcommand. See [CLI Reference](cli-reference.md). |
 | `gates.py` | the gate **orchestrator** — runs the suite cheapest-first, assembles the verdict |
 | `characterize.py` | brownfield: reconstruct a spec + characterization tests from a legacy module |
-| `conformance.py` | spec-conformance trace, two-way requirement↔task coverage, the defect regression gate |
-| `covdiff.py` | diff-coverage: intersect LCOV with the git diff |
+| `conformance.py` | the `spec_conformance` trace, two-way requirement↔task coverage, the defect regression gate |
+| `covdiff.py` | `diff_coverage`: intersect LCOV with the git diff |
 | `mutation.py` | mutation gate: run the tool, parse a normalized score, grade vs the tier |
 | `design.py` | design oracles: union the design-oracle gates for a `design` change, quarantine if unwired |
 | `workkind.py` | work-kind inference: classify intent into kind(s) + a suggested tier, deterministically |
@@ -22,7 +22,7 @@ mandatory CI. Read [Concepts](concepts.md) first for the *why*; this page is the
 | `provenance.py` | signed build provenance + SBOM; deploy-gate verification |
 | `ledger.py` | append-only, hash-chained, signed verdict ledger |
 | `verdict.py` | the normalized verdict dataclass + gate order |
-| `gaming.py` | gate-gaming detection (suppressions, deleted assertions) |
+| `gaming.py` | `gate_gaming` detection (suppressions, deleted assertions) |
 | `config.py` | locate the repo root; load `risk-tiers.yaml` / `roles.yaml` |
 | `adapters.py` | load + run the declarative language adapter manifests |
 | `deviations.py` | emergency & deviation logic at the enforcement boundary |
@@ -89,7 +89,7 @@ is versioned (`schema_version`).
 
 ## How each core gate works
 
-### diff-coverage — coverage on *changed* lines only
+### `diff_coverage` — coverage on *changed* lines only
 
 [`covdiff.py`](../engine/src/threepowers/covdiff.py). The adapter's test command emits a standard **LCOV**
 report. The core parses it into `{file: {line: hits}}`, computes the lines a change *touched* (`git diff`
@@ -98,7 +98,7 @@ just those lines. Using LCOV (every reference adapter's coverage tool can emit i
 core code serving all languages. `--paths` scopes measurement to specific files (risk-tier scoping per
 capability); `--base` sets the diff base.
 
-### spec-conformance — every requirement has a test
+### `spec_conformance` — every requirement has a test
 
 [`conformance.py`](../engine/src/threepowers/conformance.py). A deterministic, language-agnostic trace:
 read the requirement IDs declared in the spec (e.g. `VUTIL-FR-001`), scan the test roots for files that
@@ -152,7 +152,7 @@ successor — with **gitleaks** as the fallback. When a tool is **absent**, the 
 reported as skipped with a finding, never silently passed. Under `--diff-scope`, the file-based scanners
 (SAST, secret) only count findings in changed files.
 
-### gate-gaming — catch the moves that fake green
+### `gate_gaming` — catch the moves that fake green
 
 [`gaming.py`](../engine/src/threepowers/gaming.py). Scans the diff and untracked files for the patterns
 that make a red gate look green — an inline lint-disable, a `# type: ignore`, a coverage pragma, a deleted
