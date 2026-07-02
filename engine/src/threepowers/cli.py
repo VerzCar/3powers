@@ -65,7 +65,7 @@ from . import (
 from .adapters import run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
-from .ledger import Ledger
+from .ledger import Ledger, rotation_payload
 from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
@@ -238,6 +238,63 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     print()
     print("Point the engine at the private key with:")
     print(f'  export {env_var}="{out}"')
+    return EXIT_OK
+
+
+def cmd_rotate_key(args: argparse.Namespace) -> int:
+    """Rotate the ledger signer (HARDN-FR-004): the OUTGOING key signs its successor.
+
+    Appends a ``key_rotation`` entry authored by the current key and carrying the new public
+    key, then installs the successor (private key outside the repo, public key committed).
+    ``verify`` thereafter requires the committed key to descend from the genesis key through
+    exactly these recorded rotations — a bare pubkey swap becomes a named finding (SC-001).
+    """
+    s = _settings(args.root)
+    try:
+        old_sk = keys.resolve_signing_key(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+    if s.pubkey_path.exists():
+        committed = keys.load_public(s.pubkey_path)
+        if committed.key_id != old_sk.key_id:
+            print(
+                f"error: the resolved signing key ({old_sk.key_id}) is not the committed "
+                f"public key ({committed.key_id}) — a rotation must be authored by the "
+                "current key, or verify would report a broken succession",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+    out = Path(args.out).resolve() if args.out else keys.default_private_path(s.root)
+    if keys.inside_working_tree(s.root, out):
+        print(
+            f"refusing to create a private key INSIDE the repository working tree: {out}\n"
+            "  pass --out with a path outside the repo (HARDN-FR-002 / 3PWR-NFR-005)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
+    new_sk = keys.generate()
+    payload = rotation_payload(old_sk.verify_key, new_sk.verify_key, args.reason or "")
+    entry = Ledger(s.ledger_path).append("key_rotation", payload, old_sk)
+    keys.write_private(out, new_sk)
+    keys.write_public(s.pubkey_path, new_sk.verify_key)
+    hint = ""
+    env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
+    if env_file and Path(env_file).resolve() != out:
+        hint = f'\n  update the pointer:  export THREEPOWERS_SIGNING_KEY_FILE="{out}"'
+    _print(
+        {
+            "rotated": True,
+            "previous_key_id": old_sk.key_id,
+            "new_key_id": new_sk.key_id,
+            "ledger_seq": entry["seq"],
+            "private_key": str(out),
+        },
+        args.json,
+        f"key rotated: {old_sk.key_id} → {new_sk.key_id} (ledger seq={entry['seq']})\n"
+        f"  new private key (OUTSIDE the repo): {out}\n"
+        f"  committed public key updated:       {s.pubkey_path}{hint}",
+    )
     return EXIT_OK
 
 
@@ -2058,6 +2115,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="which signer to mint: the primary ledger key or a distinct judiciary oracle key",
     )
     kp.set_defaults(func=cmd_keygen)
+
+    rk = common(
+        sub.add_parser("rotate-key", help="rotate the signer: the outgoing key signs its successor")
+    )
+    rk.add_argument("--out", help="new private key path (default: outside the repo)")
+    rk.add_argument("--reason", help="why the key is being rotated (recorded in the ledger)")
+    rk.set_defaults(func=cmd_rotate_key)
 
     ip = common(
         sub.add_parser(
