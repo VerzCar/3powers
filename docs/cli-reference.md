@@ -32,20 +32,28 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 
 ### `init` — guided onboarding (new or existing project)
 Makes a project 3Powers-ready in one step: creates the `.3powers/` layout, an independent signer
-(**outside the repo**), the baseline config, and the adapter for your chosen language, then prints
-greenfield-vs-brownfield next steps. Interactive by default; falls back to defaults with no TTY.
+(**outside the repo**), the baseline config, and the adapter for your chosen language; writes a starter
+**AGENTS.md** if none exists (naming `3pwr` as the main command); and prints a **readiness checklist**
+(Spec Kit workspace, constitution, `specify` CLI) plus greenfield-vs-brownfield next steps. Interactive by
+default; falls back to defaults with no TTY. Runs offline by default.
 - `--yes` — non-interactive: prompt for nothing and apply the documented defaults (CI-friendly).
 - `--language LANG` — the language adapter to set up (default: auto-detected, else the first supported).
 - `--key-path PATH` — signing-key location; **must be outside the repo** (default: `~/.config/3powers/<repo>.key`, with `~/.ssh/` offered interactively).
 - `--auto-mode` / `--no-auto-mode` — record whether `3pwr run` defaults to autonomous mode (advisory; never bypasses a human gate).
 - `--force` — overwrite an existing signing key (default: keep it).
+- `--with-speckit` — also run Spec Kit's `specify init` and lay the 3Powers constitution overlay (for the autonomous `3pwr run` lifecycle; needs the `specify` CLI). Off by default, keeping `init` offline.
+- `--integration NAME` — coding-agent integration passed to `specify init` under `--with-speckit` (e.g. `copilot`, `claude`).
 - `--skeleton-only` — only create the directory layout (the pre-wizard behaviour).
-- `--json` — machine-readable summary of what was created vs kept.
+- `--json` — machine-readable summary of what was created vs kept (incl. the readiness checklist).
 ```bash
-3pwr init                       # guided
-3pwr init --yes --language typescript   # non-interactive, e.g. in CI
+3pwr init                       # guided, offline
+3pwr init --yes --language typescript      # non-interactive, e.g. in CI
+3pwr init --with-speckit --integration copilot   # also scaffold Spec Kit + the constitution
 ```
-`init` is idempotent — re-running preserves your ledger, keys, and hand-edited config.
+`init` is idempotent — re-running preserves your ledger, keys, hand-edited config, an existing AGENTS.md,
+and an existing constitution. For the autonomous lifecycle you also need the constitution and the Spec Kit
+workspace; `init` reports what's missing and (with `--with-speckit`) can scaffold it. Full judiciary
+slash-commands (`/3pwr.*`) install via the 3Powers Spec Kit extension.
 
 ---
 
