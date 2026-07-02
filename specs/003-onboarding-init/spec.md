@@ -44,6 +44,14 @@
   existing flag.
 - Does **not** rewrite the substance of the conceptual or architecture guides. The documentation work is a
   restructure, a completeness pass, and one new section — not a content rewrite of the technical guides.
+- Does **not** initialize the Spec Kit workspace or make any network call by default; Spec Kit
+  initialization happens only under an explicit opt-in (ONBRD-FR-015), keeping the default flow offline
+  (ONBRD-NFR-002).
+- Does **not** install the full set of judiciary slash-commands or workflow files into the Spec Kit
+  workspace; beyond laying the constitution, completing that overlay is recommended (via the 3Powers
+  Spec Kit extension), not performed here.
+- Does **not** author agent-guidance content by analyzing the repository with a model; it writes a static
+  starter and points to a separate, agent-driven generator for a richer file.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -230,6 +238,27 @@ blocking on prompts.
     unresolved "to-do"/"to-be-decided"/open-question marker remains in the reviewed user-facing docs, and any
     newly identified gap is either closed or explicitly tracked.
 
+#### Project readiness for the agentic workflow
+
+- **ONBRD-FR-015**: When onboarding completes, the system shall report whether the project is ready for
+  the autonomous lifecycle — the presence of a Spec Kit workspace, the governing constitution, and the
+  Spec Kit command-line tool — and guide the user to complete any missing piece; and, only when the user
+  explicitly requests it, the system shall initialize the Spec Kit workspace and lay the 3Powers
+  constitution.
+  - *Acceptance*: a default run makes no network call and does not initialize Spec Kit — it reports each
+    readiness item and prints the exact command to complete a missing one; when the workspace already
+    exists but the governing constitution is absent, the 3Powers constitution is laid locally; an existing
+    constitution is never overwritten; under the explicit opt-in (and with the Spec Kit tool available)
+    the workspace is initialized and the 3Powers constitution is laid, and a missing tool is reported as a
+    usage error rather than silently skipped.
+- **ONBRD-FR-016**: When onboarding completes and the repository has no agent-guidance file, the system
+  shall create a starter that names the 3Powers command as the primary way to deliver change; when one
+  already exists, it shall leave it untouched and recommend updating it.
+  - *Acceptance*: on a repo with no agent-guidance file, a starter is written that names the 3Powers
+    command as the main command and outlines the gate/lifecycle/PR workflow, and points to a richer
+    generation path; on a repo that already has one, the file is left byte-unchanged and an update is
+    recommended.
+
 ### Non-Functional Requirements
 
 - **ONBRD-NFR-001**: The onboarding flow shall never store the private signing key inside the repository
@@ -272,6 +301,9 @@ blocking on prompts.
 - **ONBRD-SC-007**: Every functional requirement has ≥1 linked verification across the appropriate layers
   (3PWR-FR-030/065) — a test for wizard behaviour (unit/integration/e2e), or a recorded documentation
   review plus a structural lint check for the documentation requirements.
+- **ONBRD-SC-008**: A fresh onboarding run reports an actionable readiness checklist (Spec Kit workspace,
+  constitution, agent-guidance file), and a repository with no agent-guidance file gains a starter that
+  names the 3Powers command as the primary way to deliver change.
 
 ## Sign-off *(3PWR-FR-006 — recorded human approver before implementation begins)*
 

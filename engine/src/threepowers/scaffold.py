@@ -13,6 +13,7 @@ converges to the same on-disk state (ONBRD-FR-009).
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -141,6 +142,88 @@ def is_outside_repo(path: Path, root: Path) -> bool:
     rp = path.expanduser().resolve()
     rr = root.resolve()
     return rr != rp and rr not in rp.parents
+
+
+# --------------------------------------------------------------------------- agent + Spec Kit readiness
+
+def seed_agents_md(root: Path) -> str:
+    """Write a 3Powers-flavoured AGENTS.md starter if the repo has none (ONBRD-FR-016).
+
+    Returns ``'created'`` (a starter was written) or ``'kept'`` (an AGENTS.md already exists — left
+    untouched; the caller recommends updating it). The starter names ``3pwr`` as the main command."""
+    return _copy_if_missing(SCAFFOLD_DIR / "agents-template.md", root / "AGENTS.md")
+
+
+def has_speckit(root: Path) -> bool:
+    """Whether Spec Kit is initialised in ``root`` (the ``.specify/`` tree exists)."""
+    return (root / ".specify").is_dir()
+
+
+def specify_installed() -> bool:
+    """Whether the Spec Kit ``specify`` CLI is on PATH (needed for the live autonomous lifecycle)."""
+    return shutil.which("specify") is not None
+
+
+def constitution_path(root: Path) -> Path:
+    return root / ".specify" / "memory" / "constitution.md"
+
+
+def is_threepowers_constitution(root: Path) -> bool:
+    """True iff a constitution exists and looks like the 3Powers separation-of-powers one."""
+    path = constitution_path(root)
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8").lower()
+    return "3powers constitution" in text or "separation of powers" in text
+
+
+def constitution_is_placeholder(root: Path) -> bool:
+    """True iff the constitution is Spec Kit's unfilled template (contains ``[PROJECT_NAME]`` etc.).
+
+    `specify init` writes a placeholder constitution; that is not a *real* constitution, so the explicit
+    ``--with-speckit`` overlay may replace it (ONBRD-FR-015) — a user-authored one is left alone."""
+    path = constitution_path(root)
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    return "[PROJECT_NAME]" in text or "[PRINCIPLE_" in text
+
+
+def seed_constitution(root: Path, *, force: bool = False) -> str:
+    """Lay the 3Powers constitution overlay at ``.specify/memory/constitution.md`` (ONBRD-FR-015).
+
+    Offline and local. By default it writes only when the constitution is absent, never overwriting an
+    existing one. With ``force=True`` (the explicit ``--with-speckit`` path) it also replaces Spec Kit's
+    unfilled *placeholder* constitution — but still never a user-authored one. Returns ``'created'``,
+    ``'overlaid'`` (a placeholder was replaced), or ``'kept'``."""
+    path = constitution_path(root)
+    if not path.exists():
+        return _copy_if_missing(SCAFFOLD_DIR / "constitution.md", path)
+    if force and constitution_is_placeholder(root):
+        shutil.copyfile(SCAFFOLD_DIR / "constitution.md", path)
+        return "overlaid"
+    return "kept"
+
+
+def run_specify_init(root: Path, integration: Optional[str] = None) -> int:
+    """Run Spec Kit's ``specify init`` in ``root`` for the opt-in ``--with-speckit`` path (ONBRD-FR-015).
+
+    ``specify init`` scaffolds from assets bundled in the specify CLI (no network). stdio is inherited so
+    the user can pick an integration interactively when one is not supplied. Returns its exit code."""
+    args = ["specify", "init", "--here", "--force"]
+    if integration:
+        args += ["--integration", integration]
+    return subprocess.run(args, cwd=root, check=False).returncode
+
+
+def readiness(root: Path) -> dict[str, object]:
+    """A checklist of what a project needs to run the full agentic workflow (ONBRD-FR-015/016)."""
+    return {
+        "agents_md": (root / "AGENTS.md").exists(),
+        "speckit_dir": has_speckit(root),
+        "specify_cli": specify_installed(),
+        "constitution": is_threepowers_constitution(root),
+    }
 
 
 def create_signer(

@@ -324,7 +324,34 @@ def cmd_init(args: argparse.Namespace) -> int:
     scaffold.seed_contract(s)
     adapter_status = scaffold.materialize_adapter(s, lang) if lang else "none"
 
-    # 8) Summary + next-step guidance (ONBRD-FR-010).
+    # 8) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
+    agents_status = scaffold.seed_agents_md(root)
+
+    # 9) Spec Kit + constitution readiness for the agentic lifecycle (ONBRD-FR-015).
+    with_speckit = getattr(args, "with_speckit", False)
+    if with_speckit:
+        if not scaffold.specify_installed():
+            print(
+                "error: --with-speckit needs the Spec Kit `specify` CLI on PATH — install it "
+                "(https://github.com/github/spec-kit) or omit --with-speckit",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        if not scaffold.has_speckit(root):
+            rc = scaffold.run_specify_init(root, getattr(args, "integration", None))
+            if rc != 0:
+                print(f"error: `specify init` failed (exit {rc})", file=sys.stderr)
+                return EXIT_FAIL
+        # Lay the 3Powers overlay, replacing Spec Kit's placeholder constitution (never a real one).
+        constitution_status = scaffold.seed_constitution(root, force=True)
+    elif scaffold.has_speckit(root):
+        # Spec Kit already present → lay the 3Powers constitution overlay if missing (offline, local).
+        constitution_status = scaffold.seed_constitution(root)
+    else:
+        constitution_status = "absent"
+    ready = scaffold.readiness(root)
+
+    # 10) Summary + next-step guidance (ONBRD-FR-010).
     report: dict[str, Any] = {
         "root": str(root),
         "layout": layout_status,
@@ -337,6 +364,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         "brownfield": brownfield,
         "detected_language": detected,
         "git": git_present,
+        "agents_md": agents_status,
+        "constitution": constitution_status,
+        "readiness": ready,
     }
     mode = "auto" if auto_mode else "commit"
     if as_json:
@@ -364,6 +394,36 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append(
             "  note: no git repo detected — `git init` to unlock diff-scoped brownfield gating"
         )
+
+    # Readiness for the agentic workflow (ONBRD-FR-015/016).
+    lines.append("")
+    lines.append("Ready for the agentic workflow?")
+    if agents_status == "created":
+        lines.append("  ＋ AGENTS.md: wrote a 3Powers starter — fill in the [bracketed] parts")
+        lines.append("      (for a richer, project-analyzed one, run your `create-agentsmd` skill)")
+    else:
+        lines.append("  ✓ AGENTS.md: present — ensure it names `3pwr` as the main command")
+    if ready["constitution"]:
+        note = (
+            " (wrote the 3Powers overlay)"
+            if constitution_status in ("created", "overlaid")
+            else ""
+        )
+        lines.append(f"  ✓ constitution: 3Powers separation-of-powers law in place{note}")
+    elif ready["speckit_dir"]:
+        lines.append("  ⚠ constitution: Spec Kit is set up but the 3Powers constitution is missing")
+    else:
+        lines.append("  ✗ Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:")
+        if ready["specify_cli"]:
+            lines.append("      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it")
+        else:
+            lines.append(
+                "      install Spec Kit's `specify` CLI (https://github.com/github/spec-kit), then "
+                "`3pwr init --with-speckit`"
+            )
+    if ready["speckit_dir"] and not ready["specify_cli"]:
+        lines.append("  ⚠ `specify` CLI not on PATH — install it to run the live lifecycle")
+
     lines.append("")
     if brownfield:
         lines.append("Existing project detected — adopt gradually:")
@@ -1859,6 +1919,18 @@ def build_parser() -> argparse.ArgumentParser:
         dest="skeleton_only",
         action="store_true",
         help="only create the .3powers/ layout (the pre-wizard behaviour)",
+    )
+    ip.add_argument(
+        "--with-speckit",
+        dest="with_speckit",
+        action="store_true",
+        help="also run Spec Kit's `specify init` and lay the 3Powers constitution overlay "
+        "(for the autonomous `3pwr run` lifecycle; needs the `specify` CLI)",
+    )
+    ip.add_argument(
+        "--integration",
+        help="coding-agent integration passed to `specify init` under --with-speckit "
+        "(e.g. copilot, claude; default: specify prompts, or copilot non-interactively)",
     )
     ip.set_defaults(func=cmd_init)
 

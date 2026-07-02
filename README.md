@@ -77,9 +77,10 @@ git clone https://github.com/VerzCar/3powers.git && cd 3powers && uv tool instal
 
 # 2. In YOUR project (new or existing), run guided onboarding. It asks for the directory, the
 #    language, where to keep the signing key (always OUTSIDE the repo), and whether autonomous
-#    mode is your default — then it's ready. Add --yes to accept every default (e.g. in CI).
+#    mode is your default. It also writes a starter AGENTS.md and prints a readiness checklist.
+#    Add --yes to accept every default (e.g. in CI); --with-speckit also scaffolds Spec Kit.
 cd /path/to/your/project
-3pwr init
+3pwr init --with-speckit        # or plain `3pwr init` to set up 3Powers only (offline)
 
 # 3. Describe what you want built, and let the lifecycle run:
 3pwr run "add rate limiting to the login endpoint" --mode auto
