@@ -30,3 +30,7 @@ reports/
 
 # OS / editor
 .DS_Store
+
+# Temporary files
+*.tmp
+/tmp/
