@@ -13,15 +13,16 @@ from threepowers.cli import main
 
 def test_run_dry_run_lifecycle_e2e(tmp_path, monkeypatch):
     """3PWR-FR-011: `3pwr run --dry-run` drives the lifecycle end to end and pauses at the spec gate."""
-    (tmp_path / ".3powers" / "config").mkdir(parents=True)
+    repo = tmp_path / "repo"
+    (repo / ".3powers" / "config").mkdir(parents=True)
     key = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(key))
-    assert main(["--root", str(tmp_path), "keygen", "--out", str(key)]) == 0
+    assert main(["--root", str(repo), "keygen", "--out", str(key)]) == 0
     assert (
         main(
             [
                 "--root",
-                str(tmp_path),
+                str(repo),
                 "run",
                 "ship a feature",
                 "--dry-run",
@@ -33,4 +34,4 @@ def test_run_dry_run_lifecycle_e2e(tmp_path, monkeypatch):
         == 0
     )
     # Resumable from the ledger (3PWR-FR-011/019): status reflects the paused human gate.
-    assert main(["--root", str(tmp_path), "run", "--status", "--spec-id", "E2E"]) == 0
+    assert main(["--root", str(repo), "run", "--status", "--spec-id", "E2E"]) == 0

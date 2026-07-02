@@ -165,6 +165,7 @@ Full guides live in **[`docs/`](docs/)**:
 - **[Getting Started](docs/getting-started.md)** — install and run the whole thing end-to-end.
 - **[Engine Architecture](docs/engine-architecture.md)** — how the gates, the verdict, and the ledger work inside.
 - **[CLI Reference](docs/cli-reference.md)** — every `3pwr` command and flag.
+- **[Threat Model](docs/threat-model.md)** — what the ledger proves, against whom, under which assumptions.
 - **[Brownfield Adoption](docs/brownfield.md)** — bring 3Powers to an existing codebase.
 - **[STATUS](docs/STATUS.md)** — implementation status, validated against the spec (maintainer-facing).
 

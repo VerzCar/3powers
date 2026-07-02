@@ -66,7 +66,7 @@ def test_observe_entry_moves_spec_to_observe_stage():
 # --------------------------------------------------------------------------- CLI
 @pytest.fixture()
 def project(tmp_path, monkeypatch):
-    root = tmp_path
+    root = tmp_path / "repo"
     (root / ".3powers" / "config").mkdir(parents=True)
     # observability registry covers OBS-NFR-001 but not OBS-NFR-002 (a visible gap).
     (root / ".3powers" / "config" / "observability.yaml").write_text(
@@ -75,7 +75,7 @@ def project(tmp_path, monkeypatch):
     proj = root / "proj"
     proj.mkdir()
     _write_spec(proj / "spec.md")
-    keyfile = root / "signer.key"
+    keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     return root, proj

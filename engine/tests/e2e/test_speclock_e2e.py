@@ -14,15 +14,16 @@ SPEC = "**Spec ID**: E2E\n\n- **E2E-FR-001**: The law shall hold.\n"
 
 def test_speclock_seal_mutate_detect_reapprove_e2e(tmp_path, monkeypatch):
     """SLOCK-FR-001/003/006/007: seal at sign-off, catch the mutation, re-approve to recover."""
-    (tmp_path / ".3powers" / "config").mkdir(parents=True)
-    spec = tmp_path / "specs" / "spec.md"
+    repo = tmp_path / "repo"
+    (repo / ".3powers" / "config").mkdir(parents=True)
+    spec = repo / "specs" / "spec.md"
     spec.parent.mkdir()
     spec.write_text(SPEC, encoding="utf-8")
     key = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(key))
-    assert main(["--root", str(tmp_path), "keygen", "--out", str(key)]) == 0
+    assert main(["--root", str(repo), "keygen", "--out", str(key)]) == 0
 
-    base = ["--root", str(tmp_path)]
+    base = ["--root", str(repo)]
     signoff = base + [
         "signoff",
         "--approver",

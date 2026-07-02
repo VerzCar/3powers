@@ -148,6 +148,57 @@ def _resolve(file_env: str, seed_env: str, default_path: Path) -> Optional[Signi
     return None
 
 
+def inside_working_tree(repo_root: Path, path: Path) -> bool:
+    """True iff ``path`` resolves inside the repository working tree (HARDN-FR-002)."""
+    try:
+        path.resolve().relative_to(repo_root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _mode_too_open(path: Path) -> bool:
+    """True iff the file grants any group/other permission bits (broader than owner-only)."""
+    try:
+        return bool(path.stat().st_mode & 0o077)
+    except OSError:
+        return False
+
+
+def custody_findings(repo_root: Path) -> list[str]:
+    """Deterministic key-custody preflight (HARDN-FR-002).
+
+    Reports a ``key_custody`` finding when a resolved private-key file lives inside the
+    repository working tree, or when its permissions are broader than owner-only. A
+    compliant setup — no key configured, or an owner-only key outside the tree — emits
+    nothing. Purely local: stat calls only, no key material is ever read.
+    """
+    findings: list[str] = []
+    candidates: list[tuple[str, Path]] = []
+    for env, default in (
+        ("THREEPOWERS_SIGNING_KEY_FILE", default_private_path(repo_root)),
+        ("THREEPOWERS_ORACLE_SIGNING_KEY_FILE", default_oracle_private_path(repo_root)),
+    ):
+        env_file = os.environ.get(env)
+        if env_file:
+            candidates.append((f"${env} → {env_file}", Path(env_file)))
+        elif default.exists():
+            candidates.append((str(default), default))
+    for label, path in candidates:
+        if inside_working_tree(repo_root, path):
+            findings.append(
+                f"key_custody: private key at {label} resolves INSIDE the working tree — "
+                "an executive agent with repo access can read it; move it outside the "
+                "repository (3PWR-NFR-005)"
+            )
+        if path.exists() and _mode_too_open(path):
+            findings.append(
+                f"key_custody: private key file {path} is readable by other users "
+                f"(mode {oct(path.stat().st_mode & 0o777)}) — run `chmod 600 {path}`"
+            )
+    return findings
+
+
 def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
     """Load the private signing key from outside the repository (3PWR-NFR-005).
 

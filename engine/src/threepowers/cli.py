@@ -217,6 +217,14 @@ def cmd_keygen(args: argparse.Namespace) -> int:
         if role == "oracle"
         else "THREEPOWERS_SIGNING_KEY_FILE"
     )
+    if keys.inside_working_tree(s.root, out):
+        print(
+            f"refusing to create a private key INSIDE the repository working tree: {out}\n"
+            "  an executive agent with repo access could read it (HARDN-FR-002 / 3PWR-NFR-005).\n"
+            f"  pass --out with a path outside the repo, e.g. {keys.default_private_path(s.root)}",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     if out.exists() and not args.force:
         print(f"refusing to overwrite existing key at {out} (use --force)", file=sys.stderr)
         return EXIT_USAGE
@@ -542,10 +550,19 @@ def cmd_conformance(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     res = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
+    # Custody preflight (HARDN-FR-002): a private key inside the working tree or readable
+    # by other users is a custody violation — surfaced here, where trust is re-derived.
+    custody = keys.custody_findings(s.root)
+    ok = res.ok and not custody
+    human = res.summary()
+    for c in custody:
+        human += f"\n  ✗ {c}"
     _print(
-        {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
+        {"ok": ok, "entries": res.entries, "problems": res.problems, "key_custody": custody},
+        args.json,
+        human,
     )
-    return EXIT_OK if res.ok else EXIT_FAIL
+    return EXIT_OK if ok else EXIT_FAIL
 
 
 def cmd_signoff(args: argparse.Namespace) -> int:
