@@ -143,3 +143,68 @@ def test_anchor_outside_git_fails_actionably(tmp_path, monkeypatch, capsys):
     rc = main(["--root", str(root), "anchor"])
     assert rc == 1
     assert "could not create anchor tag" in capsys.readouterr().err
+
+
+def test_git_helper_survives_a_missing_binary(monkeypatch, tmp_path):
+    """HARDN-FR-005: a missing git binary is a plain failure code, never a crash."""
+
+    def boom(*_a, **_kw):
+        raise OSError("no git")
+
+    monkeypatch.setattr(anchor.subprocess, "run", boom)
+    rc, out, err = anchor._git(tmp_path, ["status"])
+    assert rc == 127 and out == "" and "no git" in err
+
+
+def test_latest_anchor_rejects_forged_or_broken_witnesses(repo, tmp_path, monkeypatch):
+    """HARDN-FR-005: outside git, a garbage message, or a name/message mismatch → no witness."""
+    # Outside a git repo the tag listing fails → None.
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    not_git = tmp_path / "plain"
+    not_git.mkdir()
+    assert anchor.latest_anchor(not_git) is None
+    monkeypatch.delenv("GIT_CEILING_DIRECTORIES")
+    # A tag whose message is not the JSON witness payload is no anchor.
+    _git(repo, "tag", "-a", "3powers/anchor/7", "-m", "not json at all")
+    assert anchor.latest_anchor(repo) is None
+    _git(repo, "tag", "-d", "3powers/anchor/7")
+    # A tag whose message contradicts its own name is no anchor either.
+    _git(repo, "tag", "-a", "3powers/anchor/9", "-m", anchor.anchor_message(1, "sha256:aa"))
+    assert anchor.latest_anchor(repo) is None
+    _git(repo, "tag", "-d", "3powers/anchor/9")
+    # ... and the honest tag is found again.
+    _git(repo, "tag", "-a", "3powers/anchor/0", "-m", anchor.anchor_message(0, "sha256:bb"))
+    assert anchor.latest_anchor(repo) == (0, "sha256:bb")
+
+
+def test_latest_anchor_survives_a_failing_message_read(repo, monkeypatch):
+    """HARDN-FR-005: an unreadable tag message is no witness — fail closed, never crash."""
+    orig = anchor._git
+
+    def flaky(root, args):
+        if any("--format" in a for a in args):
+            return 1, "", "boom"
+        return orig(root, args)
+
+    monkeypatch.setattr(anchor, "_git", flaky)
+    _git(repo, "tag", "-a", "3powers/anchor/0", "-m", anchor.anchor_message(0, "sha256:aa"))
+    assert anchor.latest_anchor(repo) is None
+
+
+def test_anchor_push_reports_failure_and_success(repo, capsys):
+    """HARDN-FR-005: --push to a missing remote fails loudly; to a real remote it publishes."""
+    entries = Ledger(repo / ".3powers" / "ledger.jsonl").entries()
+    seq, entry_hash = anchor.head_of(entries)
+    ok, msg = anchor.create_anchor(repo, seq, entry_hash, push=True, remote="nowhere")
+    assert not ok and "NOT pushed" in msg
+    # A real (bare) remote receives the witness tag.
+    remote = repo.parent / "witness.git"
+    _git(repo.parent, "init", "-q", "--bare", str(remote))
+    _git(repo, "remote", "add", "origin", str(remote))
+    _git(repo, "tag", "-d", anchor.tag_name(seq))
+    ok, msg = anchor.create_anchor(repo, seq, entry_hash, push=True, remote="origin")
+    assert ok and msg == anchor.tag_name(seq)
+    listed = subprocess.run(
+        ["git", "ls-remote", "--tags", str(remote)], capture_output=True, text=True, check=False
+    ).stdout
+    assert anchor.tag_name(seq) in listed

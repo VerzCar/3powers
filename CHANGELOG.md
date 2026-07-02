@@ -12,6 +12,19 @@ it.
 
 ### Added
 
+- **Trust-spine hardening (HARDN).** A versioned [`docs/threat-model.md`](docs/threat-model.md) states what
+  the ledger proves, against whom, under which assumptions. Key custody is enforced (`keygen`/`rotate-key`
+  refuse in-repo keys; `verify` fails a `key_custody` violation; the secret gate's core `ed25519-priv` check
+  always runs). Key rotation is a signed `key_rotation` entry authored by the outgoing key — `verify` walks
+  the succession, so a bare committed-pubkey swap is a named *unrotated key change*. Opt-in `3pwr anchor` +
+  `3pwr verify --anchored` record the head with an external git-tag witness and catch wholesale ledger
+  regeneration by a key holder. `$THREEPOWERS_SIGNER_CMD` delegates signing to an external (hardware-capable)
+  process boundary — no readable seed, loud failure, unchanged verification. The self-reported oracle model
+  is cross-checked against the ledger-attested dispatch (contradiction blocks a High-risk advance; without a
+  dispatch the claim is labelled self-reported). Spec-conformance now requires requirement IDs **bound to
+  test declarations** (`untraced_requirement` for comment-only mentions) with ≥1 assertion per bound test
+  (`weak_test`), `gate_gaming` flags newly added assertion-free requirement-referencing tests, and a per-tier
+  `diff_mutation` knob runs mutation over changed files. (plan 017)
 - **Spec-integrity gate (spec-lock).** A Spec-stage `3pwr signoff` now seals the approved document's
   raw-bytes SHA-256 inside the signed ledger entry; a new `spec_integrity` gate (cheapest-first, before any
   test, at every tier) and `advance` fail a spec silently modified after approval (`spec_modified`), unless

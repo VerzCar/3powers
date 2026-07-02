@@ -4,7 +4,7 @@
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
 > single source of truth; this document is checked against it. It is a maintainer-facing status matrix —
-> the requirement IDs below are the point. Last updated after **plan 016**.
+> the requirement IDs below are the point. Last updated after **plan 017**.
 
 ---
 
@@ -80,7 +80,7 @@ plan/                       # the continuous plan series 001..015 (015 = work-ki
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; remaining: dual-headless coder leg, catalog publishing) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; plan 017: **trust-spine hardening (HARDN)** — threat model, key custody + rotation + opt-in anchoring + external signing, oracle model attestation, conformance ID-binding/assertion checks, gaming flag, opt-in diff mutation; remaining: dual-headless coder leg, catalog publishing) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -133,6 +133,15 @@ sign-off seals the full document's SHA-256 inside the signed ledger entry (SLOCK
 a fresh Spec-stage sign-off supersedes (SLOCK-FR-006), and `3pwr spec diff` reports read-only
 (SLOCK-FR-007); tampering with the recorded hash is caught by the existing `verify` (SLOCK-NFR-002).
 The new `speclock` module holds the High-risk bar (diff-coverage 97% ≥ 95, mutation ≈80% ≥ 70).
+**Trust-spine hardening (HARDN, plan 017) ✅:** a versioned [threat model](threat-model.md) states what the
+ledger proves and cannot prove (HARDN-FR-001); `keygen`/`rotate-key` refuse in-repo keys and `verify` runs a
+custody preflight (`key_custody`, HARDN-FR-002); the secret gate's core `ed25519-priv` check always runs
+(HARDN-FR-003); key rotation is a signed `key_rotation` entry authored by the outgoing key, and `verify`
+fails an *unrotated key change* (HARDN-FR-004); opt-in `3pwr anchor` + `verify --anchored` catch wholesale
+ledger regeneration by a key holder (HARDN-FR-005); `$THREEPOWERS_SIGNER_CMD` delegates signing to an
+external process boundary with no readable seed and no silent fallback (HARDN-FR-006); the self-reported
+oracle model is cross-checked against the attested dispatch, and labelled self-reported without one
+(HARDN-FR-007).
 
 **Agnosticism / config (§10–11):** FR-044 ✅, FR-045 ✅, FR-046 ✅, FR-047 ✅, FR-048 ✅, FR-049 ✅,
 FR-050 ✅ (deterministic eval set; model-driven layer is future). · **Plan 009** operationalized FR-048
@@ -296,6 +305,27 @@ existing `verify` with zero new verification code (SLOCK-NFR-002). Self-applies 
 the new `speclock` module: diff-coverage 97.18% ≥ 95, mutation 79.56% ≥ 70, all SLOCK requirements traced
 across unit+integration+e2e.
 
+**Plan 017 is done** ([`plan/017-trust-hardening.md`](../plan/017-trust-hardening.md)):
+✅ **trust-spine hardening (HARDN — High-risk).** Closes the external review's three trust-mechanism gaps
+with deterministic, local mechanisms: **(custody & continuity)** a versioned
+[`docs/threat-model.md`](threat-model.md) linked from README/SECURITY (HARDN-FR-001, SC-007); in-repo
+private keys refused at `keygen`/`rotate-key`, custody preflight in `verify` (`key_custody` on an in-tree or
+group-readable key, HARDN-FR-002); an always-on core `ed25519-priv` secret check (HARDN-FR-003); signed
+`key_rotation` succession walked by `verify` — a bare committed-pubkey swap is an *unrotated key change*
+(HARDN-FR-004, SC-001); opt-in `3pwr anchor` (git-tag witness + local receipt; `--push` is the only network
+op) with `verify --anchored` catching truncation/rewrite behind the anchor even by a key holder
+(HARDN-FR-005, SC-003); external signing via `$THREEPOWERS_SIGNER_CMD` — seed never readable by the engine,
+loud failure, verification unchanged (HARDN-FR-006, SC-004). **(oracle)** the self-reported record model is
+cross-checked against the ledger-attested dispatch integration — a contradiction blocks a High-risk advance;
+without a dispatch the claim is labelled self-reported (HARDN-FR-007). **(anti-gaming)** conformance now
+binds requirement IDs to test *declarations* (`untraced_requirement` for comment-only mentions, SC-005) and
+requires ≥1 assertion per bound test with adapter-declared patterns (`weak_test`; pattern-less adapters
+quarantine visibly — HARDN-FR-008/009, NFR-015); `gate_gaming` flags newly added assertion-free
+requirement-referencing tests (HARDN-FR-010); a per-tier `diff_mutation` knob runs mutation over changed
+files against the tier threshold (HARDN-FR-011, SC-006). Self-applies at **High-risk** scoped to the
+extended trust-spine modules (`keys`, `ledger`, `verify`, new `anchor`): diff-coverage 95.7% ≥ 95,
+mutation 79.61% ≥ 70, all HARDN requirements traced across unit+integration+e2e.
+
 Next, in priority order (breadth + the remaining hardening track):
 - **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
   live non-Copilot end-to-end `workflow run` verification (also completes `3pwr run`'s live executive leg).
@@ -306,7 +336,7 @@ Next, in priority order (breadth + the remaining hardening track):
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) · **Constitution:** [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→016 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→017 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/speckit.md`](references/speckit.md), [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
 - **Git:** stacked local branches `plan-001-base-setup` → … → `plan-015-defect-design-go-adapter`

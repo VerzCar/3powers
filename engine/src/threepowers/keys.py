@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -162,8 +163,12 @@ class CommandSigner:
         return self.public.key_id
 
     def sign(self, data: bytes) -> bytes:
+        # argv-style, never a shell (a signer needing pipes/expansion wraps them in a script).
+        argv = shlex.split(self.cmd)
+        if not argv:
+            raise ExternalSignerError("external signer command is empty (HARDN-FR-006)")
         try:
-            res = subprocess.run(self.cmd, shell=True, input=data, capture_output=True, timeout=120)
+            res = subprocess.run(argv, input=data, capture_output=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ExternalSignerError(
                 f"external signer could not run ({self.cmd!r}): {exc} — refusing to fall "

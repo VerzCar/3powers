@@ -33,13 +33,26 @@ _ASSERT = re.compile(
     r"\b(assert|expect|\.toBe|\.toEqual|self\.assert|pytest\.raises"
     r"|t\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)|require\.\w+)\b"
 )
-# A test declaration opening (core union across the reference languages).
-_TEST_DECL = re.compile(
-    r"^\s*(?:async\s+)?def\s+test_\w+|\b(?:describe|it|test)(?:\.\w+)?\s*\("
-    r"|^\s*func\s+Test\w+|\bt\.Run\s*\("
-)
+# A test declaration opening, per language (chosen by file suffix so a snippet quoted
+# inside another language's test fixture never false-positives — self-application).
+_DECL_BY_SUFFIX: list[tuple[tuple[str, ...], re.Pattern]] = [
+    ((".py",), re.compile(r"^\s*(?:async\s+)?def\s+test_\w+")),
+    (
+        (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"),
+        re.compile(r"\b(?:describe|it|test)(?:\.\w+)?\s*\("),
+    ),
+    ((".go",), re.compile(r"^\s*func\s+Test\w+|\bt\.Run\s*\(")),
+]
 # A namespaced requirement ID (mirrors the conformance matcher, digit-leading spec ids ok).
 _REQ = re.compile(r"\b[0-9A-Z]{2,16}-(?:FR|NFR)-\d{3,}\b")
+
+
+def _decl_re(file: str) -> re.Pattern | None:
+    suffix = Path(file.split()[0]).suffix.lower()
+    for suffixes, rx in _DECL_BY_SUFFIX:
+        if suffix in suffixes:
+            return rx
+    return None
 
 
 def detect_gaming(repo_root: Path, target: Path, base: str | None) -> GateResult:
@@ -62,6 +75,7 @@ def detect_gaming(repo_root: Path, target: Path, base: str | None) -> GateResult
 def _scan_diff(diff: str) -> list[str]:
     findings: list[str] = []
     added_by_file: dict[str, list[str]] = {}
+    removed_asserts: dict[str, list[str]] = {}
     current = "?"
     for line in diff.splitlines():
         if line.startswith("+++ b/"):
@@ -73,7 +87,13 @@ def _scan_diff(diff: str) -> list[str]:
                 if rx.search(body):
                     findings.append(f"{label} added in {current}: {body.strip()[:80]}")
         elif line.startswith("-") and not line.startswith("---") and _ASSERT.search(line[1:]):
-            findings.append(f"assertion removed in {current}: {line[1:].strip()[:80]}")
+            removed_asserts.setdefault(current, []).append(line[1:])
+    # A *net* per-file loss of assertions weakens the suite; a refactor that removes and
+    # re-adds an assertion balances out and is not a gaming signal.
+    for file, removed in removed_asserts.items():
+        re_added = sum(1 for ln in added_by_file.get(file, []) if _ASSERT.search(ln))
+        for ln in removed[: max(0, len(removed) - re_added)]:
+            findings.append(f"assertion removed in {file}: {ln.strip()[:80]}")
     for file, lines in added_by_file.items():
         findings += _weak_added_tests(file, lines)
     return findings
@@ -82,13 +102,17 @@ def _scan_diff(diff: str) -> list[str]:
 def _weak_added_tests(file: str, added: list[str]) -> list[str]:
     """Newly added assertion-free tests that reference a requirement ID (HARDN-FR-010).
 
-    Works over the *added* lines only: a block runs from a test declaration to the next
-    one; a block whose opening (declaration + adjacent title/docstring) names a
-    requirement ID but whose body contains no assertion is a gaming signal, routed to
-    mandatory human review through this gate's existing red → deviation path.
+    Works over the *added* lines only, with the declaration pattern chosen by the file's
+    language: a block runs from a test declaration to the next one; a block whose opening
+    (declaration + adjacent title/docstring) names a requirement ID but whose body contains
+    no assertion is a gaming signal, routed to mandatory human review through this gate's
+    existing red → deviation path.
     """
+    rx = _decl_re(file)
+    if rx is None:
+        return []
     findings: list[str] = []
-    decls = [i for i, ln in enumerate(added) if _TEST_DECL.search(ln)]
+    decls = [i for i, ln in enumerate(added) if rx.search(ln)]
     for n, start in enumerate(decls):
         end = decls[n + 1] if n + 1 < len(decls) else len(added)
         head = "\n".join(added[start : min(start + 3, end)])

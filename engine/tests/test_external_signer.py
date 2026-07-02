@@ -115,6 +115,15 @@ def test_garbage_output_external_signer_fails_loudly(tmp_path, monkeypatch):
         signer.sign(b"payload")
 
 
+def test_empty_external_signer_command_fails_loudly(tmp_path, monkeypatch):
+    """HARDN-FR-006: an empty signer command is a named configuration error."""
+    root, _sk = _external_setup(tmp_path, monkeypatch)
+    monkeypatch.setenv("THREEPOWERS_SIGNER_CMD", "   ")
+    signer = keys.resolve_signer(root)
+    with pytest.raises(keys.ExternalSignerError, match="empty"):
+        signer.sign(b"payload")
+
+
 def test_external_signer_without_committed_pubkey_is_actionable(tmp_path, monkeypatch):
     """HARDN-FR-006: the committed public key is the identity — its absence is named."""
     root = tmp_path / "repo"
