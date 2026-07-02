@@ -91,6 +91,13 @@ Exit `0` if the verdict is green, `1` if red (unless `--report-only`).
   adapter-supplied; if the adapter doesn't declare it, or the tool isn't installed, the oracle is
   **quarantined** — reported `skip` with a surfaced finding, never silently passed.
 
+**Spec-integrity (spec-lock).** At every tier the suite includes a `spec_integrity` gate — cheapest-first,
+after `types` and **before any test runs**: once a human has sealed the spec's hash via
+`signoff --stage spec`, a spec modified afterwards fails with class `spec_modified`, naming the approving
+ledger seq. A spec with no recorded approval hash is **skipped, never blocked**. Review a failure with
+`3pwr spec diff`; the sanctioned ways forward are a fresh `signoff --stage spec` over the amended document
+or a signed, reversible `3pwr deviation --gate spec_integrity`.
+
 ### `conformance` — spec-conformance trace only
 Checks every requirement in a spec has a linked test, without running the full suite.
 - `--spec SPEC` · `--tests [TESTS ...]` — test roots to scan.
@@ -162,10 +169,27 @@ behind oracle sealing; it never enters the deterministic verdict.
 ## Lifecycle & enforcement
 
 ### `signoff` — record a signed human sign-off
-Appends a signed `signoff` entry.
-- `--approver APPROVER` (required) · `--stage STAGE` (default `review`) · `--note NOTE` · `--spec-id SPEC_ID`.
+Appends a signed `signoff` entry. A **Spec-stage** sign-off (`--stage spec`) additionally seals the
+approved document into the signed payload — its raw-bytes SHA-256 (`spec_hash`), root-relative
+`spec_path`, and the current git commit — which is what the `spec_integrity` gate and `advance` enforce
+thereafter. A fresh Spec-stage sign-off supersedes the previous hash.
+- `--approver APPROVER` (required) · `--stage STAGE` (default `review`) · `--note NOTE` · `--spec-id SPEC_ID` ·
+  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: from `.specify/feature.json`).
 ```bash
+3pwr signoff --approver "$(git config user.name)" --stage spec --spec-id VUTIL \
+             --spec specs/001-validation-utils/spec.md   # seals the approved spec's hash
 3pwr signoff --approver "$(git config user.name)" --stage review --spec-id VUTIL
+```
+
+### `spec diff` — does the spec still match its approval hash? (read-only)
+Compares the spec on disk against the hash sealed at the latest Spec-stage sign-off. Exits `0` on a match
+(or when no approval hash exists — nothing to compare); exits `1` on a mismatch, reporting both hashes and
+the approving seq/approver, plus a unified textual diff when the sign-off commit is known to git. **Never
+writes to the ledger.**
+- `--spec-id SPEC_ID` (required) · `--spec SPEC` — path to the `spec.md` (default: the path recorded at
+  approval).
+```bash
+3pwr spec diff --spec-id VUTIL
 ```
 
 ### `advance` — local enforcement gate
@@ -174,7 +198,9 @@ is covered by an active deviation)**, and a human sign-off exists at/after it. R
 count, and an overdue emergency cleanup blocks the advance. Under **risk-tier scoping** (High-risk) it
 additionally requires oracle independence — a sealed spec-only bundle, an authoring record in a different
 model family than the coder, authored *before* the implementation verdict. Advisory peek/touch findings
-are surfaced but never block.
+are surfaced but never block. At **every tier** it also re-executes the **spec-integrity** check: a spec
+modified after its Spec-stage sign-off refuses with reason `spec_modified`, unless an active, signed
+`spec_integrity` deviation covers it (recorded in `deviations_applied`; revoking re-blocks).
 - `--stage STAGE` (required) · `--spec-id SPEC_ID`.
 ```bash
 3pwr advance --stage ship --spec-id VUTIL

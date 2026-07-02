@@ -16,21 +16,21 @@ tiers:
     mutation_score: 0
     model_diversity: false
     required_layers: []                       # test layers required per requirement (3PWR-FR-064)
-    gates: [format, lint, types]
+    gates: [format, lint, types, spec_integrity]
 
   Standard:        # important to correctness; failures visible and recoverable
     diff_coverage: 80
     mutation_score: 0
     model_diversity: true
     required_layers: [unit]                   # every requirement needs ≥1 unit test (3PWR-FR-064)
-    gates: [format, lint, types, tests, diff_coverage, sast, dependency_scan, secret_scan, gate_gaming, spec_conformance]
+    gates: [format, lint, types, spec_integrity, tests, diff_coverage, sast, dependency_scan, secret_scan, gate_gaming, spec_conformance]
 
   High-risk:       # this IS the trust — strictest bar, diversity + mutation required
     diff_coverage: 95
     mutation_score: 70
     model_diversity: true
     required_layers: [unit, integration, e2e] # all three layers required per requirement (3PWR-FR-064)
-    gates: [format, lint, types, tests, diff_coverage, mutation, sast, dependency_scan, secret_scan, gate_gaming, spec_conformance]
+    gates: [format, lint, types, spec_integrity, tests, diff_coverage, mutation, sast, dependency_scan, secret_scan, gate_gaming, spec_conformance]
 
 # Capability area → tier (spec §4). A change to trust-spine code is held to
 # High-risk; the executive/legislative workflow to Standard; docs/CLI polish to

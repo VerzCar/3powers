@@ -59,5 +59,6 @@ only_mutate = [
     "src/threepowers/canonical.py",
     "src/threepowers/keys.py",
     "src/threepowers/ledger.py",
+    "src/threepowers/speclock.py",
     "src/threepowers/verify.py",
 ]

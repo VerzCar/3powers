@@ -4,8 +4,8 @@ Advisory guidance for agents working in this repository, per requirement `3PWR-F
 
 ## Status
 
-**v0.5 complete; v1.0 in progress** (through plan [`010`](plan/010-observe-and-feedback.md)). The `3pwr`
-engine drives the full gate suite (floor → tests/diff-coverage → **mutation** → SAST → dependency →
+**v0.5 complete; v1.0 in progress** (through plan [`016`](plan/016-spec-integrity.md)). The `3pwr`
+engine drives the full gate suite (floor → **spec-integrity** → tests/diff-coverage → **mutation** → SAST → dependency →
 secret → gate-gaming → spec-conformance), the signed hash-chained ledger + offline `verify` + `advance`
 enforcement, provenance/deploy-gate, residual review, the eval harness, **brownfield Stage Zero**
 (report-only, diff-scoped gating, `characterize`), **emergency & deviation paths** (`emergency` +
@@ -39,6 +39,8 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Spec-conformance only | `3pwr conformance --spec <spec.md> --tests <dir>` |
 | Verify the ledger (offline) | `3pwr verify` |
 | Record a human sign-off | `3pwr signoff --approver <you> --stage review --spec-id <SPECID>` |
+| Seal the approved spec at sign-off | `3pwr signoff --approver <you> --stage spec --spec-id <ID> --spec specs/<feature>/spec.md` (`SLOCK-FR-001`; the `spec_integrity` gate + `advance` enforce the hash thereafter) |
+| Check the spec against its approval hash | `3pwr spec diff --spec-id <ID>` (read-only; `SLOCK-FR-007`) |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
 | Infer work kind(s) + suggested tier | `3pwr classify "<intent>"` (`3PWR-FR-058`; deterministic; shapes the tier/gates + oracle, never the sign-off) |
 | Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; composes `specify workflow run`, A1) |
