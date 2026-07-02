@@ -13,10 +13,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import adapters, covdiff, design, gaming, mutation, scanners
+from . import adapters, covdiff, design, gaming, mutation, scanners, speclock
 from .adapters import CmdResult
 from .conformance import conformance_failures, extract_spec, regression_gate, run_conformance
 from .config import Settings, tier_config
+from .ledger import Ledger
 from .verdict import (
     GATE_ORDER,
     STATUS_FAIL,
@@ -38,6 +39,7 @@ _DESIGN_FAILURE_CLASS = {
 # Gates executed by invoking an adapter command vs. computed in the core.
 _ADAPTER_GATES = {"format", "lint", "types", "tests", "mutation"}
 _CORE_GATES = {
+    "spec_integrity",
     "diff_coverage",
     "sast",
     "dependency_scan",
@@ -193,6 +195,16 @@ def run_gates(
                 coverage_path = target / spec["coverage_path"]
             verdict.add(gr)
 
+        elif gate == "spec_integrity":
+            # The spec is the law — after human approval its full-document hash is frozen in
+            # the signed ledger; a silent mutation fails fast, before any test runs
+            # (SLOCK-FR-003/004). Skips (never blocks) a not-yet-approved spec.
+            verdict.add(
+                speclock.integrity_gate(
+                    Ledger(settings.ledger_path).entries(), spec_id, settings.root, spec_path
+                )
+            )
+
         elif gate == "diff_coverage":
             verdict.add(
                 _diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base, paths)
@@ -300,6 +312,16 @@ def run_gates(
                     gate=g.gate,
                     detail="; ".join(g.findings[:1])
                     or "a defect fix requires a failing regression test",
+                )
+            )
+        elif g.gate == "spec_integrity":
+            verdict.failures.append(
+                failure(
+                    "spec_modified",
+                    gate=g.gate,
+                    approving_seq=g.details.get("approval_seq"),
+                    detail="; ".join(g.findings[:1])
+                    or "spec changed after approval — review with `3pwr spec diff`",
                 )
             )
         elif g.gate in _DESIGN_FAILURE_CLASS:

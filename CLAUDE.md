@@ -86,6 +86,17 @@ Implemented and committed (not yet merged to `main`):
   `.3powers/adapters/go/adapter.yaml` proving the contract is language-agnostic (FR-027/NFR-007); it reuses
   the core LCOV diff-coverage via `gcov2lcov` (a new opt-in `shell: true` per adapter gate enables the
   two-step pipeline). Live design scanners + a Go toolchain (for those adapters' live runs) are the residual.
+- **Plan 016** (`plan/016-spec-integrity.md`) — **spec-integrity gate (spec-lock, SLOCK; High-risk)**:
+  a Spec-stage `signoff` (manual or the `3pwr run` review-spec gate) seals the approved spec's raw-bytes
+  SHA-256 + root-relative path + sign-off commit **inside the signed ledger entry** (SLOCK-FR-001/002; no
+  new entry kind). The new `spec_integrity` gate runs after types, before any test, at **every tier** —
+  failing a post-approval mutation with class `spec_modified` (approving seq named), skipping a
+  never-approved spec in O(1) (SLOCK-FR-003/004, NFR-003). `advance` re-executes the check and refuses
+  `spec_modified` unless a signed `spec_integrity` deviation covers it (SLOCK-FR-005; revoke re-blocks);
+  a fresh Spec-stage sign-off supersedes (SLOCK-FR-006); read-only `3pwr spec diff` shows both hashes + a
+  textual diff when the sign-off commit is known (SLOCK-FR-007). Hash tampering breaks the signature — the
+  existing `verify` catches it with no new code (SLOCK-NFR-002). `speclock.py` joins the High-risk mutation
+  scope (diff-coverage 97% ≥ 95, mutation ≈80% ≥ 70).
 
 **Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
 (ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
@@ -116,8 +127,8 @@ the residual.
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
-                            #   observe, deps, workkind, design, orchestrate, adapters, scanners, ledger, verify,
-                            #   keys, verdict, config, canonical
+                            #   observe, deps, workkind, design, speclock, orchestrate, adapters, scanners, ledger,
+                            #   verify, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
   config/{risk-tiers,roles,dependencies,observability,design-oracles}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
@@ -149,7 +160,9 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr gate run --path <dir> --spec <spec> --tier <tier> --work-kind design   # runs design oracles; quarantines missing (FR-009)
 3pwr verify                         # recompute ledger chain + signatures, offline
 3pwr signoff --approver <you> --stage review --spec-id <ID>
-3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present
+3pwr signoff --approver <you> --stage spec --spec-id <ID> --spec specs/<f>/spec.md  # seals the spec's hash (SLOCK-FR-001)
+3pwr spec diff --spec-id <ID>       # read-only: does the spec still match its approval hash? (SLOCK-FR-007)
+3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present + spec unchanged
 
 # The whole lifecycle in one command (§6, FR-011): auto mode stops ONLY at the two human gates (FR-006/037).
 3pwr classify "<intent>"                            # FR-058: infer work kind(s) + a suggested risk tier
@@ -221,7 +234,8 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    never a blocker (NFR-001). Opt-in and High-risk-only — the default flow stays in-IDE and watchable; the
    coder leg also running headless (the fuller dispatch) is the residual.
 
-2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → tests + diff-coverage →
+2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → **spec-integrity** (the
+   approved spec's sealed hash still matches — SLOCK) → tests + diff-coverage →
    mutation → SAST → dependency → secret → gate-gaming → spec-conformance. **Work-kind inference then
    *shapes* the set** (FR-058, plan 015): a `defect` run adds a regression gate (FR-008), a `design` run
    adds the adapter-supplied design oracles (FR-009) — it only ever *adds*, never weakening a tier gate

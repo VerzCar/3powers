@@ -25,6 +25,7 @@ GATE_ORDER = [
     "format",
     "lint",
     "types",
+    "spec_integrity",  # the approved spec is unchanged — fails fast, before any test (SLOCK-FR-004)
     "tests",
     "diff_coverage",
     "mutation",

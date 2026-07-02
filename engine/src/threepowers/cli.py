@@ -7,10 +7,11 @@ Subcommands:
   gate run      run the deterministic gate suite, emit a verdict, append it to the ledger
   conformance   run only the spec-conformance trace
   verify        recompute the ledger hash chain + signatures (offline)
-  signoff       append a signed human sign-off entry
+  signoff       append a signed human sign-off entry (a Spec-stage sign-off seals the
+                approved document's hash into the signed entry — SLOCK-FR-001)
   advance       local enforcement gate: refuse to proceed unless gate green + ledger
                 verifies + the tier-required sign-off is present (+ oracle independence
-                at High-risk)
+                at High-risk + the approved spec unchanged, SLOCK-FR-005)
   oracle        structural oracle independence: seal a spec-only bundle, record authoring
                 (refusing the coder's model family), dispatch it headlessly + read-path
                 isolated (A3), verify from the ledger
@@ -20,6 +21,8 @@ Subcommands:
                 `workflow run` (A1) and streams progress
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
+  spec diff     read-only spec-integrity report: does the spec still match its approval
+                hash? (SLOCK-FR-007)
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
@@ -29,10 +32,12 @@ Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refuse
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -54,6 +59,7 @@ from . import (
     provenance,
     scaffold,
     scope,
+    speclock,
     workkind,
 )
 from .adapters import run_cmd
@@ -93,6 +99,28 @@ def _print(obj: dict, as_json: bool, human: str) -> None:
         print(json.dumps(obj, indent=2))
     else:
         print(human)
+
+
+def _git_out(root: Path, args: list[str]) -> str:
+    """Shell out to git; empty string on any failure (best-effort, never blocks)."""
+    try:
+        res = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+        return res.stdout if res.returncode == 0 else ""
+    except OSError:
+        return ""
+
+
+def _spec_approval_payload(s: Settings, spec: Optional[str]) -> dict:
+    """Best-effort spec-hash fields for a Spec-stage sign-off (SLOCK-FR-001).
+
+    An unresolvable spec records nothing — the sign-off itself still proceeds.
+    """
+    try:
+        spec_path = _resolve_spec(s, spec)
+    except FileNotFoundError:
+        return {}
+    commit = _git_out(s.root, ["rev-parse", "--short", "HEAD"]).strip()
+    return speclock.approval_fields(s.root, spec_path, commit=commit)
 
 
 def _init_interactive(args: argparse.Namespace) -> bool:
@@ -528,11 +556,92 @@ def cmd_signoff(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
     payload = {"approver": args.approver, "stage": args.stage, "note": args.note or ""}
+    # A Spec-stage sign-off freezes the law: seal the full document's hash inside the
+    # signed entry so any later silent mutation is caught (SLOCK-FR-001). A fresh
+    # Spec-stage sign-off supersedes the previous hash (SLOCK-FR-006).
+    if args.stage.lower() == "spec":
+        payload.update(_spec_approval_payload(s, getattr(args, "spec", None)))
     entry = Ledger(s.ledger_path).append("signoff", payload, sk, spec_id=args.spec_id or "")
+    sealed = f"; spec hash sealed ({payload['spec_hash']})" if payload.get("spec_hash") else ""
     print(
-        f"sign-off recorded by {args.approver} for stage '{args.stage}' (ledger seq={entry['seq']})"
+        f"sign-off recorded by {args.approver} for stage '{args.stage}' "
+        f"(ledger seq={entry['seq']}){sealed}"
     )
     return EXIT_OK
+
+
+def cmd_spec_diff(args: argparse.Namespace) -> int:
+    """Read-only spec-integrity report (SLOCK-FR-007) — never writes to the ledger.
+
+    Exit 0 when the spec matches its approval hash (or none is recorded); exit 1 on a
+    mismatch, with a textual diff when the sign-off commit is known.
+    """
+    s = _settings(args.root)
+    entries = Ledger(s.ledger_path).entries()
+    spec_path: Optional[Path]
+    try:
+        spec_path = _resolve_spec(s, args.spec)
+    except FileNotFoundError:
+        spec_path = None  # fall back to the path recorded at approval
+    lock = speclock.check(entries, args.spec_id or "", s.root, spec_path=spec_path)
+
+    if lock.status == speclock.NO_APPROVAL:
+        _print(
+            {"spec_id": args.spec_id, "status": lock.status},
+            args.json,
+            f"no Spec-stage approval hash recorded for '{args.spec_id}' — nothing to compare "
+            "(seal one via `3pwr signoff --stage spec`)",
+        )
+        return EXIT_OK
+
+    obj = {
+        "spec_id": args.spec_id,
+        "status": lock.status,
+        "approval_seq": lock.approval_seq,
+        "approver": lock.approver,
+        "approved_hash": lock.approved_hash,
+        "current_hash": lock.current_hash,
+        "spec_path": lock.spec_path,
+    }
+    if lock.status == speclock.MATCH:
+        _print(
+            obj,
+            args.json,
+            f"spec matches its approval hash (ledger seq={lock.approval_seq}, "
+            f"approver={lock.approver})\n  {lock.approved_hash}",
+        )
+        return EXIT_OK
+
+    lines = [
+        "spec MODIFIED after approval"
+        if lock.status == speclock.MISMATCH
+        else f"approved spec file is MISSING: {lock.spec_path}",
+        f"  approved: {lock.approved_hash} (ledger seq={lock.approval_seq}, "
+        f"approver={lock.approver})",
+        f"  current:  {lock.current_hash or '(missing file)'}",
+    ]
+    # Textual diff (best-effort): the version at the sign-off commit vs. the file now.
+    target = spec_path or speclock.resolve_target(s.root, lock)
+    diff_text = ""
+    if lock.commit and lock.spec_path and target is not None and target.exists():
+        before = _git_out(s.root, ["show", f"{lock.commit}:{lock.spec_path}"])
+        if before:
+            diff_text = "\n".join(
+                difflib.unified_diff(
+                    before.splitlines(),
+                    target.read_text(encoding="utf-8").splitlines(),
+                    fromfile=f"{lock.spec_path} @ {lock.commit} (approved)",
+                    tofile=f"{lock.spec_path} (current)",
+                    lineterm="",
+                )
+            )
+    if diff_text:
+        obj["diff"] = diff_text
+        lines.append(diff_text)
+    else:
+        lines.append("  (no textual diff available — sign-off commit unknown or file missing)")
+    _print(obj, args.json, "\n".join(lines))
+    return EXIT_FAIL
 
 
 def cmd_advance(args: argparse.Namespace) -> int:
@@ -630,6 +739,30 @@ def cmd_advance(args: argparse.Namespace) -> int:
         if not ind.ok:
             reasons += [f"oracle independence — {r}" for r in ind.reasons]
 
+    # 5. Spec integrity (SLOCK-FR-005): once a human has approved the spec, its recorded
+    #    hash must still match the document on disk — at every tier. A signed, active
+    #    `spec_integrity` deviation (3PWR-FR-057) turns the refusal into a warned,
+    #    recorded pass; revoking or expiring it re-blocks. A never-approved spec is
+    #    never blocked (SLOCK-FR-003).
+    lock = speclock.check(entries, spec_for_oracle, s.root)
+    spec_integrity_deviated = False
+    if not lock.ok:
+        if speclock.GATE_NAME in deviations.covered_gates(active, spec_for_oracle):
+            spec_integrity_deviated = True
+            dev_seqs = [
+                int(d["seq"])
+                for d in active
+                if speclock.GATE_NAME in d.get("gates", [])
+                and (not (d.get("spec_id") or "") or d.get("spec_id") == spec_for_oracle)
+            ]
+            deviations_applied = sorted(set(deviations_applied) | set(dev_seqs))
+        else:
+            reasons.append(
+                f"spec_modified — spec changed after approval (ledger seq={lock.approval_seq}); "
+                "review with `3pwr spec diff`, re-approve via `3pwr signoff --stage spec`, or "
+                "record a `3pwr deviation --gate spec_integrity`"
+            )
+
     if reasons:
         human = f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons)
         for a in oracle_advisory:
@@ -649,6 +782,8 @@ def cmd_advance(args: argparse.Namespace) -> int:
     payload: dict = {"stage": args.stage}
     if deviations_applied:
         payload["deviations_applied"] = deviations_applied
+    if spec_integrity_deviated:
+        payload["spec_integrity_deviated"] = True
     if oracle_ok is not None:
         payload["oracle_ok"] = oracle_ok
     if oracle_dispatch_ok is not None:
@@ -1426,21 +1561,29 @@ def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
 
 
 def _run_signoff(
-    ledger: Ledger, sk, spec_id: str, gate: str, approver: Optional[str], note: Optional[str]
+    s: Settings,
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+    gate: str,
+    approver: Optional[str],
+    note: Optional[str],
 ) -> None:
-    """Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence)."""
+    """Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).
+
+    The spec-approval gate additionally seals the approved document's hash into the
+    signed entry (SLOCK-FR-001) — same capture as a manual `3pwr signoff --stage spec`.
+    """
     stage = "Spec" if gate == "review-spec" else "Review"
     fr = orchestrate.MANDATORY_GATES.get(gate, "")
-    ledger.append(
-        "signoff",
-        {
-            "approver": approver or "human",
-            "stage": stage,
-            "note": note or f"approved gate '{gate}' {fr}".strip(),
-        },
-        sk,
-        spec_id=spec_id,
-    )
+    payload = {
+        "approver": approver or "human",
+        "stage": stage,
+        "note": note or f"approved gate '{gate}' {fr}".strip(),
+    }
+    if stage == "Spec":
+        payload.update(_spec_approval_payload(s, None))
+    ledger.append("signoff", payload, sk, spec_id=spec_id)
 
 
 def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
@@ -1510,7 +1653,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if not pending:
             print(f"error: no paused run to resume for {spec_id}", file=sys.stderr)
             return EXIT_USAGE
-        _run_signoff(ledger, sk, spec_id, pending, args.approver, args.note)
+        _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
         runner = _run_make_runner(s, args, mode, resume_from=pending)
         first_resuming = (
             not args.dry_run
@@ -1584,7 +1727,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     f"  ⊘ gate '{result.gate}' rejected — run stopped",
                 )
                 return EXIT_FAIL
-            _run_signoff(ledger, sk, spec_id, result.gate, args.approver, args.note)
+            _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # `specify` not installed on the live path
         print(str(exc), file=sys.stderr)
@@ -1993,6 +2136,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--stage", default="review")
     sp.add_argument("--note")
     sp.add_argument("--spec-id", dest="spec_id")
+    sp.add_argument(
+        "--spec",
+        help="path to the approved spec.md — its hash is sealed into a Spec-stage sign-off "
+        "(default: from .specify/feature.json)",
+    )
     sp.set_defaults(func=cmd_signoff)
 
     ap = common(sub.add_parser("advance", help="enforce gate+ledger+sign-off before advancing"))
@@ -2253,6 +2401,18 @@ def build_parser() -> argparse.ArgumentParser:
     olog.set_defaults(func=cmd_observe_log_action)
     over = common(obsub.add_parser("verify-actions", help="verify the runtime agent-action log"))
     over.set_defaults(func=cmd_observe_verify_actions)
+
+    spp = sub.add_parser("spec", help="spec operations: integrity diff")
+    spsub = spp.add_subparsers(dest="spec_cmd", required=True)
+    spd = common(
+        spsub.add_parser(
+            "diff",
+            help="read-only: does the spec still match its approval hash? (never writes)",
+        )
+    )
+    spd.add_argument("--spec-id", dest="spec_id", required=True)
+    spd.add_argument("--spec", help="path to the spec.md (default: the path recorded at approval)")
+    spd.set_defaults(func=cmd_spec_diff)
 
     return p
 

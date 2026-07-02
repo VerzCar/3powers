@@ -4,7 +4,7 @@
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
 > single source of truth; this document is checked against it. It is a maintainer-facing status matrix —
-> the requirement IDs below are the point. Last updated after **plan 015**.
+> the requirement IDs below are the point. Last updated after **plan 016**.
 
 ---
 
@@ -80,7 +80,7 @@ plan/                       # the continuous plan series 001..015 (015 = work-ki
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; remaining: dual-headless coder leg, catalog publishing) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; remaining: dual-headless coder leg, catalog publishing) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -126,7 +126,13 @@ now runs **betterleaks** (maintained Gitleaks successor), gitleaks fallback, qua
 
 **Judiciary — trust spine (§9):** FR-036 ✅, FR-037 ✅, FR-038 ✅, FR-039 ✅, FR-040 ✅, FR-041 ✅,
 FR-042 ✅, FR-066 ✅, FR-067 ✅, FR-068 ✅, FR-069 ✅, FR-070 ✅, FR-071 ✅ ·
-FR-043 ⬜ (CI re-validation — optional per A4).
+FR-043 ⬜ (CI re-validation — optional per A4). **Spec-integrity (SLOCK, plan 016) ✅:** a Spec-stage
+sign-off seals the full document's SHA-256 inside the signed ledger entry (SLOCK-FR-001/002); the
+`spec_integrity` gate fails a post-approval mutation before any test at every tier (SLOCK-FR-003/004),
+`advance` refuses `spec_modified` unless a signed `spec_integrity` deviation covers it (SLOCK-FR-005),
+a fresh Spec-stage sign-off supersedes (SLOCK-FR-006), and `3pwr spec diff` reports read-only
+(SLOCK-FR-007); tampering with the recorded hash is caught by the existing `verify` (SLOCK-NFR-002).
+The new `speclock` module holds the High-risk bar (diff-coverage 97% ≥ 95, mutation ≈80% ≥ 70).
 
 **Agnosticism / config (§10–11):** FR-044 ✅, FR-045 ✅, FR-046 ✅, FR-047 ✅, FR-048 ✅, FR-049 ✅,
 FR-050 ✅ (deterministic eval set; model-driven layer is future). · **Plan 009** operationalized FR-048
@@ -276,6 +282,20 @@ contract is language-agnostic (FR-027/NFR-007) — it reuses the core LCOV diff-
 new opt-in `shell: true` on an adapter gate enables the two-step pipeline). Self-applies green at High-risk
 (mutation on the trust spine) and Standard (whole engine, diff-coverage 88% ≥ 80%).
 
+**Plan 016 is done** ([`plan/016-spec-integrity.md`](../plan/016-spec-integrity.md)):
+✅ **spec-integrity gate (spec-lock, SLOCK — High-risk).** A Spec-stage `3pwr signoff` (manual or via the
+`3pwr run` review-spec gate) seals the approved document's raw-bytes SHA-256 + root-relative path + sign-off
+commit **inside the signed ledger entry** (SLOCK-FR-001/002 — no new entry kind, no new trust primitive).
+A new `spec_integrity` gate runs cheapest-first (after types, before any test) at **every tier** and fails a
+post-approval mutation with class `spec_modified` naming the approving seq; a never-approved spec skips in
+O(1), never blocked (SLOCK-FR-003/004, NFR-003). `advance` re-executes the check and refuses `spec_modified`
+unless a signed, reversible `spec_integrity` deviation covers it (SLOCK-FR-005); a fresh Spec-stage sign-off
+supersedes (SLOCK-FR-006); read-only `3pwr spec diff` reports both hashes + a textual diff when the sign-off
+commit is known (SLOCK-FR-007). Tampering with the recorded hash breaks the entry's signature — caught by the
+existing `verify` with zero new verification code (SLOCK-NFR-002). Self-applies at **High-risk** scoped to
+the new `speclock` module: diff-coverage 97.18% ≥ 95, mutation 79.56% ≥ 70, all SLOCK requirements traced
+across unit+integration+e2e.
+
 Next, in priority order (breadth + the remaining hardening track):
 - **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
   live non-Copilot end-to-end `workflow run` verification (also completes `3pwr run`'s live executive leg).
@@ -286,7 +306,7 @@ Next, in priority order (breadth + the remaining hardening track):
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) · **Constitution:** [`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→015 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→016 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/speckit.md`](references/speckit.md), [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
 - **Git:** stacked local branches `plan-001-base-setup` → … → `plan-015-defect-design-go-adapter`

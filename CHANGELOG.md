@@ -12,6 +12,12 @@ it.
 
 ### Added
 
+- **Spec-integrity gate (spec-lock).** A Spec-stage `3pwr signoff` now seals the approved document's
+  raw-bytes SHA-256 inside the signed ledger entry; a new `spec_integrity` gate (cheapest-first, before any
+  test, at every tier) and `advance` fail a spec silently modified after approval (`spec_modified`), unless
+  a fresh Spec-stage sign-off supersedes it or a signed `spec_integrity` deviation covers it. The read-only
+  `3pwr spec diff` reports the mismatch with a textual diff when the sign-off commit is known. Tampering
+  with the recorded hash is caught by the existing `verify` — no new trust primitive. (plan 016)
 - **Work-kind-shaped gates.** `3pwr classify` infers the kind of change (defect, design, feature, …) and a
   suggested risk tier, and the gate suite adapts. A **defect** fix must ship a failing regression test; a
   **design** change is judged by design oracles (visual-regression, accessibility, and contract checks),
