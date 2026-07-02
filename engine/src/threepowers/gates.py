@@ -229,7 +229,12 @@ def run_gates(
 
         elif gate == "spec_conformance":
             roots = _test_roots(manifest, target)
-            gr = run_conformance(spec_path, roots, required_layers=tcfg.get("required_layers"))
+            gr = run_conformance(
+                spec_path,
+                roots,
+                required_layers=tcfg.get("required_layers"),
+                conformance_cfg=manifest.get("conformance"),
+            )
             verdict.add(gr)
             verdict.failures.extend(conformance_failures(gr))
 

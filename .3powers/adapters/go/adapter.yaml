@@ -33,3 +33,15 @@ gates:
     cmd: "go-mutesting ./..."
     parser: go-mutesting
     tier_min: "High-risk"
+
+# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# to a test declaration (func TestX / t.Run title), and every requirement-bound test needs >=1
+# assertion. Absent patterns degrade to a visible quarantine (3PWR-NFR-015).
+conformance:
+  test_declarations:
+    - '^\s*func\s+Test\w+'
+    - '\bt\.Run\s*\('
+  assertion_patterns:
+    - '\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\b'
+    - '\brequire\.\w+\('
+    - '\bassert\.\w+\('

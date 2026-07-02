@@ -28,3 +28,16 @@ gates:
     score_cmd: "uv run mutmut results --all true"   # --all lists killed too (for scoring)
     parser: mutmut
     tier_min: "High-risk"
+
+# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# to a test declaration (the test's name/declaration line or its adjacent docstring), and every
+# requirement-bound test needs >=1 assertion. Absent patterns degrade to a visible quarantine,
+# never a failure or a silent pass (3PWR-NFR-015).
+conformance:
+  test_declarations:
+    - '^\s*(?:async\s+)?def\s+test_\w+'
+    - '^\s*class\s+Test\w+'
+  assertion_patterns:
+    - '\bassert\b'
+    - '\bpytest\.raises\b'
+    - '\bself\.assert\w+'
