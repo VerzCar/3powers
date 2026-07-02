@@ -99,3 +99,12 @@ Confirmed in this environment:
 - Tag every task and commit with its originating, spec-namespaced requirement ID, e.g. `3PWR-FR-016`.
 - Write requirements in EARS form; every spec carries a risk tier and an explicit non-goals section.
 - Keep the authoritative spec in versioned `specs/`; do not move it to an external tracker.
+
+## Delivering a change (pull requests)
+
+- All work happens on a **feature branch**, never directly on `main`.
+- **Once a unit of work is complete and committed, open a pull request** against `main` on the project
+  repository (https://github.com/VerzCar/3powers) using `gh pr create`. Give it a clear title and a body
+  that summarizes what changed and references the requirement ID(s) or the plan it traces to.
+- Push the feature branch as part of opening the PR; never force-push shared history or push to `main`
+  directly.

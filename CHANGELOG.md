@@ -68,4 +68,4 @@ it.
 - Two reference language adapters (TypeScript, Python), self-application of the engine on its own code, and
   supply-chain scanners. (plans 001–003)
 
-[Unreleased]: https://github.com/your-org/3powers
+[Unreleased]: https://github.com/VerzCar/3powers

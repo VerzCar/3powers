@@ -25,7 +25,7 @@ You need [`uv`](https://docs.astral.sh/uv/) (Python tooling) and `git`. The Type
 one is absent its gate is *quarantined* (surfaced as skipped), never silently passed.
 
 ```bash
-git clone https://github.com/your-org/3powers.git
+git clone https://github.com/VerzCar/3powers.git
 cd 3powers
 
 # Install the CLI so you can dogfood it
