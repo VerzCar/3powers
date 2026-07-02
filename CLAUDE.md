@@ -22,123 +22,20 @@ language, LLM provider, and CI/CD platform.
 
 ## Current state
 
-Implemented and committed (not yet merged to `main`):
+**Implementation status lives in exactly one place: [`docs/STATUS.md`](docs/STATUS.md)** — the current
+milestone, the validation date, and the open residuals, validated against the spec. Do not infer scope or
+progress from this file; read STATUS. The implementation history is the plan series under
+[`plan/`](plan/) (001 → …), each plan ending with a Verification section.
 
-- **Plan 001** (`plan/001-base-setup-and-tech-stack.md`) — base setup + a runnable walking skeleton.
-- **Plan 002** (`plan/002-self-application-and-scanners.md`) — self-application + supply-chain scanners.
-- **Plan 003** (`plan/003-complete-v0.1-mvp.md`) — completed the remaining **v0.1** trust-spine MVP gaps.
-- **Plan 004** (`plan/004-scope-provenance-residual.md`) — scope discipline + first **v0.5** pillars.
-- **Plan 005** (`plan/005-sast-and-eval-harness.md`) — SAST gate + eval harness; **completes v0.5**.
-- **Plan 006** (`plan/006-v1.0-and-hardening.md`) — **High-risk self-application (NFR-006)** + **brownfield
-  Stage Zero** (report-only, diff-scoped gating, characterization); starts **v1.0**.
-- **Plan 007** (`plan/007-emergency-and-deviation.md`) — **emergency & deviation paths** (§14, FR-056/057):
-  `3pwr deviation` (signed, reversible, named-gate relaxation; sanctioned `gate_gaming` acceptance) and
-  `3pwr emergency` (defer only mutation+coverage; overdue cleanup blocks `advance`).
-- **Plan 008** (`plan/008-oracle-independence.md`) — **structural oracle independence** (§7, FR-020/021/022/062):
-  `3pwr oracle seal` (spec-only sealed bundle), `oracle record` (actual model + signer + test hashes; refuses
-  the coder's family), `oracle verify`; High-risk `advance` proves independence from the ledger seq, and
-  peeking/touching the implementation is an **advisory** flag (never a blocker).
-- **Plan 009** (`plan/009-portability-and-dependencies.md`) — **portability & dependency stability**
-  (A1/A3, FR-044/046/048, NFR-014): `3pwr deps-check` (a supported-versions manifest + drift detection,
-  incl. Spec Kit) and a **provider-agnostic Spec Kit extension** (`.specify/extensions/3powers/`) with
-  substrate-neutral, eval-gated role config. Live multi-integration dispatch stays the residual.
-- **Plan 010** (`plan/010-observe-and-feedback.md`) — **observe & feedback loop** (§13, FR-054/055):
-  `3pwr observe signal` routes a production signal to a new-requirement backlog (not a patch) + moves the
-  spec to the Observe stage; `observe coverage` reports NFR instrumentation; `observe log-action`/
-  `verify-actions` is a tamper-evident, attributable runtime agent-action log. Closes the 8th stage.
-- **Plan 011** (`plan/011-a3-live-headless-dispatch.md`) — **A3 live headless dispatch + physical oracle
-  read-path isolation** (FR-021; oracle leg of FR-012/013): `3pwr oracle dispatch` authors the oracle
-  headlessly via `specify workflow run` under a non-coder integration (default `claude`), inside a
-  **sanitized git worktree** with the implementation/plan/tasks/contracts physically absent — attested by a
-  worktree manifest hash in the ledger. A High-risk `advance` blocks a missing/non-isolated dispatch when
-  `roles.oracle.require_dispatch` is on; the 008 peek/touch signal stays advisory; dispatch never enters
-  `gate run` (NFR-001). Optional distinct oracle signer key + two-key `verify` (NFR-005). Runs in-IDE by
-  default (opt-in, High-risk only); the fuller dual-headless (coder leg) proof is the residual.
-- **Plan 012** (`plan/012-diversity-recommend-not-force.md`) — **model diversity: recommend, not force**
-  (FR-022 via FR-057): comparison granularity is configurable (`diversity_level: family|model`, default
-  family); a same-family/model oracle is refused by default but proceeds under a signed, warned, reversible
-  `model_diversity` deviation (`3pwr deviation --gate model_diversity`), recorded in the ledger and undone
-  by `--revoke`. `oracle record`/`dispatch`/`advance`/`roles-check` honour it; `independence()` moves a
-  covered mismatch to advisory (never blocking). Single-model users (e.g. only Claude Code) are warned,
-  never walled off; FR-022 stays the law.
-- **Plan 013** (`plan/013-orchestration-loop.md`) — **orchestration front-end `3pwr run`** (§6, FR-011):
-  one command drives the whole lifecycle with a **live stage tracker**, composing Spec Kit's
-  `workflow run` (A1 — the engine makes no model call, A3). `auto` mode auto-approves the intermediate
-  review gates and **stops only at the two mandatory human gates** — spec approval (FR-006) and sign-off
-  (FR-037); `commit` mode stops at every gate. Sign-offs + progress are recorded in the ledger (resumable:
-  `--resume`/`--status`); a red verdict stops + `--notify`s + suggests `observe signal`; orchestration
-  never enters the deterministic verdict (NFR-001). Fully-headless executive dispatch is the A3 residual.
-- **Plan 014** (`plan/014-hardening-core.md`) — **hardening core**: the secret gate now runs **betterleaks**
-  (maintained Gitleaks successor; gitleaks fallback, quarantine if neither); **work-kind inference (FR-058)**
-  — `3pwr classify` + `3pwr run` infer kind(s) + a suggested tier deterministically, shaping the tier/gates
-  + oracle but never the sign-off; **tier test-layers (FR-064)** — `required_layers` per tier enforced by
-  spec-conformance as a per-change union (High-risk needs unit+integration+e2e); a **richer in-place `3pwr
-  run` tracker** (dependency-free); and the **root `LICENSE`** (NFR-012). FR-008/FR-009 + a 3rd adapter →
-  plan 015.
-- **Plan 015** (`plan/015-defect-design-go-adapter.md`) — **work-kind-shaped gates** (FR-008/FR-009,
-  FR-027): work-kind inference now *shapes the gate set* via `run_gates(work_kind=…)` / `3pwr gate run
-  --work-kind` (adds gates, never weakens a tier gate — FR-032). **FR-008 defect-flow** — a `defect` run
-  adds a **regression gate** that fails `missing_regression_test` unless a *regression*/*reproduce* test
-  referencing the requirement is present (deterministic, no model call). **FR-009 design oracles** — a
-  `design` run unions the oracle gates from `.3powers/config/design-oracles.yaml` (visual-regression /
-  a11y / structural-contract / component-contract); each tool is **adapter-supplied**, a missing one is
-  **quarantined** not silently passed (NFR-015). **Third (Go) reference adapter** — a declarative
-  `.3powers/adapters/go/adapter.yaml` proving the contract is language-agnostic (FR-027/NFR-007); it reuses
-  the core LCOV diff-coverage via `gcov2lcov` (a new opt-in `shell: true` per adapter gate enables the
-  two-step pipeline). Live design scanners + a Go toolchain (for those adapters' live runs) are the residual.
-- **Plan 016** (`plan/016-spec-integrity.md`) — **spec-integrity gate (spec-lock, SLOCK; High-risk)**:
-  a Spec-stage `signoff` (manual or the `3pwr run` review-spec gate) seals the approved spec's raw-bytes
-  SHA-256 + root-relative path + sign-off commit **inside the signed ledger entry** (SLOCK-FR-001/002; no
-  new entry kind). The new `spec_integrity` gate runs after types, before any test, at **every tier** —
-  failing a post-approval mutation with class `spec_modified` (approving seq named), skipping a
-  never-approved spec in O(1) (SLOCK-FR-003/004, NFR-003). `advance` re-executes the check and refuses
-  `spec_modified` unless a signed `spec_integrity` deviation covers it (SLOCK-FR-005; revoke re-blocks);
-  a fresh Spec-stage sign-off supersedes (SLOCK-FR-006); read-only `3pwr spec diff` shows both hashes + a
-  textual diff when the sign-off commit is known (SLOCK-FR-007). Hash tampering breaks the signature — the
-  existing `verify` catches it with no new code (SLOCK-NFR-002). `speclock.py` joins the High-risk mutation
-  scope (diff-coverage 97% ≥ 95, mutation ≈80% ≥ 70).
-- **Plan 017** (`plan/017-trust-hardening.md`) — **trust-spine hardening (HARDN; High-risk)**: a versioned
-  `docs/threat-model.md` (what the ledger proves / cannot prove, custody boundary, self-reported oracle
-  claim — HARDN-FR-001). Custody enforced: `keygen`/`rotate-key` refuse in-repo keys; `verify` runs a
-  custody preflight (`key_custody` on in-tree or group-readable keys, HARDN-FR-002); the secret gate's core
-  `ed25519-priv` check always runs (HARDN-FR-003). **Key continuity**: `3pwr rotate-key` appends a
-  `key_rotation` entry signed by the OUTGOING key; `verify` walks the succession and fails an *unrotated
-  key change* (HARDN-FR-004). **Anchoring (opt-in)**: `3pwr anchor` tags the head (`3powers/anchor/<seq>`,
-  `--push` = the only network op) + a local receipt; `verify --anchored` catches truncation/rewrite behind
-  the anchor even by a key holder (HARDN-FR-005). **External signing**: `$THREEPOWERS_SIGNER_CMD` pipes
-  bytes→stdin / b64 sig←stdout; seed never readable by the engine; loud failure, no fallback; verification
-  unchanged (HARDN-FR-006). **Oracle attestation**: the self-reported record family is cross-checked
-  against the attested dispatch integration — contradiction blocks a High-risk advance; no dispatch ⇒ the
-  claim is labelled self-reported (HARDN-FR-007). **Conformance anti-gaming**: IDs must be **bound to test
-  declarations** (comment-only mention ⇒ `untraced_requirement`), every bound test needs ≥1 assertion
-  (adapter-declared patterns; `weak_test`; pattern-less adapters quarantine — HARDN-FR-008/009);
-  `gate_gaming` flags newly added assertion-free requirement-referencing tests (HARDN-FR-010); per-tier
-  `diff_mutation: true` + `--base` runs mutation over changed files vs the tier threshold (HARDN-FR-011).
-  `anchor.py` joins the High-risk mutation scope.
-
-**Status (honest): v0.5 complete; v1.0 in progress.** Implemented across plans 001–006: the trust spine
-(ledger / verify / enforcement / **reversibility** / **build provenance + deploy gate**), the **full gate
-suite** cheapest-first (floor + tests/diff-coverage + **mutation** + **SAST** + dependency + secret +
-gate-gaming + spec-conformance), two reference adapters (TypeScript + Python), **lifecycle/resumability**,
-**two-way coverage**, **scope discipline**, **residual review**, the **prompt/constitution eval harness
-(FR-050)**, **brownfield Stage Zero** (report-only FR-052, diff-scoped gating FR-051, `characterize`
-FR-053), **emergency & deviation paths** (FR-056/057: `emergency` + `deviation`), **structural oracle
-independence** (FR-020/021/022/062: `oracle seal`/`record`/`verify` + High-risk `advance`), **portability
-& dependency stability** (FR-048/A1/A3: `deps-check` + a provider-agnostic Spec Kit extension), and the
-**observe & feedback loop** (FR-054/055: `observe signal`/`coverage`/`log-action`), and **A3 live headless
-dispatch** (FR-021 physical oracle read-path isolation + oracle leg of FR-012/013: `oracle dispatch` runs
-the judiciary headlessly in a sanitized worktree, attested in the ledger, blocking at High-risk when
-`require_dispatch` is on), and the **orchestration front-end** (FR-011: `3pwr run` drives the whole
-lifecycle with a live tracker; `auto` mode stops only at the two human gates FR-006/FR-037). **NFR-006 is met:**
-the trust-spine modules pass their own **High-risk** bar — ≥95% diff-coverage **and** mutation (≈89% ≥ the
-70% threshold) — via the fixed mutmut src-layout runner and per-path tier scoping; the engine runs green at
-`--tier High-risk`. **Work-kind now shapes the gate set** (plan 015): defect-flow (FR-008), design oracles
-(FR-009), and a **third (Go) reference adapter** (FR-027) are delivered. Next → rest of **v1.0**: the
-**fuller A3** (coder leg also headless under a second, different-family CLI + a live non-Copilot end-to-end
-run), catalog publishing, and live design/Go gate runs (live scanners + a Go toolchain). Known
-approximations (command/harness-level): context strategy (FR-060/061); the fuller dual-headless dispatch
-(the **oracle** leg is delivered); design oracles are wired + quarantine-safe but their live scanners are
-the residual.
+Durable facts you can rely on here: the full cheapest-first gate suite (`format → lint → types →
+spec_integrity → tests → diff_coverage → mutation → sast → dependency_scan → secret_scan → gate_gaming →
+spec_conformance`, plus work-kind-shaped gates) and the signed, hash-chained, offline-verifiable trust
+spine (ledger / `verify` / `advance` / reversibility / provenance) are delivered and **self-applied at
+High-risk** (NFR-006); three reference adapters (TypeScript, Python, Go); structural oracle independence
+with headless, read-path-isolated **oracle** dispatch (A3, oracle leg); one-command orchestration
+(`3pwr run`, stopping only at the two human gates FR-006/FR-037); brownfield Stage Zero; emergency &
+deviation paths; the observe & feedback loop; and the spec-lock (SLOCK) + trust-hardening (HARDN)
+mechanisms.
 
 ## Repository layout
 
@@ -252,14 +149,14 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    never a blocker (NFR-001). Opt-in and High-risk-only — the default flow stays in-IDE and watchable; the
    coder leg also running headless (the fuller dispatch) is the residual.
 
-2. **Deterministic gate engine (§8).** Cheapest-first: format/lint → types → **spec-integrity** (the
-   approved spec's sealed hash still matches — SLOCK) → tests + diff-coverage →
-   mutation → SAST → dependency → secret → gate-gaming → spec-conformance. **Work-kind inference then
+2. **Deterministic gate engine (§8).** Cheapest-first: `format`/`lint` → `types` → **`spec_integrity`** (the
+   approved spec's sealed hash still matches — SLOCK) → `tests` + `diff_coverage` →
+   `mutation` → `sast` → `dependency_scan` → `secret_scan` → `gate_gaming` → `spec_conformance`. **Work-kind inference then
    *shapes* the set** (FR-058, plan 015): a `defect` run adds a regression gate (FR-008), a `design` run
    adds the adapter-supplied design oracles (FR-009) — it only ever *adds*, never weakening a tier gate
    (FR-032). Language support is a **declarative adapter manifest** — the core never assumes a language
-   (NFR-007; TypeScript + Python + **Go**); language-agnostic gates (diff-coverage, conformance, secret,
-   dependency) live in the core. One normalized **verdict** per run, identical across languages
+   (NFR-007; TypeScript + Python + **Go**); language-agnostic gates (`diff_coverage`, `spec_conformance`, `secret_scan`,
+   `dependency_scan`) live in the core. One normalized **verdict** per run, identical across languages
    (NFR-001/FR-033), every failure actionable (FR-034).
 
 3. **The trust spine (§9).** No mandatory CI/CD enforcer; trust is recovered locally: an append-only
@@ -287,7 +184,7 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
   into spec text — flag it out of place (FR-007). When in doubt, re-read the spec; don't infer scope.
 - **Respect executive boundaries and task file-scope discipline** (see [`AGENTS.md`](AGENTS.md)): editing
   outside a task's declared file scope is a signal to stop and re-spec (FR-017).
-- **Engine changes must keep the engine green under its own gates** (ruff/mypy/pytest; diff-coverage and
+- **Engine changes must keep the engine green under its own gates** (ruff/mypy/pytest; `diff_coverage` and
   conformance via `3pwr gate run --path engine`). Trust-spine modules (`canonical`, `keys`, `ledger`,
   `verify`) are High-risk — hold their coverage ≥95%.
 - **Scope phasing** (§17): v0.1 = trust-spine MVP → v0.5 = full judiciary (remaining gates, provenance,

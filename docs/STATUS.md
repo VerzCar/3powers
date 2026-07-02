@@ -1,5 +1,18 @@
 # 3Powers — Project Status & Handoff
 
+## At a glance
+
+| | |
+|---|---|
+| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–017 delivered) |
+| **Last validated** | **2026-07-02**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
+| **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening |
+| **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the Spec Kit extension · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) · context strategy approximated at command level (FR-060/061) |
+
+**This file is the only home of implementation status.** Every other document (README, AGENTS.md,
+CLAUDE.md) carries a durable summary and links here; when status changes, this file — and only this
+file — is edited.
+
 > **Read this first if you're picking up 3Powers cold.** It says what the project is, how to run it,
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the

@@ -88,9 +88,9 @@ signed ledger entry.
 - `--tier TIER` — `Cosmetic` | `Standard` | `High-risk` (default: `Standard`).
 - `--adapter ADAPTER` — language adapter (default: auto-detect).
 - `--spec SPEC` — path to the governing `spec.md`.
-- `--base BASE` — git ref for the diff-coverage / diff-scope base.
+- `--base BASE` — git ref for the `diff_coverage` / diff-scope base.
 - `--mutation` — run the (expensive) mutation gate; opt-in.
-- `--paths [PATHS ...]` — scope diff-coverage + mutation to these files (risk-tier scoping per capability).
+- `--paths [PATHS ...]` — scope `diff_coverage` + mutation to these files (risk-tier scoping per capability).
 - `--work-kind KIND` — the kind of change (`defect`, `design`, `feature`, `docs`, `refactor`, `chore`);
   repeatable, and usually inferred by `classify`. A `defect` adds the **regression gate**; `design` unions
   the **design oracles** onto the tier's set (see below). Kinds only ever *add* gates, never remove one.
@@ -113,7 +113,7 @@ Exit `0` if the verdict is green, `1` if red (unless `--report-only`).
   adapter-supplied; if the adapter doesn't declare it, or the tool isn't installed, the oracle is
   **quarantined** — reported `skip` with a surfaced finding, never silently passed.
 
-**Spec-integrity (spec-lock).** At every tier the suite includes a `spec_integrity` gate — cheapest-first,
+**Spec integrity (spec-lock).** At every tier the suite includes a `spec_integrity` gate — cheapest-first,
 after `types` and **before any test runs**: once a human has sealed the spec's hash via
 `signoff --stage spec`, a spec modified afterwards fails with class `spec_modified`, naming the approving
 ledger seq. A spec with no recorded approval hash is **skipped, never blocked**. Review a failure with
@@ -126,7 +126,7 @@ or a signed, reversible `3pwr deviation --gate spec_integrity`.
 change without the full-sweep cost. Off by default; enabling it only ever *adds* a gate. A missing
 mutation tool quarantines, never silently passes.
 
-### `conformance` — spec-conformance trace only
+### `conformance` — the `spec_conformance` trace only
 Checks every requirement in a spec has a linked test, without running the full suite. Under `gate run`
 the trace is **anti-gamed**: a requirement counts as traced only when its ID is **bound to a test
 declaration** (the test's name/title line or its adjacent docstring — adapter-declared patterns), a
@@ -246,7 +246,7 @@ is covered by an active deviation)**, and a human sign-off exists at/after it. R
 count, and an overdue emergency cleanup blocks the advance. Under **risk-tier scoping** (High-risk) it
 additionally requires oracle independence — a sealed spec-only bundle, an authoring record in a different
 model family than the coder, authored *before* the implementation verdict. Advisory peek/touch findings
-are surfaced but never block. At **every tier** it also re-executes the **spec-integrity** check: a spec
+are surfaced but never block. At **every tier** it also re-executes the **`spec_integrity`** check: a spec
 modified after its Spec-stage sign-off refuses with reason `spec_modified`, unless an active, signed
 `spec_integrity` deviation covers it (recorded in `deviations_applied`; revoking re-blocks).
 - `--stage STAGE` (required) · `--spec-id SPEC_ID`.
@@ -329,7 +329,7 @@ human approver, and a way back (an expiry or an explicit revoke). Also the **san
 ```
 
 ### `emergency` — the constrained fast path
-Opens an emergency deviation that may defer **only mutation + diff-coverage**; it never relaxes the
+Opens an emergency deviation that may defer **only `mutation` + `diff_coverage`**; it never relaxes the
 security/secret gates, sign-off, or provenance, and it sets a one-working-day cleanup deadline. `advance`
 refuses while that cleanup is overdue.
 - `--approver APPROVER` (required) · `--note NOTE` (reason) · `--cleanup-hours N` (default 24) · `--spec-id SPEC_ID`.

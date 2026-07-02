@@ -1,0 +1,57 @@
+# CI for this repository's own contributions (OSSRD-FR-004).
+#
+# 3Powers itself needs no CI to be trusted — verdicts, the signed ledger, and enforcement all hold
+# locally and offline (3PWR-NFR-004; assumption A4: CI may re-validate, never gatekeep the framework's
+# users). This workflow gates *contributions to this repo*: every pull request to `main` must keep the
+# engine linting, type-checking, testing green, and the committed ledger verifying.
+#
+# The steps mirror the documented local commands exactly (CONTRIBUTING.md — "Development setup").
+# Budget: the whole job must finish well within 10 minutes on the hosted runners (OSSRD-NFR-002).
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: engine — lint · types · tests · ledger verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10 # OSSRD-NFR-002: never the reason contributors bypass checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync engine dev environment (locked)
+        working-directory: engine
+        run: uv sync --extra dev --locked
+
+      - name: Lint (ruff)
+        working-directory: engine
+        run: uv run ruff check .
+
+      - name: Types (mypy)
+        working-directory: engine
+        run: uv run mypy src
+
+      - name: Tests (pytest)
+        working-directory: engine
+        run: uv run pytest
+
+      # Offline ledger verification: recomputes the hash chain + Ed25519 signatures from the committed
+      # .3powers/ledger.jsonl and .3powers/keys/*.pub alone. Needs no private key — a keyless CI runner
+      # passes the custody preflight by construction (HARDN-FR-002).
+      - name: Verify the signed ledger (offline)
+        working-directory: engine
+        run: uv run python -m threepowers.cli --root .. verify

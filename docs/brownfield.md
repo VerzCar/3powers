@@ -90,7 +90,7 @@ tier, and a non-goals section that's honest about what it is:
 ```
 
 …and a **runnable characterization test** that references each reconstructed requirement ID (so
-spec-conformance traces it) and pins the module's public surface:
+`spec_conformance` traces it) and pins the module's public surface:
 
 ```bash
 (cd <project> && pytest src/legacy/characterization/)      # → 3 passed
