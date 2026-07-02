@@ -58,6 +58,21 @@ class Settings:
     def adapters_dir(self) -> Path:
         return self.dir / "adapters"
 
+    @property
+    def onboarding_path(self) -> Path:
+        """Advisory onboarding preferences written by ``3pwr init`` (3PWR-ONBRD-FR-005)."""
+        return self.dir / "config" / "onboarding.yaml"
+
+    def default_mode(self) -> str:
+        """The recorded ``3pwr run`` autonomy default (advisory — ONBRD-FR-005): ``auto`` | ``commit``.
+
+        Defaults to ``auto`` when no preference was recorded. Advisory only: it selects the *default*
+        mode when ``--mode`` is omitted and never suppresses a mandatory human gate (ONBRD-NFR-004)."""
+        auto = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("auto_mode")
+        if auto is None:
+            return "auto"
+        return "auto" if bool(auto) else "commit"
+
     def load_risk_tiers(self) -> dict[str, Any]:
         return _load_yaml(self.risk_tiers_path)
 

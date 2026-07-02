@@ -5,7 +5,7 @@ continuous series; 002+ are previewed at the end.
 
 ## Context — why
 
-The repo was pre-implementation: only the epic spec ([`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md))
+The repo was pre-implementation: only the epic spec ([`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md))
 plus `CLAUDE.md`/`AGENTS.md`. 3Powers is a "judiciary kit" for spec-driven agentic delivery that
 restores separation of powers (Legislative spec / Executive build / Judicial verification), **layered
 on GitHub Spec Kit** (A1) over Git (A2), and agnostic to model, language, and CI/CD.

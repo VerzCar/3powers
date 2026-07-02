@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Advisory guidance for agents working in this repository, per requirement `3PWR-FR-048`. This file **orients**; it does not enforce — the gates enforce. Keep it accurate as code lands. See [`CLAUDE.md`](CLAUDE.md) for the architecture and [`3Powers_Spec_v0.2.md`](3Powers_Spec_v0.2.md) for the law.
+Advisory guidance for agents working in this repository, per requirement `3PWR-FR-048`. This file **orients**; it does not enforce — the gates enforce. Keep it accurate as code lands. See [`CLAUDE.md`](CLAUDE.md) for the architecture and [`3Powers_Spec_v0.2.md`](specs/3Powers_Spec_v0.2.md) for the law.
 
 ## Status
 

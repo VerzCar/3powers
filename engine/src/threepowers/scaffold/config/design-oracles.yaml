@@ -1,0 +1,27 @@
+# Design oracles (3PWR-FR-009) — how *design* work is judged, beyond the code gates.
+#
+# When work-kind inference (3PWR-FR-058) tags a change `design`, the gate engine unions these
+# oracle gates onto the tier's gate set (it never removes a tier gate — 3PWR-FR-032). Each oracle's
+# *tool* is ADAPTER-supplied, keeping the core language-agnostic (3PWR-NFR-007): a language declares
+# a command for the gate in its adapter manifest. A selected oracle the adapter doesn't declare — or
+# whose tool isn't installed — is QUARANTINED (reported as skipped with a surfaced finding), never
+# silently passed (3PWR-NFR-015). Trim this catalog to change which oracles a design change must face
+# (single source of truth, like the risk-tier table). If this file is absent the engine falls back to
+# the built-in default (all four dimensions), so design work never silently escapes its oracles.
+version: 1
+
+oracles:
+  structural:
+    gate: contract_check
+    description: "API/schema shape matches its committed contract — no breaking drift"
+  component_contract:
+    gate: component_contract
+    description: "component props/events match their declared contract"
+  accessibility:
+    gate: a11y_scan
+    description: "no accessibility violations at the configured standard"
+    standard: WCAG-2.1-AA
+  visual_regression:
+    gate: visual_regression
+    description: "rendered output matches an approved baseline within a similarity threshold"
+    min_similarity: 0.98

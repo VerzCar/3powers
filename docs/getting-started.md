@@ -44,6 +44,11 @@ Point the engine at the private key with:
 The engine looks for the key via `$THREEPOWERS_SIGNING_KEY_FILE`, then `$THREEPOWERS_SIGNING_KEY` (a
 base64 seed, handy for CI), then the default path above. Export the variable or rely on the default.
 
+> This tutorial runs inside the already-initialized 3Powers repo, so `keygen` is all you need here. In
+> **your own** project (new or existing), run **`3pwr init`** instead — the guided onboarding creates the
+> signer, the baseline config, and your language adapter in one step. See the
+> [CLI reference](cli-reference.md#init--guided-onboarding-new-or-existing-project).
+
 ## 3. Run the gate suite on the sample
 
 The repo ships a small TypeScript sample, [`examples/validation-utils/`](../examples/validation-utils/)

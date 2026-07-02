@@ -1,7 +1,7 @@
 # Plan 009 — Portability & dependency stability (A1/A3, FR-044/046/048, NFR-014)
 
 > **Cold-start note.** Read [`docs/STATUS.md`](../docs/STATUS.md) first, then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) (the law). Plans 001–008 delivered v0.1, v0.5, and most
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (the law). Plans 001–008 delivered v0.1, v0.5, and most
 > of v1.0's judiciary (through **structural oracle independence**, plan 008). This plan advances the
 > **agnosticism/ecosystem** side of v1.0: run everywhere Spec Kit runs, and stay stable across third-party
 > releases.

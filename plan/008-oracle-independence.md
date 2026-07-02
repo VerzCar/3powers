@@ -2,7 +2,7 @@
 
 > **Cold-start note.** Read [`docs/STATUS.md`](../docs/STATUS.md) first (spec-validated state) and
 > [`docs/concepts.md`](../docs/concepts.md) for the model. The spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) is the law. Plans 001–007 delivered v0.1, v0.5, and the
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) is the law. Plans 001–007 delivered v0.1, v0.5, and the
 > first part of v1.0 (High-risk self-application, brownfield Stage Zero, emergency & deviation). This plan
 > continues v1.0 with the spec's central thesis.
 

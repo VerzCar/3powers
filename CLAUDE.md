@@ -2,7 +2,7 @@
 
 This file guides Claude Code (claude.ai/code) when working in this repository.
 
-> **The spec is the single source of truth.** [`3Powers_Spec_v0.2.md`](3Powers_Spec_v0.2.md)
+> **The spec is the single source of truth.** [`3Powers_Spec_v0.2.md`](specs/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`) is the law; always check work against it, and respect the §17 scope phasing.
 > Requirement IDs cited below are from that spec.
 

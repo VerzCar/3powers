@@ -2,7 +2,7 @@
 
 > **Cold start:** read [`docs/STATUS.md`](../docs/STATUS.md) and [`plan/014-hardening-core.md`](014-hardening-core.md)
 > first (this plan builds directly on plan 014's work-kind inference). Spec:
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) §5 (FR-008), §7 (FR-009 design oracles), §8/§10
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) §5 (FR-008), §7 (FR-009 design oracles), §8/§10
 > (adapter contract, FR-027/NFR-007). Use `uv run python -m threepowers.cli` for the CLI — the globally
 > installed `3pwr` alias is stale.
 

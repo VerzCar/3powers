@@ -1,7 +1,7 @@
 # Plan 013 — Orchestration front-end (`3pwr run`): the automated lifecycle loop
 
 > **Cold start:** read [`docs/STATUS.md`](../docs/STATUS.md), then the spec
-> [`3Powers_Spec_v0.2.md`](../3Powers_Spec_v0.2.md) §6 (lifecycle), §3 (A1/A3), and FR-006/037 (the two
+> [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) §6 (lifecycle), §3 (A1/A3), and FR-006/037 (the two
 > mandatory human gates). Builds on the judiciary from plans 008/011/012 and Spec Kit's `workflow run`.
 
 ## Context
