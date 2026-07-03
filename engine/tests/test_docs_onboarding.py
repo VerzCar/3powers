@@ -41,8 +41,8 @@ def _read(p: Path) -> str:
 def test_readme_presents_autonomous_flow_before_manual():
     """ONBRD-FR-011: the autonomous one-command flow appears before the manual flow."""
     t = _read(README)
-    i_auto = t.find("## Quickstart — the autonomous path")
-    i_manual = t.find("## Prefer to drive it yourself? Manual mode")
+    i_auto = t.find("## Quickstart: the autonomous path")
+    i_manual = t.find("## Manual mode: drive every stage yourself")
     assert i_auto != -1 and i_manual != -1
     assert i_auto < i_manual
     # the autonomous `--mode auto` run precedes the manual slash-command flow
@@ -54,7 +54,7 @@ def test_readme_states_enterprise_high_autonomy_positioning_near_top():
     """ONBRD-FR-012: the enterprise, high-autonomy positioning appears above the deep-dive sections."""
     t = _read(README)
     above_fold = t.split("## The problem")[0].lower()
-    assert "enterprise-ready" in above_fold
+    assert "enterprise scale" in above_fold
     assert "high autonomy" in above_fold
     assert "agentic" in above_fold
 
@@ -67,7 +67,7 @@ def test_readme_has_supported_languages_table_for_self_qualification():
     per-language tooling matrix, which lives in the getting-started guide.
     """
     t = _read(README)
-    assert "## Supported languages & technology stack" in t
+    assert "## Supported languages and technology stack" in t
     assert "| Language | Detected by |" in t  # header row (also ONBRD-NFR-006)
     for lang in ("TypeScript", "Python", "Go"):
         assert lang in t
