@@ -8,6 +8,12 @@
       content="3Powers — a portable, open judiciary kit for spec-driven, agentic software delivery."
     />
     <title>3Powers — Separation of Powers for Agentic Software Delivery</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -15,7 +21,8 @@
       <nav class="nav container">
         <a class="brand" href="#top">3Powers</a>
         <ul class="nav-links">
-          <li><a href="#pillars">Pillars</a></li>
+          <li><a href="#pillars">Branches</a></li>
+          <li><a href="#playbook">Playbook</a></li>
           <li><a href="#lifecycle">Lifecycle</a></li>
           <li><a href="#start">Get started</a></li>
           <li>
@@ -29,6 +36,10 @@
           </li>
         </ul>
       </nav>
+      <div class="branch-strip" aria-hidden="true">
+        <span class="strip-gold"></span><span class="strip-slate"></span
+        ><span class="strip-oxblood"></span>
+      </div>
     </header>
 
     <main id="top">
@@ -36,20 +47,17 @@
         <div class="container hero-inner">
           <p class="eyebrow">Open · Portable · Model-agnostic</p>
           <h1>Separation of powers for<br />agentic software delivery</h1>
+          <div class="hero-rule" aria-hidden="true"></div>
           <p class="lead">
             When one model writes the spec, the code, the tests, <em>and</em>
             the review, validation becomes circular. 3Powers restores three
-            independent branches — legislative, executive, and judicial — so you
-            can trust what your agents ship.
+            independent branches — legislative, executive, and judiciary — so
+            you can trust what your agents ship.
           </p>
           <div class="hero-actions">
             <a class="btn btn-primary" href="#start">Get started</a>
-            <a
-              class="btn btn-ghost"
-              href="https://github.com/VerzCar/3powers"
-              target="_blank"
-              rel="noopener"
-              >View on GitHub</a
+            <a class="btn btn-ghost" href="./the_AI-First_SDD_Playbook_v1_0.html"
+              >Read the Playbook</a
             >
           </div>
         </div>
@@ -63,24 +71,25 @@
             judiciary decides whether the code matches the spec.
           </p>
           <div class="cards">
-            <article class="card">
-              <div class="card-badge">Legislative</div>
+            <article class="card card-gold">
+              <div class="card-badge badge-gold">Legislative</div>
               <h3>The spec is the law</h3>
               <p>
                 Every later stage answers to a versioned, EARS-form
-                specification with an explicit risk tier and non-goals.
+                specification with an explicit risk tier and non-goals —
+                human-approved before code.
               </p>
             </article>
-            <article class="card">
-              <div class="card-badge">Executive</div>
+            <article class="card card-slate">
+              <div class="card-badge badge-slate">Executive</div>
               <h3>Agents do the building</h3>
               <p>
                 Model-, language-, and provider-agnostic executive agents build
                 against the spec, staying inside declared file scope.
               </p>
             </article>
-            <article class="card">
-              <div class="card-badge">Judicial</div>
+            <article class="card card-oxblood">
+              <div class="card-badge badge-oxblood">Judiciary</div>
               <h3>An independent judge</h3>
               <p>
                 An independent oracle, a deterministic gate suite, and human
@@ -88,30 +97,101 @@
               </p>
             </article>
           </div>
+          <blockquote class="pullquote">
+            <p>
+              “The spec is the law, the agents are the executive, and the gates
+              and review are the judiciary. The idea underneath every page is
+              that no branch checks itself.”
+            </p>
+            <cite>— The AI-First SDD Playbook</cite>
+          </blockquote>
         </div>
       </section>
 
-      <section id="lifecycle" class="section section-alt">
+      <section id="playbook" class="section section-alt">
         <div class="container">
-          <h2 class="section-title">An eight-stage lifecycle</h2>
+          <h2 class="section-title">The AI-First SDD Playbook</h2>
+          <p class="section-sub">
+            The complete field guide behind 3Powers — first principles, the
+            eight-stage cycle, the gate catalog, brownfield adoption, and the
+            full prompt library.
+          </p>
+          <div class="playbook-feature">
+            <a
+              class="playbook-cover"
+              href="./the_AI-First_SDD_Playbook_v1_0.html"
+              aria-label="Open the AI-First SDD Playbook"
+            >
+              <span class="cover-block cover-gold"></span>
+              <span class="cover-body">
+                <span class="cover-kicker">Season 1 · v1.0</span>
+                <span class="cover-title">The AI‑First<br />SDD Playbook</span>
+                <span class="cover-meta">Last revised June 2026</span>
+              </span>
+              <span class="cover-block cover-slate"></span>
+              <span class="cover-block cover-oxblood"></span>
+            </a>
+            <div class="playbook-points">
+              <ul class="ticklist">
+                <li>
+                  <strong>First principles</strong> — managing the work like a
+                  small state, and the circular-validation problem it solves.
+                </li>
+                <li>
+                  <strong>The judiciary gates</strong> — format, lint &amp;
+                  types · tests against the spec · mutation &amp; static
+                  analysis · dependency &amp; secret scanning · spec
+                  conformance · build provenance.
+                </li>
+                <li>
+                  <strong>The eight-stage cycle</strong> — one feature followed
+                  end to end, from discovery to observe &amp; operate.
+                </li>
+                <li>
+                  <strong>Off the happy path</strong> — when to deviate, the
+                  failure catalog, and adopting SDD in an existing codebase.
+                </li>
+              </ul>
+              <a
+                class="btn btn-primary"
+                href="./the_AI-First_SDD_Playbook_v1_0.html"
+                >Open the Playbook</a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="lifecycle" class="section">
+        <div class="container">
+          <h2 class="section-title">The cycle — eight stages</h2>
           <p class="section-sub">
             Explicit human gates at spec approval and sign-off — everything else
             is automated and cheapest-first.
           </p>
           <ol class="stages">
-            <li>Discovery</li>
-            <li>Spec</li>
-            <li>Plan</li>
-            <li>Build</li>
-            <li>Verify</li>
+            <li>Discovery &amp; Intent</li>
+            <li>Spec Authoring</li>
+            <li>Planning &amp; Decomposition</li>
+            <li>Implementation</li>
+            <li>Verification</li>
             <li>Review</li>
-            <li>Ship</li>
-            <li>Observe</li>
+            <li>CI/CD &amp; Release</li>
+            <li>Observe &amp; Operate</li>
           </ol>
+          <blockquote class="pullquote">
+            <p>
+              “The spec is the law every later stage answers to, so a misframed
+              requirement here becomes a defect you pay for in every stage after
+              it. This is the highest-impact stage in the playbook, and the
+              cheapest place to fix a mistake.”
+            </p>
+            <cite>— The AI-First SDD Playbook, Spec Authoring</cite>
+          </blockquote>
         </div>
       </section>
 
-      <section id="start" class="section">
+      <section id="start" class="section section-ink">
         <div class="container">
           <h2 class="section-title">Get started</h2>
           <p class="section-sub">
@@ -122,11 +202,14 @@
 3pwr run "your intent here" --mode auto</code></pre>
           <div class="hero-actions">
             <a
-              class="btn btn-primary"
+              class="btn btn-gold"
               href="https://github.com/VerzCar/3powers"
               target="_blank"
               rel="noopener"
-              >Read the docs</a
+              >View on GitHub</a
+            >
+            <a class="btn btn-ghost-light" href="./the_AI-First_SDD_Playbook_v1_0.html"
+              >Read the Playbook</a
             >
           </div>
         </div>
@@ -134,9 +217,15 @@
     </main>
 
     <footer class="site-footer">
+      <div class="branch-strip" aria-hidden="true">
+        <span class="strip-gold"></span><span class="strip-slate"></span
+        ><span class="strip-oxblood"></span>
+      </div>
       <div class="container footer-inner">
         <p>3Powers — a judiciary kit for spec-driven, agentic delivery.</p>
         <p>
+          <a href="./the_AI-First_SDD_Playbook_v1_0.html">The Playbook</a>
+          ·
           <a
             href="https://github.com/VerzCar/3powers"
             target="_blank"
