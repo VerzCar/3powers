@@ -15,15 +15,8 @@
 version: 1
 
 components:
-  # Substrate (A1): the CLI 3Powers layers on. Adaptations may be needed on a new Spec Kit minor.
-  - name: spec-kit
-    probe: "specify version"
-    supported: ">=0.11,<0.12"
-    known_good: "0.11.6.dev0"
-    on_drift: warn
-  # Oracle headless dispatch (3PWR-A3): a non-coder, headless integration for `3pwr oracle dispatch`.
-  # Optional (only the isolated High-risk path uses it), so `warn`, not `block`. Register it with
-  # `specify integration install claude` before running an isolated dispatch under it.
+  # Reference agent backend for the native executive (EXEC): the headless coding-agent CLI a role is
+  # dispatched to. Optional — 3Powers drives whichever agent a role points at — so `warn`, not `block`.
   - name: claude
     probe: "claude --version"
     supported: ">=1"

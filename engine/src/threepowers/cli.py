@@ -17,8 +17,8 @@ Subcommands:
                 isolated (A3), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
   run           drive the whole lifecycle loop (§6): auto mode stops only at the two mandatory
-                human gates (spec approval FR-006, sign-off FR-037); composes Spec Kit's
-                `workflow run` (A1) and streams progress
+                human gates (spec approval FR-006, sign-off FR-037); the native executive
+                dispatches each stage to a headless agent (EXEC-FR-001) and streams progress
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
   spec diff     read-only spec-integrity report: does the spec still match its approval
@@ -36,7 +36,6 @@ import difflib
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +46,7 @@ import yaml
 from . import (
     __version__,
     agentpins,
+    agents,
     anchor,
     canonical,
     config,
@@ -67,10 +67,11 @@ from . import (
     style,
     workkind,
 )
-from .adapters import run_cmd
+from .adapters import detect_adapter, run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger, rotation_payload
+from .runner import CliAgentRunner, NativeRunner
 from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
@@ -88,14 +89,12 @@ def _settings(root: Optional[str]) -> Settings:
 def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
     if spec:
         return Path(spec).resolve()
-    feat = s.root / ".specify" / "feature.json"
-    if feat.exists():
-        data = json.loads(feat.read_text(encoding="utf-8"))
-        d = data.get("feature_directory")
-        if d:
-            cand = s.root / d / "spec.md"
-            if cand.exists():
-                return cand
+    # Native fallback: the newest spec under specs/ (no Spec Kit feature.json anymore).
+    specs = sorted(
+        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
+    )
+    if specs:
+        return specs[0]
     raise FileNotFoundError("could not resolve a spec; pass --spec <path/to/spec.md>")
 
 
@@ -344,20 +343,9 @@ def _readiness_checklist(
         )
     items.append(
         (
-            "Spec Kit workspace",
-            "pass" if ready.get("speckit_dir") else "warn",
-            "present"
-            if ready.get("speckit_dir")
-            else "run `3pwr init --with-speckit` to scaffold it",
-        )
-    )
-    items.append(
-        (
             "3Powers constitution",
             "pass" if ready.get("constitution") else "warn",
-            "in place"
-            if ready.get("constitution")
-            else "laid under --with-speckit, or when a Spec Kit workspace is present",
+            "in place" if ready.get("constitution") else "seeded by `3pwr init`",
         )
     )
     if ready.get("agents_md_todo"):
@@ -587,8 +575,8 @@ def cmd_init(args: argparse.Namespace) -> int:
             interactive=interactive,
         )
         oracle_integration = _ask(
-            "  its Spec Kit integration",
-            cur.get("integration") or getattr(args, "integration", None) or "copilot",
+            "  its agent backend (.3powers/agents/)",
+            cur.get("integration") or getattr(args, "integration", None) or "claude",
             interactive=interactive,
         )
         oracle_label = _ask(
@@ -627,35 +615,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     # 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
     agents_status = scaffold.seed_agents_md(root)
 
-    # 10) Spec Kit + constitution + the judiciary extension/pins (ONBRD-FR-015 / INITX-FR-004/005/008).
-    with_speckit = getattr(args, "with_speckit", False)
-    speckit_ext: dict[str, object] = {"status": "skipped"}
-    speckit_wf: dict[str, object] = {"status": "skipped"}
-    if with_speckit:
-        if not scaffold.specify_installed():
-            print(
-                "error: --with-speckit needs the Spec Kit `specify` CLI on PATH — install it "
-                "(https://github.com/github/spec-kit) or omit --with-speckit",
-                file=sys.stderr,
-            )
-            return EXIT_USAGE
-        if not scaffold.has_speckit(root):
-            rc = scaffold.run_specify_init(root, getattr(args, "integration", None))
-            if rc != 0:
-                print(f"error: `specify init` failed (exit {rc})", file=sys.stderr)
-                return EXIT_FAIL
-        # Lay the 3Powers overlay, replacing Spec Kit's placeholder constitution (never a real one).
-        constitution_status = scaffold.seed_constitution(root, force=True)
-        # Render the judiciary extension + pin the judiciary agents' model from config (INITX-FR-004/005/008).
-        speckit_ext = scaffold.install_speckit_extension(s, root)
-        # Install the lifecycle + oracle workflows `3pwr run` dispatches (INITX-FR-005; unblocks RUNX-FR-009).
-        speckit_wf = scaffold.install_speckit_workflows(root)
-    elif scaffold.has_speckit(root):
-        # Spec Kit already present → lay the 3Powers constitution overlay if missing (offline, local).
-        # Agent pinning / extension install stays opt-in: run `3pwr config apply` (INITX non-goal).
-        constitution_status = scaffold.seed_constitution(root)
-    else:
-        constitution_status = "absent"
+    # 10) Seed the native agent-backend manifests + the 3Powers constitution (offline, non-clobber).
+    #     `3pwr run` drives these agents directly — no Spec Kit (EXEC-FR-004; SLIM removed the substrate).
+    agents_seeded = scaffold.seed_agents(s)  # .3powers/agents/*.yaml
+    constitution_status = scaffold.seed_constitution(root)
     ready = scaffold.readiness(root)
 
     # Judiciary model-diversity readiness (needs config): a concrete oracle model in a family
@@ -687,8 +650,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "git": git_present,
         "agents_md": agents_status,
         "constitution": constitution_status,
-        "speckit_extension": speckit_ext,
-        "speckit_workflows": speckit_wf,
+        "agents": agents_seeded,
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
@@ -716,39 +678,17 @@ def cmd_init(args: argparse.Namespace) -> int:
             f"  note: choose a language next time from: {', '.join(langs)} "
             "(or add one — see .3powers/adapters/CONTRACT.md)"
         )
-    if speckit_ext.get("status") == "installed":
-        pins_obj = speckit_ext.get("pins")
-        pins = pins_obj if isinstance(pins_obj, dict) else {}
-        pinned = [r for r, stt in pins.items() if stt in ("created", "updated", "kept")]
-        if pinned:
-            lines.append(
-                "  judiciary agents pinned to the configured model: " + ", ".join(sorted(pinned))
-            )
-    if speckit_wf.get("status") == "installed":
-        wf_files = speckit_wf.get("files")
-        n = len(wf_files) if isinstance(wf_files, dict) else 0
-        if n:
-            lines.append(
-                f"  lifecycle workflows installed ({n}) — `3pwr run` dispatches from "
-                ".specify/workflows/3powers/"
-            )
+    seeded = [n for n, stt in agents_seeded.items() if stt == "created"]
+    if seeded:
+        lines.append(
+            "  agent backends seeded (.3powers/agents/): " + ", ".join(sorted(seeded))
+        )
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
     # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
     lines.append("")
     lines.append(st.head("Ready for the agentic workflow? — readiness checklist:"))
     lines.extend(_checklist_lines(st, checklist))
-    if not ready["speckit_dir"]:
-        lines.append("  Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:")
-        if ready["specify_cli"]:
-            lines.append(
-                "      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it"
-            )
-        else:
-            lines.append(
-                "      install Spec Kit's `specify` CLI (https://github.com/github/spec-kit), then "
-                "`3pwr init --with-speckit`"
-            )
     if not git_present:
         lines.append(
             st.warn("  ⚠ no git repo detected")
@@ -770,7 +710,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
         lines.append("       one command drives spec → plan → oracle → build → verify → ship,")
         lines.append("       stopping only at the two human gates (spec approval, sign-off)")
-        lines.append("  (or step-by-step: /speckit.specify → … → /3pwr.advance)")
+        lines.append(
+            "  (or step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)"
+        )
     print("\n".join(lines))
     return EXIT_OK
 
@@ -1609,32 +1551,42 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
 
-        # Dispatch the authoring step through the substrate (never a direct API call — A3).
+        # Dispatch the authoring step to the oracle agent directly, headless, inside the sanitized
+        # worktree — no external workflow substrate (EXEC-FR-009; supersedes the Spec Kit dispatch).
+        # The engine issues no model call itself; the agent process does (EXEC-NFR-001).
         dispatched_model = model
         if not args.dry_run:
-            if shutil.which("specify") is None:
+            try:
+                oracle_manifest = agents.load_agent(s, args.integration)
+            except FileNotFoundError as exc:
+                print(f"error: {exc} — add the manifest or use --dry-run", file=sys.stderr)
+                return EXIT_USAGE
+            if not agents.is_headless(oracle_manifest):
                 print(
-                    "error: `specify` (Spec Kit) not found — install it to dispatch headlessly, "
-                    "or use --dry-run",
+                    f"error: agent '{args.integration}' is not headless-dispatchable",
                     file=sys.stderr,
                 )
                 return EXIT_USAGE
-            workflow = args.workflow or str(
-                s.root / ".specify" / "workflows" / "3powers" / "oracle.yml"
+            criteria = ""
+            if sealed_bundle.exists():
+                data = json.loads(sealed_bundle.read_text(encoding="utf-8"))
+                criteria = " ".join(c.get("text", "") for c in data.get("criteria", []))
+            orc = CliAgentRunner(
+                s,
+                oracle_manifest,
+                model=model,
+                cwd=info.path,
+                intent=(
+                    f"Author oracle tests into ./oracle-tests/ for spec {args.spec_id}, from the "
+                    "sealed acceptance criteria ONLY — do not read any implementation."
+                ),
+                spec_text=criteria,
             )
-            cmd = (
-                f"specify workflow run {workflow} "
-                f"-i integration={args.integration} -i spec_id={args.spec_id} --json"
-            )
-            res = run_cmd(cmd, cwd=info.path)
-            if res.returncode != 0:
-                print(
-                    "error: dispatch failed (`specify workflow run`):\n  "
-                    + "\n  ".join(res.tail(10)),
-                    file=sys.stderr,
-                )
+            res = orc.dispatch("oracle", "Build")
+            if not res.ok:
+                print("error: oracle dispatch failed:\n  " + res.detail, file=sys.stderr)
                 return EXIT_FAIL
-            dispatched_model = oracle.parse_dispatched_model(res.stdout) or model
+            dispatched_model = res.model or model
 
         # Collect authored oracle tests (from the worktree, or --tests for --dry-run / manual).
         dest_root = s.root / "tests" / "oracle" / args.spec_id
@@ -1777,7 +1729,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
         },
         args.json,
         f"observed [{args.kind}] for {args.spec_id} → routed to the legislature as new intent {fb_id}\n"
-        f"  backlog: {backlog} (take it into /speckit.specify — not an in-place patch)\n"
+        f"  backlog: {backlog} (take it into a new `3pwr run` spec — not an in-place patch)\n"
         f"  spec now at the Observe stage; ledger seq={entry['seq']}",
     )
     return EXIT_OK
@@ -1963,30 +1915,104 @@ def _run_signoff(
     ledger.append("signoff", payload, sk, spec_id=spec_id)
 
 
-def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+def _resolve_runner_kind(args: argparse.Namespace) -> str:
+    """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to ``native``
+    (EXEC-FR-013)."""
     if args.dry_run:
-        idx = orchestrate.resume_index(resume_from) if resume_from else 0
+        return "sim"
+    return getattr(args, "runner", None) or "native"
+
+
+def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
+    """The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""
+    return getattr(args, "agent", None) or runpreflight.resolve_coder_integration(s, args.integration)
+
+
+def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
+    """The spec the native verify stage gates against: --spec if given, else the newest specs/**/spec.md."""
+    if getattr(args, "spec", None):
+        p = Path(args.spec)
+        return p if p.exists() else None
+    specs = sorted(
+        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
+    )
+    return specs[0] if specs else None
+
+
+def _native_verdict(s: Settings, args: argparse.Namespace, tier: str, kinds: list[str]) -> str:
+    """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
+
+    Returns ``pass`` / ``fail``; returns ``error`` when the gates cannot even run (no spec resolvable, no
+    adapter detected, bad tier) so the caller reports a setup/dispatch problem, never a false gate-red
+    (EXEC-FR-016). The engine computes the verdict itself — no subprocess dispatch, no model (3PWR-NFR-001)."""
+    spec_path = _resolve_run_spec(s, args)
+    if spec_path is None:
+        return "error"
+    try:
+        adapter_name = detect_adapter(s, s.root)
+        verdict = run_gates(
+            s,
+            s.root,
+            tier=tier,
+            spec_path=spec_path,
+            adapter_name=adapter_name,
+            work_kind=kinds,
+        )
+    except (KeyError, LookupError, FileNotFoundError, ValueError, OSError):
+        return "error"
+    return "pass" if verdict.result == STATUS_PASS else "fail"
+
+
+def _native_runner(s: Settings, args: argparse.Namespace, start_index: int) -> NativeRunner:
+    """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009) and
+    run the gate suite in-process at the verify stage (EXEC-FR-006)."""
+    intent = args.intent or ""
+    wk = workkind.classify(intent)
+    tier = args.tier or wk.suggested_tier or s.default_tier()
+
+    coder_agent = _resolve_coder_agent(s, args)
+    oracle_agent = runpreflight.resolve_oracle_integration(s)
+    coder_manifest = agents.load_agent(s, coder_agent)
+    coder = CliAgentRunner(
+        s, coder_manifest, model=str(s.role("coder").get("model") or ""), cwd=s.root, intent=intent
+    )
+    try:
+        oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
+    except FileNotFoundError:
+        oracle_manifest = coder_manifest
+    oracle_runner = CliAgentRunner(
+        s, oracle_manifest, model=str(s.role("oracle").get("model") or ""), cwd=s.root, intent=intent
+    )
+
+    def dispatch(step: str, stage: str):
+        # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
+        # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
+        # High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.
+        return (oracle_runner if step == "oracle" else coder).dispatch(step, stage)
+
+    def run_verdict(stage: str) -> str:
+        return _native_verdict(s, args, tier, wk.kinds)
+
+    return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
+
+
+def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+    kind = _resolve_runner_kind(args)
+    idx = orchestrate.resume_index(resume_from) if resume_from else 0
+    if kind == "sim":
         return orchestrate.SimulatedRunner(
             verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
         )
-    workflow = args.workflow or str(s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-    # Carry the inferred work-kind into the workflow so the verify step shapes the gate suite
-    # (3PWR-FR-058 → FR-008/009); deterministic, so it never perturbs the verdict (3PWR-NFR-001).
-    kinds = workkind.classify(args.intent or "").kinds
-    inputs = {
-        "intent": args.intent or "",
-        "mode": mode,
-        "integration": args.integration,
-        "work_kind": ",".join(kinds),
-    }
-    return orchestrate.SpecifyRunner(s.root, workflow, inputs)
+    return _native_runner(s, args, idx)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human
-    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. Orchestration only —
-    it composes ``specify workflow run`` (A1), makes no model call (A3), and never enters the
-    deterministic verdict (NFR-001)."""
+    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the
+    **native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the
+    gate suite in-process at Verify (EXEC-FR-006); ``--runner specify`` selects the legacy Spec Kit
+    dispatch. The engine makes no model call itself (EXEC-NFR-001) and never enters the deterministic
+    verdict (3PWR-NFR-001)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
@@ -2018,23 +2044,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
-    # Resolve the coder + oracle integrations from config/flags — integration-agnostic (RUNX-NFR-005).
-    coder_int = runpreflight.resolve_coder_integration(s, args.integration)
+    # Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).
+    coder_int = _resolve_coder_agent(s, args)
     oracle_int = runpreflight.resolve_oracle_integration(s)
     coder_model = str(s.role("coder").get("model") or "")
     oracle_model = str(s.role("oracle").get("model") or "")
 
-    # Preflight — a live run must not dispatch a stage until its prerequisites hold (RUNX-FR-009).
-    # --dry-run needs none of this: it dispatches nothing and is always available offline (RUNX-FR-012).
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):
+    # a headless coder agent + a different-family oracle agent. --dry-run needs none of this: it
+    # dispatches nothing and is always available offline (EXEC-FR-016).
     if not args.dry_run and not args.status:
-        workflow_path = Path(
-            args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-        )
-        prqs = runpreflight.check(
+        prqs = runpreflight.check_native(
             s,
-            workflow_path=workflow_path,
-            coder_integration=coder_int,
-            oracle_integration=oracle_int,
+            coder_agent=coder_int,
+            oracle_agent=oracle_int,
             entries=ledger.entries(),
             spec_id=spec_id,
         )
@@ -2552,16 +2575,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="only create the .3powers/ layout (the pre-wizard behaviour)",
     )
     ip.add_argument(
-        "--with-speckit",
-        dest="with_speckit",
-        action="store_true",
-        help="also run Spec Kit's `specify init` and lay the 3Powers constitution overlay "
-        "(for the autonomous `3pwr run` lifecycle; needs the `specify` CLI)",
-    )
-    ip.add_argument(
         "--integration",
-        help="coding-agent integration passed to `specify init` under --with-speckit "
-        "(e.g. copilot, claude; default: specify prompts, or copilot non-interactively)",
+        help="default agent backend to record for the coder/oracle roles (e.g. claude, codex, "
+        "copilot); the native executive dispatches this headless agent directly",
     )
     ip.add_argument(
         "--tier",
@@ -2680,7 +2696,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument(
         "--spec",
         help="path to the approved spec.md — its hash is sealed into a Spec-stage sign-off "
-        "(default: from .specify/feature.json)",
+        "(default: the newest spec under specs/)",
     )
     sp.set_defaults(func=cmd_signoff)
 
@@ -2738,13 +2754,32 @@ def build_parser() -> argparse.ArgumentParser:
     rnp.add_argument(
         "--integration",
         default="auto",
-        help="the coder integration; the oracle should use a different model family",
+        help="the coder agent backend (a manifest in .3powers/agents/); the oracle should use a "
+        "different model family",
+    )
+    rnp.add_argument(
+        "--runner",
+        choices=["native", "sim"],
+        default=None,
+        help="executive runner: native (default; drive headless agents directly, EXEC-FR-001) or "
+        "sim (offline). --dry-run forces sim.",
+    )
+    rnp.add_argument(
+        "--agent",
+        default=None,
+        help="override the coder agent backend for this run (e.g. claude, codex, copilot)",
+    )
+    rnp.add_argument(
+        "--spec",
+        default=None,
+        help="spec.md the native verify stage gates against (default: the newest under specs/)",
+    )
+    rnp.add_argument(
+        "--tier",
+        default=None,
+        help="risk tier for the native verify stage (default: the inferred/suggested tier)",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
-    rnp.add_argument(
-        "--workflow",
-        help="lifecycle workflow yaml (default: .specify/workflows/3powers/lifecycle.yml)",
-    )
     rnp.add_argument(
         "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'
     )
@@ -2890,9 +2925,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Spec Kit integration for the oracle step (a non-coder family; default: claude)",
     )
     odp.add_argument("--model", help="override the resolved oracle model as <family/model>")
-    odp.add_argument(
-        "--workflow", help="oracle workflow yaml (default: .specify/workflows/3powers/oracle.yml)"
-    )
     odp.add_argument("--base", help="clean git ref for the sanitized worktree (default: HEAD)")
     odp.add_argument(
         "--tests",

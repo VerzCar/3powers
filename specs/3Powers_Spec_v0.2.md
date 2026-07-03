@@ -11,7 +11,7 @@
 | **Document type** | Epic-level specification (the *what* and *why*; the *how* is deferred to a separate implementation plan) |
 | **Version** | 0.2 · Draft |
 | **Status** | Awaiting clarify pass and sign-off |
-| **Substrate** | Layered on GitHub Spec Kit (preset + extension + workflow + catalog systems) — see §3 Constraints |
+| **Substrate** | A native, provider-agnostic executive (an agent-runner contract + engine-owned lifecycle prompts + the judiciary plugins) over **Git**, with optional external model gateways (internal proxy / cloud model service / OpenAI-compatible gateway) as pass-through model access — see §3 Constraints. *(Amended by EXEC, spec 009; was "Layered on GitHub Spec Kit".)* |
 | **Source of method** | *The AI-First SDD Playbook*, Season 1 v1.0 (Verzeri, June 2026) |
 
 > **Revision note (v0.2).** Incorporates author feedback: work type is now *inferred*, not declared (FR-001, FR-058); requirement IDs are project-unique and namespaced by spec ID (FR-059, identifier scheme below); explicit context and session management to preserve model performance (FR-013, FR-060, FR-061); the Phase A / Phase B testing model with the oracle as the binding check and all three test layers required (FR-062–FR-065); build provenance and the deploy gate made first-class (FR-066–FR-068); and full versioning, reversibility, and self-containment of the record (FR-069–FR-071).
@@ -24,9 +24,9 @@
 
 Generative models broke the old bundle where working code was itself proof that someone understood the problem. A passing build no longer proves intent was met. The scarce thing is no longer the code; it is the confidence that the code does what was meant. Reviewing every generated line by hand does not scale, and letting the same model write the spec, the code, the tests, and the first review fuses the legislative, executive, and judicial powers into a single mind — the **separation-of-powers collapse**, where everything agrees with everything because it all came from one source.
 
-Spec Kit, today, solves the *legislative scaffolding* and a large part of the *executive orchestration* (multi-agent headless dispatch, workflow runs with human gate steps, presets, extensions, catalogs). What it deliberately leaves out is the **judiciary**: an independent oracle the executing agent cannot author, a deterministic gate suite that returns the same verdict regardless of which model wrote the code, and an enforcement layer that makes a red gate actually block. It also offloads blocking to a CI/CD platform, which couples trust to one vendor and one always-online pipeline.
+Existing agentic scaffolds (GitHub Spec Kit among them) solve the *legislative scaffolding* and a large part of the *executive orchestration* (multi-agent dispatch, workflow runs with human gate steps, presets, extensions). What they deliberately leave out is the **judiciary**: an independent oracle the executing agent cannot author, a deterministic gate suite that returns the same verdict regardless of which model wrote the code, and an enforcement layer that makes a red gate actually block. They also offload blocking to a CI/CD platform, which couples trust to one vendor and one always-online pipeline.
 
-3Powers exists to supply that missing judiciary and to make it portable: model-agnostic, language-agnostic, provider-agnostic, and free of any mandatory CI/CD platform — so a single developer or a large team can specify a unit of work, let agents build it, and read a trustworthy verdict on whether it matches the spec.
+3Powers supplies that missing judiciary and makes it portable — model-agnostic, language-agnostic, provider-agnostic, and free of any mandatory CI/CD platform. It also owns its **executive**: a native, provider-agnostic agent-runner drives headless coding agents directly (A1′/A3′; see §3 and §6), so a single developer or a large team can specify a unit of work, let agents build it, and read a trustworthy verdict on whether it matches the spec — with no dependency on an external orchestration substrate or an IDE. *(v0.2 originally layered the executive on GitHub Spec Kit; it was brought in-house by EXEC/SLIM — see §17.)*
 
 ### 1.2 Who it is for
 
@@ -51,9 +51,9 @@ A user states a unit of work as plain-language intent. 3Powers infers what kind 
 
 These are decided inputs to the design, not internal *how*:
 
-- **A1 — Built on Spec Kit (Path A).** 3Powers ships as Spec Kit preset(s), extension(s), workflow(s), and gate plugins, distributed through Spec Kit catalogs. It reuses Spec Kit's integration registry and headless `workflow run` dispatch rather than building its own agent harness or model runtime.
-- **A2 — Git is the substrate.** The repository is the agent's working environment, the home of the authoritative spec, and the home of the versioned history. Git is assumed; a specific Git host is not.
-- **A3 — Provider-agnosticism via dispatch.** Any agent that Spec Kit can dispatch headlessly is eligible to fill a role. 3Powers does not call model APIs directly to satisfy a role.
+- **A1′ — 3Powers owns its executive.** *(Amended by EXEC, spec 009; was "Built on Spec Kit (Path A)".)* 3Powers ships its own executive: a declarative **agent-runner** contract, engine-owned lifecycle prompts, and the gate/judiciary plugins. It dispatches each role to a headless coding agent (Claude Code, an OpenAI Codex-class CLI, the GitHub Copilot CLI, OpenCode, Aider, …) described by a manifest. GitHub Spec Kit is no longer the dispatch substrate or a runtime dependency; interop export remains possible but is not required.
+- **A2 — Git is the substrate.** The repository (and, for the read-path-isolated oracle, a sanitized worktree) is the agent's working environment, the home of the authoritative spec, and the home of the versioned history. Git is assumed; a specific Git host is not.
+- **A3′ — Provider-agnosticism via a pluggable agent runner.** *(Amended by EXEC, spec 009; was "Provider-agnosticism via [Spec Kit] dispatch".)* Any headless coding agent described by a manifest is eligible to fill a role, and model access is routed through the organization's own gateway via pass-through environment/config. The engine **dispatches agents and passes gateway config through but calls no model API itself**, and — the invariant that carries the thesis — **a model never produces or alters the verdict** (the judiciary stays deterministic and model-free, 3PWR-NFR-001).
 - **A4 — CI is optional, never the source of trust.** Where a CI/CD platform exists, 3Powers may re-validate in it, but the guarantee — verdicts, provenance, and reversibility — must hold locally and offline.
 - **A5 — Polyglot from day one.** Language support is a plugin contract, not a hard-coded assumption; v1 ships the contract plus at least two reference adapters.
 - **A6 — Self-application.** 3Powers is built and maintained using 3Powers.
@@ -297,8 +297,7 @@ A signed, verifiable record of where a build came from — *this exact artifact,
 
 3Powers is **not**:
 
-- **A new agent harness or model runtime.** It reuses the substrate's headless dispatch (A1, A3) and adds the judiciary on top.
-- **A replacement for Spec Kit.** It is a kit layered on Spec Kit, not a fork of its dispatch or workflow engine.
+- **A model runtime or a model gateway.** *(Amended by EXEC, spec 009; the former non-goals "a new agent harness" and "a replacement for Spec Kit" are retired — the native executive is now in scope, A1′/A3′.)* 3Powers owns a thin agent-runner that dispatches external coding agents; it does not run models itself and does not implement the gateway/keys/budgets/RBAC/SSO/audit layer — those are inherited by pointing the agent at the organization's gateway.
 - **A CI/CD platform.** CI is optional re-validation, never the source of trust (A4). Provenance is produced and verified without a hosted pipeline (FR-068).
 - **An IDE, editor, or language runtime.** It orchestrates existing per-language tools through adapters; it does not build or run code itself beyond invoking those tools.
 - **An author of intent.** A human writes the intent and signs off on the law; the framework infers the *kind* of work but never approves its own spec.
@@ -318,6 +317,21 @@ This is scope definition, not an implementation plan.
 | **v0.1 — Trust spine (MVP)** | Free-form intake with inferred work typing and project-unique IDs (§5); legislative authoring with mandatory tier, EARS, non-goals, sign-off; oracle separation with forbidden reads and model pinning (§7); the deterministic floor + the three oracle-bearing gates (tests/diff-coverage, mutation on high-risk, spec-conformance) with unit + integration + e2e support (§8 subset); the adapter contract + **two** reference adapters; one end-to-end workflow with human gates and context/session management (§6); a signed, hash-chained verdict ledger + local enforcement (§9); and **versioning, history & reversibility of all artifacts and steps** (FR-069–FR-071). |
 | **v0.5 — Full judiciary** | Remaining gates (SAST, dependency, secret); **build provenance with deploy-gate verification, signed by the shared independent identity** (FR-066–FR-068); automated residual review; the full risk-tier threshold config; the prompt/constitution evaluation harness (§11). |
 | **v1.0 — Lifecycle & ecosystem** | Brownfield Stage Zero (§12); observe/feedback loop (§13); emergency and deviation paths (§14); catalog distribution; a third reference adapter; hardened ledger + `verify` UX; full documentation; complete self-application (NFR-006). |
+
+**Native-executive track (post-v1.0 amendment — the new solution + roadmap).** The v0.1–v1.0 slices above
+were built on the GitHub Spec Kit substrate (original A1). Practice showed that substrate could not drive
+agents headlessly from outside an IDE (a terminal `3pwr run` had no agent to pilot inside e.g. GitHub
+Copilot), so the executive was brought in-house — A1′/A3′ (§3):
+
+| Spec | Status | Scope |
+|---|---|---|
+| **EXEC** (spec 009) | delivered | A native, **provider-agnostic agent-runner**: `3pwr run` dispatches each stage to a headless coding agent (Claude Code / Codex CLI / GitHub Copilot CLI / OpenCode / Aider) described by a declarative manifest, runs the deterministic gate suite in-process, and stops only at the two human gates. Enterprise model access (Bedrock/Vertex/Azure/LiteLLM/internal proxy) is inherited via env pass-through; the engine calls no model API and a model never produces the verdict. |
+| **SLIM** (spec 010) | delivered | Removes GitHub Spec Kit entirely (runner, vendored prompts/workflows, `--with-speckit`, the dependency pin); `3pwr init` seeds the agent manifests instead. |
+| **RUNLIVE** (spec 011) | planned | Hardens the executive: per-stage **artifact contracts**, robust dispatch (timeout/retry/streaming), a **gated live end-to-end proof**, the **async hosted backend** (e.g. the GitHub Copilot coding agent for shops without a local headless CLI), and per-stage commit checkpoints. |
+| **DOCX** (spec 012) | planned | Truth-up STATUS + docs to the native executive and retire the last Spec-Kit residue (`agentpins`, the `.specify/` tree). |
+
+The **judiciary** (§7–§9) — oracle independence, the gate suite, the signed trust spine — is unchanged by
+this track; only the executive substrate changed.
 
 ---
 
@@ -345,7 +359,7 @@ Sharp questions whose answers would most change the build:
 4. **Shared ledger & history.** How do the local verdict ledger and the versioned history behave with multiple developers pushing concurrently — how are chains and reversals merged and conflicts resolved (FR-038, FR-069–FR-071)?
 5. **Provenance trust root without a CI runner.** The producing 3Powers run is the issuing authority (FR-068); what minimum attestation and key-custody arrangement makes that credible to an external third party, given there is no hosted pipeline as a trust root?
 6. **Diff coverage in polyglot changes.** How is changed-line coverage attributed when a single change spans multiple languages and toolchains (FR-029)?
-7. **Substrate coupling.** How are Spec Kit breaking changes insulated so 3Powers' guarantees do not regress when the substrate moves (A1)?
+7. **Substrate coupling — resolved by EXEC/SLIM (§17).** Formerly: how are Spec Kit breaking changes insulated (A1)? The executive is now native (A1′), so the coupling moved to the agent-runner manifest contract: the open question is now how to keep the reference agent-backend manifests current as the underlying agent CLIs (Claude Code, Codex, Copilot, …) change their flags/headless entry points.
 8. **Inference confidence.** When the model infers the wrong work kind, or misses one of several kinds in a mixed intent, how does the human catch it before sign-off, and what is the cost of a wrong inference (FR-058)?
 9. **Reversal semantics.** Does "reverse to a prior recorded state" (FR-070) mean a git-level revert, a logical undo of a stage transition, or both — and how does a reversal itself get recorded in the ledger so history stays honest?
 

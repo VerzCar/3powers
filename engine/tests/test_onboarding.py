@@ -287,22 +287,20 @@ def test_agents_md_kept_when_present(tmp_path):
     assert (root / "AGENTS.md").read_text(encoding="utf-8") == "# my agents SENTINEL\n"
 
 
-# --------------------------------------------------------------------------- FR-015 (Spec Kit + constitution)
-def test_readiness_recommends_speckit_when_missing(tmp_path, capsys):
-    """ONBRD-FR-015: with no Spec Kit workspace, init reports it and recommends init (still exit 0)."""
+# --------------------------------------------------------------------------- ONBRD-FR-015 (constitution)
+def test_readiness_checklist_is_emitted(tmp_path, capsys):
+    """ONBRD-FR-015: init emits the readiness checklist (still exit 0)."""
     root = tmp_path / "proj"
     root.mkdir()
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
     out = capsys.readouterr().out
     assert "Ready for the agentic workflow?" in out
-    assert "Spec Kit not initialized" in out
 
 
-def test_constitution_overlay_laid_when_speckit_present(tmp_path):
-    """ONBRD-FR-015: if Spec Kit exists but the 3Powers constitution is absent, init lays it offline."""
+def test_constitution_is_seeded_by_init(tmp_path):
+    """ONBRD-FR-015: init lays the 3Powers constitution overlay offline."""
     root = tmp_path / "proj"
     root.mkdir()
-    (root / ".specify" / "memory").mkdir(parents=True)
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
     assert scaffold.is_threepowers_constitution(root)
 
@@ -318,28 +316,11 @@ def test_existing_constitution_is_not_overwritten(tmp_path):
     assert "SENTINEL" in cpath.read_text(encoding="utf-8")
 
 
-def test_with_speckit_initializes_speckit_and_lays_constitution(tmp_path, monkeypatch):
-    """ONBRD-FR-015: --with-speckit initializes Spec Kit and lays the 3Powers constitution overlay."""
+def test_agent_manifests_seeded_by_init(tmp_path):
+    """SLIM/EXEC-FR-004: init seeds the native agent-backend manifests for `3pwr run`."""
     root = tmp_path / "proj"
     root.mkdir()
-    monkeypatch.setattr(scaffold, "specify_installed", lambda: True)
-
-    def fake_init(r, integration=None):
-        # Mirror `specify init`: scaffold .specify/ AND drop a placeholder constitution.
-        (r / ".specify" / "memory").mkdir(parents=True, exist_ok=True)
-        (r / ".specify" / "memory" / "constitution.md").write_text(
-            "# [PROJECT_NAME] Constitution\n", encoding="utf-8"
-        )
-        return 0
-
-    monkeypatch.setattr(scaffold, "run_specify_init", fake_init)
-    assert _init(root, "--language", "python", "--with-speckit", key=tmp_path / "k.key") == 0
-    assert scaffold.is_threepowers_constitution(root)  # the placeholder was overlaid
-
-
-def test_with_speckit_requires_the_specify_cli(tmp_path, monkeypatch):
-    """ONBRD-FR-015: --with-speckit without the `specify` CLI is a usage error (exit 2)."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    monkeypatch.setattr(scaffold, "specify_installed", lambda: False)
-    assert _init(root, "--language", "python", "--with-speckit", key=tmp_path / "k.key") == 2
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    agents_dir = root / ".3powers" / "agents"
+    assert (agents_dir / "claude.yaml").exists()
+    assert {p.stem for p in agents_dir.glob("*.yaml")} >= {"claude", "codex", "copilot"}

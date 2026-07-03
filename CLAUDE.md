@@ -81,7 +81,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 
 # The whole lifecycle in one command (§6, FR-011): auto mode stops ONLY at the two human gates (FR-006/037).
 3pwr classify "<intent>"                            # FR-058: infer work kind(s) + a suggested risk tier
-3pwr run "<intent>" --mode auto                     # streams a live stage tracker; composes `specify workflow run` (A1)
+3pwr run "<intent>" --mode auto                     # streams a live stage tracker; native executive dispatches headless agents (EXEC-FR-001)
 3pwr run --resume --spec-id <ID> --approver <you>   # after a human gate: record sign-off + continue
 3pwr run --status --spec-id <ID>                    # stage tracker from the ledger   (try it offline: add --dry-run)
 

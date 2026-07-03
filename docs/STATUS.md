@@ -4,7 +4,8 @@
 
 | | |
 |---|---|
-| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–017 delivered) |
+| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–019 delivered) |
+| **Architecture (plans 018–019, current)** | **3Powers owns its executive** — `3pwr run` drives headless coding agents *directly* via a native, provider-agnostic runner (**EXEC**, spec 009), and **GitHub Spec Kit is removed** (**SLIM**, spec 010; epic A1′/A3′/§16 amended). The judiciary is unchanged. The new solution + roadmap are documented in the epic ([§17 native-executive track](../specs/3Powers_Spec_v0.2.md)) and in §6 below; next up are **RUNLIVE** (spec 011) and **DOCX** (spec 012). A few requirement-level rows below still read in the old Spec-Kit phrasing — the full line-by-line STATUS rewrite is DOCX's job (DOCX-FR-001). Migration: [`docs/migration-remove-speckit.md`](migration-remove-speckit.md). |
 | **Last validated** | **2026-07-02**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
 | **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening |
 | **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the Spec Kit extension · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) · context strategy approximated at command level (FR-060/061) |
@@ -93,7 +94,7 @@ plan/                       # the continuous plan series 001..015 (015 = work-ki
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; plan 017: **trust-spine hardening (HARDN)** — threat model, key custody + rotation + opt-in anchoring + external signing, oracle model attestation, conformance ID-binding/assertion checks, gaming flag, opt-in diff mutation; remaining: dual-headless coder leg, catalog publishing) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; plan 017: **trust-spine hardening (HARDN)** — threat model, key custody + rotation + opt-in anchoring + external signing, oracle model attestation, conformance ID-binding/assertion checks, gaming flag, opt-in diff mutation; **plan 018: native executive (EXEC, spec 009)** — `3pwr run` drives headless agents directly via a provider-agnostic agent-runner; **plan 019: remove Spec Kit (SLIM, spec 010)** — substrate severed, `3pwr init` seeds agent manifests; remaining: RUNLIVE (spec 011) live-executive hardening + async backend, DOCX (spec 012) doc/decruft, catalog publishing) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -109,7 +110,7 @@ deterministic, no model call) · **FR-009 ✅** (a `design` run unions the **des
 visual-regression / a11y / structural-contract / component-contract — from `design-oracles.yaml`; each tool
 is adapter-supplied, a missing one is **quarantined** not silently passed; live scanners are the residual).
 
-**Executive (§6):** FR-011 ✅ (stages derived from ledger; **`3pwr run` drives the whole loop**, plan 013 — auto mode stops only at the two human gates, composing `specify workflow run`), FR-019 ✅, FR-014 ✅, FR-015 ✅,
+**Executive (§6):** FR-011 ✅ (stages derived from ledger; **`3pwr run` drives the whole loop** via the **native executive**, plans 018/019 — auto mode stops only at the two human gates; dispatches headless agents directly, no Spec Kit), FR-019 ✅, FR-014 ✅, FR-015 ✅,
 FR-016 ◑ (tasks gated by `scope-check`; commit-message tagging not gated), FR-017 ✅, FR-063 ✅ ·
 FR-012 ◑ / FR-013 ◑ (**oracle leg now dispatched headlessly** via `3pwr oracle dispatch` + Spec Kit
 `workflow run` under a non-coder integration, plan 011; the **coder** leg staying interactive/in-IDE, and
@@ -257,8 +258,9 @@ agent-action log. The 8th lifecycle stage is now reachable.
 **Plan 011 is done** ([`plan/011-a3-live-headless-dispatch.md`](../plan/011-a3-live-headless-dispatch.md)):
 ✅ **A3 live headless dispatch — physical oracle read-path isolation (FR-021), oracle leg of FR-012/013.**
 `3pwr oracle dispatch` builds a **sanitized git worktree** (implementation/plan/tasks/contracts physically
-absent), runs the oracle authoring step headlessly via `specify workflow run` under a non-coder integration
-(default `claude`), collects the authored tests, and records a signed **dispatch attestation** (integration
+absent), runs the oracle authoring step headlessly under a non-coder agent
+(default `claude`) — via `specify workflow run` originally, **now the native runner since SLIM (plan 019)** —
+collects the authored tests, and records a signed **dispatch attestation** (agent
 + resolved model + worktree isolation manifest). `independence()`/High-risk `advance` **block** on a
 missing-required or non-isolated dispatch (`roles.oracle.require_dispatch`), while the 008 peek/touch signal
 stays advisory (NFR-001); dispatch never enters `gate run`. An optional **distinct oracle signer key** is
@@ -339,12 +341,23 @@ files against the tier threshold (HARDN-FR-011, SC-006). Self-applies at **High-
 extended trust-spine modules (`keys`, `ledger`, `verify`, new `anchor`): diff-coverage 95.7% ≥ 95,
 mutation 79.61% ≥ 70, all HARDN requirements traced across unit+integration+e2e.
 
-Next, in priority order (breadth + the remaining hardening track):
-- **Fuller A3** — the coder leg also headless under a second, different-family CLI (codex/gemini), and a
-  live non-Copilot end-to-end `workflow run` verification (also completes `3pwr run`'s live executive leg).
-- **Live design/Go runs** — playwright/axe/schema-diff for a real UI sample (FR-009) and a Go toolchain for
-  the Go adapter's live gate run; catalog *publishing* of the `3powers` extension; model-driven eval layer
-  (FR-050); cross-platform validation (NFR-003).
+**Native-executive track (plans 018–019 delivered; the current direction — see epic §17).** Plan 018
+(**EXEC**, spec 009) brought the executive in-house: `3pwr run` drives headless coding agents *directly*
+via a native, provider-agnostic agent-runner (manifests under `.3powers/agents/`), runs the gate suite
+in-process, and stops only at the two human gates; the engine calls no model API and a model never produces
+the verdict. Plan 019 (**SLIM**, spec 010) removed GitHub Spec Kit entirely. This closed the old "fuller
+A3 / live executive" residual — the coder leg is now natively headless with no substrate.
+
+Next, in priority order:
+- **RUNLIVE (spec 011, planned)** — harden the executive: per-stage **artifact contracts** (a stage that
+  produced nothing is caught, not silently passed), robust dispatch (timeout/retry/streaming), a **gated
+  live end-to-end proof** (real agent → green verdict; the default suite stays model-free), the **async
+  hosted backend** (GitHub Copilot coding agent for shops without a local headless CLI), and per-stage
+  commit checkpoints.
+- **DOCX (spec 012, planned)** — full STATUS/doc rewrite to the native executive + retire the last
+  Spec-Kit residue (`agentpins`, the `.specify/` tree).
+- **Breadth (unchanged):** live design/Go runs (playwright/axe/schema-diff + a Go toolchain), model-driven
+  eval layer (FR-050), cross-platform validation (NFR-003).
 
 ## 7. Pointers
 

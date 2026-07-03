@@ -4,7 +4,7 @@ Production is where software is graded, and what is learned must return to the *
 not as ad-hoc patches. This module:
 
 * records a production signal (incident, missed objective, real usage) and **routes it to the
-  legislature as a new requirement** — a feedback backlog the human takes into `/speckit.specify` —
+  legislature as a new requirement** — a feedback backlog the human takes into a new `3pwr run` spec —
   never an in-place patch (3PWR-FR-054);
 * reports **NFR-instrumentation coverage** — which of a spec's non-functional requirements have a
   declared live production check (§13 acceptance: "a specified NFR has a live check");
@@ -35,7 +35,7 @@ def signal_payload(kind: str, note: str, nfr: str, routed_to: str) -> dict:
 
 _FB_HEADER = (
     "# Feedback intents — production lessons routed back to the legislature (3PWR-FR-054)\n\n"
-    "> Each entry is a **new requirement candidate**. Take it into `/speckit.specify` — do NOT patch "
+    "> Each entry is a **new requirement candidate**. Take it into a new `3pwr run` spec — do NOT patch "
     "in place. The loop returns to the spec, not to ad-hoc fixes.\n\n"
 )
 
@@ -56,7 +56,7 @@ def route_to_backlog(backlog_path: Path, spec_id: str, kind: str, nfr: str, note
     ref = f" (re: {nfr})" if nfr else ""
     entry = (
         f"- **{fb_id}** [{kind}]{ref}: {note}\n"
-        "  - *Route*: re-enter via `/speckit.specify` as a new requirement (not an in-place patch).\n"
+        "  - *Route*: re-enter via a new `3pwr run` spec as a new requirement (not an in-place patch).\n"
     )
     backlog_path.parent.mkdir(parents=True, exist_ok=True)
     backlog_path.write_text(text + entry, encoding="utf-8")

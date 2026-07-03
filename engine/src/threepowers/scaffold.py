@@ -13,7 +13,6 @@ converges to the same on-disk state (ONBRD-FR-009).
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -117,6 +116,29 @@ def seed_contract(settings: Settings) -> str:
     return _copy_if_missing(_ADAPTERS_DIR / "CONTRACT.md", settings.adapters_dir / "CONTRACT.md")
 
 
+_AGENTS_SCAFFOLD_DIR = SCAFFOLD_DIR / "agents"
+
+
+def bundled_agents() -> list[str]:
+    """The agent backends the engine can seed — one per bundled manifest (EXEC-FR-004)."""
+    if not _AGENTS_SCAFFOLD_DIR.is_dir():
+        return []
+    return sorted(p.stem for p in _AGENTS_SCAFFOLD_DIR.glob("*.yaml"))
+
+
+def seed_agents(settings: Settings) -> dict[str, str]:
+    """Copy the bundled agent-backend manifests into ``.3powers/agents/`` (EXEC-FR-004), never clobbering.
+
+    The native executive drives whichever headless coding agent a role points at; seeding the reference
+    manifests makes a fresh project runnable with `3pwr run` and no Spec Kit."""
+    out: dict[str, str] = {}
+    if not _AGENTS_SCAFFOLD_DIR.is_dir():
+        return out
+    for src in sorted(_AGENTS_SCAFFOLD_DIR.glob("*.yaml")):
+        out[src.name] = _copy_if_missing(src, settings.agents_dir / src.name)
+    return out
+
+
 def seed_gitignore(settings: Settings) -> str:
     """Write ``.3powers/.gitignore`` so transient state and stray keys are never committed."""
     return _copy_if_missing(SCAFFOLD_DIR / "gitignore", settings.dir / ".gitignore")
@@ -189,16 +211,6 @@ def seed_agents_md(root: Path) -> str:
     return _copy_if_missing(SCAFFOLD_DIR / "agents-template.md", root / "AGENTS.md")
 
 
-def has_speckit(root: Path) -> bool:
-    """Whether Spec Kit is initialised in ``root`` (the ``.specify/`` tree exists)."""
-    return (root / ".specify").is_dir()
-
-
-def specify_installed() -> bool:
-    """Whether the Spec Kit ``specify`` CLI is on PATH (needed for the live autonomous lifecycle)."""
-    return shutil.which("specify") is not None
-
-
 def constitution_path(root: Path) -> Path:
     return root / ".specify" / "memory" / "constitution.md"
 
@@ -238,17 +250,6 @@ def seed_constitution(root: Path, *, force: bool = False) -> str:
         shutil.copyfile(SCAFFOLD_DIR / "constitution.md", path)
         return "overlaid"
     return "kept"
-
-
-def run_specify_init(root: Path, integration: Optional[str] = None) -> int:
-    """Run Spec Kit's ``specify init`` in ``root`` for the opt-in ``--with-speckit`` path (ONBRD-FR-015).
-
-    ``specify init`` scaffolds from assets bundled in the specify CLI (no network). stdio is inherited so
-    the user can pick an integration interactively when one is not supplied. Returns its exit code."""
-    args = ["specify", "init", "--here", "--force"]
-    if integration:
-        args += ["--integration", integration]
-    return subprocess.run(args, cwd=root, check=False).returncode
 
 
 def detect_ci(root: Path) -> bool:
@@ -297,99 +298,6 @@ def agents_md_is_starter(root: Path) -> bool:
     return any(tok in text for tok in _AGENTS_STARTER_TOKENS)
 
 
-_SPECKIT_DIR = SCAFFOLD_DIR / "speckit"
-_WORKFLOWS_DIR = SCAFFOLD_DIR / "workflows"  # the 3Powers lifecycle/oracle workflows, installed verbatim
-_SPECKIT_RANGE = ">=0.11,<0.12"  # kept in sync with .3powers/config/dependencies.yaml (3PWR-FR-048)
-
-
-def _render_template(text: str, ctx: dict[str, str]) -> str:
-    """Substitute ``{{key}}`` tokens from ``ctx`` — deterministic (INITX-NFR-005)."""
-    for key, val in ctx.items():
-        text = text.replace("{{" + key + "}}", val)
-    return text
-
-
-def has_unresolved_placeholders(text: str) -> bool:
-    """True iff a ``{{…}}`` template token remains unresolved (INITX-FR-008)."""
-    return "{{" in text
-
-
-def speckit_extension_dir(root: Path) -> Path:
-    return root / ".specify" / "extensions" / "3powers"
-
-
-def install_speckit_extension(
-    settings: Settings, root: Path, *, force: bool = False
-) -> dict[str, object]:
-    """Render + install the 3Powers Spec Kit extension and pin the judiciary agents (INITX-FR-005/008).
-
-    Renders the bundled extension templates from the active configuration — the judiciary command's
-    model pin comes from ``roles.yaml``, so no hardcoded model literal survives (INITX-FR-008) — then
-    pins the judiciary agent files. Requires a Spec Kit workspace: returns ``{'status': 'no-speckit'}``
-    when absent (reported, never fabricated). Non-destructive: an existing file is kept unless ``force``.
-    Deterministic: the same configuration yields byte-identical output (INITX-NFR-005)."""
-    from . import agentpins  # local import keeps scaffold import-order independent
-
-    if not has_speckit(root):
-        return {"status": "no-speckit"}
-
-    oracle_pin = settings.role_model_pin("oracle")
-    judiciary_model = agentpins.model_field(oracle_pin) if oracle_pin else ""
-    ctx = {"judiciary_model": judiciary_model, "spec_kit_range": _SPECKIT_RANGE}
-
-    dest = speckit_extension_dir(root)
-    files: dict[str, str] = {}
-    for src in sorted(_SPECKIT_DIR.rglob("*")):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(_SPECKIT_DIR)
-        rendered = _render_template(src.read_text(encoding="utf-8"), ctx)
-        if has_unresolved_placeholders(rendered):
-            raise ValueError(f"unresolved template placeholder in bundled {rel}")
-        out = dest / rel
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists() and not force:
-            files[str(rel)] = "kept"
-            continue
-        out.write_text(rendered, encoding="utf-8")
-        files[str(rel)] = "created"
-
-    pins = agentpins.render_all(settings, root, force=force)
-    return {"status": "installed", "files": files, "pins": pins}
-
-
-def speckit_workflows_dir(root: Path) -> Path:
-    return root / ".specify" / "workflows"
-
-
-def install_speckit_workflows(root: Path, *, force: bool = False) -> dict[str, object]:
-    """Install the 3Powers lifecycle + oracle Spec Kit workflows that ``3pwr run`` dispatches
-    (INITX-FR-005; the missing piece behind the RUNX-FR-009 "lifecycle workflow" prerequisite —
-    ``--with-speckit`` previously installed the extension but never these workflows).
-
-    Copied VERBATIM into ``.specify/workflows/3powers/``: the ``{{ inputs.* }}`` tokens are Spec Kit
-    run-time inputs, NOT 3Powers config, so they must survive un-rendered (unlike the extension
-    templates, which go through ``_render_template``). Requires a Spec Kit workspace: returns
-    ``{'status': 'no-speckit'}`` when absent, never fabricated. Non-destructive and idempotent — a
-    hand-edited workflow is kept unless ``force`` (INITX-NFR-006)."""
-    if not has_speckit(root):
-        return {"status": "no-speckit"}
-    dest_base = speckit_workflows_dir(root)
-    files: dict[str, str] = {}
-    for src in sorted(_WORKFLOWS_DIR.rglob("*")):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(_WORKFLOWS_DIR)
-        out = dest_base / rel
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists() and not force:
-            files[str(rel)] = "kept"
-            continue
-        out.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-        files[str(rel)] = "created"
-    return {"status": "installed", "files": files}
-
-
 def readiness(root: Path) -> dict[str, object]:
     """A checklist of what a project needs to run the full agentic workflow (ONBRD-FR-015/016).
 
@@ -398,8 +306,6 @@ def readiness(root: Path) -> dict[str, object]:
     return {
         "agents_md": (root / "AGENTS.md").exists(),
         "agents_md_todo": agents_md_is_starter(root),
-        "speckit_dir": has_speckit(root),
-        "specify_cli": specify_installed(),
         "constitution": is_threepowers_constitution(root),
         "ci": detect_ci(root),
     }

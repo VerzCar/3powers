@@ -39,7 +39,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Anchor the ledger head with an external witness | `3pwr anchor --push` · check with `3pwr verify --anchored` (`HARDN-FR-005`; opt-in — plain `verify` stays offline) |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
 | Infer work kind(s) + suggested tier | `3pwr classify "<intent>"` (`3PWR-FR-058`; deterministic; shapes the tier/gates + oracle, never the sign-off) |
-| Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; composes `specify workflow run`, A1) |
+| Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--runner native\|sim] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; the native executive dispatches each stage to a headless agent, EXEC-FR-001) |
 | Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`) |
 | Emergency fast path | `3pwr emergency --approver <you> --note "<why>"` (`3PWR-FR-056`; defers mutation+coverage; 1-day cleanup) |
 | Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
@@ -72,8 +72,7 @@ Confirmed in this environment:
 
 | Component | Version |
 |---|---|
-| Spec Kit (`specify`) | `0.11.6.dev0` — upstream [`github/spec-kit`](https://github.com/github/spec-kit) (not a fork), pinned via `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<tag>`; provides headless `workflow run` for the A3 oracle dispatch |
-| Claude Code (`claude`) | headless, non-`openai` integration for `3pwr oracle dispatch` (A3); `specify integration install claude` |
+| Claude Code (`claude`) | reference headless agent backend for the native executive (EXEC); drives coder/oracle stages. Any headless coding-agent CLI (codex/copilot/opencode/aider) works via its `.3powers/agents/<name>.yaml` manifest |
 | Python (via `uv`) | 3.12 (engine `requires-python >=3.10`) |
 | Node | 23.3.0 |
 | Engine runtime deps | `cryptography`, `PyYAML` |

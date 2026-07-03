@@ -1,7 +1,7 @@
-"""Render the configured judiciary model into the Spec Kit judiciary agents' frontmatter (INITX-FR-004).
+"""Render the configured judiciary model into the judiciary agent files' frontmatter (INITX-FR-004).
 
-Only the judiciary roles are pinned — ``/3pwr.oracle`` (oracle) and ``/3pwr.review`` (reviewer). The
-coder and every other agent stay on the Spec Kit integration's default model (an explicit non-goal).
+Only the judiciary roles are pinned — ``3pwr.oracle`` (oracle) and ``3pwr.review`` (reviewer). The
+coder and every other agent stay on the agent backend's default model (an explicit non-goal).
 Rendering is deterministic — the same configuration yields byte-identical output (INITX-NFR-005) — and
 non-destructive: a hand-edited ``model:`` line is never overwritten without ``force`` (INITX-NFR-006). A
 managed pin carries a marker comment so re-rendering and drift re-apply stay idempotent.

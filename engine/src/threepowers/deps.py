@@ -1,6 +1,6 @@
 """Third-party dependency compatibility (3PWR-FR-048, 3PWR-NFR-014).
 
-3Powers layers on Spec Kit (A1) and drives per-language adapter toolchains + supply-chain scanners.
+3Powers drives headless agent backends, per-language adapter toolchains, and supply-chain scanners.
 A new upstream release of any of these can change behaviour, so the **supported** versions are an
 explicit, versioned config (``.3powers/config/dependencies.yaml``) and ``3pwr deps-check`` probes the
 INSTALLED versions against it: `ok` (within range), `drift` (installed but outside), `missing` (not

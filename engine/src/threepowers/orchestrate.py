@@ -1,26 +1,21 @@
 """The orchestration front-end — drive the whole lifecycle as one loop (3PWR-FR-011, §6).
 
-`3pwr run` is a **thin driver over Spec Kit's `workflow run`** (A1): it does not dispatch agents or call
-model APIs itself (A3). It walks the lifecycle, streaming progress, and — in ``auto`` mode — auto-continues
-past the intermediate review gates while **always** stopping at the two spec-mandated human gates:
-``review-spec`` (a human approves the spec, 3PWR-FR-006) and ``signoff`` (a human signs off on the evidence
-+ residual, 3PWR-FR-037). ``commit`` mode stops at every gate.
+`3pwr run` walks the lifecycle, streaming progress, and — in ``auto`` mode — auto-continues past the
+intermediate review gates while **always** stopping at the two spec-mandated human gates: ``review-spec``
+(a human approves the spec, 3PWR-FR-006) and ``signoff`` (a human signs off on the evidence + residual,
+3PWR-FR-037). ``commit`` mode stops at every gate.
 
-The mode/gate/progress logic (``drive``) is pure given a *runner*; the live runner shells out to
-``specify workflow run``/``resume`` (best-effort — the live executive dispatch is the A3 residual), and a
-``SimulatedRunner`` drives ``--dry-run`` and the tests. Orchestration is provisioning, never part of the
-deterministic verdict (3PWR-NFR-001) — the gates still run through ``3pwr gate run``.
+The mode/gate/progress logic (``drive``) is pure given a *runner*. The live runner is the native
+:class:`threepowers.runner.NativeRunner` (EXEC-FR-001) — it dispatches each stage to a headless agent
+directly and runs the gate suite in-process; a ``SimulatedRunner`` drives ``--dry-run`` and the tests.
+Orchestration never enters the deterministic verdict (3PWR-NFR-001).
 """
 
 from __future__ import annotations
 
-import json
-import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Callable, Optional, Protocol
 
-from .adapters import run_cmd
 from .lifecycle import STAGES, canonical_stage
 
 # The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
@@ -29,7 +24,7 @@ MANDATORY_GATES: dict[str, str] = {
     "signoff": "3PWR-FR-037",  # a human signs off on evidence + residual before advance
 }
 
-# The lifecycle steps, in order, mapped to their stage — mirrors .specify/workflows/3powers/lifecycle.yml.
+# The lifecycle steps, in order, mapped to their stage — the native executive walks these directly.
 # kind: "action" (an executive/judiciary command), "verdict" (the deterministic gate suite), "gate" (human).
 LIFECYCLE_STEPS: list[tuple[str, str, str]] = [
     ("specify", "action", "Spec"),
@@ -186,56 +181,6 @@ class SimulatedRunner:
         if decision == "reject":
             return Outcome("aborted", events=[Event("aborted")])
         return self._walk()
-
-
-# --------------------------------------------------------------------------- live runner (Spec Kit; A3 residual)
-class SpecifyRunner:
-    """Drive the real lifecycle via ``specify workflow run``/``resume`` (A1). Best-effort JSON parsing —
-    the fully-live executive dispatch is the A3 residual; guarded by ``shutil.which('specify')``."""
-
-    def __init__(self, root: Path, workflow: str, inputs: dict[str, str]) -> None:
-        self.root = root
-        self.workflow = workflow
-        self.inputs = inputs
-
-    def _invoke(self, args: list[str]) -> Outcome:
-        if shutil.which("specify") is None:
-            raise FileNotFoundError(
-                "`specify` (Spec Kit) not found — install it to run the live lifecycle, or use --dry-run"
-            )
-        cmd = "specify " + " ".join(args) + " --json"
-        res = run_cmd(cmd, cwd=self.root)
-        return _parse_specify_outcome(res.stdout, res.returncode)
-
-    def run(self) -> Outcome:
-        args = ["workflow", "run", self.workflow]
-        for k, v in self.inputs.items():
-            args += ["-i", f"{k}={v}"]
-        return self._invoke(args)
-
-    def resume(self, decision: str) -> Outcome:
-        return self._invoke(["workflow", "resume", "--decision", decision])
-
-
-def _parse_specify_outcome(stdout: str, returncode: int) -> Outcome:
-    """Best-effort read of a ``specify … --json`` result into an Outcome (schema-tolerant)."""
-    try:
-        data = json.loads(stdout)
-    except (ValueError, TypeError):
-        return Outcome("failed" if returncode != 0 else "done")
-    status = str(data.get("status") or data.get("state") or "").lower()
-    gate = data.get("gate") or data.get("paused_at") or ""
-    stage = canonical_stage(data.get("stage")) or ""
-    verdict = str(data.get("verdict") or "")
-    if "gate" in status or gate:
-        return Outcome("gate", gate=str(gate), stage=stage or "", verdict=verdict)
-    if status in ("done", "complete", "completed", "succeeded"):
-        return Outcome("done", stage=stage or "", verdict=verdict)
-    if status in ("failed", "error", "aborted"):
-        return Outcome(
-            "failed" if status != "aborted" else "aborted", stage=stage or "", verdict=verdict
-        )
-    return Outcome("done" if returncode == 0 else "failed", stage=stage or "", verdict=verdict)
 
 
 # --------------------------------------------------------------------------- progress rendering (pure)

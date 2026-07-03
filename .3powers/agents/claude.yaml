@@ -1,0 +1,19 @@
+# Agent backend manifest — Claude Code, headless (EXEC-FR-002/003/004).
+#
+# Declarative, like a language adapter: the native executive builds the invocation from these
+# fields alone, so adding an agent is "add a manifest" with no engine change (EXEC-NFR-003).
+# The engine makes no model call itself — the dispatched `claude` process does (EXEC-NFR-001).
+# Point it at an enterprise gateway via the environment (ANTHROPIC_BASE_URL, CLAUDE_CODE_USE_BEDROCK,
+# CLAUDE_CODE_USE_VERTEX, HTTPS_PROXY, …) — the engine passes the environment through untouched
+# (EXEC-FR-012).
+agent: claude
+family: anthropic            # model family for the diversity precheck (3PWR-FR-022)
+headless: true              # dispatchable with no interactive IDE
+command: claude
+base_args: ["--permission-mode", "acceptEdits"]
+model_flag: "--model"       # coder/oracle model pin is inserted here when configured
+prompt_flag: "-p"           # print/headless mode; the assembled stage prompt follows
+prompt_via: arg             # arg | stdin
+notes: >
+  Reference backend. Verified present on PATH in this repo. For enterprise model access set the
+  ANTHROPIC_* / CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX env before running `3pwr run`.

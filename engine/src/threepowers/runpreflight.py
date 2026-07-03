@@ -1,42 +1,44 @@
-"""Run preflight — verify the prerequisites for a LIVE ``3pwr run`` before dispatching any stage (RUNX-FR-009).
+"""Run preflight — verify the prerequisites for a LIVE **native** ``3pwr run`` before dispatching any stage
+(EXEC-FR-015).
 
 Honest diagnostics: a run that cannot start names the missing prerequisite and the exact fix, and always
-names the fully-offline ``--dry-run`` and the step-by-step alternatives (RUNX-FR-012) — it is never
-mislabeled "gates red" (RUNX-FR-010). Integration-, provider-, and model-agnostic: the set of
-headless-capable integrations is configuration-driven and no integration name is embedded in run logic
-(RUNX-NFR-005). This module only *reads* configuration and the environment; it dispatches nothing.
+names the fully-offline ``--dry-run`` alternative — it is never mislabeled "gates red" (EXEC-FR-016).
+Provider-, model-, and agent-agnostic: the set of headless-capable agent backends is configuration-driven
+and no vendor name is embedded in run logic (EXEC-NFR-003). This module only *reads* configuration and the
+environment; it dispatches nothing.
 """
 
 from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from typing import Callable
 
-from . import deviations
+from . import agents, deviations
 from .config import Settings
 from .oracle import diverse, family_of
 
-# Integrations that can be dispatched headlessly (no interactive IDE). Config overrides this
-# (roles.yaml `headless_integrations`) so the accepted set is data, not code (RUNX-NFR-005).
+# Agent backends that can be dispatched headlessly (no interactive IDE). Config overrides this
+# (roles.yaml `headless_integrations`) so the accepted set is data, not code (EXEC-NFR-003).
 DEFAULT_HEADLESS: tuple[str, ...] = (
     "claude",
-    "gemini",
     "codex",
+    "copilot",
     "cursor-agent",
     "opencode",
+    "aider",
     "qwen",
     "auggie",
     "amp",
 )
-# IDE-bound integrations that cannot run headless — they need an editor session. Advisory: used only to
+# Editor-bound backends that cannot run headless — they need an editor session. Advisory: used only to
 # give a clearer message; the authoritative test is membership in the headless set.
-IDE_ONLY: tuple[str, ...] = ("copilot", "windsurf", "kilocode", "roo")
+IDE_ONLY: tuple[str, ...] = ("windsurf", "kilocode", "roo")
 
-# The always-available offline paths named in every preflight-failure message (RUNX-FR-012).
+# The always-available offline paths named in every preflight-failure message (EXEC-FR-016).
 OFFLINE_ALTERNATIVES: tuple[str, ...] = (
     'run fully offline (no dispatch): 3pwr run "<intent>" --dry-run',
-    "or drive it step-by-step: /speckit.specify → … → /3pwr.advance",
+    "or drive stages individually: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance",
 )
 
 
@@ -85,91 +87,70 @@ def diversity_ok(settings: Settings, entries: list[dict], spec_id: str | None) -
     return deviations.covers_model_diversity(deviations.active_deviations(entries), spec_id)
 
 
-def check(
+def _agent_prereq(
+    settings: Settings,
+    label: str,
+    agent: str,
+    headless: set[str],
+    command_present: Callable[[str], bool],
+) -> Prereq:
+    """Whether one role's agent backend is dispatchable: configured, has a manifest, is headless, and its
+    CLI is present. Native counterpart to the coder/oracle checks in :func:`check` (EXEC-FR-015)."""
+    if not agent:
+        return Prereq(
+            label,
+            False,
+            f"set roles.{label.split()[1]}.integration to a headless agent backend "
+            f"(a manifest in .3powers/agents/): {sorted(headless)}",
+        )
+    try:
+        manifest = agents.load_agent(settings, agent)
+    except FileNotFoundError:
+        return Prereq(label, False, f"add an agent manifest at .3powers/agents/{agent}.yaml")
+    if not agents.is_headless(manifest) or agent not in headless:
+        hint = " (IDE-only)" if agent in IDE_ONLY else ""
+        return Prereq(
+            label,
+            False,
+            f"agent '{agent}'{hint} is not headless-dispatchable; use one of: {sorted(headless)}",
+        )
+    cmd = agents.agent_command(manifest)
+    if not command_present(cmd):
+        return Prereq(label, False, f"install/enable the '{cmd}' CLI for agent '{agent}'")
+    return Prereq(label, True)
+
+
+def check_native(
     settings: Settings,
     *,
-    workflow_path: Path,
-    coder_integration: str,
-    oracle_integration: str,
+    coder_agent: str,
+    oracle_agent: str,
     entries: list[dict],
     spec_id: str | None,
-    specify_present: bool | None = None,
+    command_present: Callable[[str], bool] | None = None,
 ) -> list[Prereq]:
-    """Verify every live-run prerequisite (RUNX-FR-009). Pure given its inputs — the caller supplies the
-    resolved integrations and the ledger entries; ``specify_present`` defaults to a PATH probe."""
-    if specify_present is None:
-        specify_present = shutil.which("specify") is not None
+    """Verify the prerequisites for a LIVE **native** run (EXEC-FR-015): a headless coder agent and a
+    different-family oracle agent — no Spec Kit CLI and no workflow descriptor. Pure given its inputs;
+    ``command_present`` defaults to a PATH probe."""
+    if command_present is None:
+        command_present = lambda cmd: shutil.which(cmd) is not None  # noqa: E731
     headless = headless_set(settings)
     prqs: list[Prereq] = [
-        Prereq(
-            "lifecycle workflow",
-            workflow_path.exists(),
-            f"provision it with `3pwr init --with-speckit` (expected at {workflow_path})",
-        ),
-        Prereq(
-            "Spec Kit CLI",
-            bool(specify_present),
-            "install Spec Kit's `specify` CLI (https://github.com/github/spec-kit)",
-        ),
+        _agent_prereq(settings, "headless coder agent", coder_agent, headless, command_present)
     ]
-
-    # A headless coder integration (RUNX-FR-001).
-    if not coder_integration:
-        prqs.append(
-            Prereq(
-                "headless coder integration",
-                False,
-                "set roles.coder.integration (or pass --integration) to a headless one: "
-                f"{sorted(headless)}",
-            )
+    oracle_pr = _agent_prereq(
+        settings, "different-family oracle agent", oracle_agent, headless, command_present
+    )
+    if oracle_pr.ok and not diversity_ok(settings, entries, spec_id):
+        oracle_pr = Prereq(
+            "different-family oracle agent",
+            False,
+            f"the oracle's family ({family_of(_role_id(settings, 'oracle')) or '?'}) equals the "
+            f"coder's ({settings.coder_family() or '?'}) — pick a different-family headless agent, or "
+            'record a signed deviation: 3pwr deviation --gate model_diversity --approver <you> '
+            '--note "single-model dev"',
         )
-    elif coder_integration not in headless:
-        hint = " (IDE-only)" if coder_integration in IDE_ONLY else ""
-        prqs.append(
-            Prereq(
-                "headless coder integration",
-                False,
-                f"integration '{coder_integration}'{hint} is not headless-dispatchable; "
-                f"use one of: {sorted(headless)}",
-            )
-        )
-    else:
-        prqs.append(Prereq("headless coder integration", True))
-
-    # A different-family oracle integration (RUNX-FR-005/006).
-    if not oracle_integration:
-        prqs.append(
-            Prereq(
-                "different-family oracle integration",
-                False,
-                "set roles.oracle.integration to a headless integration whose model family "
-                "differs from the coder's",
-            )
-        )
-    elif oracle_integration not in headless:
-        hint = " (IDE-only)" if oracle_integration in IDE_ONLY else ""
-        prqs.append(
-            Prereq(
-                "different-family oracle integration",
-                False,
-                f"oracle integration '{oracle_integration}'{hint} is not headless-dispatchable; "
-                f"use one of: {sorted(headless)}",
-            )
-        )
-    elif not diversity_ok(settings, entries, spec_id):
-        prqs.append(
-            Prereq(
-                "different-family oracle integration",
-                False,
-                f"the oracle's family ({family_of(_role_id(settings, 'oracle')) or '?'}) equals the "
-                f"coder's ({settings.coder_family() or '?'}) — pick a different-family headless "
-                "integration, or record a signed deviation: 3pwr deviation --gate model_diversity "
-                '--approver <you> --note "single-model dev"',
-            )
-        )
-    else:
-        prqs.append(Prereq("different-family oracle integration", True))
-
+    prqs.append(oracle_pr)
     return prqs
 
 

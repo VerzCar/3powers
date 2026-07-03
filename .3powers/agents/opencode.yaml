@@ -1,0 +1,12 @@
+# Agent backend manifest — OpenCode, headless (EXEC-FR-004).
+# MIT, provider-agnostic; `opencode run "<prompt>"` runs non-interactively. Model/provider is chosen in
+# OpenCode's own config or via `--model`; the engine passes the environment through (EXEC-FR-012).
+agent: opencode
+family: ""                  # provider-agnostic; set roles.<role>.model for the diversity precheck
+headless: true
+command: opencode
+base_args: ["run"]
+model_flag: "--model"
+prompt_flag: null           # positional prompt after `run`
+prompt_via: arg
+notes: "Reference backend. Provider-agnostic; the model family is whatever OpenCode is configured for."

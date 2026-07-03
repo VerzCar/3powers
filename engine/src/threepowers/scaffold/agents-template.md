@@ -32,9 +32,9 @@ judiciary (an oracle, a deterministic gate suite, and a human sign-off) decides 
 **`3pwr` is the primary command for delivering change here** — not ad-hoc edits.
 
 - **Author + drive work through the lifecycle.** Prefer the one command:
-  `3pwr run "<what you want built>" --mode auto` — it stops only at the two human gates (spec approval,
-  final sign-off). Or drive it by hand: `/speckit.specify → clarify → plan → tasks` → switch the model →
-  `/3pwr.oracle` → switch back → `/speckit.implement` → `/3pwr.verify` → `/3pwr.signoff` → `/3pwr.advance`.
+  `3pwr run "<what you want built>" --mode auto` — the native executive dispatches each stage to a
+  headless agent and stops only at the two human gates (spec approval, final sign-off). Or drive stages
+  by hand: `3pwr oracle` → `3pwr gate run` → `3pwr verify` → `3pwr signoff` → `3pwr advance`.
 - **Gate your change before hand-off:** `3pwr gate run --path <dir> --spec <spec> --tier <tier>` emits one
   normalized verdict; `3pwr verify` re-checks the signed ledger offline; `3pwr advance --stage ship`
   refuses without a green verdict **and** a human sign-off.
