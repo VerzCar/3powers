@@ -122,19 +122,53 @@ def seed_gitignore(settings: Settings) -> str:
     return _copy_if_missing(SCAFFOLD_DIR / "gitignore", settings.dir / ".gitignore")
 
 
-def write_onboarding(settings: Settings, *, auto_mode: bool) -> None:
-    """Record the autonomy default (advisory only — never bypasses a human gate; ONBRD-FR-005)."""
+def write_onboarding(
+    settings: Settings, *, auto_mode: bool, tier: str = "Standard", auto_commit: bool = True
+) -> None:
+    """Record the autonomy defaults (advisory; ONBRD-FR-005 / INITX-FR-001/006).
+
+    Advisory only: ``auto_mode`` selects the default ``3pwr run`` mode when ``--mode`` is omitted,
+    ``tier`` is the tier a *new* spec starts at, and ``auto_commit`` toggles per-stage auto-commit.
+    None ever weakens a gate or suppresses a mandatory human gate (ONBRD-NFR-004 / INITX-NFR-002)."""
     path = settings.onboarding_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "# 3Powers onboarding preferences.\n"
-        "# Advisory only: selects the default `3pwr run` mode when --mode is omitted; it NEVER\n"
-        "# suppresses a mandatory human gate (spec approval, sign-off) — ONBRD-NFR-004.\n"
+        "# Advisory only: `auto_mode` selects the default `3pwr run` mode when --mode is omitted,\n"
+        "# `tier` is the tier a new spec starts at, and `auto_commit` toggles per-stage auto-commit.\n"
+        "# None suppresses a mandatory human gate or weakens a threshold (ONBRD-NFR-004 / INITX-NFR-002).\n"
         "version: 1\n"
         "defaults:\n"
-        f"  auto_mode: {str(bool(auto_mode)).lower()}\n",
+        f"  auto_mode: {str(bool(auto_mode)).lower()}\n"
+        f"  tier: {tier}\n"
+        f"  auto_commit: {str(bool(auto_commit)).lower()}\n",
         encoding="utf-8",
     )
+
+
+def set_role_model(
+    settings: Settings, role: str, *, model: str, integration: str = "", label: str = ""
+) -> None:
+    """Record a judiciary role's concrete model + integration in ``roles.yaml`` (INITX-FR-002/003).
+
+    Merges into the existing roles configuration (seeding it first if absent). The file is rewritten,
+    so the template's explanatory comments are dropped once a value is customized — the fields stay
+    valid and are documented in the CLI/docs. Other roles' fields are preserved."""
+    path = settings.roles_path
+    data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+    roles = data.setdefault("roles", {})
+    block = dict(roles.get(role) or {})
+    block["model"] = model
+    fam = model.split("/", 1)[0].strip()
+    if fam:
+        block["model_family"] = fam
+    if integration:
+        block["integration"] = integration
+    if label:
+        block["label"] = label
+    roles[role] = block
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
 def is_outside_repo(path: Path, root: Path) -> bool:
@@ -217,13 +251,124 @@ def run_specify_init(root: Path, integration: Optional[str] = None) -> int:
     return subprocess.run(args, cwd=root, check=False).returncode
 
 
+def detect_ci(root: Path) -> bool:
+    """True iff a recognized CI/CD configuration is present (INITX-FR-010).
+
+    Platform-agnostic: a non-empty GitHub Actions workflows directory, or any known CI config file.
+    It asserts *presence* only — never that the pipeline is complete or correct (INITX-FR-010)."""
+    wf = root / ".github" / "workflows"
+    if wf.is_dir() and any(p.is_file() and p.suffix in (".yml", ".yaml") for p in wf.iterdir()):
+        return True
+    return any(
+        (root / m).exists()
+        for m in (
+            ".gitlab-ci.yml",
+            ".circleci/config.yml",
+            "Jenkinsfile",
+            "azure-pipelines.yml",
+            "azure-pipelines.yaml",
+            ".drone.yml",
+            "bitbucket-pipelines.yml",
+            ".travis.yml",
+        )
+    )
+
+
+# Placeholder tokens that only the 3Powers AGENTS.md starter carries (agents-template.md).
+_AGENTS_STARTER_TOKENS = (
+    "[Brief description",
+    "[package manager]",
+    "[command]",
+    "[test command]",
+    "[lint command]",
+    "[bracketed]",
+)
+
+
+def agents_md_is_starter(root: Path) -> bool:
+    """True iff AGENTS.md exists and is still the unfilled 3Powers starter (INITX-FR-011).
+
+    The starter carries bracketed placeholders; any remaining one means it is an unfinished TODO. A
+    filled-in or user-authored file has none of them."""
+    path = root / "AGENTS.md"
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    return any(tok in text for tok in _AGENTS_STARTER_TOKENS)
+
+
+_SPECKIT_DIR = SCAFFOLD_DIR / "speckit"
+_SPECKIT_RANGE = ">=0.11,<0.12"  # kept in sync with .3powers/config/dependencies.yaml (3PWR-FR-048)
+
+
+def _render_template(text: str, ctx: dict[str, str]) -> str:
+    """Substitute ``{{key}}`` tokens from ``ctx`` — deterministic (INITX-NFR-005)."""
+    for key, val in ctx.items():
+        text = text.replace("{{" + key + "}}", val)
+    return text
+
+
+def has_unresolved_placeholders(text: str) -> bool:
+    """True iff a ``{{…}}`` template token remains unresolved (INITX-FR-008)."""
+    return "{{" in text
+
+
+def speckit_extension_dir(root: Path) -> Path:
+    return root / ".specify" / "extensions" / "3powers"
+
+
+def install_speckit_extension(
+    settings: Settings, root: Path, *, force: bool = False
+) -> dict[str, object]:
+    """Render + install the 3Powers Spec Kit extension and pin the judiciary agents (INITX-FR-005/008).
+
+    Renders the bundled extension templates from the active configuration — the judiciary command's
+    model pin comes from ``roles.yaml``, so no hardcoded model literal survives (INITX-FR-008) — then
+    pins the judiciary agent files. Requires a Spec Kit workspace: returns ``{'status': 'no-speckit'}``
+    when absent (reported, never fabricated). Non-destructive: an existing file is kept unless ``force``.
+    Deterministic: the same configuration yields byte-identical output (INITX-NFR-005)."""
+    from . import agentpins  # local import keeps scaffold import-order independent
+
+    if not has_speckit(root):
+        return {"status": "no-speckit"}
+
+    oracle_pin = settings.role_model_pin("oracle")
+    judiciary_model = agentpins.model_field(oracle_pin) if oracle_pin else ""
+    ctx = {"judiciary_model": judiciary_model, "spec_kit_range": _SPECKIT_RANGE}
+
+    dest = speckit_extension_dir(root)
+    files: dict[str, str] = {}
+    for src in sorted(_SPECKIT_DIR.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(_SPECKIT_DIR)
+        rendered = _render_template(src.read_text(encoding="utf-8"), ctx)
+        if has_unresolved_placeholders(rendered):
+            raise ValueError(f"unresolved template placeholder in bundled {rel}")
+        out = dest / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists() and not force:
+            files[str(rel)] = "kept"
+            continue
+        out.write_text(rendered, encoding="utf-8")
+        files[str(rel)] = "created"
+
+    pins = agentpins.render_all(settings, root, force=force)
+    return {"status": "installed", "files": files, "pins": pins}
+
+
 def readiness(root: Path) -> dict[str, object]:
-    """A checklist of what a project needs to run the full agentic workflow (ONBRD-FR-015/016)."""
+    """A checklist of what a project needs to run the full agentic workflow (ONBRD-FR-015/016).
+
+    Extended for INITX-FR-009/010/011 with CI/CD presence and whether AGENTS.md is still an unfilled
+    starter (a TODO). Model-diversity readiness is computed by the caller (it needs config)."""
     return {
         "agents_md": (root / "AGENTS.md").exists(),
+        "agents_md_todo": agents_md_is_starter(root),
         "speckit_dir": has_speckit(root),
         "specify_cli": specify_installed(),
         "constitution": is_threepowers_constitution(root),
+        "ci": detect_ci(root),
     }
 
 
