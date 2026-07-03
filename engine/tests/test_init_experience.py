@@ -1,8 +1,13 @@
-"""Init experience — config-driven setup, model-pinned judiciary agents, workflow extensions, a
-first-run readiness gate, colorized output, and config-drift detection (INITX-FR-001…016, NFR-001…006).
+"""Init experience — config-driven setup, a first-run readiness gate, colorized output, and
+per-stage auto-commit (INITX-FR-001…014, NFR-001…004).
 
 These drive the engine headlessly (pytest has no TTY, so ``3pwr init`` is non-interactive and applies
-defaults) and assert the resulting configuration, agent, and output state.
+defaults) and assert the resulting configuration and output state.
+
+Note: the judiciary agent-file model pins (INITX-FR-004) and config-drift detection (INITX-FR-015/016)
+were retired by DOCX (spec 012) — see ``plan/022-docs-and-decruft.md``. They existed only to keep the
+Spec-Kit-dispatched ``.github/agents/3pwr.*.agent.md`` pins fresh; nothing in the native executive reads
+that frontmatter (it reads ``.3powers/agents/*.yaml`` + ``roles.yaml``), so both are moot.
 """
 
 from __future__ import annotations
@@ -10,11 +15,10 @@ from __future__ import annotations
 import io
 import json
 import subprocess
-from argparse import Namespace
 from pathlib import Path
 
-from threepowers import agentpins, configdrift, scaffold, style
-from threepowers.cli import _maybe_warn_config_drift, main
+from threepowers import scaffold, style
+from threepowers.cli import main
 from threepowers.config import Settings
 
 
@@ -23,22 +27,6 @@ def _init(root, *extra, key=None):
     if key is not None:
         argv += ["--key-path", str(key)]
     return main(argv + list(extra))
-
-
-def _agent_file(agents_dir: Path, name: str) -> Path:
-    agents_dir.mkdir(parents=True, exist_ok=True)
-    path = agents_dir / name
-    path.write_text(
-        "---\n"
-        'description: "judiciary agent"\n'
-        "handoffs:\n"
-        "  - label: Next\n"
-        "    agent: other\n"
-        "---\n\n"
-        "## body\n",
-        encoding="utf-8",
-    )
-    return path
 
 
 # --------------------------------------------------------------------------- INITX-FR-013/014, NFR-004 (color)
@@ -162,64 +150,6 @@ def test_oracle_sharing_coder_family_warns_but_proceeds(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "shares the coder's family" in err
     assert "deviation" in err  # names the recorded-deviation path
-
-
-# --------------------------------------------------------------------------- INITX-FR-004, NFR-005/006 (agent pins)
-def test_render_pins_judiciary_agents_only(tmp_path):
-    """INITX-FR-004: the oracle + review agents get an explicit model selector; others are untouched."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    agents = agentpins.agents_dir(root)
-    _agent_file(agents, "3pwr.oracle.agent.md")
-    _agent_file(agents, "3pwr.review.agent.md")
-    other = _agent_file(agents, "speckit.implement.agent.md")
-    before_other = other.read_text(encoding="utf-8")
-
-    statuses = agentpins.render_all(Settings(root=root), root)
-    assert statuses == {"oracle": "created", "reviewer": "created"}
-    oracle_text = (agents / "3pwr.oracle.agent.md").read_text(encoding="utf-8")
-    assert "model: Claude Opus 4.8 (claude)" in oracle_text
-    assert "3pwr:managed-model" in oracle_text
-    # the pin sits inside the frontmatter (before the closing fence)
-    assert oracle_text.index("model:") < oracle_text.index("\n---")
-    assert other.read_text(encoding="utf-8") == before_other  # non-judiciary agent unchanged
-
-
-def test_render_pins_idempotent_and_deterministic(tmp_path):
-    """INITX-NFR-005: re-rendering from unchanged config is byte-identical (kept, no rewrite)."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    agents = agentpins.agents_dir(root)
-    path = _agent_file(agents, "3pwr.oracle.agent.md")
-    _agent_file(agents, "3pwr.review.agent.md")
-
-    s = Settings(root=root)
-    agentpins.render_all(s, root)
-    first = path.read_text(encoding="utf-8")
-    second_status = agentpins.render_all(s, root)
-    assert second_status["oracle"] == "kept"
-    assert path.read_text(encoding="utf-8") == first  # unchanged
-
-
-def test_render_does_not_clobber_hand_edited_pin(tmp_path):
-    """INITX-NFR-006: a hand-edited model line is never overwritten without --force."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    agents = agentpins.agents_dir(root)
-    path = agents / "3pwr.oracle.agent.md"
-    agents.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        '---\ndescription: "x"\nmodel: MyHandPick (copilot)\n---\nbody\n', encoding="utf-8"
-    )
-    s = Settings(root=root)
-    assert agentpins.render_all(s, root)["oracle"] == "skipped"
-    assert "MyHandPick (copilot)" in path.read_text(encoding="utf-8")
-    # with force it is updated
-    assert agentpins.render_all(s, root, force=True)["oracle"] == "updated"
-    assert "Claude Opus 4.8 (claude)" in path.read_text(encoding="utf-8")
 
 
 # NOTE: the Spec Kit extension/workflow install tests were removed with the substrate (SLIM, spec 010).
@@ -365,74 +295,6 @@ def test_next_steps_are_explained_not_bare(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "author your first spec" in out and "3pwr run" in out
     assert "one command drives" in out
-
-
-# --------------------------------------------------------------------------- INITX-FR-015/016 (config drift)
-def test_config_drift_detected_after_edit(tmp_path):
-    """INITX-FR-015: editing a tracked config file is detected against the recorded fingerprint."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    s = Settings(root=root)
-    assert configdrift.detect(s) == []  # freshly recorded — no drift
-    s.roles_path.write_text(
-        s.roles_path.read_text(encoding="utf-8") + "\n# tweak\n", encoding="utf-8"
-    )
-    assert configdrift.detect(s) == ["roles.yaml"]
-
-
-def test_drift_warns_to_stderr_and_touches_no_agent(tmp_path, capsys):
-    """INITX-FR-016: drift warns (stderr) + points to `config apply`; it never regenerates an agent."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    agents = agentpins.agents_dir(root)
-    oracle = _agent_file(agents, "3pwr.oracle.agent.md")
-    before = oracle.read_text(encoding="utf-8")
-    # edit a tracked config file
-    s = Settings(root=root)
-    s.roles_path.write_text(s.roles_path.read_text(encoding="utf-8") + "\n# tweak\n", "utf-8")
-
-    args = Namespace(root=str(root), json=False)
-    _maybe_warn_config_drift(args)
-    err = capsys.readouterr().err
-    assert "config changed" in err
-    assert "roles.yaml" in err
-    assert "3pwr config apply" in err
-    assert oracle.read_text(encoding="utf-8") == before  # agent file untouched
-
-
-def test_no_drift_warning_when_unchanged(tmp_path, capsys):
-    """INITX-FR-015: an unchanged config produces no drift signal."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    _maybe_warn_config_drift(Namespace(root=str(root), json=False))
-    assert "config changed" not in capsys.readouterr().err
-
-
-def test_config_apply_re_renders_pins_and_clears_drift(tmp_path, capsys):
-    """INITX-FR-016: `config apply` re-renders the pins and clears the stale-config warning."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    agents = agentpins.agents_dir(root)
-    _agent_file(agents, "3pwr.oracle.agent.md")
-    _agent_file(agents, "3pwr.review.agent.md")
-    s = Settings(root=root)
-    s.roles_path.write_text(s.roles_path.read_text(encoding="utf-8") + "\n# tweak\n", "utf-8")
-    assert configdrift.detect(s) == ["roles.yaml"]
-
-    capsys.readouterr()  # flush the init output
-    rc = main(["--root", str(root), "config", "apply", "--json"])
-    assert rc == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["pins"]["oracle"] == "created"
-    # fingerprint re-recorded → the drift is cleared
-    assert configdrift.detect(s) == []
-    assert "model: Claude Opus 4.8 (claude)" in (agents / "3pwr.oracle.agent.md").read_text(
-        "utf-8"
-    )
 
 
 # --------------------------------------------------------------------------- INITX-FR-001, NFR-001/002/003

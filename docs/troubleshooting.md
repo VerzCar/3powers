@@ -22,24 +22,6 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 If the key exists but `3pwr verify` reports `key_custody`, the key is inside the working tree or its
 permissions are too open — move it outside the repo and run `chmod 600 <keyfile>`.
 
-## Spec Kit version mismatch
-
-**Symptom** — `3pwr deps-check` reports the installed `specify` version is outside the supported range,
-or a `3pwr run` / `specify workflow run` step fails with an unexpected-schema or unknown-flag error.
-
-**Cause** — the installed GitHub Spec Kit CLI has drifted from the range pinned in
-[`.3powers/config/dependencies.yaml`](../.3powers/config/dependencies.yaml). Spec Kit is upstream
-[`github/spec-kit`](https://github.com/github/spec-kit) installed from a git tag — not a fork.
-
-**Fix** — check the drift, then reinstall the pinned tag:
-
-```bash
-3pwr deps-check
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<pinned-tag>
-```
-
-See [Spec Kit reference — install & init](references/speckit.md#install--init) for the current pin.
-
 ## A gate shows as skipped (quarantined scanner)
 
 **Symptom** — the verdict lists a gate like `secret_scan`, `dependency_scan`, or `sast` with a **skip**
@@ -59,21 +41,22 @@ brew install semgrep           # sast
 
 On Linux, use your package manager or the scanners' release pages; the gate names the exact tool it wants.
 
-## `3pwr run` fails: `specify` not installed
+## Coding-agent CLI not found
 
-**Symptom** — `3pwr run "<intent>"` aborts immediately with `FileNotFoundError`/`specify: command not
-found`, while `3pwr gate run` and `3pwr verify` work fine.
+**Symptom** — `3pwr run "<intent>"` aborts immediately with a `command not found` / `FileNotFoundError`
+naming your agent (e.g. `claude` or `copilot`), while `3pwr gate run` and `3pwr verify` work fine.
 
-**Cause** — the autonomous lifecycle composes GitHub Spec Kit's `workflow run`, so it needs the
-`specify` CLI (plus a coding-agent integration) on your machine. The deterministic gates, ledger, and
-enforcement don't — only `3pwr run` does.
+**Cause** — the autonomous lifecycle dispatches each stage to a **headless coding-agent CLI** through the
+native executive, so that CLI must be installed and on your PATH. The role → agent mapping lives in
+[`.3powers/config/roles.yaml`](../.3powers/config/roles.yaml). The deterministic gates, ledger, and
+enforcement need no agent — only `3pwr run` does.
 
-**Fix** — install Spec Kit at the pinned tag and add an integration, or stay on the gates-only path:
+**Fix** — install the agent CLI your roles point at (or switch the role to one you have), then re-run;
+`3pwr deps-check` reports installed tool versions and `--dry-run` sanity-checks the loop offline:
 
 ```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<pinned-tag>
-specify init . --integration copilot --here     # or: claude, gemini, codex, …
-3pwr run "<intent>" --mode auto --dry-run       # sanity-check the loop offline first
+3pwr deps-check                                  # installed tools vs the supported ranges
+3pwr run "<intent>" --mode auto --dry-run        # sanity-check the loop offline first
 ```
 
 ## The `spec_integrity` gate fails with `spec_modified`

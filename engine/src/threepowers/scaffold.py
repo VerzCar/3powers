@@ -212,7 +212,8 @@ def seed_agents_md(root: Path) -> str:
 
 
 def constitution_path(root: Path) -> Path:
-    return root / ".specify" / "memory" / "constitution.md"
+    # 3Powers-owned path (DOCX-FR-004; relocated out of the former Spec-Kit tree).
+    return root / ".3powers" / "memory" / "constitution.md"
 
 
 def is_threepowers_constitution(root: Path) -> bool:
@@ -225,10 +226,10 @@ def is_threepowers_constitution(root: Path) -> bool:
 
 
 def constitution_is_placeholder(root: Path) -> bool:
-    """True iff the constitution is Spec Kit's unfilled template (contains ``[PROJECT_NAME]`` etc.).
+    """True iff the constitution is an unfilled template (contains ``[PROJECT_NAME]`` etc.).
 
-    `specify init` writes a placeholder constitution; that is not a *real* constitution, so the explicit
-    ``--with-speckit`` overlay may replace it (ONBRD-FR-015) — a user-authored one is left alone."""
+    A scaffolded-but-unedited constitution is not a *real* one, so a ``force`` overlay may replace it
+    (ONBRD-FR-015) — a user-authored one is left alone."""
     path = constitution_path(root)
     if not path.exists():
         return False
@@ -237,12 +238,12 @@ def constitution_is_placeholder(root: Path) -> bool:
 
 
 def seed_constitution(root: Path, *, force: bool = False) -> str:
-    """Lay the 3Powers constitution overlay at ``.specify/memory/constitution.md`` (ONBRD-FR-015).
+    """Lay the 3Powers constitution at ``.3powers/memory/constitution.md`` (ONBRD-FR-015, DOCX-FR-005).
 
     Offline and local. By default it writes only when the constitution is absent, never overwriting an
-    existing one. With ``force=True`` (the explicit ``--with-speckit`` path) it also replaces Spec Kit's
-    unfilled *placeholder* constitution — but still never a user-authored one. Returns ``'created'``,
-    ``'overlaid'`` (a placeholder was replaced), or ``'kept'``."""
+    existing one. With ``force=True`` it also replaces an unfilled *placeholder* constitution — but still
+    never a user-authored one. Returns ``'created'``, ``'overlaid'`` (a placeholder was replaced), or
+    ``'kept'``."""
     path = constitution_path(root)
     if not path.exists():
         return _copy_if_missing(SCAFFOLD_DIR / "constitution.md", path)

@@ -7,7 +7,7 @@ makes decisions, how, and how that can change over time.
 
 Governance in 3Powers mirrors what the tool enforces. Technical decisions trace back to the specification
 ([`3Powers_Spec_v0.2.md`](specs/3Powers_Spec_v0.2.md)) and the
-[constitution](.specify/memory/constitution.md). A change that alters intended behavior belongs in the
+[constitution](.3powers/memory/constitution.md). A change that alters intended behavior belongs in the
 spec first — not as a quiet code fix. Disagreements are resolved by appeal to the spec; if the spec is
 silent or wrong, the fix is to change the spec, with sign-off.
 

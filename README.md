@@ -8,14 +8,14 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](engine/pyproject.toml)
-[![Built on Spec Kit](https://img.shields.io/badge/built%20on-GitHub%20Spec%20Kit-black.svg)](docs/references/speckit.md)
+[![Deterministic judiciary](https://img.shields.io/badge/judiciary-deterministic%20%26%20offline-black.svg)](docs/STATUS.md)
 [![Self-applied](https://img.shields.io/badge/self--applied-gates%20its%20own%20code-brightgreen.svg)](docs/STATUS.md)
 
 <p align="center">
   <img src="docs/assets/3powers-hero.png" alt="The spec is the law. Agents execute. An independent judiciary decides." width="100%" />
 </p>
 
-**3Powers is a framework for building software with high autonomy in agentic mode, built for teams that need to trust agent output at enterprise scale.** Agents do the building. An *independent* judiciary, made of an [oracle](docs/glossary.md#oracle) that never saw the code, a deterministic gate suite, and a signed, tamper-evident ledger, proves that what shipped matches the spec you approved. You appear at exactly two moments: **approving the spec, and the final sign-off.** Everything in between runs without prompting you, driven by GitHub Spec Kit and your coding-agent integration and judged locally by `3pwr`, with no CI/CD platform required and no lock-in to any model family, language, or LLM provider. Every [verdict](docs/glossary.md#verdict) and sign-off is hash-chained and Ed25519-signed in a ledger you can verify offline. "The agents said it passed" becomes "here is the signed, independent proof."
+**3Powers is a framework for building software with high autonomy in agentic mode, built for teams that need to trust agent output at enterprise scale.** Agents do the building. An *independent* judiciary, made of an [oracle](docs/glossary.md#oracle) that never saw the code, a deterministic gate suite, and a signed, tamper-evident ledger, proves that what shipped matches the spec you approved. You appear at exactly two moments: **approving the spec, and the final sign-off.** Everything in between runs without prompting you, driven by 3Powers' own native executive and your coding-agent integration and judged locally by `3pwr`, with no CI/CD platform required and no lock-in to any model family, language, or LLM provider. Every [verdict](docs/glossary.md#verdict) and sign-off is hash-chained and Ed25519-signed in a ledger you can verify offline. "The agents said it passed" becomes "here is the signed, independent proof."
 
 3Powers is the working implementation of the [*AI-First SDD Playbook*](https://verzcar.github.io/3powers/the_AI-First_SDD_Playbook_v1_0.html): the playbook defines the laws, 3Powers enforces them mechanically.
 
@@ -54,20 +54,20 @@ flowchart LR
     SH -.-> L
 ```
 
-<sub>Gold = legislative · slate = executive · oxblood = judicial · parchment = the two human gates · charcoal = the [trust spine](docs/glossary.md#trust-spine). In `auto` mode everything between the two parchment gates runs without prompting you, driven by GitHub Spec Kit plus a coding-agent integration and judged by the deterministic gates. All terms of art: [glossary](docs/glossary.md).</sub>
+<sub>Gold = legislative · slate = executive · oxblood = judicial · parchment = the two human gates · charcoal = the [trust spine](docs/glossary.md#trust-spine). In `auto` mode everything between the two parchment gates runs without prompting you, driven by the native executive plus a coding-agent integration and judged by the deterministic gates. All terms of art: [glossary](docs/glossary.md).</sub>
 
 ## What you get
 
-- **An independent oracle.** Acceptance tests authored *from the spec alone*, by a different model family than the coder. At the strictest tier the **oracle authoring** runs headlessly in a sanitized workspace where the implementation is physically absent; the coder side runs interactively today (see [STATUS](docs/STATUS.md)). The coder never grades its own exam.
+- **An independent oracle.** Acceptance tests authored *from the spec alone*, by a different model family than the coder. At the strictest tier the **oracle authoring** runs headlessly in a sanitized workspace where the implementation is physically absent — the coder never grades its own exam. The native executive dispatches the coder leg headlessly too; the fuller proof (the coder under a second, different-family CLI) is a documented [residual](docs/glossary.md#residual) — see [STATUS](docs/STATUS.md).
 - **A deterministic verdict.** One cheapest-first gate suite, `format → lint → types → spec_integrity → tests + diff_coverage → mutation → sast → dependency_scan → secret_scan → gate_gaming → spec_conformance`, plus [work-kind](docs/glossary.md#work-kind)-shaped gates (the canonical list lives in [Engine Architecture](docs/engine-architecture.md)). Same result regardless of which model wrote the code, every failure named and locatable.
 - **A local [trust spine](docs/glossary.md#trust-spine).** Every verdict and sign-off is hash-chained and Ed25519-signed in an append-only ledger you can verify **offline**; a local `advance` gate refuses to ship without green gates *and* a human sign-off. Tamper-evident, reconstructable from the repo alone.
 - **Risk-tiered rigor.** `Cosmetic` / `Standard` / `High-risk` set every threshold from one knob, and **you never satisfy a gate by weakening it**: gaming attempts are flagged for human review.
-- **Polyglot and provider-agnostic.** Languages plug in through a declarative adapter (TypeScript, Python, Go) with zero core changes; swap model vendors freely. Layers on **GitHub Spec Kit**; **Git** is the substrate.
+- **Polyglot and provider-agnostic.** Languages plug in through a declarative adapter (TypeScript, Python, Go) with zero core changes; swap model vendors freely. The executive is **native and provider-agnostic**; **Git** is the substrate.
 - **Proven on itself.** The `3pwr` engine gates its own code, with its trust-spine modules at the **High-risk** tier, mutation testing included.
 
 ## Quickstart: the autonomous path
 
-Install the engine, make your project 3Powers-ready with the guided setup, then let one command drive the whole lifecycle. The autonomous path composes **GitHub Spec Kit** (upstream [`github/spec-kit`](https://github.com/github/spec-kit), installed from a pinned tag, see the [Spec Kit reference](docs/references/speckit.md#install--init)) with a coding-agent integration such as GitHub Copilot. The deterministic gates, ledger, and enforcement are pure `3pwr` and need neither: the [gates-only path](docs/getting-started.md#prerequisites) works fully offline.
+Install the engine, make your project 3Powers-ready with the guided setup, then let one command drive the whole lifecycle. The autonomous path drives a headless **coding-agent integration** (such as Claude Code or the GitHub Copilot CLI) through 3Powers' own native executive — no external orchestration substrate. The deterministic gates, ledger, and enforcement are pure `3pwr` and need no agent at all: the [gates-only path](docs/getting-started.md#prerequisites) works fully offline.
 
 ```bash
 # 1. Install the engine from a clone (provides the `3pwr` command).
@@ -87,7 +87,7 @@ cd /path/to/your/project && 3pwr init
 
 ## Manual mode: drive every stage yourself
 
-Every stage is also a command. Open the repo in VS Code with GitHub Copilot and drive it with slash commands: `/speckit.specify → clarify → plan → tasks` → **switch the chat model** → `/3pwr.oracle` (the independent answer key) → **switch back** → `/speckit.implement` → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`. On an *existing* codebase, start with `/3pwr.characterize`.
+Every stage is also a command you can run by hand. Author and plan the work with the `3pwr` CLI, then — switching the chat model for the judiciary — drive the independent answer key and gates with the `/3pwr.*` prompts: `/3pwr.oracle` (the independent answer key) → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`. On an *existing* codebase, start with `/3pwr.characterize`.
 
 You can also drive the gates directly. Here it runs on the bundled TypeScript sample, after `3pwr init` has created your signer:
 
@@ -130,7 +130,7 @@ The full per-language tooling matrix (format / lint / types / test / mutation / 
 
 - **Teams who have handed execution to agents and now need to trust the output**, without reading every transcript or hoping the tests mean something.
 - **Regulated or high-assurance work** that needs an auditable, signed trail from spec to verdict to sign-off to build provenance.
-- **Anyone adopting GitHub Spec Kit** who wants the missing judiciary layer: independent validation and local, enforceable trust.
+- **Anyone using an agent scaffold** (GitHub Spec Kit or otherwise) who wants the missing judiciary layer: independent validation and local, enforceable trust.
 
 ## Documentation
 

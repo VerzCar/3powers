@@ -1,7 +1,7 @@
 # Concepts — how 3Powers thinks
 
 > Plain-English tour of the ideas. The **normative** version lives in the
-> [constitution](../.specify/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
+> [constitution](../.3powers/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`); this page explains *why* they say what they say. New to the project? Read this,
 > then [Getting Started](getting-started.md). Terms of art are defined in the [glossary](glossary.md).
 
@@ -154,16 +154,16 @@ Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe
 ```
 
 The state isn't stored in some external tracker — it's **derived from the ledger** (`3pwr status`), so it
-reconstructs offline and survives a fresh checkout. In practice the stages run through GitHub Copilot
-slash commands: Spec Kit drives the legislative/executive stages (`/speckit.*`) and 3Powers adds the
-judiciary (`/3pwr.*`). See [Getting Started](getting-started.md#driving-the-full-lifecycle).
+reconstructs offline and survives a fresh checkout. In practice `3pwr run` drives the whole lifecycle via
+the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
+command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
 
 ## Agnostic by construction
 
 No required dependency on any single LLM provider, model vendor, language toolchain, or CI/CD platform.
 Roles bind to model *families* in config so you can swap models without touching the
-workflow; languages plug in via the adapter contract with **zero core changes**. It
-layers on **GitHub Spec Kit** and uses **Git** as its substrate.
+workflow; languages plug in via the adapter contract with **zero core changes**. The executive is
+**native and provider-agnostic**, and **Git** is its substrate.
 
 ## Self-application
 

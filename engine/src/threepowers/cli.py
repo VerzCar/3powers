@@ -45,13 +45,11 @@ import yaml
 
 from . import (
     __version__,
-    agentpins,
     agents,
     anchor,
     artifacts,
     canonical,
     config,
-    configdrift,
     covdiff,
     deps,
     deviations,
@@ -381,28 +379,6 @@ def _checklist_lines(st: style.Styler, items: list[tuple[str, str, str]]) -> lis
     return [f"  {st.mark(status)} {st.bold(label)}: {detail}" for label, status, detail in items]
 
 
-def cmd_config_apply(args: argparse.Namespace) -> int:
-    """Re-apply the configuration: re-render the judiciary agent pins + re-record the fingerprint.
-
-    This is the explicit command the drift warning points to (INITX-FR-016): it is the *only* thing that
-    regenerates agent files, and it clears the stale-config warning by re-recording the fingerprint."""
-    s = _settings(args.root)
-    as_json = getattr(args, "json", False)
-    st = style.styler(sys.stdout, as_json=as_json)
-    pins = agentpins.render_all(s, s.root, force=getattr(args, "force", False))
-    configdrift.record(s)
-    obj = {"pins": pins, "fingerprint": "recorded"}
-    if as_json:
-        print(json.dumps(obj, indent=2))
-        return EXIT_OK
-    print(st.head("config applied — judiciary agent pins re-rendered:"))
-    for role, status in sorted(pins.items()):
-        good = status in ("created", "updated", "kept")
-        print(f"  {st.mark('pass' if good else 'warn')} {st.bold(role)}: {status}")
-    print(st.dim("  config fingerprint re-recorded — the stale-config warning is cleared"))
-    return EXIT_OK
-
-
 def cmd_commit_stage(args: argparse.Namespace) -> int:
     """Auto-commit after a successful lifecycle stage (INITX-FR-006).
 
@@ -631,9 +607,6 @@ def cmd_init(args: argparse.Namespace) -> int:
     model_div_ok = oracle_pin is not None and (
         not coder_fam or oracle.family_of(oracle_pin["model"]) != coder_fam
     )
-
-    # 11) Record the config fingerprint so a later edit is flagged as drift (INITX-FR-015).
-    configdrift.record(s)
 
     mode = "auto" if auto_mode else "commit"
     checklist = _readiness_checklist(ready, model_div_ok=model_div_ok)
@@ -2119,9 +2092,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human
     gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the
     **native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the
-    gate suite in-process at Verify (EXEC-FR-006); ``--runner specify`` selects the legacy Spec Kit
-    dispatch. The engine makes no model call itself (EXEC-NFR-001) and never enters the deterministic
-    verdict (3PWR-NFR-001)."""
+    gate suite in-process at Verify (EXEC-FR-006); ``--runner sim`` uses the offline simulator (also
+    forced by ``--dry-run``). The engine makes no model call itself (EXEC-NFR-001) and never enters the
+    deterministic verdict (3PWR-NFR-001)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
@@ -2768,22 +2741,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="oracle_label",
         help="friendly label written into the agent frontmatter (default: the model id)",
     )
-    ip.set_defaults(func=cmd_init, _skip_drift=True)
-
-    cfp = sub.add_parser("config", help="3Powers configuration operations")
-    csub = cfp.add_subparsers(dest="config_cmd", required=True)
-    cap = common(
-        csub.add_parser(
-            "apply",
-            help="re-render the judiciary agent model pins from config and clear the drift warning",
-        )
-    )
-    cap.add_argument(
-        "--force",
-        action="store_true",
-        help="overwrite a hand-edited model pin (default: keep it — INITX-NFR-006)",
-    )
-    cap.set_defaults(func=cmd_config_apply, _skip_drift=True)
+    ip.set_defaults(func=cmd_init)
 
     csp = common(
         sub.add_parser(
@@ -3179,30 +3137,9 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _maybe_warn_config_drift(args: argparse.Namespace) -> None:
-    """Warn (to stderr) when tracked config changed since the last apply (INITX-FR-015/016).
-
-    Routing the warning to stderr keeps stdout / ``--json`` / verdict bytes byte-identical
-    (INITX-FR-014). Best-effort: skipped for ``init`` / ``config apply`` (they record the fingerprint)
-    and whenever no trust spine is resolvable. It never acts on the change and never raises."""
-    if getattr(args, "_skip_drift", False):
-        return
-    try:
-        s = _settings(getattr(args, "root", None))
-        changed = configdrift.detect(s)
-    except (FileNotFoundError, LookupError, KeyError, ValueError, OSError):
-        return
-    if not changed:
-        return
-    st = style.styler(sys.stderr, as_json=getattr(args, "json", False))
-    for line in configdrift.warn_lines(changed):
-        print(st.warn(line) if line.lstrip().startswith("⚠") else st.dim(line), file=sys.stderr)
-
-
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    _maybe_warn_config_drift(args)
     try:
         return int(args.func(args))
     except (FileNotFoundError, LookupError, KeyError, ValueError) as exc:

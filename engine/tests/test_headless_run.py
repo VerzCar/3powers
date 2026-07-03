@@ -82,7 +82,12 @@ def test_preflight_flags_non_headless_coder_agent(tmp_path):
         {"windsurf": {"command": "windsurf", "headless": False}, "claude": {"command": "claude"}},
     )
     prqs = runpreflight.check_native(
-        s, coder_agent="windsurf", oracle_agent="claude", entries=[], spec_id="X", command_present=_PRESENT
+        s,
+        coder_agent="windsurf",
+        oracle_agent="claude",
+        entries=[],
+        spec_id="X",
+        command_present=_PRESENT,
     )
     coder = next(p for p in prqs if p.name == "headless coder agent")
     assert not coder.ok and "not headless-dispatchable" in coder.fix
@@ -98,10 +103,18 @@ def test_preflight_passes_when_all_satisfied(tmp_path):
     s = _native_settings(
         tmp_path,
         roles,
-        {"claude": {"command": "claude", "headless": True}, "codex": {"command": "codex", "headless": True}},
+        {
+            "claude": {"command": "claude", "headless": True},
+            "codex": {"command": "codex", "headless": True},
+        },
     )
     prqs = runpreflight.check_native(
-        s, coder_agent="codex", oracle_agent="claude", entries=[], spec_id="X", command_present=_PRESENT
+        s,
+        coder_agent="codex",
+        oracle_agent="claude",
+        entries=[],
+        spec_id="X",
+        command_present=_PRESENT,
     )
     assert runpreflight.unmet(prqs) == []
 
@@ -116,7 +129,12 @@ def test_headless_set_is_configuration_driven(tmp_path):
     assert runpreflight.headless_set(s) == {"only-this"}
     # a normally-headless agent is now rejected because it is not in the configured set
     prqs = runpreflight.check_native(
-        s, coder_agent="claude", oracle_agent="only-this", entries=[], spec_id="X", command_present=_PRESENT
+        s,
+        coder_agent="claude",
+        oracle_agent="only-this",
+        entries=[],
+        spec_id="X",
+        command_present=_PRESENT,
     )
     coder = next(p for p in prqs if p.name == "headless coder agent")
     assert not coder.ok

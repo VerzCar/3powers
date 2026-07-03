@@ -56,26 +56,23 @@ export THREEPOWERS_SIGNER_CMD="$HOME/bin/hsm-sign"   # e.g. a YubiKey/ssh-agent/
 Makes a project 3Powers-ready in one step: creates the `.3powers/` layout, an independent signer
 (**outside the repo**), the baseline config, and the adapter for your chosen language; writes a starter
 **AGENTS.md** if none exists (naming `3pwr` as the main command); and prints a **readiness checklist**
-(Spec Kit workspace, constitution, `specify` CLI) plus greenfield-vs-brownfield next steps. Interactive by
-default; falls back to defaults with no TTY. Runs offline by default.
+(the 3Powers constitution and the agent backends each role dispatches to) plus greenfield-vs-brownfield
+next steps. Interactive by default; falls back to defaults with no TTY. Runs offline by default.
 - `--yes` — non-interactive: prompt for nothing and apply the documented defaults (CI-friendly).
 - `--language LANG` — the language adapter to set up (default: auto-detected, else the first supported).
 - `--key-path PATH` — signing-key location; **must be outside the repo** (default: `~/.config/3powers/<repo>.key`, with `~/.ssh/` offered interactively).
 - `--auto-mode` / `--no-auto-mode` — record whether `3pwr run` defaults to autonomous mode (advisory; never bypasses a human gate).
 - `--force` — overwrite an existing signing key (default: keep it).
-- `--with-speckit` — also run Spec Kit's `specify init` and lay the 3Powers constitution overlay (for the autonomous `3pwr run` lifecycle; needs the `specify` CLI). Off by default, keeping `init` offline.
-- `--integration NAME` — coding-agent integration passed to `specify init` under `--with-speckit` (e.g. `copilot`, `claude`).
 - `--skeleton-only` — only create the directory layout (the pre-wizard behaviour).
 - `--json` — machine-readable summary of what was created vs kept (incl. the readiness checklist).
 ```bash
 3pwr init                       # guided, offline
 3pwr init --yes --language typescript      # non-interactive, e.g. in CI
-3pwr init --with-speckit --integration copilot   # also scaffold Spec Kit + the constitution
 ```
 `init` is idempotent — re-running preserves your ledger, keys, hand-edited config, an existing AGENTS.md,
-and an existing constitution. For the autonomous lifecycle you also need the constitution and the Spec Kit
-workspace; `init` reports what's missing and (with `--with-speckit`) can scaffold it. Full judiciary
-slash-commands (`/3pwr.*`) install via the 3Powers Spec Kit extension.
+and an existing constitution. For the autonomous lifecycle you also need the constitution
+(`.3powers/memory/constitution.md`) and an agent backend on PATH for each role; `init` reports what's
+missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
 ---
 
@@ -200,7 +197,7 @@ oracle was authored via a read-path-isolated headless dispatch. Exit `1` if the 
 ```
 
 ### `oracle dispatch` — author the oracle headlessly, read-path isolated
-Authors the oracle **headlessly** (via `specify workflow run`) under a non-coder integration inside a
+Authors the oracle **headlessly** via the native executive runner, under a non-coder integration inside a
 **sanitized git worktree** where the implementation, plan, tasks, and contracts are physically absent —
 attested by a worktree manifest hash recorded in the ledger. This is the physical read-path isolation
 behind oracle sealing; it never enters the deterministic verdict.
@@ -222,7 +219,7 @@ approved document into the signed payload — its raw-bytes SHA-256 (`spec_hash`
 `spec_path`, and the current git commit — which is what the `spec_integrity` gate and `advance` enforce
 thereafter. A fresh Spec-stage sign-off supersedes the previous hash.
 - `--approver APPROVER` (required) · `--stage STAGE` (default `review`) · `--note NOTE` · `--spec-id SPEC_ID` ·
-  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: from `.specify/feature.json`).
+  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs/**/spec.md`).
 ```bash
 3pwr signoff --approver "$(git config user.name)" --stage spec --spec-id VUTIL \
              --spec specs/001-validation-utils/spec.md   # seals the approved spec's hash
@@ -275,12 +272,13 @@ pulls in the design oracles) but **never** bypasses the human sign-off.
 ```
 
 ### `run` — drive the whole lifecycle in one command
-Drives the eight-stage lifecycle by composing Spec Kit's `workflow run`, streaming a live stage tracker
-(the engine makes no model call itself). `auto` mode auto-approves the intermediate review gates and
-**stops only at the two mandatory human gates** — spec approval and sign-off; `commit` mode stops at every
-gate. It first classifies the intent and carries the inferred work-kind into the run so the verify step
-shapes the gate suite. Sign-offs and progress are recorded in the ledger, so a run is resumable; a red
-verdict stops the run, `--notify`s, and suggests `observe signal`.
+Drives the eight-stage lifecycle through the **native executive** — dispatching each stage to the headless
+agent named by its role in `.3powers/config/roles.yaml` — while streaming a live stage tracker (the engine
+makes no model call itself). `auto` mode auto-approves the intermediate review gates and **stops only at
+the two mandatory human gates** — spec approval and sign-off; `commit` mode stops at every gate. It first
+classifies the intent and carries the inferred work-kind into the run so the verify step shapes the gate
+suite. Sign-offs and progress are recorded in the ledger, so a run is resumable; a red verdict stops the
+run, `--notify`s, and suggests `observe signal`.
 - `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` · `--spec-id SPEC_ID`
   (run id, default `RUN`) · `--workflow WORKFLOW` · `--notify CMD` (best-effort notification hook) ·
   `--resume` (record a sign-off + continue after a human gate) · `--status` (print the stage tracker) ·
@@ -349,8 +347,8 @@ standalone commands (like `verify` / `deps-check`), never folded into the determ
 
 ### `observe signal` — record a production signal → route to new intent
 Records a signed, attributed `observe` ledger entry, appends a `<SPEC>-FB-###` new-requirement candidate to
-`.3powers/feedback/<spec>.md` (to take into `/speckit.specify` — never an in-place patch), and moves the
-spec to the **Observe** stage.
+`.3powers/feedback/<spec>.md` (to take into a fresh spec via `3pwr run` — never an in-place patch), and
+moves the spec to the **Observe** stage.
 - `--spec-id SPEC_ID` (required) · `--kind incident|missed-nfr|usage` (required) · `--nfr NFR_ID` · `--note NOTE` (required).
 ```bash
 3pwr observe signal --spec-id VUTIL --kind incident --nfr VUTIL-NFR-002 --note "p99 latency regressed under load"
@@ -442,11 +440,11 @@ Treats prompts/commands/constitution as versioned software; blocks on regression
 ```
 
 ### `deps-check` — third-party version compatibility (preflight)
-Probes the installed versions (Spec Kit, scanners, adapter toolchains) against the supported ranges in
+Probes the installed versions (scanners, adapter toolchains) against the supported ranges in
 `.3powers/config/dependencies.yaml` and reports each `ok | drift | missing | unknown`; a `block`-policy
 drift or absence fails. A **preflight** command, *not* a verdict gate — installed versions are
-environment-dependent, so they stay out of the verdict to preserve determinism. Pins a known-good Spec Kit
-and flags an upstream release that needs adaptation.
+environment-dependent, so they stay out of the verdict to preserve determinism. Flags an upstream release
+that needs adaptation.
 - `--manifest MANIFEST` (default `.3powers/config/dependencies.yaml`) · `--strict` (treat `warn` as blocking).
 ```bash
 3pwr deps-check

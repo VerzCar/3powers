@@ -327,8 +327,8 @@ Copilot), so the executive was brought in-house — A1′/A3′ (§3):
 |---|---|---|
 | **EXEC** (spec 009) | delivered | A native, **provider-agnostic agent-runner**: `3pwr run` dispatches each stage to a headless coding agent (Claude Code / Codex CLI / GitHub Copilot CLI / OpenCode / Aider) described by a declarative manifest, runs the deterministic gate suite in-process, and stops only at the two human gates. Enterprise model access (Bedrock/Vertex/Azure/LiteLLM/internal proxy) is inherited via env pass-through; the engine calls no model API and a model never produces the verdict. |
 | **SLIM** (spec 010) | delivered | Removes GitHub Spec Kit entirely (runner, vendored prompts/workflows, `--with-speckit`, the dependency pin); `3pwr init` seeds the agent manifests instead. |
-| **RUNLIVE** (spec 011) | planned | Hardens the executive: per-stage **artifact contracts**, robust dispatch (timeout/retry/streaming), a **gated live end-to-end proof**, the **async hosted backend** (e.g. the GitHub Copilot coding agent for shops without a local headless CLI), and per-stage commit checkpoints. |
-| **DOCX** (spec 012) | planned | Truth-up STATUS + docs to the native executive and retire the last Spec-Kit residue (`agentpins`, the `.specify/` tree). |
+| **RUNLIVE** (spec 011) | delivered | Hardens the executive: per-stage **artifact contracts**, robust dispatch (timeout/retry/streaming), a **gated live end-to-end proof**, the **async hosted backend** (e.g. the GitHub Copilot coding agent for shops without a local headless CLI), and per-stage commit checkpoints. |
+| **DOCX** (spec 012) | delivered | Truth-up STATUS + docs to the native executive and retire the last Spec-Kit residue (the `agentpins` model-pin module + its config-drift feature; the `.specify/` tree, relocated to `.3powers/`). |
 
 The **judiciary** (§7–§9) — oracle independence, the gate suite, the signed trust spine — is unchanged by
 this track; only the executive substrate changed.

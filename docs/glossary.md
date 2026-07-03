@@ -2,7 +2,7 @@
 
 The terms of art used across the 3Powers documentation, defined once. Entry documents link here on
 first use. The normative definitions live in the [spec](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`)
-and the [constitution](../.specify/memory/constitution.md); this page is the plain-English lookup.
+and the [constitution](../.3powers/memory/constitution.md); this page is the plain-English lookup.
 
 ## Adapter
 
@@ -22,13 +22,14 @@ signed.
 
 The spec's architectural givens (spec §3). When a document says "A3", it means the third of these:
 
-- **A1 — Built on Spec Kit.** 3Powers ships as GitHub Spec Kit extensions/workflows and reuses Spec
-  Kit's integration registry and headless `workflow run` dispatch, rather than building its own agent
-  harness.
+- **A1 — 3Powers owns its executive (amended to A1′).** 3Powers ships its own native, provider-agnostic
+  agent-runner: `3pwr run` dispatches each role to a headless coding-agent CLI described by a manifest.
+  (v0.2 originally ran on GitHub Spec Kit as its substrate; that was removed by SLIM, spec 010.)
 - **A2 — Git is the substrate.** The repository is the working environment and the home of the
   authoritative spec; a specific Git host is not assumed.
-- **A3 — Provider-agnosticism via dispatch.** Any agent Spec Kit can dispatch headlessly is eligible to
-  fill a role; 3Powers never calls model APIs directly to satisfy a role.
+- **A3 — Provider-agnosticism via the native runner (amended to A3′).** Any headless coding-agent CLI the
+  native executive can dispatch is eligible to fill a role; 3Powers never calls model APIs directly to
+  satisfy a role.
 - **A4 — CI is optional, never the source of trust.** The guarantees (verdicts, provenance,
   reversibility) must hold locally and offline; a CI platform may *re-validate*, never gatekeep.
 - **A5 — Polyglot from day one.** Language support is a plugin contract (see [adapter](#adapter)).
