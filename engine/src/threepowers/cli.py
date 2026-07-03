@@ -630,6 +630,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     # 10) Spec Kit + constitution + the judiciary extension/pins (ONBRD-FR-015 / INITX-FR-004/005/008).
     with_speckit = getattr(args, "with_speckit", False)
     speckit_ext: dict[str, object] = {"status": "skipped"}
+    speckit_wf: dict[str, object] = {"status": "skipped"}
     if with_speckit:
         if not scaffold.specify_installed():
             print(
@@ -647,6 +648,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         constitution_status = scaffold.seed_constitution(root, force=True)
         # Render the judiciary extension + pin the judiciary agents' model from config (INITX-FR-004/005/008).
         speckit_ext = scaffold.install_speckit_extension(s, root)
+        # Install the lifecycle + oracle workflows `3pwr run` dispatches (INITX-FR-005; unblocks RUNX-FR-009).
+        speckit_wf = scaffold.install_speckit_workflows(root)
     elif scaffold.has_speckit(root):
         # Spec Kit already present → lay the 3Powers constitution overlay if missing (offline, local).
         # Agent pinning / extension install stays opt-in: run `3pwr config apply` (INITX non-goal).
@@ -685,6 +688,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "agents_md": agents_status,
         "constitution": constitution_status,
         "speckit_extension": speckit_ext,
+        "speckit_workflows": speckit_wf,
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
@@ -719,6 +723,14 @@ def cmd_init(args: argparse.Namespace) -> int:
         if pinned:
             lines.append(
                 "  judiciary agents pinned to the configured model: " + ", ".join(sorted(pinned))
+            )
+    if speckit_wf.get("status") == "installed":
+        wf_files = speckit_wf.get("files")
+        n = len(wf_files) if isinstance(wf_files, dict) else 0
+        if n:
+            lines.append(
+                f"  lifecycle workflows installed ({n}) — `3pwr run` dispatches from "
+                ".specify/workflows/3powers/"
             )
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
