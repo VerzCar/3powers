@@ -60,6 +60,7 @@ from . import (
     oracle,
     orchestrate,
     provenance,
+    runpreflight,
     scaffold,
     scope,
     speclock,
@@ -2005,12 +2006,77 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
+    # Resolve the coder + oracle integrations from config/flags — integration-agnostic (RUNX-NFR-005).
+    coder_int = runpreflight.resolve_coder_integration(s, args.integration)
+    oracle_int = runpreflight.resolve_oracle_integration(s)
+    coder_model = str(s.role("coder").get("model") or "")
+    oracle_model = str(s.role("oracle").get("model") or "")
+
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold (RUNX-FR-009).
+    # --dry-run needs none of this: it dispatches nothing and is always available offline (RUNX-FR-012).
+    if not args.dry_run and not args.status:
+        workflow_path = Path(
+            args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
+        )
+        prqs = runpreflight.check(
+            s,
+            workflow_path=workflow_path,
+            coder_integration=coder_int,
+            oracle_integration=oracle_int,
+            entries=ledger.entries(),
+            spec_id=spec_id,
+        )
+        missing = runpreflight.unmet(prqs)
+        if missing:
+            # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
+            # alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).
+            obj = {
+                "status": "preflight_failed",
+                "spec_id": spec_id,
+                "missing": [{"prerequisite": p.name, "fix": p.fix} for p in missing],
+                "alternatives": list(runpreflight.OFFLINE_ALTERNATIVES),
+            }
+            if args.json:
+                print(json.dumps(obj, indent=2))
+            else:
+                est = style.styler(sys.stderr, as_json=False)
+                lines = [
+                    est.err("✗ cannot start `3pwr run` — unmet prerequisites")
+                    + " (no stage was dispatched):"
+                ]
+                for p in missing:
+                    lines.append(f"  {est.mark('fail')} {est.bold(p.name)}: {p.fix}")
+                lines.append("  always available offline:")
+                for alt in runpreflight.OFFLINE_ALTERNATIVES:
+                    lines.append(f"    • {alt}")
+                print("\n".join(lines), file=sys.stderr)
+            return EXIT_USAGE
+
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     tracker = orchestrate.Tracker(sys.stdout, mode)
 
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
             tracker.on_event(ev)
+
+    def _record_dispatch(resume_from: str) -> None:
+        """Record one signed executive-dispatch provenance entry per stage in the next live segment
+        (RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run
+        (it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012)."""
+        if args.dry_run:
+            return
+        for step, _stage in orchestrate.segment_actions(resume_from):
+            is_oracle = step == "oracle"
+            ledger.append(
+                "run",
+                runpreflight.provenance_payload(
+                    step,
+                    oracle_int if is_oracle else coder_int,
+                    oracle_model if is_oracle else coder_model,
+                ),
+                sk,
+                spec_id=spec_id,
+            )
 
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
@@ -2019,6 +2085,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
         runner = _run_make_runner(s, args, mode, resume_from=pending)
+        _record_dispatch(pending)  # provenance for the resumed segment only (RUNX-FR-004/007)
         first_resuming = (
             not args.dry_run
         )  # live: `specify resume`; dry-run: runner is already positioned
@@ -2046,6 +2113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "(you still approve the spec — FR-006)"
             )
         runner = _run_make_runner(s, args, mode)
+        _record_dispatch("")  # provenance for the first segment (up to the spec-approval gate)
         first_resuming = False
 
     try:
@@ -2092,20 +2160,45 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
+            _record_dispatch(
+                result.gate
+            )  # provenance for the next segment (no re-record — RUNX-FR-004)
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # `specify` not installed on the live path
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
     if result.status == "failed":
-        _notify(args.notify, f"3pwr run {spec_id}: gates RED — needs your decision")
+        if result.is_gate_red:
+            # A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,
+            # show Verify reached. No incident/observe-signal suggestion — that is not the remedy.
+            reached = result.stage or "Verify"
+            _notify(args.notify, f"3pwr run {spec_id}: gates RED at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(reached)}\n"
+                "  ✗ gates red — the deterministic gate suite failed. Inspect with "
+                "`3pwr gate run --spec <spec> --tier <tier>`, fix the failing gate(s), then "
+                f"`3pwr run --resume --spec-id {spec_id}`."
+            )
+            _print({"status": "gates_red", "stage": reached, "spec_id": spec_id}, args.json, human)
+            return EXIT_FAIL
+        # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
+        # "gates red", never route to the incident/observe-signal path; exit with a setup/usage status.
+        reached = result.stage or "an early stage"
+        _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
         human = (
-            f"{orchestrate.render_tracker(result.stage)}\n  ✗ gates red. Fix + re-run, or route the "
-            f"lesson to a new spec round:\n    "
-            f'`3pwr observe signal --spec-id {spec_id} --kind incident --note "..."`.'
+            f"{orchestrate.render_tracker(result.stage)}\n"
+            f"  ✗ dispatch failed at {reached} — a stage could not be executed (a setup/dispatch "
+            "problem, not a gate verdict).\n"
+            "  confirm the coder integration is headless and available (`3pwr run` reports "
+            f"prerequisites), then re-run — or resume: `3pwr run --resume --spec-id {spec_id}`."
         )
-        _print({"status": "failed", "stage": result.stage, "spec_id": spec_id}, args.json, human)
-        return EXIT_FAIL
+        _print(
+            {"status": "dispatch_failed", "stage": result.stage, "spec_id": spec_id},
+            args.json,
+            human,
+        )
+        return EXIT_USAGE
     if result.status == "aborted":
         _notify(args.notify, f"3pwr run {spec_id}: aborted")
         _print({"status": "aborted", "spec_id": spec_id}, args.json, "  ⊘ run aborted")

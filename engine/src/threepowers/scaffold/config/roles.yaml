@@ -34,6 +34,13 @@ version: 1
 diversity_enforced: true
 diversity_level: family                     # family | model (3PWR-FR-022)
 
+# Integrations that a LIVE `3pwr run` can dispatch HEADLESSLY (no interactive IDE) — RUNX-FR-001/NFR-005.
+# The set is data, not code: edit it to match the integrations you have installed in Spec Kit. An
+# IDE-bound integration (e.g. copilot) is not headless-dispatchable, so `3pwr run` preflight will name a
+# headless alternative from this list instead of failing opaquely (RUNX-FR-009). `3pwr run --dry-run`
+# needs none of these.
+headless_integrations: [claude, gemini, codex, cursor-agent, opencode, qwen, auggie]
+
 roles:
   planner:  { model_family: "" }            # set per project / per run
   coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot — NOT pinned into any agent
