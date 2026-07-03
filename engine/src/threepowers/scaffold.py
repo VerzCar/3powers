@@ -298,6 +298,7 @@ def agents_md_is_starter(root: Path) -> bool:
 
 
 _SPECKIT_DIR = SCAFFOLD_DIR / "speckit"
+_WORKFLOWS_DIR = SCAFFOLD_DIR / "workflows"  # the 3Powers lifecycle/oracle workflows, installed verbatim
 _SPECKIT_RANGE = ">=0.11,<0.12"  # kept in sync with .3powers/config/dependencies.yaml (3PWR-FR-048)
 
 
@@ -355,6 +356,38 @@ def install_speckit_extension(
 
     pins = agentpins.render_all(settings, root, force=force)
     return {"status": "installed", "files": files, "pins": pins}
+
+
+def speckit_workflows_dir(root: Path) -> Path:
+    return root / ".specify" / "workflows"
+
+
+def install_speckit_workflows(root: Path, *, force: bool = False) -> dict[str, object]:
+    """Install the 3Powers lifecycle + oracle Spec Kit workflows that ``3pwr run`` dispatches
+    (INITX-FR-005; the missing piece behind the RUNX-FR-009 "lifecycle workflow" prerequisite —
+    ``--with-speckit`` previously installed the extension but never these workflows).
+
+    Copied VERBATIM into ``.specify/workflows/3powers/``: the ``{{ inputs.* }}`` tokens are Spec Kit
+    run-time inputs, NOT 3Powers config, so they must survive un-rendered (unlike the extension
+    templates, which go through ``_render_template``). Requires a Spec Kit workspace: returns
+    ``{'status': 'no-speckit'}`` when absent, never fabricated. Non-destructive and idempotent — a
+    hand-edited workflow is kept unless ``force`` (INITX-NFR-006)."""
+    if not has_speckit(root):
+        return {"status": "no-speckit"}
+    dest_base = speckit_workflows_dir(root)
+    files: dict[str, str] = {}
+    for src in sorted(_WORKFLOWS_DIR.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(_WORKFLOWS_DIR)
+        out = dest_base / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists() and not force:
+            files[str(rel)] = "kept"
+            continue
+        out.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        files[str(rel)] = "created"
+    return {"status": "installed", "files": files}
 
 
 def readiness(root: Path) -> dict[str, object]:

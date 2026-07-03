@@ -253,6 +253,76 @@ def test_install_speckit_extension_requires_workspace(tmp_path):
     assert scaffold.install_speckit_extension(Settings(root=root), root)["status"] == "no-speckit"
 
 
+# --------------------------------------------------------------------------- INITX-FR-005 / RUNX-FR-009 (workflows)
+def test_install_speckit_workflows_copies_verbatim(tmp_path):
+    """INITX-FR-005: init lays the lifecycle + oracle workflows `3pwr run` dispatches, VERBATIM — the
+    Spec Kit `{{ inputs.* }}` run-time tokens survive un-rendered (unlike the extension templates)."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    (root / ".specify").mkdir()  # a Spec Kit workspace is present
+
+    result = scaffold.install_speckit_workflows(root)
+    assert result["status"] == "installed"
+    wf_dir = scaffold.speckit_workflows_dir(root) / "3powers"
+    lifecycle = (wf_dir / "lifecycle.yml").read_text(encoding="utf-8")
+    oracle_wf = (wf_dir / "oracle.yml").read_text(encoding="utf-8")
+    # the run-time input token is preserved (NOT rendered/stripped) — needed by `specify workflow run`
+    assert "{{ inputs.integration }}" in lifecycle
+    assert "3powers-lifecycle" in lifecycle
+    assert "3powers-oracle" in oracle_wf
+
+
+def test_install_speckit_workflows_satisfies_run_preflight(tmp_path):
+    """RUNX-FR-009: once the workflow is provisioned, the `3pwr run` preflight's lifecycle-workflow
+    prerequisite is met — previously it failed even after `3pwr init --with-speckit`."""
+    from threepowers import runpreflight
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    (root / ".specify").mkdir()
+    scaffold.install_speckit_workflows(root)
+
+    wf_path = root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
+    prqs = runpreflight.check(
+        Settings(root=root),
+        workflow_path=wf_path,
+        coder_integration="claude",
+        oracle_integration="gemini",
+        entries=[],
+        spec_id="RUN",
+        specify_present=True,
+    )
+    wf_prq = next(p for p in prqs if p.name == "lifecycle workflow")
+    assert wf_prq.ok
+
+
+def test_install_speckit_workflows_requires_workspace(tmp_path):
+    """INITX-FR-005: with no Spec Kit workspace, workflow install is reported, never fabricated."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    assert scaffold.install_speckit_workflows(root)["status"] == "no-speckit"
+
+
+def test_install_speckit_workflows_is_non_destructive(tmp_path):
+    """INITX-NFR-006: a hand-edited workflow is kept on re-install unless forced."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    (root / ".specify").mkdir()
+    scaffold.install_speckit_workflows(root)
+    wf = root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
+    wf.write_text("# hand-edited\n", encoding="utf-8")
+
+    again = scaffold.install_speckit_workflows(root)
+    assert again["files"]["3powers/lifecycle.yml"] == "kept"
+    assert wf.read_text(encoding="utf-8") == "# hand-edited\n"
+    scaffold.install_speckit_workflows(root, force=True)
+    assert "3powers-lifecycle" in wf.read_text(encoding="utf-8")
+
+
 def test_conformance_dry_run_names_untested_requirement(tmp_path):
     """INITX-FR-007: the dry-run names a requirement with no linked test and exits non-zero."""
     root = tmp_path / "proj"
