@@ -8,12 +8,14 @@ engine makes no model call itself (EXEC-NFR-001).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from threepowers import agents, orchestrate, prompts, runner, runpreflight
-from threepowers.cli import _resolve_runner_kind, main
+from threepowers import agents, hosted, orchestrate, prompts, runner, runpreflight
+from threepowers.cli import _make_agent_runner, _resolve_runner_kind, main
 from threepowers.config import Settings
-from threepowers.runner import CliAgentRunner, DispatchResult, NativeRunner
+from threepowers.runner import CliAgentRunner, DispatchResult, NativeRunner, StageResult
 
 
 # --------------------------------------------------------------------------- agent manifests (EXEC-FR-002/003/004)
@@ -83,9 +85,15 @@ def test_reference_manifests_ship(tmp_path, monkeypatch):
     shipped = set(agents.available_agents(s))
     assert {"claude", "codex", "copilot"} <= shipped
     assert len(shipped) >= 3
-    # every shipped manifest builds a valid invocation
+    # every shipped *CLI* manifest builds a valid invocation; a hosted backend uses a different contract
+    from threepowers import hosted
+
     for name in shipped:
-        argv, _ = agents.build_command(agents.load_agent(s, name), "PROMPT")
+        manifest = agents.load_agent(s, name)
+        if hosted.is_hosted(manifest):
+            assert manifest.get("trigger_command")  # hosted manifests declare a trigger instead
+            continue
+        argv, _ = agents.build_command(manifest, "PROMPT")
         assert argv and isinstance(argv[0], str)
 
 
@@ -110,11 +118,13 @@ def test_cli_agent_runner_dispatches_via_process_not_a_model(tmp_path):
     manifest = {"command": "claude", "prompt_flag": "-p", "model_flag": "--model"}
     seen: list[tuple] = []
 
-    def fake_dispatcher(argv, *, cwd, stdin, timeout):
+    def fake_dispatcher(argv, *, cwd, stdin, timeout, stream=False):
         seen.append((argv, cwd, stdin, timeout))
         return (0, "changes written", "")
 
-    r = CliAgentRunner(s, manifest, model="anthropic/opus", intent="do it", dispatcher=fake_dispatcher)
+    r = CliAgentRunner(
+        s, manifest, model="anthropic/opus", intent="do it", dispatcher=fake_dispatcher
+    )
     res = r.dispatch("implement", "Build")
     assert res.ok and res.model == "anthropic/opus"
     argv = seen[0][0]
@@ -126,7 +136,7 @@ def test_cli_agent_runner_reports_dispatch_failure(tmp_path):
     """EXEC-FR-016: a non-zero agent exit is a dispatch failure carrying the reason."""
     s = Settings(root=tmp_path)
 
-    def failing(argv, *, cwd, stdin, timeout):
+    def failing(argv, *, cwd, stdin, timeout, stream=False):
         return (127, "", "agent command not found: codex")
 
     r = CliAgentRunner(s, {"command": "codex"}, dispatcher=failing)
@@ -137,7 +147,15 @@ def test_cli_agent_runner_reports_dispatch_failure(tmp_path):
 # --------------------------------------------------------------------------- NativeRunner drive (EXEC-FR-001/006/007/008)
 def _fake_runner(verdict="pass", fail_step=""):
     def dispatch(step, stage):
-        return DispatchResult(step != fail_step, detail=step)
+        ok = step != fail_step
+        return StageResult(
+            step=step,
+            stage=stage,
+            ok=ok,
+            attempts=1,
+            outcome="ok" if ok else "dispatch_failed",
+            detail=step,
+        )
 
     def run_verdict(stage):
         return verdict
@@ -186,7 +204,9 @@ def _roles(tmp_path, coder, oracle):
     import yaml
 
     (cdir / "roles.yaml").write_text(
-        yaml.safe_dump({"version": 1, "diversity_level": "family", "roles": {"coder": coder, "oracle": oracle}}),
+        yaml.safe_dump(
+            {"version": 1, "diversity_level": "family", "roles": {"coder": coder, "oracle": oracle}}
+        ),
         encoding="utf-8",
     )
 
@@ -206,7 +226,12 @@ def test_check_native_all_ok_and_each_failure_mode(tmp_path):
     present = lambda cmd: True  # noqa: E731 — probe stub (EXEC-NFR-004)
 
     ok = runpreflight.check_native(
-        s, coder_agent="claude", oracle_agent="codex", entries=[], spec_id="RUN", command_present=present
+        s,
+        coder_agent="claude",
+        oracle_agent="codex",
+        entries=[],
+        spec_id="RUN",
+        command_present=present,
     )
     assert runpreflight.unmet(ok) == []
 
@@ -234,12 +259,59 @@ def test_check_native_all_ok_and_each_failure_mode(tmp_path):
         {"integration": "claude", "model_family": "anthropic"},
     )
     same = runpreflight.check_native(
-        s, coder_agent="claude", oracle_agent="claude", entries=[], spec_id="RUN", command_present=present
+        s,
+        coder_agent="claude",
+        oracle_agent="claude",
+        entries=[],
+        spec_id="RUN",
+        command_present=present,
     )
     assert any("oracle" in p.name and "deviation" in p.fix for p in runpreflight.unmet(same))
 
 
 # --------------------------------------------------------------------------- CLI end-to-end (EXEC-FR-013/001/006)
+def _git_init(root):
+    import subprocess
+
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@e.st"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-q", "-m", "init"],
+    ):
+        subprocess.run(cmd, cwd=str(root), check=True, capture_output=True)
+
+
+def _artifact_writer(spec_id="RUN"):
+    """A fake agent that, like a real one, writes each stage's declared artifact (RUNLIVE-FR-001).
+
+    Detects the stage from the assembled prompt (the final argv) and produces the file the artifact contract
+    expects, so a native run advances past Specify/Oracle/Implement. No model call — the engine issues none
+    (EXEC-NFR-001, RUNLIVE-NFR-001)."""
+
+    def fake(argv, **kw):
+        from pathlib import Path
+
+        cwd = Path(kw.get("cwd", "."))
+        prompt = argv[-1] if argv else ""
+        if "STAGE: Specify" in prompt:
+            d = cwd / "specs" / spec_id
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
+        elif "STAGE: Oracle" in prompt:
+            d = cwd / "tests" / "oracle" / spec_id
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+        elif "STAGE: Implement" in prompt:
+            d = cwd / "src"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
+        return (0, "changes written", "")
+
+    return fake
+
+
 @pytest.fixture()
 def native_project(tmp_path, monkeypatch):
     root = tmp_path / "repo"
@@ -270,9 +342,10 @@ def native_project(tmp_path, monkeypatch):
     keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
+    _git_init(root)  # a real repo so artifact detection + checkpoints work (RUNLIVE-FR-001/010)
     # a headless agent CLI is "present"; the agent process is faked (no model call — EXEC-NFR-001)
     monkeypatch.setattr(runpreflight.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
-    monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "ok", ""))
+    monkeypatch.setattr(runner, "dispatch_agent", _artifact_writer())
     return root
 
 
@@ -290,7 +363,15 @@ def test_cli_native_run_dispatches_and_stops_at_spec_gate(native_project, capsys
     """EXEC-FR-001/013: a native run drives the executive stages with a headless agent (no Spec Kit) and
     stops at the mandatory spec-approval gate."""
     rc = main(
-        ["--root", str(native_project), "run", "add a rate limiter", "--no-input", "--spec-id", "RUN"]
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "add a rate limiter",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+        ]
     )
     out = capsys.readouterr().out
     assert rc == 0
@@ -333,3 +414,308 @@ def test_cli_native_run_runs_gates_in_process_at_verify(native_project, monkeypa
     assert rc == 0
     assert calls  # run_gates was invoked in-process at the Verify stage
     assert "signoff" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- robust dispatch (RUNLIVE-FR-004/005/006)
+def test_dispatch_agent_timeout_is_a_terminated_failure(monkeypatch):
+    """RUNLIVE-FR-004: an agent that exceeds its timeout is terminated and reported (rc 124), never a hang."""
+    import subprocess as sp
+
+    def raise_timeout(*a, **k):
+        raise sp.TimeoutExpired(cmd="claude", timeout=k.get("timeout", 1))
+
+    monkeypatch.setattr(runner.subprocess, "run", raise_timeout)
+    rc, out, err = runner.dispatch_agent(["claude", "-p", "x"], cwd=Path("."), timeout=1)
+    assert rc == 124 and "timed out" in err
+
+
+def test_dispatch_with_retry_bounds_attempts_and_stops_on_success():
+    """RUNLIVE-FR-005: a stage is tried at most retries+1 times; a success is never retried."""
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        return DispatchResult(calls["n"] >= 3, detail=f"try {calls['n']}")
+
+    res, attempts = runner.dispatch_with_retry(flaky, retries=5)
+    assert res.ok and attempts == 3  # succeeded on the 3rd of a 6-try budget; stopped there
+
+    # exhausted budget: retries=2 → at most 3 attempts, then reported failed
+    always = {"n": 0}
+
+    def failing():
+        always["n"] += 1
+        return DispatchResult(False, detail="nope")
+
+    res2, attempts2 = runner.dispatch_with_retry(failing, retries=2)
+    assert not res2.ok and attempts2 == 3
+
+    # a success is never retried (attempts == 1)
+    ok_res, ok_attempts = runner.dispatch_with_retry(lambda: DispatchResult(True), retries=3)
+    assert ok_res.ok and ok_attempts == 1
+
+
+def test_run_stage_reports_dispatch_artifact_and_ok_outcomes():
+    """RUNLIVE-FR-002/006: run_stage classifies dispatch-failed, artifact-missing, and ok with a summary."""
+    from threepowers import artifacts
+
+    ticks = iter([10.0, 10.5, 20.0, 20.25, 30.0, 30.1])
+
+    def clock():
+        return next(ticks)
+
+    # dispatch failed after exhausting retries
+    df = runner.run_stage(
+        "implement",
+        "Build",
+        attempt=lambda: DispatchResult(False, detail="boom"),
+        retries=0,
+        agent="claude",
+        clock=clock,
+    )
+    assert not df.ok and df.outcome == "dispatch_failed" and df.attempts == 1 and df.duration_s > 0
+
+    # dispatched ok but produced no declared artifact
+    contract = artifacts.contract_for("specify")
+    am = runner.run_stage(
+        "specify",
+        "Spec",
+        attempt=lambda: DispatchResult(True),
+        retries=0,
+        verify_artifact=lambda: artifacts.verify(contract, []),
+        agent="claude",
+        clock=clock,
+    )
+    assert not am.ok and am.outcome == "artifact_missing" and "spec file" in am.detail
+
+    # dispatched ok and produced the artifact → ok, with an artifact summary
+    good = runner.run_stage(
+        "specify",
+        "Spec",
+        attempt=lambda: DispatchResult(True, model="anthropic/opus"),
+        retries=0,
+        verify_artifact=lambda: artifacts.verify(contract, ["specs/x/spec.md"]),
+        agent="claude",
+        clock=clock,
+    )
+    assert good.ok and good.outcome == "ok" and "spec.md" in good.artifact
+    assert good.as_dict()["model"] == "anthropic/opus"
+
+
+def test_cli_json_emits_a_per_stage_result(native_project, capsys):
+    """RUNLIVE-FR-006: a --json run carries one structured result per dispatched stage, no ANSI."""
+    import json as _json
+
+    rc = main(
+        ["--root", str(native_project), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"]
+    )
+    assert rc == 0
+    obj = _json.loads(capsys.readouterr().out)
+    assert obj["status"] == "paused_at_gate" and obj["gate"] == "review-spec"
+    stages = obj["stages"]
+    steps = [st["step"] for st in stages]
+    assert "specify" in steps
+    spec_stage = next(st for st in stages if st["step"] == "specify")
+    assert spec_stage["ok"] and spec_stage["outcome"] == "ok" and spec_stage["agent"] == "claude"
+    assert spec_stage["attempts"] == 1 and "spec.md" in spec_stage["artifact"]
+
+
+# --------------------------------------------------------------------------- per-stage artifact contract (RUNLIVE-FR-001/002)
+def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monkeypatch, capsys):
+    """RUNLIVE-FR-002/SC-001: a Specify agent that writes no spec stops the run with a named artifact
+    failure — not a silent pass, not a gate-red."""
+    monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "did nothing", ""))
+    rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
+    out = capsys.readouterr().out
+    assert rc == 2  # EXIT_USAGE — a setup/dispatch problem, not a gate verdict
+    assert "artifact missing" in out and "Spec" in out
+    assert "gates red" not in out  # never mislabeled a gate-red (SC-001)
+
+
+# --------------------------------------------------------------------------- commit checkpoints + resume (RUNLIVE-FR-010)
+def _writer_no_implement():
+    def fake(argv, **kw):
+        p = argv[-1] if argv else ""
+        if "STAGE: Oracle" in p:
+            d = Path(kw["cwd"]) / "tests" / "oracle" / "RUN"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
+        return (0, "ok", "")  # Implement writes nothing → artifact_missing
+
+    return fake
+
+
+def _recording_writer(seen):
+    def fake(argv, **kw):
+        p = argv[-1] if argv else ""
+        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
+            if f"STAGE: {key}" in p:
+                seen.append(key.lower())
+        if "STAGE: Implement" in p:
+            d = Path(kw["cwd"]) / "src"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
+        return (0, "ok", "")
+
+    return fake
+
+
+def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, capsys):
+    """RUNLIVE-FR-010/SC-005: after committed checkpoints and a mid-run failure, a resume continues from the
+    next uncompleted stage without re-dispatching a committed one."""
+    import subprocess as sp
+
+    import threepowers.cli as climod
+    from threepowers.verdict import STATUS_PASS
+
+    monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
+    monkeypatch.setattr(
+        climod, "run_gates", lambda *a, **k: __import__("types").SimpleNamespace(result=STATUS_PASS)
+    )
+
+    # Run 1: specify (committed as a checkpoint) → stop at review-spec.
+    assert (
+        main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+    )
+
+    # Run 2 (resume): oracle is committed, but implement produces nothing → artifact_missing at Build.
+    monkeypatch.setattr(runner, "dispatch_agent", _writer_no_implement())
+    rc2 = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "x",
+        ]
+    )
+    assert rc2 == 2 and "artifact missing" in capsys.readouterr().out
+
+    # specify + oracle are committed checkpoints; implement is not.
+    log = sp.run(
+        ["git", "log", "--pretty=%s"], cwd=str(native_project), capture_output=True, text=True
+    ).stdout
+    assert "3pwr(RUN): specify" in log and "3pwr(RUN): oracle" in log
+    assert "3pwr(RUN): implement" not in log
+
+    # Run 3 (resume): a fixed agent — ONLY implement is re-dispatched; specify/oracle are not.
+    seen: list[str] = []
+    monkeypatch.setattr(runner, "dispatch_agent", _recording_writer(seen))
+    rc3 = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "x",
+        ]
+    )
+    assert rc3 == 0 and "signoff" in capsys.readouterr().out
+    assert "implement" in seen
+    assert "specify" not in seen and "oracle" not in seen and "plan" not in seen
+    # the property (RUNLIVE-FR-010): implement succeeded exactly once — its checkpoint now exists
+    log2 = sp.run(
+        ["git", "log", "--pretty=%s"], cwd=str(native_project), capture_output=True, text=True
+    ).stdout
+    assert log2.count("3pwr(RUN): implement") == 1
+
+
+# --------------------------------------------------------------------------- async hosted backend (RUNLIVE-FR-008)
+def test_make_agent_runner_selects_hosted_or_cli(tmp_path):
+    """RUNLIVE-FR-008/NFR-005: the manifest's `mode` picks the backend — hosted vs local CLI."""
+    s = Settings(root=tmp_path)
+    cli = _make_agent_runner(
+        s, {"command": "claude"}, model="", intent="", timeout=60, stream=False
+    )
+    assert isinstance(cli, CliAgentRunner)
+    hb = _make_agent_runner(
+        s,
+        {"mode": "async-hosted", "trigger_command": ["gh"]},
+        model="",
+        intent="",
+        timeout=60,
+        stream=False,
+    )
+    assert isinstance(hb, hosted.HostedAgentRunner)
+
+
+def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, monkeypatch, capsys):
+    """RUNLIVE-FR-008/NFR-003/SC-004: an async-hosted coder backend drives a stage end-to-end (trigger →
+    poll → collect); its produced artifact is judged by the same path as a local dispatch."""
+    import yaml
+
+    (native_project / ".3powers" / "agents" / "claude.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "agent": "claude",
+                "family": "anthropic",
+                "headless": True,
+                "mode": "async-hosted",
+                "trigger_command": ["gh", "trigger", "{step}"],
+                "poll_command": ["gh", "poll", "{run_id}"],
+                "completed_values": ["completed"],
+                "collect_command": ["gh", "collect", "{run_id}", "{step}"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = {"step": ""}
+
+    def fake_hosted(argv, cwd):
+        if argv[:2] == ["gh", "trigger"]:
+            state["step"] = argv[2]
+            return (0, "run-1", "")
+        if argv[:2] == ["gh", "poll"]:
+            return (0, "completed", "")
+        if argv[:2] == ["gh", "collect"]:
+            if state["step"] == "specify":  # the hosted run's branch carries the produced spec
+                d = Path(cwd) / "specs" / "RUN"
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
+            return (0, "checked out", "")
+        return (1, "", "unexpected")
+
+    monkeypatch.setattr(hosted, "run_hosted_command", fake_hosted)
+    rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
+    out = capsys.readouterr().out
+    assert rc == 0 and "review-spec" in out  # the hosted-produced spec advanced the run to the gate
+
+
+def test_no_auto_commit_makes_no_checkpoint(native_project, capsys):
+    """RUNLIVE-FR-010 (edge): with auto-commit disabled the runner commits nothing."""
+    import subprocess as sp
+
+    before = sp.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=str(native_project),
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "add x",
+            "--no-input",
+            "--no-auto-commit",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    assert rc == 0
+    after = sp.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=str(native_project),
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert before == after  # no checkpoint commit was made

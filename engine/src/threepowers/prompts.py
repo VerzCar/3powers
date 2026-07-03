@@ -26,7 +26,8 @@ _STAGE_PROMPTS: dict[str, str] = {
         "STAGE: Specify. Turn the intent below into a feature spec in EARS form. Declare a Spec ID, a "
         "risk tier (Cosmetic|Standard|High-risk), and explicit non-goals BEFORE any requirement. Write "
         "each requirement as '<SPECID>-FR-###: the system shall …' with a measurable Acceptance line. Do "
-        "NOT put implementation detail (named stack, schema, vendor) in the spec."
+        "NOT put implementation detail (named stack, schema, vendor) in the spec. Write the spec to "
+        "specs/<feature>/spec.md — that file is the artifact this stage must produce."
     ),
     "clarify": (
         "STAGE: Clarify. Find every ambiguous or unmeasurable requirement in the spec and resolve it into "
@@ -46,17 +47,18 @@ _STAGE_PROMPTS: dict[str, str] = {
     "oracle": (
         "STAGE: Oracle (Phase A — judiciary). Author oracle tests SOLELY from the spec's acceptance "
         "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from the "
-        "sealed spec bundle. Each oracle test names the requirement id it verifies."
+        "sealed spec bundle. Each oracle test names the requirement id it verifies. Write the oracle tests "
+        "under tests/oracle/<spec-id>/ (or ./oracle-tests/ in a sanitized worktree) — those tests are the "
+        "artifact this stage must produce."
     ),
     "implement": (
         "STAGE: Implement. Make the code satisfy the spec and pass the oracle tests, staying within each "
-        "task's file scope. Add the coder's own tests; never modify or weaken the oracle tests."
+        "task's file scope. Add the coder's own tests; never modify or weaken the oracle tests. This stage "
+        "must produce a non-empty implementation change."
     ),
 }
 
-_GENERIC = (
-    "STAGE: {step}. Perform this lifecycle step for the intent below, staying within the spec's scope."
-)
+_GENERIC = "STAGE: {step}. Perform this lifecycle step for the intent below, staying within the spec's scope."
 
 
 def stage_prompt_body(step: str) -> str:
