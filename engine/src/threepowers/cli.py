@@ -48,18 +48,21 @@ from . import (
     agentpins,
     agents,
     anchor,
+    artifacts,
     canonical,
     config,
     configdrift,
     covdiff,
     deps,
     deviations,
+    hosted,
     keys,
     lifecycle,
     observe,
     oracle,
     orchestrate,
     provenance,
+    runner as runnermod,
     runpreflight,
     scaffold,
     scope,
@@ -680,9 +683,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
     seeded = [n for n, stt in agents_seeded.items() if stt == "created"]
     if seeded:
-        lines.append(
-            "  agent backends seeded (.3powers/agents/): " + ", ".join(sorted(seeded))
-        )
+        lines.append("  agent backends seeded (.3powers/agents/): " + ", ".join(sorted(seeded)))
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
     # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
@@ -1925,7 +1926,9 @@ def _resolve_runner_kind(args: argparse.Namespace) -> str:
 
 def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
     """The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""
-    return getattr(args, "agent", None) or runpreflight.resolve_coder_integration(s, args.integration)
+    return getattr(args, "agent", None) or runpreflight.resolve_coder_integration(
+        s, args.integration
+    )
 
 
 def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
@@ -1963,32 +1966,127 @@ def _native_verdict(s: Settings, args: argparse.Namespace, tier: str, kinds: lis
     return "pass" if verdict.result == STATUS_PASS else "fail"
 
 
-def _native_runner(s: Settings, args: argparse.Namespace, start_index: int) -> NativeRunner:
-    """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009) and
-    run the gate suite in-process at the verify stage (EXEC-FR-006)."""
+def _dispatch_timeout(s: Settings, args: argparse.Namespace) -> int:
+    """The per-stage dispatch timeout (RUNLIVE-FR-004): --timeout wins, else the configured default."""
+    v = getattr(args, "timeout", None)
+    return int(v) if v else s.dispatch_timeout()
+
+
+def _dispatch_retries(s: Settings, args: argparse.Namespace) -> int:
+    """The dispatch retry budget (RUNLIVE-FR-005): --retries wins, else the configured default."""
+    v = getattr(args, "retries", None)
+    return int(v) if v is not None else s.dispatch_retries()
+
+
+def _run_stream(args: argparse.Namespace) -> bool:
+    """Stream agent output live only on a real TTY and not under --json (RUNLIVE-FR-006)."""
+    return bool(sys.stdout.isatty()) and not args.json
+
+
+def _make_agent_runner(
+    s: Settings,
+    manifest: dict,
+    *,
+    model: str,
+    intent: str,
+    timeout: int,
+    stream: bool,
+):
+    """Build the backend that dispatches a role's stages: a local headless CLI (:class:`CliAgentRunner`) or,
+    when the manifest declares ``mode: async-hosted``, the async hosted backend (:class:`HostedAgentRunner`,
+    RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the
+    verdict is judged identically (RUNLIVE-NFR-003)."""
+    if hosted.is_hosted(manifest):
+        return hosted.HostedAgentRunner(
+            s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
+        )
+    return CliAgentRunner(
+        s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout, stream=stream
+    )
+
+
+def _native_runner(
+    s: Settings,
+    args: argparse.Namespace,
+    start_index: int,
+    *,
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+    stream: bool,
+) -> NativeRunner:
+    """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
+    its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
+    optionally checkpoint the stage (RUNLIVE-FR-010), and run the gate suite in-process at Verify
+    (EXEC-FR-006)."""
     intent = args.intent or ""
     wk = workkind.classify(intent)
     tier = args.tier or wk.suggested_tier or s.default_tier()
+    timeout = _dispatch_timeout(s, args)
+    retries = _dispatch_retries(s, args)
+    auto_commit = s.auto_commit() and not getattr(args, "no_auto_commit", False)
 
     coder_agent = _resolve_coder_agent(s, args)
     oracle_agent = runpreflight.resolve_oracle_integration(s)
     coder_manifest = agents.load_agent(s, coder_agent)
-    coder = CliAgentRunner(
-        s, coder_manifest, model=str(s.role("coder").get("model") or ""), cwd=s.root, intent=intent
+    coder = _make_agent_runner(
+        s,
+        coder_manifest,
+        model=str(s.role("coder").get("model") or ""),
+        intent=intent,
+        timeout=timeout,
+        stream=stream,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
     except FileNotFoundError:
         oracle_manifest = coder_manifest
-    oracle_runner = CliAgentRunner(
-        s, oracle_manifest, model=str(s.role("oracle").get("model") or ""), cwd=s.root, intent=intent
+    oracle_runner = _make_agent_runner(
+        s,
+        oracle_manifest,
+        model=str(s.role("oracle").get("model") or ""),
+        intent=intent,
+        timeout=timeout,
+        stream=stream,
     )
 
-    def dispatch(step: str, stage: str):
+    def dispatch(step: str, stage: str) -> runnermod.StageResult:
         # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
         # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
         # High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.
-        return (oracle_runner if step == "oracle" else coder).dispatch(step, stage)
+        backend = oracle_runner if step == "oracle" else coder
+        agent_name = oracle_agent if step == "oracle" else coder_agent
+        contract = artifacts.contract_for(step)
+        pre = runnermod.worktree_state(s.root)
+        produced_box: dict[str, list[str]] = {}
+
+        def verify() -> artifacts.ArtifactCheck:
+            post = runnermod.worktree_state(s.root)
+            produced = runnermod.produced_paths(pre, post)
+            produced_box["paths"] = produced
+            # A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.
+            return artifacts.verify(contract, produced)
+
+        result = runnermod.run_stage(
+            step,
+            stage,
+            attempt=lambda: backend.dispatch(step, stage),
+            retries=retries,
+            verify_artifact=verify,
+            agent=agent_name,
+            model=str(backend.model),
+        )
+        if result.ok and auto_commit:
+            produced = produced_box.get("paths", [])
+            sha = runnermod.commit_checkpoint(s.root, spec_id, step, produced)
+            if sha:
+                ledger.append(
+                    "run",
+                    {"kind": "checkpoint", "step": step, "stage": stage, "commit": sha},
+                    sk,
+                    spec_id=spec_id,
+                )
+        return result
 
     def run_verdict(stage: str) -> str:
         return _native_verdict(s, args, tier, wk.kinds)
@@ -1996,14 +2094,25 @@ def _native_runner(s: Settings, args: argparse.Namespace, start_index: int) -> N
     return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
 
 
-def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+def _run_make_runner(
+    s: Settings,
+    args: argparse.Namespace,
+    mode: str,
+    *,
+    start_index: int,
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+    stream: bool,
+):
     kind = _resolve_runner_kind(args)
-    idx = orchestrate.resume_index(resume_from) if resume_from else 0
     if kind == "sim":
         return orchestrate.SimulatedRunner(
-            verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
+            verdict=("fail" if args.simulate_fail else "pass"), start_index=start_index
         )
-    return _native_runner(s, args, idx)
+    return _native_runner(
+        s, args, start_index, ledger=ledger, sk=sk, spec_id=spec_id, stream=stream
+    )
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -2088,19 +2197,22 @@ def cmd_run(args: argparse.Namespace) -> int:
             return EXIT_USAGE
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
+    stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
     tracker = orchestrate.Tracker(sys.stdout, mode)
 
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
             tracker.on_event(ev)
 
-    def _record_dispatch(resume_from: str) -> None:
+    def _record_dispatch(start_index: int) -> None:
         """Record one signed executive-dispatch provenance entry per stage in the next live segment
         (RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run
-        (it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012)."""
+        (it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012). Keyed on the actual
+        start index, so a resume that skipped committed checkpoints records only the stages it will
+        dispatch (RUNLIVE-FR-010)."""
         if args.dry_run:
             return
-        for step, _stage in orchestrate.segment_actions(resume_from):
+        for step, _stage in orchestrate.segment_actions_from(start_index):
             is_oracle = step == "oracle"
             ledger.append(
                 "run",
@@ -2113,17 +2225,36 @@ def cmd_run(args: argparse.Namespace) -> int:
                 spec_id=spec_id,
             )
 
+    def _make_runner(start_index: int):
+        return _run_make_runner(
+            s,
+            args,
+            mode,
+            start_index=start_index,
+            ledger=ledger,
+            sk=sk,
+            spec_id=spec_id,
+            stream=stream,
+        )
+
+    def _stages() -> list[dict]:
+        """The per-stage machine-readable results of the dispatched stages, for --json (RUNLIVE-FR-006)."""
+        return [sr.as_dict() for sr in getattr(runner, "stage_results", [])]
+
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
-        if not pending:
+        cp_step = orchestrate.last_checkpoint_step(ledger.entries(), spec_id)
+        if not pending and not cp_step:
             print(f"error: no paused run to resume for {spec_id}", file=sys.stderr)
             return EXIT_USAGE
-        _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
-        runner = _run_make_runner(s, args, mode, resume_from=pending)
-        _record_dispatch(pending)  # provenance for the resumed segment only (RUNX-FR-004/007)
-        first_resuming = (
-            not args.dry_run
-        )  # live: `specify resume`; dry-run: runner is already positioned
+        if pending:
+            # A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).
+            _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
+        # Re-enter after the later of the approved gate and the last committed checkpoint, so a mid-run
+        # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010).
+        start_index = orchestrate.resume_start_index(ledger.entries(), spec_id, pending)
+        runner = _make_runner(start_index)
+        _record_dispatch(start_index)  # provenance for the resumed segment only (RUNX-FR-004/007)
     else:
         wk = workkind.classify(
             args.intent or ""
@@ -2147,9 +2278,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"  inferred work kind(s): {', '.join(wk.kinds)} · suggested tier: {wk.suggested_tier} "
                 "(you still approve the spec — FR-006)"
             )
-        runner = _run_make_runner(s, args, mode)
-        _record_dispatch("")  # provenance for the first segment (up to the spec-approval gate)
-        first_resuming = False
+        runner = _make_runner(0)
+        _record_dispatch(0)  # provenance for the first segment (up to the spec-approval gate)
+    first_resuming = False  # start_index already positions native/sim runners; resume==run for both
 
     try:
         result = orchestrate.drive(runner, mode, on_event, resuming=first_resuming)
@@ -2177,6 +2308,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                         "gate_fr": result.gate_fr,
                         "stage": result.stage,
                         "spec_id": spec_id,
+                        "stages": _stages(),
                     },
                     args.json,
                     human,
@@ -2196,10 +2328,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
             _record_dispatch(
-                result.gate
-            )  # provenance for the next segment (no re-record — RUNX-FR-004)
+                orchestrate.resume_start_index(ledger.entries(), spec_id, result.gate)
+            )  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
-    except FileNotFoundError as exc:  # `specify` not installed on the live path
+    except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
@@ -2215,28 +2347,66 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "`3pwr gate run --spec <spec> --tier <tier>`, fix the failing gate(s), then "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
-            _print({"status": "gates_red", "stage": reached, "spec_id": spec_id}, args.json, human)
+            _print(
+                {"status": "gates_red", "stage": reached, "spec_id": spec_id, "stages": _stages()},
+                args.json,
+                human,
+            )
             return EXIT_FAIL
+        reached = result.stage or "an early stage"
+        if result.is_artifact_missing:
+            # A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a
+            # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
+            # resume pick up here without re-running completed stages (RUNLIVE-FR-010).
+            _notify(args.notify, f"3pwr run {spec_id}: artifact missing at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(result.stage)}\n"
+                f"  ✗ artifact missing at {reached} — {result.detail}\n"
+                "  the stage's agent ran but did not produce what the stage is responsible for "
+                f"(not a gate verdict). Re-run or resume: `3pwr run --resume --spec-id {spec_id}`."
+            )
+            _print(
+                {
+                    "status": "artifact_missing",
+                    "stage": result.stage,
+                    "detail": result.detail,
+                    "spec_id": spec_id,
+                    "stages": _stages(),
+                },
+                args.json,
+                human,
+            )
+            return EXIT_USAGE
         # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
         # "gates red", never route to the incident/observe-signal path; exit with a setup/usage status.
-        reached = result.stage or "an early stage"
         _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
+        detail = f" — {result.detail}" if result.detail else ""
         human = (
             f"{orchestrate.render_tracker(result.stage)}\n"
             f"  ✗ dispatch failed at {reached} — a stage could not be executed (a setup/dispatch "
-            "problem, not a gate verdict).\n"
+            f"problem, not a gate verdict){detail}.\n"
             "  confirm the coder integration is headless and available (`3pwr run` reports "
             f"prerequisites), then re-run — or resume: `3pwr run --resume --spec-id {spec_id}`."
         )
         _print(
-            {"status": "dispatch_failed", "stage": result.stage, "spec_id": spec_id},
+            {
+                "status": "dispatch_failed",
+                "stage": result.stage,
+                "detail": result.detail,
+                "spec_id": spec_id,
+                "stages": _stages(),
+            },
             args.json,
             human,
         )
         return EXIT_USAGE
     if result.status == "aborted":
         _notify(args.notify, f"3pwr run {spec_id}: aborted")
-        _print({"status": "aborted", "spec_id": spec_id}, args.json, "  ⊘ run aborted")
+        _print(
+            {"status": "aborted", "spec_id": spec_id, "stages": _stages()},
+            args.json,
+            "  ⊘ run aborted",
+        )
         return EXIT_FAIL
 
     ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
@@ -2245,7 +2415,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         f"{orchestrate.render_tracker('Observe')}\n  ✓ lifecycle complete — advanced to Ship; "
         "observe feeds new intent"
     )
-    _print({"status": "done", "spec_id": spec_id}, args.json, human)
+    _print({"status": "done", "spec_id": spec_id, "stages": _stages()}, args.json, human)
     return EXIT_OK
 
 
@@ -2778,6 +2948,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--tier",
         default=None,
         help="risk tier for the native verify stage (default: the inferred/suggested tier)",
+    )
+    rnp.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="per-stage dispatch timeout in seconds (RUNLIVE-FR-004; default: configured, 1800)",
+    )
+    rnp.add_argument(
+        "--retries",
+        type=int,
+        default=None,
+        help="retries for a failed dispatch before the stage is reported failed "
+        "(RUNLIVE-FR-005; default: configured, 1)",
+    )
+    rnp.add_argument(
+        "--no-auto-commit",
+        dest="no_auto_commit",
+        action="store_true",
+        help="do not commit each successful stage as a checkpoint (RUNLIVE-FR-010)",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
     rnp.add_argument(

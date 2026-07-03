@@ -85,6 +85,34 @@ class Settings:
         v = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("auto_commit")
         return True if v is None else bool(v)
 
+    def dispatch_timeout(self) -> int:
+        """The per-stage dispatch timeout in seconds (RUNLIVE-FR-004). Defaults to 1800 (30 min).
+
+        Advisory config only: it bounds how long one agent dispatch may run before it is terminated and
+        reported as a dispatch failure. Never affects a gate, verdict, or the ledger."""
+        v = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("dispatch_timeout_s")
+        if not isinstance(v, (int, str)):
+            return 1800
+        try:
+            n = int(v)
+        except ValueError:
+            return 1800
+        return n if n > 0 else 1800
+
+    def dispatch_retries(self) -> int:
+        """How many times a *failed* dispatch is retried before the stage is reported failed (RUNLIVE-FR-005).
+
+        Defaults to 1 (one retry on a transient failure). A stage is attempted at most ``retries + 1`` times;
+        a successful stage is never retried. Advisory config only — never a gate or verdict."""
+        v = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("dispatch_retries")
+        if not isinstance(v, (int, str)):
+            return 1
+        try:
+            n = int(v)
+        except ValueError:
+            return 1
+        return n if n >= 0 else 1
+
     def default_tier(self) -> str:
         """The recorded default risk tier a new spec starts at (advisory — INITX-FR-001).
 

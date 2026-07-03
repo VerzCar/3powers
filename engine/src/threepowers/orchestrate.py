@@ -60,6 +60,12 @@ class Outcome:
     gate: str = ""
     stage: str = ""
     verdict: str = ""  # pass | fail | ""
+    outcome: str = (
+        ""  # a finer failure class: gate_red | verdict_error | dispatch_failed | artifact_missing
+    )
+    detail: str = (
+        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
+    )
     events: list[Event] = field(default_factory=list)
 
 
@@ -75,11 +81,22 @@ class RunResult:
         ""  # the deterministic-gate verdict when status == failed: "fail" = a real gate-red,
     )
     # "" = a dispatch/execution failure (not a gate verdict) — the honest-diagnostics split (RUNX-FR-010/011)
+    outcome: str = (
+        ""  # a finer failure class (RUNLIVE): dispatch_failed | artifact_missing | verdict_error
+    )
+    detail: str = (
+        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
+    )
 
     @property
     def is_gate_red(self) -> bool:
         """True only when a failure carries a real deterministic-gate ``fail`` verdict (RUNX-FR-010)."""
         return self.status == "failed" and self.verdict == "fail"
+
+    @property
+    def is_artifact_missing(self) -> bool:
+        """True when the failure was a stage producing no declared artifact (RUNLIVE-FR-002)."""
+        return self.status == "failed" and self.outcome == "artifact_missing"
 
 
 class Runner(Protocol):
@@ -99,14 +116,58 @@ def resume_index(gate: str) -> int:
     return 0
 
 
+def step_index(step: str) -> int:
+    """The index of ``step`` in the lifecycle, or -1 when unknown."""
+    for i, (sid, _kind, _stage) in enumerate(LIFECYCLE_STEPS):
+        if sid == step:
+            return i
+    return -1
+
+
+def last_checkpoint_step(entries: list[dict], spec_id: str) -> str:
+    """The last action step committed as a checkpoint for ``spec_id`` (RUNLIVE-FR-010), else ''.
+
+    Read from the signed ledger's ``run``/``checkpoint`` entries, so a resume knows which stages already
+    have a committed artifact and must not be re-dispatched — reconstructed offline from the repo alone."""
+    step = ""
+    for e in entries:
+        if e.get("spec_id") != spec_id or e.get("type") != "run":
+            continue
+        payload = e.get("payload", {})
+        if payload.get("kind") == "checkpoint" and payload.get("step"):
+            step = str(payload["step"])
+    return step
+
+
+def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = "") -> int:
+    """Where a ``--resume`` should re-enter the lifecycle (RUNLIVE-FR-010).
+
+    The later of: the step after the last approved human ``pending_gate`` (the EXEC behavior) and the step
+    after the last committed checkpoint. Taking the max means a mid-segment failure resumes from the next
+    *uncompleted* stage without re-dispatching a committed one, while a gate approval still advances past
+    the gate."""
+    start = resume_index(pending_gate) if pending_gate else 0
+    cp = last_checkpoint_step(entries, spec_id)
+    if cp:
+        start = max(start, step_index(cp) + 1)
+    return start
+
+
 def segment_actions(resume_from: str = "") -> list[tuple[str, str]]:
     """The executive/judiciary action steps dispatched in the segment after ``resume_from`` — up to (not
     including) the next gate. Used to record one per-stage dispatch provenance entry (RUNX-FR-007), so a
     fresh run records only the stages before the first human gate and a resume records only the next
     segment (no already-completed stage is re-recorded, mirroring RUNX-FR-004)."""
-    start = resume_index(resume_from) if resume_from else 0
+    return segment_actions_from(resume_index(resume_from) if resume_from else 0)
+
+
+def segment_actions_from(start_index: int) -> list[tuple[str, str]]:
+    """The action steps from ``start_index`` up to (not including) the next gate (RUNX-FR-007, RUNLIVE-FR-010).
+
+    Taking an explicit start index lets a resume that skipped committed checkpoints record provenance only
+    for the stages it will actually dispatch — never a completed one."""
     out: list[tuple[str, str]] = []
-    for sid, kind, stage in LIFECYCLE_STEPS[start:]:
+    for sid, kind, stage in LIFECYCLE_STEPS[max(0, start_index) :]:
         if kind == "gate":
             break
         if kind == "action":
@@ -140,8 +201,18 @@ def drive(
             )  # auto mode: intermediate gate
             outcome = runner.resume("approve")
             continue
-        on_event(Event(outcome.status, "", outcome.stage, outcome.verdict))
-        return RunResult(outcome.status, stage=outcome.stage, verdict=outcome.verdict)
+        # The failed event carries the finer outcome class in ``step`` so the log can word it precisely
+        # (gate-red vs a dispatch/artifact failure — RUNLIVE-FR-002, RUNX-FR-010/011).
+        on_event(
+            Event(outcome.status, outcome.outcome, outcome.stage, outcome.detail or outcome.verdict)
+        )
+        return RunResult(
+            outcome.status,
+            stage=outcome.stage,
+            verdict=outcome.verdict,
+            outcome=outcome.outcome,
+            detail=outcome.detail,
+        )
 
 
 # --------------------------------------------------------------------------- simulated runner (--dry-run / tests)
@@ -158,6 +229,7 @@ class SimulatedRunner:
         self._steps = steps if steps is not None else LIFECYCLE_STEPS
         self._i = start_index
         self._verdict = verdict
+        self.stage_results: list = []  # symmetry with NativeRunner; --dry-run dispatches nothing
 
     def _walk(self) -> Outcome:
         events: list[Event] = []
@@ -212,12 +284,18 @@ def format_event(ev: Event, mode: str) -> str:
         tag = f" — HUMAN GATE ({fr})" if fr else " — review gate (commit mode)"
         return f"  ⏸ {ev.stage:<8} {ev.step}{tag}: awaiting your commitment"
     if ev.kind == "failed":
-        # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/execution
-        # failure is reported distinctly and names the stage reached (RUNX-FR-010/011).
-        if ev.detail == "fail":
+        # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/artifact
+        # failure is reported distinctly and names the stage reached (RUNX-FR-010/011, RUNLIVE-FR-002).
+        if ev.step == "gate_red" or ev.detail == "fail":
             return "  ✗ gates red — the deterministic gate suite failed"
         where = f" at {ev.stage}" if ev.stage else ""
-        return f"  ✗ dispatch failed{where} — a stage could not be executed (not a gate verdict)"
+        if ev.step == "artifact_missing":
+            return f"  ✗ artifact missing{where} — {ev.detail}"
+        extra = f": {ev.detail}" if ev.detail else ""
+        return (
+            f"  ✗ dispatch failed{where} — a stage could not be executed "
+            f"(not a gate verdict){extra}"
+        )
     if ev.kind == "aborted":
         return "  ⊘ aborted"
     if ev.kind == "done":

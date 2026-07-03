@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–019 delivered) |
-| **Architecture (plans 018–019, current)** | **3Powers owns its executive** — `3pwr run` drives headless coding agents *directly* via a native, provider-agnostic runner (**EXEC**, spec 009), and **GitHub Spec Kit is removed** (**SLIM**, spec 010; epic A1′/A3′/§16 amended). The judiciary is unchanged. The new solution + roadmap are documented in the epic ([§17 native-executive track](../specs/3Powers_Spec_v0.2.md)) and in §6 below; next up are **RUNLIVE** (spec 011) and **DOCX** (spec 012). A few requirement-level rows below still read in the old Spec-Kit phrasing — the full line-by-line STATUS rewrite is DOCX's job (DOCX-FR-001). Migration: [`docs/migration-remove-speckit.md`](migration-remove-speckit.md). |
+| **Architecture (plans 018–019, current)** | **3Powers owns its executive** — `3pwr run` drives headless coding agents *directly* via a native, provider-agnostic runner (**EXEC**, spec 009), and **GitHub Spec Kit is removed** (**SLIM**, spec 010; epic A1′/A3′/§16 amended). The judiciary is unchanged. The new solution + roadmap are documented in the epic ([§17 native-executive track](../specs/3Powers_Spec_v0.2.md)) and in §6 below. **RUNLIVE** (spec 011, plan 021) is now delivered — the executive is hardened with per-stage artifact contracts, retry/timeout/streamed dispatch + `--json` per-stage results, a gated live end-to-end proof, an async hosted backend, and commit checkpoints; next up is **DOCX** (spec 012). A few requirement-level rows below still read in the old Spec-Kit phrasing — the full line-by-line STATUS rewrite is DOCX's job (DOCX-FR-001). Migration: [`docs/migration-remove-speckit.md`](migration-remove-speckit.md). |
 | **Last validated** | **2026-07-02**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
 | **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening |
 | **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the Spec Kit extension · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) · context strategy approximated at command level (FR-060/061) |
@@ -117,6 +117,14 @@ FR-012 ◑ / FR-013 ◑ (**oracle leg now dispatched headlessly** via `3pwr orac
 a live end-to-end run under a non-Copilot agent, are the residual) · FR-062 ✅ (Phase-A/B ordering proven
 from the ledger seq; enforced at High-risk `advance`), FR-018 ◑ (advisory) · FR-060 ⬜, FR-061 ⬜
 (context strategy — harness-limited).
+**Live executive hardening (RUNLIVE, spec 011 / plan 021) ✅:** the native executive is hardened —
+**per-stage artifact contracts** catch a stage that produced nothing/off-target as a named artifact failure,
+never a silent pass (RUNLIVE-FR-001/002/003); dispatch is **timeout-bounded, retried, streamed, and reported
+per-stage on `--json`** (RUNLIVE-FR-004/005/006); a **gated live end-to-end proof** drives a real agent to a
+green verdict while the default suite makes zero model calls (RUNLIVE-FR-007); an **async hosted backend**
+(provider-neutral trigger→poll→collect) covers Copilot-only shops with no local CLI, judged identically and
+leaking no credential (RUNLIVE-FR-008/009); and **commit checkpoints** let a resume skip completed stages
+(RUNLIVE-FR-010). No new trust primitive; the verdict never sees it (RUNLIVE-NFR-001/003).
 
 **Judiciary — oracle (§7):** **FR-020 ✅** (`oracle seal` writes a spec-only bundle the judiciary authors
 from; the authoring record binds to its content hash), **FR-022 ✅** (checked on the *actual* recorded model
@@ -348,14 +356,28 @@ in-process, and stops only at the two human gates; the engine calls no model API
 the verdict. Plan 019 (**SLIM**, spec 010) removed GitHub Spec Kit entirely. This closed the old "fuller
 A3 / live executive" residual — the coder leg is now natively headless with no substrate.
 
+**Plan 021 is done** ([`plan/021-live-executive-hardening.md`](../plan/021-live-executive-hardening.md)):
+✅ **live executive hardening (RUNLIVE, spec 011).** The native executive is hardened from "walks the
+lifecycle with a fake agent" to "reliably builds real software": **per-stage artifact contracts** (a stage
+that produced nothing — or only an off-target change — is a *named artifact failure*, distinct from a
+gate-red, never a silent pass; unconfigured stages stay lenient — RUNLIVE-FR-001/002/003, new `artifacts`
+module); **robust dispatch** — a configurable per-stage timeout + retry policy, streamed agent output on a
+TTY, and a machine-readable per-stage result on `--json` (RUNLIVE-FR-004/005/006); a **gated live
+end-to-end proof** — an opt-in test drives one real agent to a green verdict while the default suite makes
+zero outbound model calls (RUNLIVE-FR-007); an **async hosted backend** — a provider-neutral,
+manifest-driven trigger→poll→collect backend for Copilot-only shops without a local headless CLI, judged
+identically to a local dispatch and never logging a credential (RUNLIVE-FR-008/009, new `hosted` module +
+`copilot-hosted.yaml`); and **commit checkpoints** — each successful stage is committed and a resume
+continues from the last checkpoint without re-dispatching a completed stage (RUNLIVE-FR-010). No new
+trust-spine primitive; the deterministic verdict never sees any of it (RUNLIVE-NFR-001/003). Self-applies
+clean on the gates it owns (diff-coverage 91.68% ≥ 80, gate_gaming green, no new suppressions).
+
 Next, in priority order:
-- **RUNLIVE (spec 011, planned)** — harden the executive: per-stage **artifact contracts** (a stage that
-  produced nothing is caught, not silently passed), robust dispatch (timeout/retry/streaming), a **gated
-  live end-to-end proof** (real agent → green verdict; the default suite stays model-free), the **async
-  hosted backend** (GitHub Copilot coding agent for shops without a local headless CLI), and per-stage
-  commit checkpoints.
 - **DOCX (spec 012, planned)** — full STATUS/doc rewrite to the native executive + retire the last
-  Spec-Kit residue (`agentpins`, the `.specify/` tree).
+  Spec-Kit residue (`agentpins`, the `.specify/` tree). Fold in the pre-existing self-gate residue plan 021
+  surfaced: `ruff format` three stale files (`runpreflight.py`, `test_headless_run.py`,
+  `test_init_experience.py`) and re-seal + re-approve the epic spec (its post-approval edit trips
+  `spec_integrity`).
 - **Breadth (unchanged):** live design/Go runs (playwright/axe/schema-diff + a Go toolchain), model-driven
   eval layer (FR-050), cross-platform validation (NFR-003).
 
