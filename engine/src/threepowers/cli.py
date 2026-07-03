@@ -46,9 +46,11 @@ import yaml
 
 from . import (
     __version__,
+    agentpins,
     anchor,
     canonical,
     config,
+    configdrift,
     covdiff,
     deps,
     deviations,
@@ -58,9 +60,11 @@ from . import (
     oracle,
     orchestrate,
     provenance,
+    runpreflight,
     scaffold,
     scope,
     speclock,
+    style,
     workkind,
 )
 from .adapters import run_cmd
@@ -174,22 +178,23 @@ def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
     return default if not ans else ans in ("y", "yes")
 
 
-def _format_verdict(verdict, appended: Optional[dict]) -> str:
-    """Human-readable verdict: failing gate, class, and offending item — no transcript needed (3PWR-NFR-011)."""
-    mark = {"pass": "✓", "fail": "✗", "skip": "–"}
-    lines = [
-        f"verdict {verdict.result.upper()}  "
-        f"spec={verdict.spec_id or '?'} tier={verdict.tier} adapter={verdict.adapter}"
-    ]
+def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler] = None) -> str:
+    """Human-readable verdict: failing gate, class, and offending item — no transcript needed (3PWR-NFR-011).
+
+    ``st`` colorizes the status markers consistently with the rest of the CLI (INITX-FR-013); a disabled
+    styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before."""
+    st = st or style.Styler()
+    result = verdict.result.upper()
+    head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
+    lines = [f"{head}  spec={verdict.spec_id or '?'} tier={verdict.tier} adapter={verdict.adapter}"]
     for g in verdict.gates:
         extra = ""
         if g.gate == "diff_coverage" and g.details:
             extra = f"  ({g.details.get('covered_pct')}% ≥ {g.details.get('threshold')}%)"
         elif g.gate == "spec_conformance" and g.details:
             extra = f"  ({len(g.details.get('requirement_ids', []))} requirements traced)"
-        lines.append(
-            f"  {mark.get(g.status, '?')} {g.gate}{(' · ' + g.tool) if g.tool else ''}{extra}"
-        )
+        glyph = st.mark(g.status) if g.status in ("pass", "fail", "skip") else "?"
+        lines.append(f"  {glyph} {g.gate}{(' · ' + g.tool) if g.tool else ''}{extra}")
         for finding in g.findings[:5]:
             lines.append(f"      - {finding}")
     if verdict.failures:
@@ -316,6 +321,138 @@ def _init_layout(s: Settings) -> str:
     return status
 
 
+def _readiness_checklist(
+    ready: dict[str, object], *, model_div_ok: bool
+) -> list[tuple[str, str, str]]:
+    """Build the first-run readiness checklist (INITX-FR-009/010/011).
+
+    Each item is ``(label, status, detail)`` with status ∈ ``pass`` | ``warn`` | ``fail`` | ``todo``.
+    A missing CI/CD configuration is a mandatory prerequisite for secure gate enforcement (fail,
+    INITX-FR-010); a 3Powers-generated AGENTS.md starter is an unfinished TODO (INITX-FR-011). No item
+    is omitted (INITX-FR-009)."""
+    items: list[tuple[str, str, str]] = []
+    if ready.get("ci"):
+        items.append(("CI/CD pipeline", "pass", "gates can run automatically on every change"))
+    else:
+        items.append(
+            (
+                "CI/CD pipeline",
+                "fail",
+                "MISSING — required for secure gates. Gates must run automatically on every "
+                "change; add a CI workflow (e.g. under .github/workflows/) that runs `3pwr gate run`.",
+            )
+        )
+    items.append(
+        (
+            "Spec Kit workspace",
+            "pass" if ready.get("speckit_dir") else "warn",
+            "present"
+            if ready.get("speckit_dir")
+            else "run `3pwr init --with-speckit` to scaffold it",
+        )
+    )
+    items.append(
+        (
+            "3Powers constitution",
+            "pass" if ready.get("constitution") else "warn",
+            "in place"
+            if ready.get("constitution")
+            else "laid under --with-speckit, or when a Spec Kit workspace is present",
+        )
+    )
+    if ready.get("agents_md_todo"):
+        items.append(
+            (
+                "AGENTS.md",
+                "todo",
+                "TODO — a 3Powers starter was written; fill in the [bracketed] parts "
+                "(or run your create-agentsmd skill)",
+            )
+        )
+    elif ready.get("agents_md"):
+        items.append(("AGENTS.md", "pass", "present — ensure it names `3pwr` as the main command"))
+    else:
+        items.append(("AGENTS.md", "warn", "none — consider adding agent guidance"))
+    items.append(
+        (
+            "Judiciary model diversity",
+            "pass" if model_div_ok else "warn",
+            "oracle model differs from the coder's family"
+            if model_div_ok
+            else "oracle shares the coder's family (or is unset) — recommended to differ (3PWR-FR-022)",
+        )
+    )
+    return items
+
+
+def _checklist_lines(st: style.Styler, items: list[tuple[str, str, str]]) -> list[str]:
+    """Render checklist items as colorized ``<mark> <label>: <detail>`` lines (INITX-FR-013)."""
+    return [f"  {st.mark(status)} {st.bold(label)}: {detail}" for label, status, detail in items]
+
+
+def cmd_config_apply(args: argparse.Namespace) -> int:
+    """Re-apply the configuration: re-render the judiciary agent pins + re-record the fingerprint.
+
+    This is the explicit command the drift warning points to (INITX-FR-016): it is the *only* thing that
+    regenerates agent files, and it clears the stale-config warning by re-recording the fingerprint."""
+    s = _settings(args.root)
+    as_json = getattr(args, "json", False)
+    st = style.styler(sys.stdout, as_json=as_json)
+    pins = agentpins.render_all(s, s.root, force=getattr(args, "force", False))
+    configdrift.record(s)
+    obj = {"pins": pins, "fingerprint": "recorded"}
+    if as_json:
+        print(json.dumps(obj, indent=2))
+        return EXIT_OK
+    print(st.head("config applied — judiciary agent pins re-rendered:"))
+    for role, status in sorted(pins.items()):
+        good = status in ("created", "updated", "kept")
+        print(f"  {st.mark('pass' if good else 'warn')} {st.bold(role)}: {status}")
+    print(st.dim("  config fingerprint re-recorded — the stale-config warning is cleared"))
+    return EXIT_OK
+
+
+def cmd_commit_stage(args: argparse.Namespace) -> int:
+    """Auto-commit after a successful lifecycle stage (INITX-FR-006).
+
+    One commit, message ``3pwr(<spec-id>): <stage>``. It commits the currently-staged changes (or the
+    files named by ``--paths``), so it never sweeps unrelated changes; when nothing is staged (a failed
+    or no-op stage) it makes no commit. It never touches the ledger."""
+    s = _settings(args.root)
+    as_json = getattr(args, "json", False)
+    spec_id = getattr(args, "spec_id", None) or "?"
+    stage = args.stage
+    paths = getattr(args, "paths", None) or []
+    if paths:
+        subprocess.run(["git", "add", "--", *paths], cwd=s.root, check=False)
+    # Anything staged? `git diff --cached --quiet` exits 0 when the index has no changes.
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"], cwd=s.root, check=False
+    ).returncode
+    if staged == 0:
+        _print(
+            {"committed": False, "reason": "nothing staged"},
+            as_json,
+            "nothing staged — no stage commit made",
+        )
+        return EXIT_OK
+    msg = f"3pwr({spec_id}): {stage}"
+    res = subprocess.run(
+        ["git", "commit", "-m", msg], cwd=s.root, capture_output=True, text=True, check=False
+    )
+    if res.returncode != 0:
+        print(f"error: git commit failed: {res.stderr.strip()}", file=sys.stderr)
+        return EXIT_FAIL
+    sha = _git_out(s.root, ["rev-parse", "--short", "HEAD"]).strip()
+    st = style.styler(sys.stdout, as_json=as_json)
+    _print(
+        {"committed": True, "message": msg, "commit": sha},
+        as_json,
+        f"{st.ok('✓')} committed [{sha}] {msg}",
+    )
+    return EXIT_OK
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """Guided onboarding — make an existing or new project 3Powers-ready in one step (ONBRD-FR-001).
 
@@ -327,6 +464,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     (ONBRD-NFR-002)."""
     as_json = getattr(args, "json", False)
     interactive = _init_interactive(args)
+    st = style.styler(sys.stdout, as_json=as_json, assume_yes=getattr(args, "yes", False))
 
     # 1) Target directory — default the current directory (ONBRD-FR-002).
     default_dir = str(Path(args.root).resolve() if args.root else Path.cwd())
@@ -412,7 +550,6 @@ def cmd_init(args: argparse.Namespace) -> int:
         if args.auto_mode is not None
         else _ask_yesno("Make autonomous mode the default?", True, interactive=interactive)
     )
-    scaffold.write_onboarding(s, auto_mode=auto_mode)
 
     # 7) Seed baseline config + the selected adapter, never clobbering (ONBRD-FR-008).
     cfg = scaffold.seed_config(s)
@@ -420,11 +557,79 @@ def cmd_init(args: argparse.Namespace) -> int:
     scaffold.seed_contract(s)
     adapter_status = scaffold.materialize_adapter(s, lang) if lang else "none"
 
-    # 8) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
+    # 8) Config selection — accept the recommended defaults or customize the choices that can
+    #    never weaken a gate: the judiciary model + the default risk tier (INITX-FR-001/002).
+    tier = getattr(args, "tier", None) or s.default_tier()
+    oracle_model = getattr(args, "oracle_model", None)
+    oracle_integration = getattr(args, "oracle_integration", None)
+    oracle_label = getattr(args, "oracle_label", None)
+    customized = bool(oracle_model or getattr(args, "tier", None))
+    if (
+        interactive
+        and not oracle_model
+        and not _ask_yesno(
+            "Use the recommended 3Powers defaults (risk tier + judiciary model)?",
+            True,
+            interactive=interactive,
+        )
+    ):
+        customized = True
+        tiers = list((s.load_risk_tiers().get("tiers") or {}).keys()) or [
+            "Cosmetic",
+            "Standard",
+            "High-risk",
+        ]
+        tier = _ask_choice("Default risk tier for new specs?", tiers, tier, interactive=interactive)
+        cur = s.role_model_pin("oracle") or {}
+        oracle_model = _ask(
+            "Oracle (judiciary) model as <family>/<model>",
+            cur.get("model") or "anthropic/claude-opus-4-8",
+            interactive=interactive,
+        )
+        oracle_integration = _ask(
+            "  its Spec Kit integration",
+            cur.get("integration") or getattr(args, "integration", None) or "copilot",
+            interactive=interactive,
+        )
+        oracle_label = _ask(
+            "  friendly label for the agent frontmatter",
+            cur.get("label") or oracle_model,
+            interactive=interactive,
+        )
+    if oracle_model:
+        coder_fam = s.coder_family()
+        if coder_fam and oracle.family_of(oracle_model) == coder_fam:
+            # Diversity is recommended, not forced (3PWR-FR-022/057). Warn to STDERR so a --json
+            # run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).
+            print(
+                st.warn(
+                    f"⚠ oracle model shares the coder's family ({coder_fam}) — model diversity is "
+                    "recommended (3PWR-FR-022)."
+                ),
+                file=sys.stderr,
+            )
+            print(
+                st.dim(
+                    "    proceed by recording a signed deviation: 3pwr deviation "
+                    '--gate model_diversity --approver <you> --note "single-model dev"'
+                ),
+                file=sys.stderr,
+            )
+        scaffold.set_role_model(
+            s,
+            "oracle",
+            model=oracle_model,
+            integration=oracle_integration or getattr(args, "integration", None) or "copilot",
+            label=oracle_label or oracle_model,
+        )
+    scaffold.write_onboarding(s, auto_mode=auto_mode, tier=tier, auto_commit=True)
+
+    # 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
     agents_status = scaffold.seed_agents_md(root)
 
-    # 9) Spec Kit + constitution readiness for the agentic lifecycle (ONBRD-FR-015).
+    # 10) Spec Kit + constitution + the judiciary extension/pins (ONBRD-FR-015 / INITX-FR-004/005/008).
     with_speckit = getattr(args, "with_speckit", False)
+    speckit_ext: dict[str, object] = {"status": "skipped"}
     if with_speckit:
         if not scaffold.specify_installed():
             print(
@@ -440,14 +645,29 @@ def cmd_init(args: argparse.Namespace) -> int:
                 return EXIT_FAIL
         # Lay the 3Powers overlay, replacing Spec Kit's placeholder constitution (never a real one).
         constitution_status = scaffold.seed_constitution(root, force=True)
+        # Render the judiciary extension + pin the judiciary agents' model from config (INITX-FR-004/005/008).
+        speckit_ext = scaffold.install_speckit_extension(s, root)
     elif scaffold.has_speckit(root):
         # Spec Kit already present → lay the 3Powers constitution overlay if missing (offline, local).
+        # Agent pinning / extension install stays opt-in: run `3pwr config apply` (INITX non-goal).
         constitution_status = scaffold.seed_constitution(root)
     else:
         constitution_status = "absent"
     ready = scaffold.readiness(root)
 
-    # 10) Summary + next-step guidance (ONBRD-FR-010).
+    # Judiciary model-diversity readiness (needs config): a concrete oracle model in a family
+    # different from the coder's (INITX-FR-002 / 3PWR-FR-022).
+    oracle_pin = s.role_model_pin("oracle")
+    coder_fam = s.coder_family()
+    model_div_ok = oracle_pin is not None and (
+        not coder_fam or oracle.family_of(oracle_pin["model"]) != coder_fam
+    )
+
+    # 11) Record the config fingerprint so a later edit is flagged as drift (INITX-FR-015).
+    configdrift.record(s)
+
+    mode = "auto" if auto_mode else "commit"
+    checklist = _readiness_checklist(ready, model_div_ok=model_div_ok)
     report: dict[str, Any] = {
         "root": str(root),
         "layout": layout_status,
@@ -457,19 +677,24 @@ def cmd_init(args: argparse.Namespace) -> int:
         "key_path": str(key_path) if key_path else None,
         "key": key_status,
         "auto_mode": bool(auto_mode),
+        "tier": tier,
+        "customized": customized,
         "brownfield": brownfield,
         "detected_language": detected,
         "git": git_present,
         "agents_md": agents_status,
         "constitution": constitution_status,
+        "speckit_extension": speckit_ext,
+        "model_diversity": model_div_ok,
         "readiness": ready,
+        "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
     }
-    mode = "auto" if auto_mode else "commit"
     if as_json:
         print(json.dumps(report, indent=2))
         return EXIT_OK
 
-    lines = [f"✓ 3Powers is ready under {s.dir}"]
+    # ---- human, colorized summary (INITX-FR-013) ----
+    lines = [st.ok("✓") + " " + st.bold(f"3Powers is ready under {s.dir}")]
     if key_status == "created":
         lines.append(f"  signer created (private key OUTSIDE the repo): {key_path}")
         lines.append(f'  point the engine at it:  export THREEPOWERS_SIGNING_KEY_FILE="{key_path}"')
@@ -479,37 +704,30 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append("  signer: using the key from your environment")
     lines.append(
         f"  language: {lang or '(none — no adapter selected)'} · "
-        f"adapter {adapter_status} · autonomous default: {'yes' if auto_mode else 'no'}"
+        f"adapter {adapter_status} · default tier: {tier} · autonomous default: "
+        f"{'yes' if auto_mode else 'no'}"
     )
     if lang == "" and langs:
         lines.append(
             f"  note: choose a language next time from: {', '.join(langs)} "
             "(or add one — see .3powers/adapters/CONTRACT.md)"
         )
-    if not git_present:
-        lines.append(
-            "  note: no git repo detected — `git init` to unlock diff-scoped brownfield gating"
-        )
+    if speckit_ext.get("status") == "installed":
+        pins_obj = speckit_ext.get("pins")
+        pins = pins_obj if isinstance(pins_obj, dict) else {}
+        pinned = [r for r, stt in pins.items() if stt in ("created", "updated", "kept")]
+        if pinned:
+            lines.append(
+                "  judiciary agents pinned to the configured model: " + ", ".join(sorted(pinned))
+            )
 
-    # Readiness for the agentic workflow (ONBRD-FR-015/016).
+    # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
+    # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
     lines.append("")
-    lines.append("Ready for the agentic workflow?")
-    if agents_status == "created":
-        lines.append("  ＋ AGENTS.md: wrote a 3Powers starter — fill in the [bracketed] parts")
-        lines.append("      (for a richer, project-analyzed one, run your `create-agentsmd` skill)")
-    else:
-        lines.append("  ✓ AGENTS.md: present — ensure it names `3pwr` as the main command")
-    if ready["constitution"]:
-        note = (
-            " (wrote the 3Powers overlay)" if constitution_status in ("created", "overlaid") else ""
-        )
-        lines.append(f"  ✓ constitution: 3Powers separation-of-powers law in place{note}")
-    elif ready["speckit_dir"]:
-        lines.append("  ⚠ constitution: Spec Kit is set up but the 3Powers constitution is missing")
-    else:
-        lines.append(
-            "  ✗ Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:"
-        )
+    lines.append(st.head("Ready for the agentic workflow? — readiness checklist:"))
+    lines.extend(_checklist_lines(st, checklist))
+    if not ready["speckit_dir"]:
+        lines.append("  Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:")
         if ready["specify_cli"]:
             lines.append(
                 "      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it"
@@ -519,24 +737,27 @@ def cmd_init(args: argparse.Namespace) -> int:
                 "      install Spec Kit's `specify` CLI (https://github.com/github/spec-kit), then "
                 "`3pwr init --with-speckit`"
             )
-    if ready["speckit_dir"] and not ready["specify_cli"]:
-        lines.append("  ⚠ `specify` CLI not on PATH — install it to run the live lifecycle")
+    if not git_present:
+        lines.append(
+            st.warn("  ⚠ no git repo detected")
+            + " — `git init` to unlock diff-scoped brownfield gating"
+        )
 
+    # Explained next steps (INITX-FR-012).
     lines.append("")
     if brownfield:
-        lines.append("Existing project detected — adopt gradually:")
-        lines.append(
-            "  3pwr gate run --path . --tier Standard --report-only     # see debt, block nothing"
-        )
-        lines.append(
-            "  3pwr characterize --module <path>                        # pin legacy behaviour"
-        )
-        lines.append(
-            "  3pwr gate run --path . --base main --diff-scope          # enforce on changes only"
-        )
+        lines.append(st.head("Existing project detected — adopt gradually, in this order:"))
+        lines.append("  1. " + st.bold("3pwr gate run --path . --tier Standard --report-only"))
+        lines.append("       see your current gate debt without blocking anything")
+        lines.append("  2. " + st.bold("3pwr characterize --module <path>"))
+        lines.append("       pin the behaviour of a legacy module (reconstruct spec + oracle)")
+        lines.append("  3. " + st.bold("3pwr gate run --path . --base main --diff-scope"))
+        lines.append("       enforce the gates only on the code you change from now on")
     else:
-        lines.append("Next — author your first spec and drive the lifecycle:")
-        lines.append(f'  3pwr run "<what you want built>" --mode {mode}')
+        lines.append(st.head("Next — author your first spec and drive the lifecycle:"))
+        lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
+        lines.append("       one command drives spec → plan → oracle → build → verify → ship,")
+        lines.append("       stopping only at the two human gates (spec approval, sign-off)")
         lines.append("  (or step-by-step: /speckit.specify → … → /3pwr.advance)")
     print("\n".join(lines))
     return EXIT_OK
@@ -577,7 +798,9 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
-    human = _format_verdict(verdict, appended)
+    human = _format_verdict(
+        verdict, appended, style.styler(sys.stdout, as_json=getattr(args, "json", False))
+    )
     if args.report_only and verdict.result != STATUS_PASS:
         human += "\n  ⓘ report-only: verdict emitted but not enforced"
     _print(
@@ -1783,12 +2006,77 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
+    # Resolve the coder + oracle integrations from config/flags — integration-agnostic (RUNX-NFR-005).
+    coder_int = runpreflight.resolve_coder_integration(s, args.integration)
+    oracle_int = runpreflight.resolve_oracle_integration(s)
+    coder_model = str(s.role("coder").get("model") or "")
+    oracle_model = str(s.role("oracle").get("model") or "")
+
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold (RUNX-FR-009).
+    # --dry-run needs none of this: it dispatches nothing and is always available offline (RUNX-FR-012).
+    if not args.dry_run and not args.status:
+        workflow_path = Path(
+            args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
+        )
+        prqs = runpreflight.check(
+            s,
+            workflow_path=workflow_path,
+            coder_integration=coder_int,
+            oracle_integration=oracle_int,
+            entries=ledger.entries(),
+            spec_id=spec_id,
+        )
+        missing = runpreflight.unmet(prqs)
+        if missing:
+            # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
+            # alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).
+            obj = {
+                "status": "preflight_failed",
+                "spec_id": spec_id,
+                "missing": [{"prerequisite": p.name, "fix": p.fix} for p in missing],
+                "alternatives": list(runpreflight.OFFLINE_ALTERNATIVES),
+            }
+            if args.json:
+                print(json.dumps(obj, indent=2))
+            else:
+                est = style.styler(sys.stderr, as_json=False)
+                lines = [
+                    est.err("✗ cannot start `3pwr run` — unmet prerequisites")
+                    + " (no stage was dispatched):"
+                ]
+                for p in missing:
+                    lines.append(f"  {est.mark('fail')} {est.bold(p.name)}: {p.fix}")
+                lines.append("  always available offline:")
+                for alt in runpreflight.OFFLINE_ALTERNATIVES:
+                    lines.append(f"    • {alt}")
+                print("\n".join(lines), file=sys.stderr)
+            return EXIT_USAGE
+
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     tracker = orchestrate.Tracker(sys.stdout, mode)
 
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
             tracker.on_event(ev)
+
+    def _record_dispatch(resume_from: str) -> None:
+        """Record one signed executive-dispatch provenance entry per stage in the next live segment
+        (RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run
+        (it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012)."""
+        if args.dry_run:
+            return
+        for step, _stage in orchestrate.segment_actions(resume_from):
+            is_oracle = step == "oracle"
+            ledger.append(
+                "run",
+                runpreflight.provenance_payload(
+                    step,
+                    oracle_int if is_oracle else coder_int,
+                    oracle_model if is_oracle else coder_model,
+                ),
+                sk,
+                spec_id=spec_id,
+            )
 
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
@@ -1797,6 +2085,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
         runner = _run_make_runner(s, args, mode, resume_from=pending)
+        _record_dispatch(pending)  # provenance for the resumed segment only (RUNX-FR-004/007)
         first_resuming = (
             not args.dry_run
         )  # live: `specify resume`; dry-run: runner is already positioned
@@ -1824,6 +2113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "(you still approve the spec — FR-006)"
             )
         runner = _run_make_runner(s, args, mode)
+        _record_dispatch("")  # provenance for the first segment (up to the spec-approval gate)
         first_resuming = False
 
     try:
@@ -1870,20 +2160,45 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
+            _record_dispatch(
+                result.gate
+            )  # provenance for the next segment (no re-record — RUNX-FR-004)
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # `specify` not installed on the live path
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
     if result.status == "failed":
-        _notify(args.notify, f"3pwr run {spec_id}: gates RED — needs your decision")
+        if result.is_gate_red:
+            # A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,
+            # show Verify reached. No incident/observe-signal suggestion — that is not the remedy.
+            reached = result.stage or "Verify"
+            _notify(args.notify, f"3pwr run {spec_id}: gates RED at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(reached)}\n"
+                "  ✗ gates red — the deterministic gate suite failed. Inspect with "
+                "`3pwr gate run --spec <spec> --tier <tier>`, fix the failing gate(s), then "
+                f"`3pwr run --resume --spec-id {spec_id}`."
+            )
+            _print({"status": "gates_red", "stage": reached, "spec_id": spec_id}, args.json, human)
+            return EXIT_FAIL
+        # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
+        # "gates red", never route to the incident/observe-signal path; exit with a setup/usage status.
+        reached = result.stage or "an early stage"
+        _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
         human = (
-            f"{orchestrate.render_tracker(result.stage)}\n  ✗ gates red. Fix + re-run, or route the "
-            f"lesson to a new spec round:\n    "
-            f'`3pwr observe signal --spec-id {spec_id} --kind incident --note "..."`.'
+            f"{orchestrate.render_tracker(result.stage)}\n"
+            f"  ✗ dispatch failed at {reached} — a stage could not be executed (a setup/dispatch "
+            "problem, not a gate verdict).\n"
+            "  confirm the coder integration is headless and available (`3pwr run` reports "
+            f"prerequisites), then re-run — or resume: `3pwr run --resume --spec-id {spec_id}`."
         )
-        _print({"status": "failed", "stage": result.stage, "spec_id": spec_id}, args.json, human)
-        return EXIT_FAIL
+        _print(
+            {"status": "dispatch_failed", "stage": result.stage, "spec_id": spec_id},
+            args.json,
+            human,
+        )
+        return EXIT_USAGE
     if result.status == "aborted":
         _notify(args.notify, f"3pwr run {spec_id}: aborted")
         _print({"status": "aborted", "spec_id": spec_id}, args.json, "  ⊘ run aborted")
@@ -2236,7 +2551,58 @@ def build_parser() -> argparse.ArgumentParser:
         help="coding-agent integration passed to `specify init` under --with-speckit "
         "(e.g. copilot, claude; default: specify prompts, or copilot non-interactively)",
     )
-    ip.set_defaults(func=cmd_init)
+    ip.add_argument(
+        "--tier",
+        help="default risk tier a new spec starts at (advisory; never weakens a gate — INITX-FR-001)",
+    )
+    ip.add_argument(
+        "--oracle-model",
+        dest="oracle_model",
+        help="judiciary oracle model as <family>/<model>, pinned into /3pwr.oracle (INITX-FR-002/004)",
+    )
+    ip.add_argument(
+        "--oracle-integration",
+        dest="oracle_integration",
+        help="Spec Kit integration for the judiciary model (e.g. copilot); default: --integration or copilot",
+    )
+    ip.add_argument(
+        "--oracle-label",
+        dest="oracle_label",
+        help="friendly label written into the agent frontmatter (default: the model id)",
+    )
+    ip.set_defaults(func=cmd_init, _skip_drift=True)
+
+    cfp = sub.add_parser("config", help="3Powers configuration operations")
+    csub = cfp.add_subparsers(dest="config_cmd", required=True)
+    cap = common(
+        csub.add_parser(
+            "apply",
+            help="re-render the judiciary agent model pins from config and clear the drift warning",
+        )
+    )
+    cap.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite a hand-edited model pin (default: keep it — INITX-NFR-006)",
+    )
+    cap.set_defaults(func=cmd_config_apply, _skip_drift=True)
+
+    csp = common(
+        sub.add_parser(
+            "commit-stage",
+            help="auto-commit after a successful lifecycle stage (INITX-FR-006)",
+        )
+    )
+    csp.add_argument("--stage", required=True, help="the lifecycle stage just completed")
+    csp.add_argument(
+        "--spec-id", dest="spec_id", help="the governing spec id (recorded in the message)"
+    )
+    csp.add_argument(
+        "--paths",
+        nargs="*",
+        help="stage only these paths before committing (default: commit what is already staged)",
+    )
+    csp.set_defaults(func=cmd_commit_stage)
 
     gp = sub.add_parser("gate", help="gate engine")
     gsub = gp.add_subparsers(dest="gate_cmd", required=True)
@@ -2580,9 +2946,30 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _maybe_warn_config_drift(args: argparse.Namespace) -> None:
+    """Warn (to stderr) when tracked config changed since the last apply (INITX-FR-015/016).
+
+    Routing the warning to stderr keeps stdout / ``--json`` / verdict bytes byte-identical
+    (INITX-FR-014). Best-effort: skipped for ``init`` / ``config apply`` (they record the fingerprint)
+    and whenever no trust spine is resolvable. It never acts on the change and never raises."""
+    if getattr(args, "_skip_drift", False):
+        return
+    try:
+        s = _settings(getattr(args, "root", None))
+        changed = configdrift.detect(s)
+    except (FileNotFoundError, LookupError, KeyError, ValueError, OSError):
+        return
+    if not changed:
+        return
+    st = style.styler(sys.stderr, as_json=getattr(args, "json", False))
+    for line in configdrift.warn_lines(changed):
+        print(st.warn(line) if line.lstrip().startswith("⚠") else st.dim(line), file=sys.stderr)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _maybe_warn_config_drift(args)
     try:
         return int(args.func(args))
     except (FileNotFoundError, LookupError, KeyError, ValueError) as exc:

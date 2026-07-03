@@ -1,0 +1,26 @@
+# Tasks: Headless Executive Dispatch (RUNX)
+
+Every task traces to exactly one requirement (3PWR-FR-016) and declares its file scope
+(3PWR-FR-017). Two-way coverage with the spec is checked by `3pwr coverage-check`; spec→test
+conformance is enforced by the `spec_conformance` gate (3PWR-FR-030). The live headless dispatch of
+real agents cannot be exercised deterministically in the suite, so those requirements are covered by a
+structural check plus the stubbed-live CLI path (RUNX-SC-007).
+
+- [x] T001 [RUNX-FR-001] Dispatch each executive stage through the Spec Kit substrate carrying the resolved coder integration (the live runner composes `specify workflow run`); verified structurally via `_run_make_runner` (files: engine/src/threepowers/cli.py, engine/src/threepowers/orchestrate.py, engine/tests/test_headless_run.py)
+- [x] T002 [RUNX-FR-002] Keep the engine free of any model/agent API call — all agent work is dispatched through the substrate; verified with a blocked socket on the run path (files: engine/src/threepowers/orchestrate.py, engine/tests/test_headless_run.py)
+- [x] T003 [RUNX-FR-003] Auto mode stops only at the two mandatory human gates; commit mode stops at every gate (existing `drive` policy, held by test) (files: engine/src/threepowers/orchestrate.py, engine/tests/test_headless_run.py)
+- [x] T004 [RUNX-FR-004] Resume from the paused stage without re-dispatching a completed stage — segment provenance is recorded per segment only (files: engine/src/threepowers/orchestrate.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T005 [RUNX-FR-005] Author the run's oracle under a different-family, read-path-isolated headless dispatch — the oracle segment carries the oracle integration; isolation delegated to the delivered `oracle dispatch` (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T006 [RUNX-FR-006] Apply the diversity policy — same-family coder/oracle is refused by default and proceeds only under a signed, active model-diversity deviation, never silently (files: engine/src/threepowers/runpreflight.py, engine/tests/test_headless_run.py)
+- [x] T007 [RUNX-FR-007] Record one signed executive-dispatch provenance entry per dispatched stage (stage, integration, resolved model), bound into the hash-chained ledger (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T008 [RUNX-FR-008] Preserve the High-risk require-dispatch + diversity enforcement at the ship advance — RUNX relaxes no independence check; the policy knob still reads from config (files: engine/src/threepowers/runpreflight.py, engine/tests/test_headless_run.py)
+- [x] T009 [RUNX-FR-009] Preflight every run prerequisite (workflow, Spec Kit CLI, headless coder, different-family oracle) and fail fast with a named prerequisite + exact fix before any dispatch (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T010 [RUNX-FR-010] Report a setup/dispatch failure distinctly — name the failing stage, exit with a status distinct from the gate-failure status, and never print "gates red" or route to the incident/observe path for a non-verdict failure (files: engine/src/threepowers/orchestrate.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T011 [RUNX-FR-011] Report a gate-red verdict only when the deterministic gate suite actually failed at Verify, showing the stages reached (files: engine/src/threepowers/orchestrate.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T012 [RUNX-FR-012] Always offer the fully-offline `--dry-run` and step-by-step alternatives, and name them in every preflight-failure message (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T013 [RUNX-NFR-001] Keep dispatch a delivery mechanism only — `drive` passes the runner's verdict through unchanged, so a headless and a step-by-step verdict are identical (files: engine/src/threepowers/orchestrate.py, engine/tests/test_headless_run.py)
+- [x] T014 [RUNX-NFR-002] Make a headless run offline-reconstructable and tamper-evident — provenance entries are bound into the signed ledger and re-verify offline (files: engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T015 [RUNX-NFR-003] Degrade gracefully to non-interactive defaults with machine-readable status/failures (files: engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T016 [RUNX-NFR-004] Turn every preflight/dispatch failure mode into an actionable message and a clean non-zero exit — never an unhandled crash (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/cli.py, engine/tests/test_headless_run.py)
+- [x] T017 [RUNX-NFR-005] Keep the engine integration-agnostic — the accepted headless set is configuration-driven with no integration name embedded in run logic (files: engine/src/threepowers/runpreflight.py, engine/src/threepowers/scaffold/config/roles.yaml, engine/tests/test_headless_run.py)
+- [x] T018 [RUNX-FR-009] Record the change set in the plan series (files: plan/020-headless-run.md, specs/008-headless-run/tasks.md)

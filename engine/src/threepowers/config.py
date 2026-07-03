@@ -73,6 +73,23 @@ class Settings:
             return "auto"
         return "auto" if bool(auto) else "commit"
 
+    def auto_commit(self) -> bool:
+        """Whether per-stage auto-commit is enabled (INITX-FR-006). Defaults to True (the wanted workflow).
+
+        Advisory: it commits each successful lifecycle stage; it never touches the ledger or a gate."""
+        v = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("auto_commit")
+        return True if v is None else bool(v)
+
+    def default_tier(self) -> str:
+        """The recorded default risk tier a new spec starts at (advisory — INITX-FR-001).
+
+        Defaults to ``Standard`` when no preference was recorded. Advisory only: it never lowers a
+        threshold or removes a gate (INITX-NFR-002); it seeds the tier a fresh spec is authored at."""
+        tier = str(
+            (_load_yaml(self.onboarding_path).get("defaults") or {}).get("tier") or ""
+        ).strip()
+        return tier or "Standard"
+
     def load_risk_tiers(self) -> dict[str, Any]:
         return _load_yaml(self.risk_tiers_path)
 
@@ -99,6 +116,33 @@ class Settings:
     def coder_model(self) -> str:
         """The coder's full ``<family>/<model>`` if declared (for model-level diversity); else ''."""
         return ((self.load_roles().get("roles") or {}).get("coder") or {}).get("model", "") or ""
+
+    def role(self, name: str) -> dict[str, Any]:
+        """The raw configuration block for one role (empty dict when absent)."""
+        return (self.load_roles().get("roles") or {}).get(name) or {}
+
+    def coder_family(self) -> str:
+        """The coder's model *family* — from its full ``model`` if present, else ``model_family``."""
+        from .oracle import family_of
+
+        c = self.role("coder")
+        return (family_of(str(c.get("model") or "")) or str(c.get("model_family") or "")).strip()
+
+    def role_model_pin(self, name: str) -> dict[str, str] | None:
+        """The concrete model pin for a role — ``{model, integration, label}`` — or ``None`` (INITX-FR-003).
+
+        Reading a roles configuration that predates this feature (family-only, no ``model``) simply
+        yields ``None`` here and never fails — the concrete-model fields are additive. ``label``
+        falls back to the model id, so a pin always renders as ``<label> (<integration>)`` (INITX-FR-004)."""
+        r = self.role(name)
+        model = str(r.get("model") or "").strip()
+        if not model:
+            return None
+        return {
+            "model": model,
+            "integration": str(r.get("integration") or "").strip(),
+            "label": str(r.get("label") or "").strip() or model,
+        }
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

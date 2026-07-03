@@ -76,6 +76,15 @@ class RunResult:
     gate: str = ""
     gate_fr: str = ""  # the FR id when the pause is a mandatory gate
     stage: str = ""
+    verdict: str = (
+        ""  # the deterministic-gate verdict when status == failed: "fail" = a real gate-red,
+    )
+    # "" = a dispatch/execution failure (not a gate verdict) — the honest-diagnostics split (RUNX-FR-010/011)
+
+    @property
+    def is_gate_red(self) -> bool:
+        """True only when a failure carries a real deterministic-gate ``fail`` verdict (RUNX-FR-010)."""
+        return self.status == "failed" and self.verdict == "fail"
 
 
 class Runner(Protocol):
@@ -93,6 +102,21 @@ def resume_index(gate: str) -> int:
         if sid == gate:
             return i + 1
     return 0
+
+
+def segment_actions(resume_from: str = "") -> list[tuple[str, str]]:
+    """The executive/judiciary action steps dispatched in the segment after ``resume_from`` — up to (not
+    including) the next gate. Used to record one per-stage dispatch provenance entry (RUNX-FR-007), so a
+    fresh run records only the stages before the first human gate and a resume records only the next
+    segment (no already-completed stage is re-recorded, mirroring RUNX-FR-004)."""
+    start = resume_index(resume_from) if resume_from else 0
+    out: list[tuple[str, str]] = []
+    for sid, kind, stage in LIFECYCLE_STEPS[start:]:
+        if kind == "gate":
+            break
+        if kind == "action":
+            out.append((sid, stage))
+    return out
 
 
 def drive(
@@ -122,7 +146,7 @@ def drive(
             outcome = runner.resume("approve")
             continue
         on_event(Event(outcome.status, "", outcome.stage, outcome.verdict))
-        return RunResult(outcome.status, stage=outcome.stage)
+        return RunResult(outcome.status, stage=outcome.stage, verdict=outcome.verdict)
 
 
 # --------------------------------------------------------------------------- simulated runner (--dry-run / tests)
@@ -243,7 +267,12 @@ def format_event(ev: Event, mode: str) -> str:
         tag = f" — HUMAN GATE ({fr})" if fr else " — review gate (commit mode)"
         return f"  ⏸ {ev.stage:<8} {ev.step}{tag}: awaiting your commitment"
     if ev.kind == "failed":
-        return "  ✗ gates red — stopped for your decision"
+        # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/execution
+        # failure is reported distinctly and names the stage reached (RUNX-FR-010/011).
+        if ev.detail == "fail":
+            return "  ✗ gates red — the deterministic gate suite failed"
+        where = f" at {ev.stage}" if ev.stage else ""
+        return f"  ✗ dispatch failed{where} — a stage could not be executed (not a gate verdict)"
     if ev.kind == "aborted":
         return "  ⊘ aborted"
     if ev.kind == "done":

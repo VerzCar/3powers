@@ -21,13 +21,40 @@
 # `oracle.require_dispatch` (default false) is the High-risk policy for 3PWR-FR-021/A3:
 # when true, a High-risk `advance` requires an isolated *headless* dispatch attestation
 # (`3pwr oracle dispatch`), not just the manual in-IDE record.
+#
+# The judiciary roles (`oracle`, `reviewer`) also carry a concrete `model` + `integration`
+# (+ optional friendly `label`). `3pwr init` and `3pwr config apply` render this into the
+# frontmatter of the judiciary Spec Kit agents (`/3pwr.oracle`, `/3pwr.review`) as
+# `model: <label> (<integration>)`, so the diversity split is real in the IDE (INITX-FR-004).
+# These fields are ADDITIVE: a family-only file (no `model`) still loads and gates exactly as
+# before (INITX-FR-003). Non-judiciary agents are never pinned — the coder stays on the
+# integration's default model. Editing this file makes the next `3pwr` run warn that the pins
+# may be stale; re-apply with `3pwr config apply` (INITX-FR-015/016).
 version: 1
 diversity_enforced: true
 diversity_level: family                     # family | model (3PWR-FR-022)
 
+# Integrations that a LIVE `3pwr run` can dispatch HEADLESSLY (no interactive IDE) — RUNX-FR-001/NFR-005.
+# The set is data, not code: edit it to match the integrations you have installed in Spec Kit. An
+# IDE-bound integration (e.g. copilot) is not headless-dispatchable, so `3pwr run` preflight will name a
+# headless alternative from this list instead of failing opaquely (RUNX-FR-009). `3pwr run --dry-run`
+# needs none of these.
+headless_integrations: [claude, gemini, codex, cursor-agent, opencode, qwen, auggie]
+
 roles:
   planner:  { model_family: "" }            # set per project / per run
-  coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot
+  coder:    { model_family: "openai" }      # e.g. a GPT-* model in Copilot — NOT pinned into any agent
   # coder:  { model_family: "openai", model: "openai/gpt-4o" }   # add `model` for diversity_level: model
-  oracle:   { model_family: "anthropic", require_dispatch: false }  # judiciary — SHOULD differ from `coder`
-  reviewer: { model_family: "google" }      # residual review (3PWR-FR-036, arrives v0.5)
+  # judiciary — SHOULD differ from `coder`; pinned into /3pwr.oracle (INITX-FR-004):
+  oracle:
+    model_family: anthropic
+    model: anthropic/claude-opus-4-8
+    integration: copilot
+    label: Claude Opus 4.8
+    require_dispatch: false
+  # residual review (3PWR-FR-036); pinned into /3pwr.review:
+  reviewer:
+    model_family: google
+    model: google/gemini-2.5-pro
+    integration: copilot
+    label: Gemini 2.5 Pro

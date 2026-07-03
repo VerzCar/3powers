@@ -4,8 +4,28 @@ version = "0.1.0"
 description = "3Powers — judiciary kit engine (gate runner, hash-chained verdict ledger, verify) layered on GitHub Spec Kit."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "3Powers" }]
+keywords = [
+    "spec-driven-development",
+    "agentic",
+    "code-review",
+    "quality-gates",
+    "oracle",
+    "spec-kit",
+    "verdict-ledger",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "cryptography>=42",
     "PyYAML>=6",
@@ -13,6 +33,11 @@ dependencies = [
 
 [project.scripts]
 "3pwr" = "threepowers.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/VerzCar/3powers"
+Repository = "https://github.com/VerzCar/3powers"
+Issues = "https://github.com/VerzCar/3powers/issues"
 
 [project.optional-dependencies]
 dev = [
