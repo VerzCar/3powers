@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="3Powers — a portable, open judiciary kit for spec-driven, agentic software delivery."
+    />
+    <title>3Powers — Separation of Powers for Agentic Software Delivery</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav container">
+        <a class="brand" href="#top">3Powers</a>
+        <ul class="nav-links">
+          <li><a href="#pillars">Pillars</a></li>
+          <li><a href="#lifecycle">Lifecycle</a></li>
+          <li><a href="#start">Get started</a></li>
+          <li>
+            <a
+              class="nav-cta"
+              href="https://github.com/VerzCar/3powers"
+              target="_blank"
+              rel="noopener"
+              >GitHub</a
+            >
+          </li>
+        </ul>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-inner">
+          <p class="eyebrow">Open · Portable · Model-agnostic</p>
+          <h1>Separation of powers for<br />agentic software delivery</h1>
+          <p class="lead">
+            When one model writes the spec, the code, the tests, <em>and</em>
+            the review, validation becomes circular. 3Powers restores three
+            independent branches — legislative, executive, and judicial — so you
+            can trust what your agents ship.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#start">Get started</a>
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/VerzCar/3powers"
+              target="_blank"
+              rel="noopener"
+              >View on GitHub</a
+            >
+          </div>
+        </div>
+      </section>
+
+      <section id="pillars" class="section">
+        <div class="container">
+          <h2 class="section-title">Three independent branches</h2>
+          <p class="section-sub">
+            The spec is the law. Agents do the building. An independent
+            judiciary decides whether the code matches the spec.
+          </p>
+          <div class="cards">
+            <article class="card">
+              <div class="card-badge">Legislative</div>
+              <h3>The spec is the law</h3>
+              <p>
+                Every later stage answers to a versioned, EARS-form
+                specification with an explicit risk tier and non-goals.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-badge">Executive</div>
+              <h3>Agents do the building</h3>
+              <p>
+                Model-, language-, and provider-agnostic executive agents build
+                against the spec, staying inside declared file scope.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-badge">Judicial</div>
+              <h3>An independent judge</h3>
+              <p>
+                An independent oracle, a deterministic gate suite, and human
+                review judge whether the code matches the spec.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="lifecycle" class="section section-alt">
+        <div class="container">
+          <h2 class="section-title">An eight-stage lifecycle</h2>
+          <p class="section-sub">
+            Explicit human gates at spec approval and sign-off — everything else
+            is automated and cheapest-first.
+          </p>
+          <ol class="stages">
+            <li>Discovery</li>
+            <li>Spec</li>
+            <li>Plan</li>
+            <li>Build</li>
+            <li>Verify</li>
+            <li>Review</li>
+            <li>Ship</li>
+            <li>Observe</li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="start" class="section">
+        <div class="container">
+          <h2 class="section-title">Get started</h2>
+          <p class="section-sub">
+            Install the engine and run the full lifecycle in one command.
+          </p>
+          <pre class="code"><code>uv tool install ./engine
+3pwr keygen
+3pwr run "your intent here" --mode auto</code></pre>
+          <div class="hero-actions">
+            <a
+              class="btn btn-primary"
+              href="https://github.com/VerzCar/3powers"
+              target="_blank"
+              rel="noopener"
+              >Read the docs</a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <p>3Powers — a judiciary kit for spec-driven, agentic delivery.</p>
+        <p>
+          <a
+            href="https://github.com/VerzCar/3powers"
+            target="_blank"
+            rel="noopener"
+            >github.com/VerzCar/3powers</a
+          >
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
