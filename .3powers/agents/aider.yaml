@@ -1,0 +1,14 @@
+# Agent backend manifest — Aider, headless (EXEC-FR-004).
+# Git-disciplined; `aider --message "<prompt>"` runs one non-interactive turn. Works against any
+# OpenAI-compatible API, so it slots cleanly behind an enterprise gateway (OPENAI_BASE_URL, etc.) —
+# the engine passes the environment through (EXEC-FR-012). 3Powers records provenance/commits itself,
+# so auto-commit is disabled here.
+agent: aider
+family: ""                  # any OpenAI-compatible model; set roles.<role>.model for diversity
+headless: true
+command: aider
+base_args: ["--yes-always", "--no-auto-commit", "--no-gitignore"]
+model_flag: "--model"
+prompt_flag: "--message"
+prompt_via: arg
+notes: "Reference backend. `--message` runs a single non-interactive turn; provider-resilient (any OpenAI-compatible API)."

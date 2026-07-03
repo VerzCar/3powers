@@ -225,7 +225,9 @@ def test_cli_dispatch_failure_is_not_gates_red(run_project, monkeypatch, capsys)
         "drive",
         lambda *a, **k: orchestrate.RunResult("failed", stage="Build", verdict=""),
     )
-    rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "DF"])
+    rc = main(
+        ["--root", str(root), "run", "x", "--runner", "specify", "--no-input", "--json", "--spec-id", "DF"]
+    )
     assert rc == 2  # distinct from the gate-failure status
     out = capsys.readouterr().out
     payload = json.loads(out)
@@ -263,7 +265,9 @@ def test_live_run_records_per_stage_provenance_and_ledger_verifies(run_project, 
     monkeypatch.setattr(runpreflight, "check", lambda *a, **k: [])  # prerequisites hold
     monkeypatch.setattr(orchestrate, "SpecifyRunner", lambda *a, **k: orchestrate.SimulatedRunner())
     # A live (non-dry-run) run pauses at the first human gate after dispatching specify + clarify.
-    rc = main(["--root", str(root), "run", "build X", "--no-input", "--spec-id", "PR"])
+    rc = main(
+        ["--root", str(root), "run", "build X", "--runner", "specify", "--no-input", "--spec-id", "PR"]
+    )
     assert rc == 0
     entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
     dispatched = [
@@ -331,7 +335,9 @@ def test_cli_same_family_oracle_refused_at_preflight(tmp_path, monkeypatch, caps
     (root / ".specify" / "workflows" / "3powers").mkdir(parents=True)
     (root / ".specify" / "workflows" / "3powers" / "lifecycle.yml").write_text("x\n", "utf-8")
     capsys.readouterr()  # flush the keygen output
-    rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "SF"])
+    rc = main(
+        ["--root", str(root), "run", "x", "--runner", "specify", "--no-input", "--json", "--spec-id", "SF"]
+    )
     assert rc == 2
     payload = json.loads(capsys.readouterr().out)
     missing = {m["prerequisite"]: m["fix"] for m in payload["missing"]}
@@ -348,6 +354,7 @@ def test_live_runner_dispatches_through_spec_kit_with_integration(run_project):
 
     class _Args:
         dry_run = False
+        runner = "specify"  # EXEC: the legacy Spec Kit dispatch now lives behind --runner specify
         intent = "do a thing"
         integration = "claude"
         workflow = None

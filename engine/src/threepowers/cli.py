@@ -47,6 +47,7 @@ import yaml
 from . import (
     __version__,
     agentpins,
+    agents,
     anchor,
     canonical,
     config,
@@ -67,10 +68,11 @@ from . import (
     style,
     workkind,
 )
-from .adapters import run_cmd
+from .adapters import detect_adapter, run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger, rotation_payload
+from .runner import CliAgentRunner, NativeRunner
 from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
@@ -1963,30 +1965,118 @@ def _run_signoff(
     ledger.append("signoff", payload, sk, spec_id=spec_id)
 
 
-def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+def _resolve_runner_kind(args: argparse.Namespace) -> str:
+    """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to ``native``
+    (EXEC-FR-013). ``specify`` selects the legacy Spec Kit dispatch."""
     if args.dry_run:
-        idx = orchestrate.resume_index(resume_from) if resume_from else 0
+        return "sim"
+    return getattr(args, "runner", None) or "native"
+
+
+def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
+    """The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""
+    return getattr(args, "agent", None) or runpreflight.resolve_coder_integration(s, args.integration)
+
+
+def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
+    """The spec the native verify stage gates against: --spec if given, else the newest specs/**/spec.md."""
+    if getattr(args, "spec", None):
+        p = Path(args.spec)
+        return p if p.exists() else None
+    specs = sorted(
+        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
+    )
+    return specs[0] if specs else None
+
+
+def _native_verdict(s: Settings, args: argparse.Namespace, tier: str, kinds: list[str]) -> str:
+    """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
+
+    Returns ``pass`` / ``fail``; returns ``error`` when the gates cannot even run (no spec resolvable, no
+    adapter detected, bad tier) so the caller reports a setup/dispatch problem, never a false gate-red
+    (EXEC-FR-016). The engine computes the verdict itself — no subprocess dispatch, no model (3PWR-NFR-001)."""
+    spec_path = _resolve_run_spec(s, args)
+    if spec_path is None:
+        return "error"
+    try:
+        adapter_name = detect_adapter(s, s.root)
+        verdict = run_gates(
+            s,
+            s.root,
+            tier=tier,
+            spec_path=spec_path,
+            adapter_name=adapter_name,
+            work_kind=kinds,
+        )
+    except (KeyError, LookupError, FileNotFoundError, ValueError, OSError):
+        return "error"
+    return "pass" if verdict.result == STATUS_PASS else "fail"
+
+
+def _native_runner(s: Settings, args: argparse.Namespace, start_index: int) -> NativeRunner:
+    """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009) and
+    run the gate suite in-process at the verify stage (EXEC-FR-006)."""
+    intent = args.intent or ""
+    wk = workkind.classify(intent)
+    tier = args.tier or wk.suggested_tier or s.default_tier()
+
+    coder_agent = _resolve_coder_agent(s, args)
+    oracle_agent = runpreflight.resolve_oracle_integration(s)
+    coder_manifest = agents.load_agent(s, coder_agent)
+    coder = CliAgentRunner(
+        s, coder_manifest, model=str(s.role("coder").get("model") or ""), cwd=s.root, intent=intent
+    )
+    try:
+        oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
+    except FileNotFoundError:
+        oracle_manifest = coder_manifest
+    oracle_runner = CliAgentRunner(
+        s, oracle_manifest, model=str(s.role("oracle").get("model") or ""), cwd=s.root, intent=intent
+    )
+
+    def dispatch(step: str, stage: str):
+        # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
+        # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
+        # High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.
+        return (oracle_runner if step == "oracle" else coder).dispatch(step, stage)
+
+    def run_verdict(stage: str) -> str:
+        return _native_verdict(s, args, tier, wk.kinds)
+
+    return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
+
+
+def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_from: str = ""):
+    kind = _resolve_runner_kind(args)
+    idx = orchestrate.resume_index(resume_from) if resume_from else 0
+    if kind == "sim":
         return orchestrate.SimulatedRunner(
             verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
         )
-    workflow = args.workflow or str(s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-    # Carry the inferred work-kind into the workflow so the verify step shapes the gate suite
-    # (3PWR-FR-058 → FR-008/009); deterministic, so it never perturbs the verdict (3PWR-NFR-001).
-    kinds = workkind.classify(args.intent or "").kinds
-    inputs = {
-        "intent": args.intent or "",
-        "mode": mode,
-        "integration": args.integration,
-        "work_kind": ",".join(kinds),
-    }
-    return orchestrate.SpecifyRunner(s.root, workflow, inputs)
+    if kind == "specify":
+        workflow = args.workflow or str(
+            s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
+        )
+        # Carry the inferred work-kind into the workflow so the verify step shapes the gate suite
+        # (3PWR-FR-058 → FR-008/009); deterministic, so it never perturbs the verdict (3PWR-NFR-001).
+        kinds = workkind.classify(args.intent or "").kinds
+        inputs = {
+            "intent": args.intent or "",
+            "mode": mode,
+            "integration": args.integration,
+            "work_kind": ",".join(kinds),
+        }
+        return orchestrate.SpecifyRunner(s.root, workflow, inputs)
+    return _native_runner(s, args, idx)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human
-    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. Orchestration only —
-    it composes ``specify workflow run`` (A1), makes no model call (A3), and never enters the
-    deterministic verdict (NFR-001)."""
+    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the
+    **native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the
+    gate suite in-process at Verify (EXEC-FR-006); ``--runner specify`` selects the legacy Spec Kit
+    dispatch. The engine makes no model call itself (EXEC-NFR-001) and never enters the deterministic
+    verdict (3PWR-NFR-001)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
@@ -2018,26 +2108,35 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
 
-    # Resolve the coder + oracle integrations from config/flags — integration-agnostic (RUNX-NFR-005).
-    coder_int = runpreflight.resolve_coder_integration(s, args.integration)
+    # Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).
+    coder_int = _resolve_coder_agent(s, args)
     oracle_int = runpreflight.resolve_oracle_integration(s)
     coder_model = str(s.role("coder").get("model") or "")
     oracle_model = str(s.role("oracle").get("model") or "")
 
-    # Preflight — a live run must not dispatch a stage until its prerequisites hold (RUNX-FR-009).
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015).
     # --dry-run needs none of this: it dispatches nothing and is always available offline (RUNX-FR-012).
     if not args.dry_run and not args.status:
-        workflow_path = Path(
-            args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-        )
-        prqs = runpreflight.check(
-            s,
-            workflow_path=workflow_path,
-            coder_integration=coder_int,
-            oracle_integration=oracle_int,
-            entries=ledger.entries(),
-            spec_id=spec_id,
-        )
+        if _resolve_runner_kind(args) == "specify":
+            workflow_path = Path(
+                args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
+            )
+            prqs = runpreflight.check(
+                s,
+                workflow_path=workflow_path,
+                coder_integration=coder_int,
+                oracle_integration=oracle_int,
+                entries=ledger.entries(),
+                spec_id=spec_id,
+            )
+        else:  # native (default): require a headless agent CLI, not Spec Kit (EXEC-FR-015)
+            prqs = runpreflight.check_native(
+                s,
+                coder_agent=coder_int,
+                oracle_agent=oracle_int,
+                entries=ledger.entries(),
+                spec_id=spec_id,
+            )
         missing = runpreflight.unmet(prqs)
         if missing:
             # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
@@ -2738,12 +2837,35 @@ def build_parser() -> argparse.ArgumentParser:
     rnp.add_argument(
         "--integration",
         default="auto",
-        help="the coder integration; the oracle should use a different model family",
+        help="the coder agent backend (a manifest in .3powers/agents/); the oracle should use a "
+        "different model family",
+    )
+    rnp.add_argument(
+        "--runner",
+        choices=["native", "specify", "sim"],
+        default=None,
+        help="executive runner: native (default; drive headless agents directly, EXEC-FR-001), "
+        "specify (legacy Spec Kit dispatch), or sim (offline). --dry-run forces sim.",
+    )
+    rnp.add_argument(
+        "--agent",
+        default=None,
+        help="override the coder agent backend for this run (e.g. claude, codex, copilot)",
+    )
+    rnp.add_argument(
+        "--spec",
+        default=None,
+        help="spec.md the native verify stage gates against (default: the newest under specs/)",
+    )
+    rnp.add_argument(
+        "--tier",
+        default=None,
+        help="risk tier for the native verify stage (default: the inferred/suggested tier)",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
     rnp.add_argument(
         "--workflow",
-        help="lifecycle workflow yaml (default: .specify/workflows/3powers/lifecycle.yml)",
+        help="(--runner specify only) lifecycle workflow yaml",
     )
     rnp.add_argument(
         "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'

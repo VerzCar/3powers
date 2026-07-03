@@ -1,0 +1,13 @@
+# Agent backend manifest — OpenAI Codex CLI, headless (EXEC-FR-004).
+# Apache-2.0 coding agent; `codex exec` runs non-interactively. Route model access through the org's
+# OpenAI / Azure OpenAI entitlement or an OpenAI-compatible gateway via OPENAI_BASE_URL / OPENAI_API_KEY
+# (the engine passes the environment through — EXEC-FR-012).
+agent: codex
+family: openai
+headless: true
+command: codex
+base_args: ["exec", "--full-auto"]
+model_flag: "--model"
+prompt_flag: null           # the prompt is the positional argument after `exec`
+prompt_via: arg
+notes: "Reference backend. `codex exec` is the non-interactive entry point; `--full-auto` auto-approves."

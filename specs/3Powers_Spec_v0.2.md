@@ -11,7 +11,7 @@
 | **Document type** | Epic-level specification (the *what* and *why*; the *how* is deferred to a separate implementation plan) |
 | **Version** | 0.2 · Draft |
 | **Status** | Awaiting clarify pass and sign-off |
-| **Substrate** | Layered on GitHub Spec Kit (preset + extension + workflow + catalog systems) — see §3 Constraints |
+| **Substrate** | A native, provider-agnostic executive (an agent-runner contract + engine-owned lifecycle prompts + the judiciary plugins) over **Git**, with optional external model gateways (internal proxy / cloud model service / OpenAI-compatible gateway) as pass-through model access — see §3 Constraints. *(Amended by EXEC, spec 009; was "Layered on GitHub Spec Kit".)* |
 | **Source of method** | *The AI-First SDD Playbook*, Season 1 v1.0 (Verzeri, June 2026) |
 
 > **Revision note (v0.2).** Incorporates author feedback: work type is now *inferred*, not declared (FR-001, FR-058); requirement IDs are project-unique and namespaced by spec ID (FR-059, identifier scheme below); explicit context and session management to preserve model performance (FR-013, FR-060, FR-061); the Phase A / Phase B testing model with the oracle as the binding check and all three test layers required (FR-062–FR-065); build provenance and the deploy gate made first-class (FR-066–FR-068); and full versioning, reversibility, and self-containment of the record (FR-069–FR-071).
@@ -51,9 +51,9 @@ A user states a unit of work as plain-language intent. 3Powers infers what kind 
 
 These are decided inputs to the design, not internal *how*:
 
-- **A1 — Built on Spec Kit (Path A).** 3Powers ships as Spec Kit preset(s), extension(s), workflow(s), and gate plugins, distributed through Spec Kit catalogs. It reuses Spec Kit's integration registry and headless `workflow run` dispatch rather than building its own agent harness or model runtime.
-- **A2 — Git is the substrate.** The repository is the agent's working environment, the home of the authoritative spec, and the home of the versioned history. Git is assumed; a specific Git host is not.
-- **A3 — Provider-agnosticism via dispatch.** Any agent that Spec Kit can dispatch headlessly is eligible to fill a role. 3Powers does not call model APIs directly to satisfy a role.
+- **A1′ — 3Powers owns its executive.** *(Amended by EXEC, spec 009; was "Built on Spec Kit (Path A)".)* 3Powers ships its own executive: a declarative **agent-runner** contract, engine-owned lifecycle prompts, and the gate/judiciary plugins. It dispatches each role to a headless coding agent (Claude Code, an OpenAI Codex-class CLI, the GitHub Copilot CLI, OpenCode, Aider, …) described by a manifest. GitHub Spec Kit is no longer the dispatch substrate or a runtime dependency; interop export remains possible but is not required.
+- **A2 — Git is the substrate.** The repository (and, for the read-path-isolated oracle, a sanitized worktree) is the agent's working environment, the home of the authoritative spec, and the home of the versioned history. Git is assumed; a specific Git host is not.
+- **A3′ — Provider-agnosticism via a pluggable agent runner.** *(Amended by EXEC, spec 009; was "Provider-agnosticism via [Spec Kit] dispatch".)* Any headless coding agent described by a manifest is eligible to fill a role, and model access is routed through the organization's own gateway via pass-through environment/config. The engine **dispatches agents and passes gateway config through but calls no model API itself**, and — the invariant that carries the thesis — **a model never produces or alters the verdict** (the judiciary stays deterministic and model-free, 3PWR-NFR-001).
 - **A4 — CI is optional, never the source of trust.** Where a CI/CD platform exists, 3Powers may re-validate in it, but the guarantee — verdicts, provenance, and reversibility — must hold locally and offline.
 - **A5 — Polyglot from day one.** Language support is a plugin contract, not a hard-coded assumption; v1 ships the contract plus at least two reference adapters.
 - **A6 — Self-application.** 3Powers is built and maintained using 3Powers.
@@ -297,8 +297,7 @@ A signed, verifiable record of where a build came from — *this exact artifact,
 
 3Powers is **not**:
 
-- **A new agent harness or model runtime.** It reuses the substrate's headless dispatch (A1, A3) and adds the judiciary on top.
-- **A replacement for Spec Kit.** It is a kit layered on Spec Kit, not a fork of its dispatch or workflow engine.
+- **A model runtime or a model gateway.** *(Amended by EXEC, spec 009; the former non-goals "a new agent harness" and "a replacement for Spec Kit" are retired — the native executive is now in scope, A1′/A3′.)* 3Powers owns a thin agent-runner that dispatches external coding agents; it does not run models itself and does not implement the gateway/keys/budgets/RBAC/SSO/audit layer — those are inherited by pointing the agent at the organization's gateway.
 - **A CI/CD platform.** CI is optional re-validation, never the source of trust (A4). Provenance is produced and verified without a hosted pipeline (FR-068).
 - **An IDE, editor, or language runtime.** It orchestrates existing per-language tools through adapters; it does not build or run code itself beyond invoking those tools.
 - **An author of intent.** A human writes the intent and signs off on the law; the framework infers the *kind* of work but never approves its own spec.

@@ -1,0 +1,15 @@
+# Agent backend manifest — GitHub Copilot CLI, headless (EXEC-FR-004; enterprise Copilot shops).
+# Copilot exposes its agent runtime programmatically: `copilot -p "<prompt>"` (non-interactive),
+# `--allow-all-tools` (autopilot). Uses the org's Copilot entitlement + Microsoft/GitHub policies; no raw
+# model-gateway API is needed because the executive drives the agent, not raw model calls. A hosted async
+# path (Copilot coding agent via REST → Actions → PR) fits the same contract as a shape-(b) backend
+# (EXEC-FR-011) and is a future manifest, not this one.
+agent: copilot
+family: ""                  # depends on the selected model / BYOK; set roles.<role>.model for diversity
+headless: true
+command: copilot
+base_args: ["--allow-all-tools"]
+model_flag: "--model"
+prompt_flag: "-p"
+prompt_via: arg
+notes: "Reference backend for GitHub Copilot shops. BYOK (OpenAI/Azure/Anthropic keys) via Copilot config."

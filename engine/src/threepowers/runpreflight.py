@@ -13,7 +13,9 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import deviations
+from typing import Callable
+
+from . import agents, deviations
 from .config import Settings
 from .oracle import diverse, family_of
 
@@ -170,6 +172,73 @@ def check(
     else:
         prqs.append(Prereq("different-family oracle integration", True))
 
+    return prqs
+
+
+def _agent_prereq(
+    settings: Settings,
+    label: str,
+    agent: str,
+    headless: set[str],
+    command_present: Callable[[str], bool],
+) -> Prereq:
+    """Whether one role's agent backend is dispatchable: configured, has a manifest, is headless, and its
+    CLI is present. Native counterpart to the coder/oracle checks in :func:`check` (EXEC-FR-015)."""
+    if not agent:
+        return Prereq(
+            label,
+            False,
+            f"set roles.{label.split()[1]}.integration to a headless agent backend "
+            f"(a manifest in .3powers/agents/): {sorted(headless)}",
+        )
+    try:
+        manifest = agents.load_agent(settings, agent)
+    except FileNotFoundError:
+        return Prereq(label, False, f"add an agent manifest at .3powers/agents/{agent}.yaml")
+    if not agents.is_headless(manifest) or agent not in headless:
+        hint = " (IDE-only)" if agent in IDE_ONLY else ""
+        return Prereq(
+            label,
+            False,
+            f"agent '{agent}'{hint} is not headless-dispatchable; use one of: {sorted(headless)}",
+        )
+    cmd = agents.agent_command(manifest)
+    if not command_present(cmd):
+        return Prereq(label, False, f"install/enable the '{cmd}' CLI for agent '{agent}'")
+    return Prereq(label, True)
+
+
+def check_native(
+    settings: Settings,
+    *,
+    coder_agent: str,
+    oracle_agent: str,
+    entries: list[dict],
+    spec_id: str | None,
+    command_present: Callable[[str], bool] | None = None,
+) -> list[Prereq]:
+    """Verify the prerequisites for a LIVE **native** run (EXEC-FR-015): a headless coder agent and a
+    different-family oracle agent — no Spec Kit CLI and no workflow descriptor. Pure given its inputs;
+    ``command_present`` defaults to a PATH probe."""
+    if command_present is None:
+        command_present = lambda cmd: shutil.which(cmd) is not None  # noqa: E731
+    headless = headless_set(settings)
+    prqs: list[Prereq] = [
+        _agent_prereq(settings, "headless coder agent", coder_agent, headless, command_present)
+    ]
+    oracle_pr = _agent_prereq(
+        settings, "different-family oracle agent", oracle_agent, headless, command_present
+    )
+    if oracle_pr.ok and not diversity_ok(settings, entries, spec_id):
+        oracle_pr = Prereq(
+            "different-family oracle agent",
+            False,
+            f"the oracle's family ({family_of(_role_id(settings, 'oracle')) or '?'}) equals the "
+            f"coder's ({settings.coder_family() or '?'}) — pick a different-family headless agent, or "
+            'record a signed deviation: 3pwr deviation --gate model_diversity --approver <you> '
+            '--note "single-model dev"',
+        )
+    prqs.append(oracle_pr)
     return prqs
 
 

@@ -59,6 +59,11 @@ class Settings:
         return self.dir / "adapters"
 
     @property
+    def agents_dir(self) -> Path:
+        """Declarative agent-backend manifests for the native executive (EXEC-FR-002)."""
+        return self.dir / "agents"
+
+    @property
     def onboarding_path(self) -> Path:
         """Advisory onboarding preferences written by ``3pwr init`` (3PWR-ONBRD-FR-005)."""
         return self.dir / "config" / "onboarding.yaml"
