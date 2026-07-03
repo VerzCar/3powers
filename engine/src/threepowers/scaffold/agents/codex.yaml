@@ -1,0 +1,10 @@
+# Agent backend manifest — OpenAI Codex CLI, headless (EXEC-FR-004). Seeded by `3pwr init`.
+# Route model access via OPENAI_BASE_URL / OPENAI_API_KEY or an OpenAI-compatible gateway (EXEC-FR-012).
+agent: codex
+family: openai
+headless: true
+command: codex
+base_args: ["exec", "--full-auto"]
+model_flag: "--model"
+prompt_flag: null
+prompt_via: arg

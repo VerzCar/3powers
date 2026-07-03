@@ -1,7 +1,7 @@
 [project]
 name = "threepowers"
 version = "0.1.0"
-description = "3Powers — judiciary kit engine (gate runner, hash-chained verdict ledger, verify) layered on GitHub Spec Kit."
+description = "3Powers — judiciary kit engine (native provider-agnostic executive, gate runner, hash-chained verdict ledger, verify)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -13,7 +13,6 @@ keywords = [
     "code-review",
     "quality-gates",
     "oracle",
-    "spec-kit",
     "verdict-ledger",
 ]
 classifiers = [

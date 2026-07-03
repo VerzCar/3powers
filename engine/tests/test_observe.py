@@ -27,14 +27,14 @@ def _write_spec(p: Path) -> Path:
 
 
 def test_route_to_backlog_creates_new_intent(tmp_path):
-    """3PWR-FR-054: a signal becomes a NEW requirement in the backlog, routed to /speckit.specify."""
+    """3PWR-FR-054: a signal becomes a NEW requirement in the backlog, routed to a new `3pwr run` spec."""
     backlog = tmp_path / "feedback" / "OBS.md"
     fb1 = observe.route_to_backlog(backlog, "OBS", "incident", "OBS-NFR-001", "500s under load")
     fb2 = observe.route_to_backlog(backlog, "OBS", "usage", "", "users paste huge inputs")
     assert fb1 == "OBS-FB-001" and fb2 == "OBS-FB-002"  # ids increment
     text = backlog.read_text(encoding="utf-8")
     assert "OBS-FB-001" in text and "OBS-FB-002" in text
-    assert "/speckit.specify" in text and "not an in-place patch" in text
+    assert "3pwr run" in text and "not an in-place patch" in text
     assert "(re: OBS-NFR-001)" in text  # the NFR reference is carried
 
 

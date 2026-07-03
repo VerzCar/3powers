@@ -17,8 +17,8 @@ Subcommands:
                 isolated (A3), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
   run           drive the whole lifecycle loop (§6): auto mode stops only at the two mandatory
-                human gates (spec approval FR-006, sign-off FR-037); composes Spec Kit's
-                `workflow run` (A1) and streams progress
+                human gates (spec approval FR-006, sign-off FR-037); the native executive
+                dispatches each stage to a headless agent (EXEC-FR-001) and streams progress
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
   spec diff     read-only spec-integrity report: does the spec still match its approval
@@ -36,7 +36,6 @@ import difflib
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -90,14 +89,12 @@ def _settings(root: Optional[str]) -> Settings:
 def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
     if spec:
         return Path(spec).resolve()
-    feat = s.root / ".specify" / "feature.json"
-    if feat.exists():
-        data = json.loads(feat.read_text(encoding="utf-8"))
-        d = data.get("feature_directory")
-        if d:
-            cand = s.root / d / "spec.md"
-            if cand.exists():
-                return cand
+    # Native fallback: the newest spec under specs/ (no Spec Kit feature.json anymore).
+    specs = sorted(
+        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
+    )
+    if specs:
+        return specs[0]
     raise FileNotFoundError("could not resolve a spec; pass --spec <path/to/spec.md>")
 
 
@@ -346,20 +343,9 @@ def _readiness_checklist(
         )
     items.append(
         (
-            "Spec Kit workspace",
-            "pass" if ready.get("speckit_dir") else "warn",
-            "present"
-            if ready.get("speckit_dir")
-            else "run `3pwr init --with-speckit` to scaffold it",
-        )
-    )
-    items.append(
-        (
             "3Powers constitution",
             "pass" if ready.get("constitution") else "warn",
-            "in place"
-            if ready.get("constitution")
-            else "laid under --with-speckit, or when a Spec Kit workspace is present",
+            "in place" if ready.get("constitution") else "seeded by `3pwr init`",
         )
     )
     if ready.get("agents_md_todo"):
@@ -589,8 +575,8 @@ def cmd_init(args: argparse.Namespace) -> int:
             interactive=interactive,
         )
         oracle_integration = _ask(
-            "  its Spec Kit integration",
-            cur.get("integration") or getattr(args, "integration", None) or "copilot",
+            "  its agent backend (.3powers/agents/)",
+            cur.get("integration") or getattr(args, "integration", None) or "claude",
             interactive=interactive,
         )
         oracle_label = _ask(
@@ -629,35 +615,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     # 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
     agents_status = scaffold.seed_agents_md(root)
 
-    # 10) Spec Kit + constitution + the judiciary extension/pins (ONBRD-FR-015 / INITX-FR-004/005/008).
-    with_speckit = getattr(args, "with_speckit", False)
-    speckit_ext: dict[str, object] = {"status": "skipped"}
-    speckit_wf: dict[str, object] = {"status": "skipped"}
-    if with_speckit:
-        if not scaffold.specify_installed():
-            print(
-                "error: --with-speckit needs the Spec Kit `specify` CLI on PATH — install it "
-                "(https://github.com/github/spec-kit) or omit --with-speckit",
-                file=sys.stderr,
-            )
-            return EXIT_USAGE
-        if not scaffold.has_speckit(root):
-            rc = scaffold.run_specify_init(root, getattr(args, "integration", None))
-            if rc != 0:
-                print(f"error: `specify init` failed (exit {rc})", file=sys.stderr)
-                return EXIT_FAIL
-        # Lay the 3Powers overlay, replacing Spec Kit's placeholder constitution (never a real one).
-        constitution_status = scaffold.seed_constitution(root, force=True)
-        # Render the judiciary extension + pin the judiciary agents' model from config (INITX-FR-004/005/008).
-        speckit_ext = scaffold.install_speckit_extension(s, root)
-        # Install the lifecycle + oracle workflows `3pwr run` dispatches (INITX-FR-005; unblocks RUNX-FR-009).
-        speckit_wf = scaffold.install_speckit_workflows(root)
-    elif scaffold.has_speckit(root):
-        # Spec Kit already present → lay the 3Powers constitution overlay if missing (offline, local).
-        # Agent pinning / extension install stays opt-in: run `3pwr config apply` (INITX non-goal).
-        constitution_status = scaffold.seed_constitution(root)
-    else:
-        constitution_status = "absent"
+    # 10) Seed the native agent-backend manifests + the 3Powers constitution (offline, non-clobber).
+    #     `3pwr run` drives these agents directly — no Spec Kit (EXEC-FR-004; SLIM removed the substrate).
+    agents_seeded = scaffold.seed_agents(s)  # .3powers/agents/*.yaml
+    constitution_status = scaffold.seed_constitution(root)
     ready = scaffold.readiness(root)
 
     # Judiciary model-diversity readiness (needs config): a concrete oracle model in a family
@@ -689,8 +650,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "git": git_present,
         "agents_md": agents_status,
         "constitution": constitution_status,
-        "speckit_extension": speckit_ext,
-        "speckit_workflows": speckit_wf,
+        "agents": agents_seeded,
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
@@ -718,39 +678,17 @@ def cmd_init(args: argparse.Namespace) -> int:
             f"  note: choose a language next time from: {', '.join(langs)} "
             "(or add one — see .3powers/adapters/CONTRACT.md)"
         )
-    if speckit_ext.get("status") == "installed":
-        pins_obj = speckit_ext.get("pins")
-        pins = pins_obj if isinstance(pins_obj, dict) else {}
-        pinned = [r for r, stt in pins.items() if stt in ("created", "updated", "kept")]
-        if pinned:
-            lines.append(
-                "  judiciary agents pinned to the configured model: " + ", ".join(sorted(pinned))
-            )
-    if speckit_wf.get("status") == "installed":
-        wf_files = speckit_wf.get("files")
-        n = len(wf_files) if isinstance(wf_files, dict) else 0
-        if n:
-            lines.append(
-                f"  lifecycle workflows installed ({n}) — `3pwr run` dispatches from "
-                ".specify/workflows/3powers/"
-            )
+    seeded = [n for n, stt in agents_seeded.items() if stt == "created"]
+    if seeded:
+        lines.append(
+            "  agent backends seeded (.3powers/agents/): " + ", ".join(sorted(seeded))
+        )
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
     # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
     lines.append("")
     lines.append(st.head("Ready for the agentic workflow? — readiness checklist:"))
     lines.extend(_checklist_lines(st, checklist))
-    if not ready["speckit_dir"]:
-        lines.append("  Spec Kit not initialized — needed for the autonomous `3pwr run` lifecycle:")
-        if ready["specify_cli"]:
-            lines.append(
-                "      run `3pwr init --with-speckit` (or `specify init --here`) to scaffold it"
-            )
-        else:
-            lines.append(
-                "      install Spec Kit's `specify` CLI (https://github.com/github/spec-kit), then "
-                "`3pwr init --with-speckit`"
-            )
     if not git_present:
         lines.append(
             st.warn("  ⚠ no git repo detected")
@@ -772,7 +710,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
         lines.append("       one command drives spec → plan → oracle → build → verify → ship,")
         lines.append("       stopping only at the two human gates (spec approval, sign-off)")
-        lines.append("  (or step-by-step: /speckit.specify → … → /3pwr.advance)")
+        lines.append(
+            "  (or step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)"
+        )
     print("\n".join(lines))
     return EXIT_OK
 
@@ -1611,32 +1551,42 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
 
-        # Dispatch the authoring step through the substrate (never a direct API call — A3).
+        # Dispatch the authoring step to the oracle agent directly, headless, inside the sanitized
+        # worktree — no external workflow substrate (EXEC-FR-009; supersedes the Spec Kit dispatch).
+        # The engine issues no model call itself; the agent process does (EXEC-NFR-001).
         dispatched_model = model
         if not args.dry_run:
-            if shutil.which("specify") is None:
+            try:
+                oracle_manifest = agents.load_agent(s, args.integration)
+            except FileNotFoundError as exc:
+                print(f"error: {exc} — add the manifest or use --dry-run", file=sys.stderr)
+                return EXIT_USAGE
+            if not agents.is_headless(oracle_manifest):
                 print(
-                    "error: `specify` (Spec Kit) not found — install it to dispatch headlessly, "
-                    "or use --dry-run",
+                    f"error: agent '{args.integration}' is not headless-dispatchable",
                     file=sys.stderr,
                 )
                 return EXIT_USAGE
-            workflow = args.workflow or str(
-                s.root / ".specify" / "workflows" / "3powers" / "oracle.yml"
+            criteria = ""
+            if sealed_bundle.exists():
+                data = json.loads(sealed_bundle.read_text(encoding="utf-8"))
+                criteria = " ".join(c.get("text", "") for c in data.get("criteria", []))
+            orc = CliAgentRunner(
+                s,
+                oracle_manifest,
+                model=model,
+                cwd=info.path,
+                intent=(
+                    f"Author oracle tests into ./oracle-tests/ for spec {args.spec_id}, from the "
+                    "sealed acceptance criteria ONLY — do not read any implementation."
+                ),
+                spec_text=criteria,
             )
-            cmd = (
-                f"specify workflow run {workflow} "
-                f"-i integration={args.integration} -i spec_id={args.spec_id} --json"
-            )
-            res = run_cmd(cmd, cwd=info.path)
-            if res.returncode != 0:
-                print(
-                    "error: dispatch failed (`specify workflow run`):\n  "
-                    + "\n  ".join(res.tail(10)),
-                    file=sys.stderr,
-                )
+            res = orc.dispatch("oracle", "Build")
+            if not res.ok:
+                print("error: oracle dispatch failed:\n  " + res.detail, file=sys.stderr)
                 return EXIT_FAIL
-            dispatched_model = oracle.parse_dispatched_model(res.stdout) or model
+            dispatched_model = res.model or model
 
         # Collect authored oracle tests (from the worktree, or --tests for --dry-run / manual).
         dest_root = s.root / "tests" / "oracle" / args.spec_id
@@ -1779,7 +1729,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
         },
         args.json,
         f"observed [{args.kind}] for {args.spec_id} → routed to the legislature as new intent {fb_id}\n"
-        f"  backlog: {backlog} (take it into /speckit.specify — not an in-place patch)\n"
+        f"  backlog: {backlog} (take it into a new `3pwr run` spec — not an in-place patch)\n"
         f"  spec now at the Observe stage; ledger seq={entry['seq']}",
     )
     return EXIT_OK
@@ -1967,7 +1917,7 @@ def _run_signoff(
 
 def _resolve_runner_kind(args: argparse.Namespace) -> str:
     """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to ``native``
-    (EXEC-FR-013). ``specify`` selects the legacy Spec Kit dispatch."""
+    (EXEC-FR-013)."""
     if args.dry_run:
         return "sim"
     return getattr(args, "runner", None) or "native"
@@ -2053,20 +2003,6 @@ def _run_make_runner(s: Settings, args: argparse.Namespace, mode: str, resume_fr
         return orchestrate.SimulatedRunner(
             verdict=("fail" if args.simulate_fail else "pass"), start_index=idx
         )
-    if kind == "specify":
-        workflow = args.workflow or str(
-            s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
-        )
-        # Carry the inferred work-kind into the workflow so the verify step shapes the gate suite
-        # (3PWR-FR-058 → FR-008/009); deterministic, so it never perturbs the verdict (3PWR-NFR-001).
-        kinds = workkind.classify(args.intent or "").kinds
-        inputs = {
-            "intent": args.intent or "",
-            "mode": mode,
-            "integration": args.integration,
-            "work_kind": ",".join(kinds),
-        }
-        return orchestrate.SpecifyRunner(s.root, workflow, inputs)
     return _native_runner(s, args, idx)
 
 
@@ -2114,29 +2050,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     coder_model = str(s.role("coder").get("model") or "")
     oracle_model = str(s.role("oracle").get("model") or "")
 
-    # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015).
-    # --dry-run needs none of this: it dispatches nothing and is always available offline (RUNX-FR-012).
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):
+    # a headless coder agent + a different-family oracle agent. --dry-run needs none of this: it
+    # dispatches nothing and is always available offline (EXEC-FR-016).
     if not args.dry_run and not args.status:
-        if _resolve_runner_kind(args) == "specify":
-            workflow_path = Path(
-                args.workflow or (s.root / ".specify" / "workflows" / "3powers" / "lifecycle.yml")
-            )
-            prqs = runpreflight.check(
-                s,
-                workflow_path=workflow_path,
-                coder_integration=coder_int,
-                oracle_integration=oracle_int,
-                entries=ledger.entries(),
-                spec_id=spec_id,
-            )
-        else:  # native (default): require a headless agent CLI, not Spec Kit (EXEC-FR-015)
-            prqs = runpreflight.check_native(
-                s,
-                coder_agent=coder_int,
-                oracle_agent=oracle_int,
-                entries=ledger.entries(),
-                spec_id=spec_id,
-            )
+        prqs = runpreflight.check_native(
+            s,
+            coder_agent=coder_int,
+            oracle_agent=oracle_int,
+            entries=ledger.entries(),
+            spec_id=spec_id,
+        )
         missing = runpreflight.unmet(prqs)
         if missing:
             # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
@@ -2651,16 +2575,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="only create the .3powers/ layout (the pre-wizard behaviour)",
     )
     ip.add_argument(
-        "--with-speckit",
-        dest="with_speckit",
-        action="store_true",
-        help="also run Spec Kit's `specify init` and lay the 3Powers constitution overlay "
-        "(for the autonomous `3pwr run` lifecycle; needs the `specify` CLI)",
-    )
-    ip.add_argument(
         "--integration",
-        help="coding-agent integration passed to `specify init` under --with-speckit "
-        "(e.g. copilot, claude; default: specify prompts, or copilot non-interactively)",
+        help="default agent backend to record for the coder/oracle roles (e.g. claude, codex, "
+        "copilot); the native executive dispatches this headless agent directly",
     )
     ip.add_argument(
         "--tier",
@@ -2779,7 +2696,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument(
         "--spec",
         help="path to the approved spec.md — its hash is sealed into a Spec-stage sign-off "
-        "(default: from .specify/feature.json)",
+        "(default: the newest spec under specs/)",
     )
     sp.set_defaults(func=cmd_signoff)
 
@@ -2842,10 +2759,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rnp.add_argument(
         "--runner",
-        choices=["native", "specify", "sim"],
+        choices=["native", "sim"],
         default=None,
-        help="executive runner: native (default; drive headless agents directly, EXEC-FR-001), "
-        "specify (legacy Spec Kit dispatch), or sim (offline). --dry-run forces sim.",
+        help="executive runner: native (default; drive headless agents directly, EXEC-FR-001) or "
+        "sim (offline). --dry-run forces sim.",
     )
     rnp.add_argument(
         "--agent",
@@ -2863,10 +2780,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="risk tier for the native verify stage (default: the inferred/suggested tier)",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
-    rnp.add_argument(
-        "--workflow",
-        help="(--runner specify only) lifecycle workflow yaml",
-    )
     rnp.add_argument(
         "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'
     )
@@ -3012,9 +2925,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Spec Kit integration for the oracle step (a non-coder family; default: claude)",
     )
     odp.add_argument("--model", help="override the resolved oracle model as <family/model>")
-    odp.add_argument(
-        "--workflow", help="oracle workflow yaml (default: .specify/workflows/3powers/oracle.yml)"
-    )
     odp.add_argument("--base", help="clean git ref for the sanitized worktree (default: HEAD)")
     odp.add_argument(
         "--tests",

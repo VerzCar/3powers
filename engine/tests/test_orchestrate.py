@@ -89,15 +89,6 @@ def test_tracker_in_place_on_tty():
     assert "\r" in out and "Plan" in out
 
 
-def test_parse_specify_outcome_tolerant():
-    assert (
-        orchestrate._parse_specify_outcome('{"status": "gate", "gate": "signoff"}', 0).status
-        == "gate"
-    )
-    assert orchestrate._parse_specify_outcome('{"status": "completed"}', 0).status == "done"
-    assert orchestrate._parse_specify_outcome("not json", 1).status == "failed"
-
-
 # --------------------------------------------------------------------------- CLI end-to-end (--dry-run)
 @pytest.fixture()
 def run_project(tmp_path, monkeypatch):

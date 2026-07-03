@@ -4,7 +4,8 @@
 
 | | |
 |---|---|
-| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–017 delivered) |
+| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–019 delivered) |
+| **⚠ Architecture pivot (plans 018–019)** | **3Powers now owns its executive** — `3pwr run` drives headless coding agents *directly* via a native, provider-agnostic runner (EXEC, spec 009), and **GitHub Spec Kit has been removed** (SLIM, spec 010; epic A1′/A3′ amended). The judiciary is unchanged. This matrix below still describes the former Spec-Kit dispatch in places — a full STATUS rewrite is the next doc task (see [`plan/019`](../plan/019-remove-speckit.md) handoff). Migration: [`docs/migration-remove-speckit.md`](migration-remove-speckit.md). |
 | **Last validated** | **2026-07-02**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
 | **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening |
 | **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the Spec Kit extension · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) · context strategy approximated at command level (FR-060/061) |

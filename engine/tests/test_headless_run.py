@@ -46,89 +46,86 @@ def run_project(tmp_path, monkeypatch):
     return root
 
 
-# --------------------------------------------------------------------------- RUNX-FR-009/012, NFR-005 (preflight)
+# --------------------------------------------------------------------------- EXEC-FR-015/016 (native preflight)
+def _native_settings(tmp_path, roles_yaml: str, agents: dict) -> Settings:
+    root = tmp_path / "proj"
+    (root / ".3powers" / "config").mkdir(parents=True, exist_ok=True)
+    (root / ".3powers" / "config" / "roles.yaml").write_text(roles_yaml, encoding="utf-8")
+    adir = root / ".3powers" / "agents"
+    adir.mkdir(parents=True, exist_ok=True)
+    import yaml
+
+    for name, data in agents.items():
+        (adir / f"{name}.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    return Settings(root=root)
+
+
+_PRESENT = lambda cmd: True  # noqa: E731 — probe stub (EXEC-NFR-004)
+
+
 def test_preflight_reports_every_missing_prerequisite_with_a_fix(tmp_path):
-    """RUNX-FR-009: each unmet prerequisite is named with an exact fix, before any dispatch."""
-    s = _settings_with_roles(tmp_path, "version: 1\nroles: {}\n")
-    prqs = runpreflight.check(
-        s,
-        workflow_path=tmp_path / "nope" / "lifecycle.yml",
-        coder_integration="",
-        oracle_integration="",
-        entries=[],
-        spec_id="X",
-        specify_present=False,
+    """EXEC-FR-015: each unmet prerequisite is named with an exact fix, before any dispatch."""
+    s = _native_settings(tmp_path, "version: 1\nroles: {}\n", {})
+    prqs = runpreflight.check_native(
+        s, coder_agent="", oracle_agent="", entries=[], spec_id="X", command_present=_PRESENT
     )
     unmet = {p.name: p.fix for p in runpreflight.unmet(prqs)}
-    assert set(unmet) == {
-        "lifecycle workflow",
-        "Spec Kit CLI",
-        "headless coder integration",
-        "different-family oracle integration",
-    }
+    assert set(unmet) == {"headless coder agent", "different-family oracle agent"}
     assert all(fix for fix in unmet.values())  # every unmet prereq carries a fix
 
 
-def test_preflight_flags_ide_only_coder_as_not_headless(tmp_path):
-    """RUNX-FR-009 (edge): an IDE-only integration is detected as not headless-dispatchable."""
-    s = _settings_with_roles(tmp_path, _DIVERSE_ROLES)
-    (tmp_path / "wf").mkdir()
-    wf = tmp_path / "wf" / "lifecycle.yml"
-    wf.write_text("steps: []\n", encoding="utf-8")
-    prqs = runpreflight.check(
-        s,
-        workflow_path=wf,
-        coder_integration="copilot",  # IDE-only
-        oracle_integration="gemini",
-        entries=[],
-        spec_id="X",
-        specify_present=True,
+def test_preflight_flags_non_headless_coder_agent(tmp_path):
+    """EXEC-FR-015 (edge): an agent whose manifest is not headless is flagged as not dispatchable."""
+    s = _native_settings(
+        tmp_path,
+        _DIVERSE_ROLES,
+        {"windsurf": {"command": "windsurf", "headless": False}, "claude": {"command": "claude"}},
     )
-    coder = next(p for p in prqs if p.name == "headless coder integration")
+    prqs = runpreflight.check_native(
+        s, coder_agent="windsurf", oracle_agent="claude", entries=[], spec_id="X", command_present=_PRESENT
+    )
+    coder = next(p for p in prqs if p.name == "headless coder agent")
     assert not coder.ok and "not headless-dispatchable" in coder.fix
 
 
 def test_preflight_passes_when_all_satisfied(tmp_path):
-    """RUNX-FR-009: a project meeting every prerequisite passes preflight with no spurious warning."""
-    s = _settings_with_roles(tmp_path, _DIVERSE_ROLES)
-    wf = tmp_path / "lifecycle.yml"
-    wf.write_text("steps: []\n", encoding="utf-8")
-    prqs = runpreflight.check(
-        s,
-        workflow_path=wf,
-        coder_integration="claude",
-        oracle_integration="gemini",
-        entries=[],
-        spec_id="X",
-        specify_present=True,
+    """EXEC-FR-015: a project meeting every prerequisite passes preflight with no spurious warning."""
+    roles = (
+        "version: 1\ndiversity_level: family\nroles:\n"
+        "  coder: {model_family: openai, integration: codex}\n"
+        "  oracle: {model_family: anthropic, integration: claude}\n"
+    )
+    s = _native_settings(
+        tmp_path,
+        roles,
+        {"claude": {"command": "claude", "headless": True}, "codex": {"command": "codex", "headless": True}},
+    )
+    prqs = runpreflight.check_native(
+        s, coder_agent="codex", oracle_agent="claude", entries=[], spec_id="X", command_present=_PRESENT
     )
     assert runpreflight.unmet(prqs) == []
 
 
 def test_headless_set_is_configuration_driven(tmp_path):
-    """RUNX-NFR-005: the accepted headless set is data — no integration name is hardcoded in the check."""
-    s = _settings_with_roles(
-        tmp_path, "version: 1\nheadless_integrations: [only-this]\nroles: {}\n"
+    """EXEC-NFR-003: the accepted headless set is data — no agent name is hardcoded in the check."""
+    s = _native_settings(
+        tmp_path,
+        "version: 1\nheadless_integrations: [only-this]\nroles: {}\n",
+        {"claude": {"command": "claude", "headless": True}},
     )
     assert runpreflight.headless_set(s) == {"only-this"}
-    # a normally-headless integration is now rejected because it is not in the configured set
-    prqs = runpreflight.check(
-        s,
-        workflow_path=tmp_path / "lifecycle.yml",
-        coder_integration="claude",
-        oracle_integration="only-this",
-        entries=[],
-        spec_id="X",
-        specify_present=True,
+    # a normally-headless agent is now rejected because it is not in the configured set
+    prqs = runpreflight.check_native(
+        s, coder_agent="claude", oracle_agent="only-this", entries=[], spec_id="X", command_present=_PRESENT
     )
-    coder = next(p for p in prqs if p.name == "headless coder integration")
+    coder = next(p for p in prqs if p.name == "headless coder agent")
     assert not coder.ok
 
 
 def test_offline_alternatives_name_dry_run_and_step_by_step():
-    """RUNX-FR-012: the always-available offline paths name --dry-run and the step-by-step flow."""
+    """EXEC-FR-016: the always-available offline paths name --dry-run and the step-by-step flow."""
     joined = " ".join(runpreflight.OFFLINE_ALTERNATIVES)
-    assert "--dry-run" in joined and "/speckit.specify" in joined
+    assert "--dry-run" in joined and "3pwr oracle" in joined
 
 
 # --------------------------------------------------------------------------- RUNX-FR-010, NFR-003/004 (CLI preflight)
@@ -212,22 +209,18 @@ def test_cli_gates_red_only_on_real_verdict(run_project, capsys):
 
 
 def test_cli_dispatch_failure_is_not_gates_red(run_project, monkeypatch, capsys):
-    """RUNX-FR-010 / SC-004: a mid-run dispatch failure names the stage, exits 2, and is never 'gates red'."""
+    """EXEC-FR-016: a mid-run dispatch failure names the stage, exits 2, and is never 'gates red'."""
+    import threepowers.cli as climod
+
     root = run_project
-    monkeypatch.setattr(runpreflight, "check", lambda *a, **k: [])  # pretend prerequisites hold
-    monkeypatch.setattr(
-        orchestrate,
-        "SpecifyRunner",
-        lambda *a, **k: orchestrate.SimulatedRunner(),  # avoid needing the specify CLI
-    )
+    monkeypatch.setattr(runpreflight, "check_native", lambda *a, **k: [])  # prerequisites hold
+    monkeypatch.setattr(climod, "_run_make_runner", lambda *a, **k: orchestrate.SimulatedRunner())
     monkeypatch.setattr(
         orchestrate,
         "drive",
         lambda *a, **k: orchestrate.RunResult("failed", stage="Build", verdict=""),
     )
-    rc = main(
-        ["--root", str(root), "run", "x", "--runner", "specify", "--no-input", "--json", "--spec-id", "DF"]
-    )
+    rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "DF"])
     assert rc == 2  # distinct from the gate-failure status
     out = capsys.readouterr().out
     payload = json.loads(out)
@@ -258,16 +251,16 @@ def test_provenance_payload_names_stage_integration_model():
 
 
 def test_live_run_records_per_stage_provenance_and_ledger_verifies(run_project, monkeypatch):
-    """RUNX-FR-007 / RUNX-NFR-002: a (stubbed-live) run records one provenance entry per dispatched
-    stage, bound into the signed ledger, which then verifies offline."""
+    """EXEC-FR-014: a (stubbed) run records one provenance entry per dispatched stage, bound into the
+    signed ledger, which then verifies offline."""
+    import threepowers.cli as climod
+
     root = run_project
     (root / ".3powers" / "config" / "roles.yaml").write_text(_DIVERSE_ROLES, encoding="utf-8")
-    monkeypatch.setattr(runpreflight, "check", lambda *a, **k: [])  # prerequisites hold
-    monkeypatch.setattr(orchestrate, "SpecifyRunner", lambda *a, **k: orchestrate.SimulatedRunner())
-    # A live (non-dry-run) run pauses at the first human gate after dispatching specify + clarify.
-    rc = main(
-        ["--root", str(root), "run", "build X", "--runner", "specify", "--no-input", "--spec-id", "PR"]
-    )
+    monkeypatch.setattr(runpreflight, "check_native", lambda *a, **k: [])  # prerequisites hold
+    monkeypatch.setattr(climod, "_run_make_runner", lambda *a, **k: orchestrate.SimulatedRunner())
+    # A run pauses at the first human gate after dispatching specify + clarify.
+    rc = main(["--root", str(root), "run", "build X", "--no-input", "--spec-id", "PR"])
     assert rc == 0
     entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
     dispatched = [
@@ -318,52 +311,34 @@ def test_diversity_allowed_via_signed_deviation(tmp_path):
 
 
 def test_cli_same_family_oracle_refused_at_preflight(tmp_path, monkeypatch, capsys):
-    """RUNX-FR-006 / SC-002: a same-family resolution is refused at preflight, naming the deviation path."""
+    """EXEC-FR-015: a same-family resolution is refused at preflight, naming the deviation path."""
     root = tmp_path / "proj"
     (root / ".3powers" / "config").mkdir(parents=True)
+    (root / ".3powers" / "agents").mkdir(parents=True)
+    import yaml
+
+    (root / ".3powers" / "agents" / "claude.yaml").write_text(
+        yaml.safe_dump({"command": "claude", "headless": True}), encoding="utf-8"
+    )
     keyfile = tmp_path / "s.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     (root / ".3powers" / "config" / "roles.yaml").write_text(
         "version: 1\ndiversity_level: family\n"
-        "headless_integrations: [claude, gemini]\n"
+        "headless_integrations: [claude]\n"
         "roles:\n"
         "  coder: {model_family: openai, integration: claude}\n"
-        "  oracle: {model_family: openai, model: openai/o1, integration: gemini}\n",
+        "  oracle: {model_family: openai, model: openai/o1, integration: claude}\n",
         encoding="utf-8",
     )
-    (root / ".specify" / "workflows" / "3powers").mkdir(parents=True)
-    (root / ".specify" / "workflows" / "3powers" / "lifecycle.yml").write_text("x\n", "utf-8")
+    monkeypatch.setattr(runpreflight.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
     capsys.readouterr()  # flush the keygen output
-    rc = main(
-        ["--root", str(root), "run", "x", "--runner", "specify", "--no-input", "--json", "--spec-id", "SF"]
-    )
+    rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "SF"])
     assert rc == 2
     payload = json.loads(capsys.readouterr().out)
     missing = {m["prerequisite"]: m["fix"] for m in payload["missing"]}
-    assert "different-family oracle integration" in missing
-    assert "deviation" in missing["different-family oracle integration"]
-
-
-# --------------------------------------------------------------------------- RUNX-FR-001/008, NFR-001 (structural)
-def test_live_runner_dispatches_through_spec_kit_with_integration(run_project):
-    """RUNX-FR-001: executive stages are dispatched through the Spec Kit substrate carrying the integration."""
-    from threepowers import cli
-
-    s = Settings(root=run_project)
-
-    class _Args:
-        dry_run = False
-        runner = "specify"  # EXEC: the legacy Spec Kit dispatch now lives behind --runner specify
-        intent = "do a thing"
-        integration = "claude"
-        workflow = None
-        simulate_fail = False
-
-    runner = cli._run_make_runner(s, _Args(), "auto")
-    assert isinstance(runner, orchestrate.SpecifyRunner)
-    assert runner.inputs["integration"] == "claude"
-    assert runner.workflow.endswith("lifecycle.yml")
+    assert "different-family oracle agent" in missing
+    assert "deviation" in missing["different-family oracle agent"]
 
 
 def test_drive_passes_runner_verdict_through_unchanged():

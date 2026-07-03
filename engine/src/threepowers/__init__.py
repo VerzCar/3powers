@@ -1,4 +1,4 @@
-"""3Powers engine — the judicial trust spine layered on GitHub Spec Kit.
+"""3Powers engine — the native provider-agnostic executive + judicial trust spine.
 
 This package implements the language-agnostic core of 3Powers:
 

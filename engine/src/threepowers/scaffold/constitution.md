@@ -1,9 +1,9 @@
 # 3Powers Constitution
 
-> The supreme, versioned law of this repository. Every Spec Kit stage — `/speckit.specify`,
-> `/speckit.clarify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.implement` — and every 3Powers
-> command (`/3pwr.*`) must comply. It encodes the **separation of powers** that keeps validation from
-> becoming circular when one model writes the spec, the code, the tests, and the review.
+> The supreme, versioned law of this repository. Every lifecycle stage the executive drives —
+> specify, clarify, plan, tasks, oracle, implement — and every 3Powers command must comply. It encodes
+> the **separation of powers** that keeps validation from becoming circular when one model writes the
+> spec, the code, the tests, and the review.
 
 ## Core Principles
 

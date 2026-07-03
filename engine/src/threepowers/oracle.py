@@ -10,10 +10,10 @@ that independence **structural and traceable** rather than merely procedural:
   that actually authored, the oracle test files and their content hashes, and (via the ledger)
   the signer identity. It refuses when the oracle resolves to the coder's model family
   (3PWR-FR-022, on the *actual* model — not just the declared config).
-* ``dispatch`` (3PWR-A3) authors the oracle *headlessly* under a non-coder integration (Spec Kit
-  ``workflow run``) inside a **sanitized git worktree** from which the implementation, plan, tasks,
+* ``dispatch`` (3PWR-A3) authors the oracle *headlessly* under a non-coder agent backend (dispatched
+  natively by the engine) inside a **sanitized git worktree** from which the implementation, plan, tasks,
   and contracts are physically **absent** — the full letter of 3PWR-FR-021. It attests the isolation
-  with a worktree manifest hash recorded in the ledger, and records the actual integration + model.
+  with a worktree manifest hash recorded in the ledger, and records the actual agent + model.
 * ``independence`` proves, from the ledger's monotonic signed ``seq`` (never from spoofable git
   timestamps), that Phase A preceded Phase B (3PWR-FR-062), the oracle was bound to the active
   seal (3PWR-FR-020/021), the families diverge (3PWR-FR-022), and every acceptance criterion has
@@ -414,14 +414,15 @@ def active_dispatch(entries: list[dict], spec_id: str) -> Optional[dict]:
     return recs[-1] if recs else None
 
 
-# Best-effort model *family* for a Spec Kit integration key — the fast-fail FR-022 precheck only.
+# Best-effort model *family* for an agent-backend key — the fast-fail FR-022 precheck only.
 # The authoritative family is the resolved model recorded post-dispatch; "" means "unknown, skip".
 INTEGRATION_FAMILY = {
     "claude": "anthropic",
     "gemini": "google",
     "codex": "openai",
-    "copilot": "",  # in-IDE model picker — family depends on the chosen model, not the integration
+    "copilot": "",  # depends on the chosen model / BYOK, not the backend
     "opencode": "",
+    "aider": "",  # any OpenAI-compatible model
 }
 
 

@@ -99,7 +99,7 @@ def test_default_roles_carry_concrete_judiciary_model(tmp_path):
     pin = Settings(root=root).role_model_pin("oracle")
     assert pin is not None
     assert pin["model"] == "anthropic/claude-opus-4-8"
-    assert pin["integration"] == "copilot"
+    assert pin["integration"] == "claude"
     assert pin["label"] == "Claude Opus 4.8"
 
 
@@ -179,7 +179,7 @@ def test_render_pins_judiciary_agents_only(tmp_path):
     statuses = agentpins.render_all(Settings(root=root), root)
     assert statuses == {"oracle": "created", "reviewer": "created"}
     oracle_text = (agents / "3pwr.oracle.agent.md").read_text(encoding="utf-8")
-    assert "model: Claude Opus 4.8 (copilot)" in oracle_text
+    assert "model: Claude Opus 4.8 (claude)" in oracle_text
     assert "3pwr:managed-model" in oracle_text
     # the pin sits inside the frontmatter (before the closing fence)
     assert oracle_text.index("model:") < oracle_text.index("\n---")
@@ -219,108 +219,11 @@ def test_render_does_not_clobber_hand_edited_pin(tmp_path):
     assert "MyHandPick (copilot)" in path.read_text(encoding="utf-8")
     # with force it is updated
     assert agentpins.render_all(s, root, force=True)["oracle"] == "updated"
-    assert "Claude Opus 4.8 (copilot)" in path.read_text(encoding="utf-8")
+    assert "Claude Opus 4.8 (claude)" in path.read_text(encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- INITX-FR-005/007/008 (extension)
-def test_install_speckit_extension_renders_from_config(tmp_path):
-    """INITX-FR-008: installed templates are rendered from config — no hardcoded literal, no placeholder."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    (root / ".specify").mkdir()  # a Spec Kit workspace is present
-
-    result = scaffold.install_speckit_extension(Settings(root=root), root)
-    assert result["status"] == "installed"
-    ext_dir = scaffold.speckit_extension_dir(root)
-    manifest = (ext_dir / "extension.yml").read_text(encoding="utf-8")
-    gaps = (ext_dir / "commands" / "3pwr.tests-gaps.md").read_text(encoding="utf-8")
-    # rendered, not hardcoded (INITX-FR-008)
-    assert "{{" not in manifest and "{{" not in gaps
-    assert "model: Claude Opus 4.8 (copilot)" in gaps
-    assert "GPT-5.5" not in gaps  # the bundle's old hardcoded literal is gone
-    # test-first hook precedes implementation (INITX-FR-005)
-    assert "after_plan" in manifest
-    # read-only conformance dry-run (INITX-FR-007)
-    assert "3pwr conformance" in gaps
-
-
-def test_install_speckit_extension_requires_workspace(tmp_path):
-    """INITX-FR-005: with no Spec Kit workspace, installation is reported, never fabricated."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    assert scaffold.install_speckit_extension(Settings(root=root), root)["status"] == "no-speckit"
-
-
-# --------------------------------------------------------------------------- INITX-FR-005 / RUNX-FR-009 (workflows)
-def test_install_speckit_workflows_copies_verbatim(tmp_path):
-    """INITX-FR-005: init lays the lifecycle + oracle workflows `3pwr run` dispatches, VERBATIM — the
-    Spec Kit `{{ inputs.* }}` run-time tokens survive un-rendered (unlike the extension templates)."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    (root / ".specify").mkdir()  # a Spec Kit workspace is present
-
-    result = scaffold.install_speckit_workflows(root)
-    assert result["status"] == "installed"
-    wf_dir = scaffold.speckit_workflows_dir(root) / "3powers"
-    lifecycle = (wf_dir / "lifecycle.yml").read_text(encoding="utf-8")
-    oracle_wf = (wf_dir / "oracle.yml").read_text(encoding="utf-8")
-    # the run-time input token is preserved (NOT rendered/stripped) — needed by `specify workflow run`
-    assert "{{ inputs.integration }}" in lifecycle
-    assert "3powers-lifecycle" in lifecycle
-    assert "3powers-oracle" in oracle_wf
-
-
-def test_install_speckit_workflows_satisfies_run_preflight(tmp_path):
-    """RUNX-FR-009: once the workflow is provisioned, the `3pwr run` preflight's lifecycle-workflow
-    prerequisite is met — previously it failed even after `3pwr init --with-speckit`."""
-    from threepowers import runpreflight
-
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    (root / ".specify").mkdir()
-    scaffold.install_speckit_workflows(root)
-
-    wf_path = root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
-    prqs = runpreflight.check(
-        Settings(root=root),
-        workflow_path=wf_path,
-        coder_integration="claude",
-        oracle_integration="gemini",
-        entries=[],
-        spec_id="RUN",
-        specify_present=True,
-    )
-    wf_prq = next(p for p in prqs if p.name == "lifecycle workflow")
-    assert wf_prq.ok
-
-
-def test_install_speckit_workflows_requires_workspace(tmp_path):
-    """INITX-FR-005: with no Spec Kit workspace, workflow install is reported, never fabricated."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    assert scaffold.install_speckit_workflows(root)["status"] == "no-speckit"
-
-
-def test_install_speckit_workflows_is_non_destructive(tmp_path):
-    """INITX-NFR-006: a hand-edited workflow is kept on re-install unless forced."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    (root / ".specify").mkdir()
-    scaffold.install_speckit_workflows(root)
-    wf = root / ".specify" / "workflows" / "3powers" / "lifecycle.yml"
-    wf.write_text("# hand-edited\n", encoding="utf-8")
-
-    again = scaffold.install_speckit_workflows(root)
-    assert again["files"]["3powers/lifecycle.yml"] == "kept"
-    assert wf.read_text(encoding="utf-8") == "# hand-edited\n"
-    scaffold.install_speckit_workflows(root, force=True)
-    assert "3powers-lifecycle" in wf.read_text(encoding="utf-8")
+# NOTE: the Spec Kit extension/workflow install tests were removed with the substrate (SLIM, spec 010).
+# The native executive seeds agent manifests instead — see test_native_runner.py.
 
 
 def test_conformance_dry_run_names_untested_requirement(tmp_path):
@@ -409,7 +312,6 @@ def test_checklist_flags_missing_ci_as_mandatory(tmp_path, capsys):
     # no checklist item is silently omitted (INITX-FR-009)
     assert {
         "CI/CD pipeline",
-        "Spec Kit workspace",
         "3Powers constitution",
         "AGENTS.md",
         "Judiciary model diversity",
@@ -528,7 +430,7 @@ def test_config_apply_re_renders_pins_and_clears_drift(tmp_path, capsys):
     assert out["pins"]["oracle"] == "created"
     # fingerprint re-recorded → the drift is cleared
     assert configdrift.detect(s) == []
-    assert "model: Claude Opus 4.8 (copilot)" in (agents / "3pwr.oracle.agent.md").read_text(
+    assert "model: Claude Opus 4.8 (claude)" in (agents / "3pwr.oracle.agent.md").read_text(
         "utf-8"
     )
 
@@ -556,7 +458,7 @@ def test_noninteractive_defaults_match_recommended(tmp_path):
     assert s.default_tier() == "Standard"  # the recommended default
     assert s.role_model_pin("oracle") == {
         "model": "anthropic/claude-opus-4-8",
-        "integration": "copilot",
+        "integration": "claude",
         "label": "Claude Opus 4.8",
     }
 
