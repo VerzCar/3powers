@@ -16,19 +16,14 @@ What you need depends on the path you take. **Hard requirements**, every path:
 
 | Path | What you get | Additionally needs |
 |---|---|---|
-| **Gates-only (offline)** | the deterministic gate suite, signed ledger, `verify`, and `advance` — a signed verdict, no autonomy | nothing extra — no Spec Kit, no agent integration (the bundled TypeScript sample uses `npm`) |
-| **Slash commands (in-IDE)** | drive each lifecycle stage by hand | VS Code with GitHub Copilot |
-| **Autonomous (`3pwr run`)** | one command drives the whole lifecycle | GitHub Spec Kit (the `specify` CLI) **and** a coding-agent integration (e.g. Copilot) |
+| **Gates-only (offline)** | the deterministic gate suite, signed ledger, `verify`, and `advance` — a signed verdict, no autonomy | nothing extra — no agent integration, no external substrate (the bundled TypeScript sample uses `npm`) |
+| **Manual mode (by hand)** | drive each lifecycle stage yourself | the `3pwr` CLI + the `/3pwr.*` command prompts (any chat client) |
+| **Autonomous (`3pwr run`)** | one command drives the whole lifecycle | a headless coding-agent integration (e.g. Claude Code or the GitHub Copilot CLI) |
 
-Spec Kit is upstream [`github/spec-kit`](https://github.com/github/spec-kit) — not a fork — installed
-from a pinned tag:
-
-```bash
-uv tool install specify-cli --from git+https://github.com/github/spec-kit.git@<pinned-tag>
-```
-
-The currently supported pin lives in [`.3powers/config/dependencies.yaml`](../.3powers/config/dependencies.yaml)
-(check yours with `3pwr deps-check`); see the [Spec Kit reference](references/speckit.md#install--init).
+The coding-agent integration is any **headless agent CLI** (e.g. `claude` or the GitHub Copilot CLI) on
+your PATH; 3Powers dispatches each role to the agent named in
+[`.3powers/config/roles.yaml`](../.3powers/config/roles.yaml) via its own native executive — no external
+orchestration substrate. Check installed tool versions against the supported ranges with `3pwr deps-check`.
 
 **Optional scanners.** Three gates shell out to external scanners. Each is **quarantined** when its tool
 is absent — surfaced as *skipped* in the verdict, never silently passed — so you can start without them:
@@ -247,14 +242,14 @@ threshold (70%). See [Engine Architecture](engine-architecture.md#mutation) for 
 
 ## Driving the full lifecycle
 
-The eight stages (Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe) run through GitHub
-Copilot slash commands. Open the repo in VS Code with Copilot; `/speckit.*` and `/3pwr.*` appear as chat
-commands. On a feature:
+The eight stages (Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe) can be driven by
+hand with the `3pwr` CLI and the judiciary `/3pwr.*` command prompts (they live in `.github/` and work in
+any chat client). On a feature:
 
 ```
-/speckit.specify → /speckit.clarify → /speckit.plan → /speckit.tasks
+author + plan the work (3pwr CLI)
    → switch the chat model →  /3pwr.oracle      (Phase A: independent tests, different family)
-   → switch back →            /speckit.implement
+   → switch back →            implement against the oracle
    → /3pwr.verify → /3pwr.review → /3pwr.signoff → /3pwr.advance
 ```
 
@@ -264,9 +259,10 @@ alone. On an *existing* repo, start with `/3pwr.characterize` — see [Brownfiel
 
 ## The whole lifecycle in one command
 
-You don't have to run the stages by hand. `3pwr run` drives the eight-stage lifecycle end to end — it
-composes the Spec Kit workflow and the judiciary gates, streams a live stage tracker, and in `auto` mode
-**stops only at the two human gates** (approving the spec, and the final sign-off):
+You don't have to run the stages by hand. `3pwr run` drives the eight-stage lifecycle end to end — the
+native executive dispatches each stage to a headless coding agent and runs the judiciary gates in-process,
+streams a live stage tracker, and in `auto` mode **stops only at the two human gates** (approving the spec,
+and the final sign-off):
 
 ```bash
 # A quick, offline read on what you're about to build: the kind(s) of change + a suggested risk tier.
@@ -280,8 +276,8 @@ composes the Spec Kit workflow and the judiciary gates, streams a live stage tra
 `3pwr classify` only *suggests* the kind and tier (it shapes which gates and oracle strategy apply); the
 human sign-off is always yours. The step-by-step slash-command flow above stays valid for a hands-on run.
 
-> `3pwr run` needs the **autonomous path** prerequisites — the `specify` CLI plus a coding-agent
-> integration (see [Prerequisites](#prerequisites)). Without them it fails fast naming the missing tool;
+> `3pwr run` needs the **autonomous path** prerequisite — a headless coding-agent integration
+> (see [Prerequisites](#prerequisites)). Without one it fails fast naming the missing tool;
 > `--dry-run` simulates the loop offline. See [Troubleshooting](troubleshooting.md) if a run won't start.
 
 ## Supported languages & tooling matrix

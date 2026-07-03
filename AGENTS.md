@@ -10,9 +10,9 @@ rely on here: the `3pwr` engine drives the full cheapest-first gate suite (`form
 spec_integrity → tests → diff_coverage → mutation → sast → dependency_scan → secret_scan → gate_gaming →
 spec_conformance`, plus work-kind-shaped gates) and the signed, hash-chained, offline-verifiable trust
 spine (`verify`/`advance`/provenance); the engine gates its own trust-spine code at **High-risk**
-(NFR-006); three reference adapters (TypeScript, Python, Go); built on GitHub Spec Kit — upstream
-[`github/spec-kit`](https://github.com/github/spec-kit), installed from a pinned tag (see the pinned
-versions below). The guides live in [`docs/`](docs/).
+(NFR-006); three reference adapters (TypeScript, Python, Go); and a **native, provider-agnostic
+executive** that drives the lifecycle — `3pwr run` dispatches headless coding agents directly (GitHub
+Spec Kit was removed by SLIM, spec 010). The guides live in [`docs/`](docs/).
 
 ## Commands
 
@@ -67,7 +67,7 @@ The signer's private key lives **outside** the repo; point the engine at it once
 
 Authoritative pins live in the lockfiles: `engine/uv.lock` and
 `examples/validation-utils/package-lock.json`; the **supported ranges** live in
-`.3powers/config/dependencies.yaml` and `3pwr deps-check` flags installed drift (incl. Spec Kit).
+`.3powers/config/dependencies.yaml` and `3pwr deps-check` flags installed drift.
 Confirmed in this environment:
 
 | Component | Version |

@@ -17,8 +17,9 @@ writes the spec, the code, the tests, *and* the review, validation becomes circu
 - **Judicial** — an independent oracle, a deterministic gate suite, and human review judge whether the
   code matches the spec.
 
-It layers on **GitHub Spec Kit** (A1), uses Git as substrate (A2), and is agnostic to model family,
-language, LLM provider, and CI/CD platform.
+It owns a **native, provider-agnostic executive** (A1′) — `3pwr run` dispatches headless coding agents
+directly — uses Git as substrate (A2), and is agnostic to model family, language, LLM provider, and CI/CD
+platform. (GitHub Spec Kit was the original substrate; it was removed by SLIM, spec 010.)
 
 ## Current state
 
@@ -42,17 +43,17 @@ mechanisms.
 ```
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
-                            #   observe, deps, workkind, design, speclock, orchestrate, adapters, scanners, ledger,
-                            #   verify, keys, verdict, config, canonical
+                            #   observe, deps, workkind, design, speclock, orchestrate, runner, agents, prompts,
+                            #   artifacts, hosted, adapters, scanners, ledger, verify, anchor, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
   config/{risk-tiers,roles,dependencies,observability,design-oracles}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
+  agents/*.yaml (native agent backends)   memory/constitution.md   templates/{spec,plan,tasks,…}.md
   ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
-.specify/                   # Spec Kit; constitution + templates OVERRIDDEN by 3Powers; extensions/3powers/ (A1)
-.github/{prompts,agents}/   # Spec Kit /speckit.* commands + custom /3pwr.{oracle,verify,review,signoff,advance,characterize}
+.github/{prompts,agents}/   # /3pwr.{oracle,verify,review,signoff,advance,characterize} command prompts for a manual drive (no Spec Kit)
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs
 examples/validation-utils/  # the runnable TypeScript sample (spec id VUTIL)
-docs/references/            # compacted Spec Kit + trust-spine tooling references
+docs/references/            # trust-spine tooling reference + historical Spec Kit reference (removed by SLIM, spec 010)
 plan/                       # the continuous plan series (001, 002, 003, …)
 ```
 
@@ -90,11 +91,11 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr oracle seal   --spec specs/<feature>/spec.md --spec-id <ID>
 3pwr oracle record --spec-id <ID> --model <family/model> --tests <oracle-test-paths>  # refuses coder's family
 # A3 (physical FR-021): author the oracle HEADLESSLY, read-path isolated — the implementation is absent from
-# a sanitized git worktree. One-time: `specify integration install claude` (a non-coder, headless integration).
+# a sanitized git worktree. The oracle role's headless agent CLI is set in `.3powers/config/roles.yaml`.
 3pwr oracle dispatch --spec-id <ID> --integration claude   # + `--dry-run` to build/attest isolation offline
 3pwr oracle verify --spec-id <ID> [--require-dispatch]   # seal-binding + diversity + ordering + coverage (+ isolation); advisory peek/touch
 
-3pwr deps-check                     # probe installed third-party versions (incl. Spec Kit) vs supported ranges (FR-048)
+3pwr deps-check                     # probe installed third-party versions (scanners, adapter toolchains) vs supported ranges (FR-048)
 
 # Observe & feedback (§13): route a production signal to new intent; NFR coverage; tamper-evident agent log.
 3pwr observe signal --spec-id <ID> --kind incident|missed-nfr|usage --note "..."   # FR-054 → new-requirement backlog
@@ -123,12 +124,12 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr emergency --approver <you> --note "<why>"                                 # FR-056 (defers mutation+coverage; 1-day cleanup)
 ```
 
-The lifecycle runs through GitHub Copilot slash commands: `/speckit.specify → clarify → plan → tasks`
-then (switch model for the judiciary) `/3pwr.oracle`, then `/speckit.implement → /3pwr.verify →
-/3pwr.signoff → /3pwr.advance`. For an existing repo, start with `/3pwr.characterize` on a legacy module.
-**`3pwr run "<intent>"` automates that whole sequence** (§6, plan 013): it composes Spec Kit's
-`workflow run`, streams a stage tracker, and in `auto` mode stops only at the two human gates (spec
-approval, sign-off). The slash commands remain for a hands-on, step-by-step run.
+**`3pwr run "<intent>"` drives the whole lifecycle** (§6, plans 013/018/019): the native executive
+dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
+and in `auto` mode stops only at the two human gates (spec approval, sign-off). For a hands-on,
+step-by-step run, drive the stages with the `3pwr` CLI and the judiciary `/3pwr.*` prompts (`/3pwr.oracle`
+→ `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`); for an existing repo, start with
+`/3pwr.characterize` on a legacy module.
 
 ## Architecture (the big picture)
 
@@ -143,7 +144,7 @@ Build → Verify → Review → Ship → Observe (§6). Three pillars carry the 
    `oracle verify` and a **High-risk `advance`** prove independence from the signed ledger seq — seal-binding,
    diversity, Phase-A-before-B ordering, and per-criterion coverage (FR-020/062). **Physical read-path
    isolation is delivered (FR-021, A3):** `3pwr oracle dispatch` authors the oracle *headlessly* via
-   `specify workflow run` under a non-coder integration, inside a **sanitized git worktree** with the
+   the native runner under a non-coder integration, inside a **sanitized git worktree** with the
    implementation/plan/tasks/contracts physically absent — attested by a worktree manifest hash and enforced
    at a High-risk `advance` (`roles.oracle.require_dispatch`). Reading/touching heuristics stay **advisory**,
    never a blocker (NFR-001). Opt-in and High-risk-only — the default flow stays in-IDE and watchable; the

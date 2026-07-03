@@ -147,7 +147,7 @@ def check_native(
             False,
             f"the oracle's family ({family_of(_role_id(settings, 'oracle')) or '?'}) equals the "
             f"coder's ({settings.coder_family() or '?'}) — pick a different-family headless agent, or "
-            'record a signed deviation: 3pwr deviation --gate model_diversity --approver <you> '
+            "record a signed deviation: 3pwr deviation --gate model_diversity --approver <you> "
             '--note "single-model dev"',
         )
     prqs.append(oracle_pr)

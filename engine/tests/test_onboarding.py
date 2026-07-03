@@ -309,7 +309,7 @@ def test_existing_constitution_is_not_overwritten(tmp_path):
     """ONBRD-FR-015: an existing constitution is never overwritten."""
     root = tmp_path / "proj"
     root.mkdir()
-    cpath = root / ".specify" / "memory" / "constitution.md"
+    cpath = root / ".3powers" / "memory" / "constitution.md"
     cpath.parent.mkdir(parents=True)
     cpath.write_text("# Custom Constitution SENTINEL\n", encoding="utf-8")
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0

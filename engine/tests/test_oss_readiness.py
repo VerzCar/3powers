@@ -64,32 +64,49 @@ def _read(p: Path) -> str:
 
 
 # --------------------------------------------------------------------------- FR-001
-def test_readme_scopes_sanitized_headless_claim_to_the_oracle_leg():
-    """OSSRD-FR-001: every README paragraph claiming a sanitized/headless workspace names the oracle."""
+def test_readme_scopes_sanitized_workspace_claim_to_the_oracle_leg():
+    """OSSRD-FR-001: every README paragraph claiming a *sanitized* workspace names the oracle.
+
+    Read-path isolation (the sanitized worktree) is oracle-specific. "Headless" is no longer
+    oracle-only — the native executive (EXEC/SLIM, DOCX truth-up) dispatches every agent headlessly."""
     for para in _read(README).split("\n\n"):
         low = para.lower()
-        if "sanitized" in low or "headless" in low:
-            assert "oracle" in low, f"unscoped sanitized/headless claim:\n{para}"
+        if "sanitized" in low:
+            assert "oracle" in low, f"unscoped sanitized-workspace claim:\n{para}"
 
 
-def test_readme_names_autonomy_dependencies_before_first_run_command():
-    """OSSRD-FR-001: Spec Kit + a coding-agent integration are named before the first `3pwr run`."""
+def test_readme_names_autonomy_dependency_before_first_run_command():
+    """OSSRD-FR-001 (DOCX truth-up): a coding-agent integration — the only autonomy dependency now
+    that the executive is native (EXEC/SLIM) — is named before the first `3pwr run`."""
     t = _read(README)
     first_run = t.find("3pwr run")
     assert first_run != -1
-    assert 0 <= t.find("github/spec-kit") < first_run
     assert 0 <= t.lower().find("coding-agent integration") < first_run
 
 
-# --------------------------------------------------------------------------- FR-002
-def test_entry_documents_source_the_spec_kit_pin_upstream():
-    """OSSRD-FR-002: README, AGENTS.md, and getting-started each source the pin to github/spec-kit."""
-    for doc in (README, AGENTS, GETTING_STARTED):
-        assert "github/spec-kit" in _read(doc), f"{doc.name}: Spec Kit pin left unsourced"
-    # the reference doc carries the tagged-install command they point at
-    assert "uv tool install specify-cli --from git+https://github.com/github/spec-kit.git" in _read(
-        REPO / "docs" / "references" / "speckit.md"
+# --------------------------------------------------------------------------- FR-002 (DOCX-FR-002)
+def test_entry_docs_carry_no_speckit_dependency_claim():
+    """DOCX-FR-002 (truths up OSSRD-FR-002): README, AGENTS, and CLAUDE present Spec Kit as neither a
+    dependency nor a required lifecycle step. Any surviving mention is historical/optional interop, so
+    only the dependency *phrasings* are forbidden — not the words "Spec Kit" themselves."""
+    forbidden = (
+        "layers on github spec kit",
+        "built on github spec kit",
+        "built on spec kit",
+        "driven by github spec kit",
+        "driven by spec kit",
+        "composes github spec kit",
+        "composes spec kit",
+        "composing spec kit",
+        "spec kit's workflow run",
+        "specify workflow run",
+        "the specify cli",
+        "needs the specify",
     )
+    for doc in (README, AGENTS, CLAUDE):
+        norm = _read(doc).lower().replace("*", "").replace("`", "")
+        for phrase in forbidden:
+            assert phrase not in norm, f"{doc.name}: residual Spec-Kit dependency claim {phrase!r}"
 
 
 # --------------------------------------------------------------------------- FR-003
@@ -111,11 +128,12 @@ def test_getting_started_opens_with_tiered_prerequisites():
     assert section.count("quarantined") >= 3
 
 
-def test_gates_only_path_requires_no_speckit_or_agent():
-    """OSSRD-FR-003: the gates-only path lists no Spec Kit or agent-integration requirement."""
+def test_gates_only_path_requires_no_agent_integration():
+    """OSSRD-FR-003 (DOCX truth-up): the gates-only path lists no agent-integration requirement (and,
+    post-SLIM, no substrate at all)."""
     t = _read(GETTING_STARTED)
     row = next(ln for ln in t.splitlines() if "Gates-only" in ln)
-    assert "no Spec Kit" in row and "no agent integration" in row
+    assert "no agent integration" in row
 
 
 # --------------------------------------------------------------------------- FR-004
@@ -219,20 +237,20 @@ def test_platform_policy_and_maintainer_path_are_documented():
 
 # --------------------------------------------------------------------------- FR-010
 def test_troubleshooting_covers_the_required_failures_with_fixes():
-    """OSSRD-FR-010: each required failure names its symptom, cause, and resolving command."""
+    """OSSRD-FR-010 (DOCX truth-up): each required failure names its symptom, cause, and resolving
+    command. The Spec-Kit failures were replaced by the native-executive one (no agent CLI on PATH)."""
     t = _read(TROUBLESHOOTING)
     for heading in (
         "## Signing key not found",
-        "## Spec Kit version mismatch",
+        "## Coding-agent CLI not found",
         "quarantined",  # the missing-scanner entry
-        "`specify` not installed",
     ):
         assert heading in t, f"troubleshooting is missing {heading!r}"
     # every entry follows the symptom / cause / fix structure, each with a resolving command block
     assert t.count("**Symptom**") >= 4
     assert t.count("**Cause**") >= 4
     assert t.count("**Fix**") >= 4
-    for cmd in ("3pwr keygen", "3pwr deps-check", "uv tool install specify-cli", "osv-scanner"):
+    for cmd in ("3pwr keygen", "3pwr deps-check", "osv-scanner"):
         assert cmd in t
 
 
