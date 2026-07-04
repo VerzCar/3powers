@@ -11,7 +11,9 @@ Verification is a **pure function** of the contract and the set of paths the sta
 deterministic and unit-testable with a fake agent and no network (RUNLIVE-NFR-002). The engine-owned
 contract table below is provider-, model-, and language-agnostic (RUNLIVE-NFR-005): it names *kinds* of
 artifact by path shape, not any vendor, stack, or file. A stage with no declared contract falls back to the
-lenient prior behavior so unconfigured stages still run (RUNLIVE-FR-003).
+lenient prior behavior so unconfigured stages still run (RUNLIVE-FR-003) — but PHASE-FR-002 extended the
+hard contracts to every artifact-producing action stage: ``plan`` and ``tasks`` now declare theirs, so the
+committed artifact trail in the feature workspace (PHASE-FR-001) is checked at every stage.
 """
 
 from __future__ import annotations
@@ -74,15 +76,32 @@ class ArtifactCheck:
         return f"expected {self.expected}, but the stage produced no change"
 
 
-# The engine-owned per-stage contracts (RUNLIVE-FR-001). Only the three stages the spec names carry a hard
-# contract; every other action step (clarify/plan/tasks/…) has none and falls back to lenient acceptance
-# (RUNLIVE-FR-003), so an unconfigured or optional stage never spuriously blocks the run.
+# The engine-owned per-stage contracts (RUNLIVE-FR-001). Every lifecycle *action* stage that produces a
+# committed artifact carries a hard contract: specify/oracle/implement (RUNLIVE) plus plan/tasks — which
+# PHASE-FR-002 removed from RUNLIVE-FR-003's lenient fallback, so a plan or tasks dispatch that writes no
+# artifact is a named failure, never a silent pass. Remaining steps (clarify/…) still fall back leniently.
+# The spec/plan/tasks patterns accept both the feature-workspace layout (specs/<f>/spec/spec.md,
+# specs/<f>/artifacts/<step>.md) and the legacy flat layout (PHASE-FR-001).
 STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
     "specify": ArtifactContract(
         step="specify",
         kind="path",
-        expected="a spec file (specs/<feature>/spec.md)",
+        expected="a spec file (specs/<feature>/spec/spec.md, or legacy specs/<feature>/spec.md)",
         patterns=(r"(^|/)specs/.+/spec\.md$",),
+    ),
+    "plan": ArtifactContract(
+        step="plan",
+        kind="path",
+        expected="a plan artifact (specs/<feature>/artifacts/plan.md, or legacy specs/<feature>/plan.md)",
+        patterns=(r"(^|/)specs/.+/plan\.md$",),
+    ),
+    "tasks": ArtifactContract(
+        step="tasks",
+        kind="path",
+        expected=(
+            "a tasks artifact (specs/<feature>/artifacts/tasks.md, or legacy specs/<feature>/tasks.md)"
+        ),
+        patterns=(r"(^|/)specs/.+/tasks\.md$",),
     ),
     "oracle": ArtifactContract(
         step="oracle",

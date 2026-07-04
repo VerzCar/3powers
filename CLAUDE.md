@@ -35,8 +35,13 @@ spine (ledger / `verify` / `advance` / reversibility / provenance) are delivered
 High-risk** (NFR-006); three reference adapters (TypeScript, Python, Go); structural oracle independence
 with headless, read-path-isolated **oracle** dispatch (A3, oracle leg); one-command orchestration
 (`3pwr run`, stopping only at the two human gates FR-006/FR-037); brownfield Stage Zero; emergency &
-deviation paths; the observe & feedback loop; and the spec-lock (SLOCK) + trust-hardening (HARDN)
-mechanisms.
+deviation paths; the observe & feedback loop; the spec-lock (SLOCK) + trust-hardening (HARDN)
+mechanisms; and **phased execution** (PHASE, spec 013): each feature gets a versioned workspace
+(`specs/<f>/spec/spec.md` + `specs/<f>/artifacts/{plan,tasks,…}.md`; the legacy flat layout stays
+readable), every action stage's artifact is verified against its declared contract, plans decompose work into
+**context-budgeted phases** (advisory ~110k-token default, `.3powers/config/context.yaml`), and the
+implement stage runs **one fresh headless session per phase** — in parallel for `[P]`-marked phases
+with disjoint file scopes.
 
 ## Repository layout
 
@@ -44,14 +49,17 @@ mechanisms.
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
                             #   observe, deps, workkind, design, speclock, orchestrate, runner, agents, prompts,
-                            #   artifacts, hosted, adapters, scanners, ledger, verify, anchor, keys, verdict, config, canonical
+                            #   artifacts, phases, workspace, hosted, adapters, scanners, ledger, verify, anchor,
+                            #   keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
-  config/{risk-tiers,roles,dependencies,observability,design-oracles}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
+  config/{risk-tiers,roles,dependencies,observability,design-oracles,context}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
   agents/*.yaml (native agent backends)   memory/constitution.md   templates/{spec,plan,tasks,…}.md
   ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
 .github/{prompts,agents}/   # /3pwr.{oracle,verify,review,signoff,advance,characterize} command prompts for a manual drive (no Spec Kit)
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs
+                            #   new features use the workspace layout: <f>/spec/spec.md + <f>/artifacts/{plan,tasks,…}.md
+                            #   (PHASE-FR-001); pre-013 features keep the legacy flat <f>/spec.md — both resolve
 examples/validation-utils/  # the runnable TypeScript sample (spec id VUTIL)
 docs/references/            # trust-spine tooling reference + historical Spec Kit reference (removed by SLIM, spec 010)
 plan/                       # the continuous plan series (001, 002, 003, …)
@@ -124,9 +132,13 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr emergency --approver <you> --note "<why>"                                 # FR-056 (defers mutation+coverage; 1-day cleanup)
 ```
 
-**`3pwr run "<intent>"` drives the whole lifecycle** (§6, plans 013/018/019): the native executive
+**`3pwr run "<intent>"` drives the whole lifecycle** (§6, plans 013/018/019/023): the native executive
 dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
-and in `auto` mode stops only at the two human gates (spec approval, sign-off). For a hands-on,
+and in `auto` mode stops only at the two human gates (spec approval, sign-off). Post-approval stage
+prompts reload the approved spec + the prior stage's artifact reference (PHASE-FR-005); a phased tasks
+artifact makes implement run **one fresh session per phase** — concurrently for `[P]`-marked phases with
+disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
+budget in `.3powers/config/context.yaml` (PHASE-FR-007..012). For a hands-on,
 step-by-step run, drive the stages with the `3pwr` CLI and the judiciary `/3pwr.*` prompts (`/3pwr.oracle`
 → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`); for an existing repo, start with
 `/3pwr.characterize` on a legacy module.

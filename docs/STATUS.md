@@ -4,11 +4,11 @@
 
 | | |
 |---|---|
-| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–019 delivered) |
+| **Current milestone** | **v0.5 complete; v1.0 in progress** (spec §17 phasing; plans 001–023 delivered) |
 | **Architecture (plans 018–022, current)** | **3Powers owns its executive** — `3pwr run` drives headless coding agents *directly* via a native, provider-agnostic runner (**EXEC**, spec 009), and **GitHub Spec Kit is removed** (**SLIM**, spec 010; epic A1′/A3′/§16 amended). The judiciary is unchanged. The solution + roadmap are documented in the epic ([§17 native-executive track](../specs/3Powers_Spec_v0.2.md)) and in §6 below. **RUNLIVE** (spec 011, plan 021) hardened the executive — per-stage artifact contracts, retry/timeout/streamed dispatch + `--json` per-stage results, a gated live end-to-end proof, an async hosted backend, and commit checkpoints. **DOCX** (spec 012, plan 022) then truthed-up this document and the guides to the native executive, and retired the last Spec-Kit residue (the `agentpins` model-pin module + its `config apply`/config-drift feature; the `.specify/` tree — constitution + templates relocated to `.3powers/`). Migration: [`docs/migration-remove-speckit.md`](migration-remove-speckit.md). |
-| **Last validated** | **2026-07-03**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
-| **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command **native** orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening, and a hardened native executive (RUNLIVE) |
-| **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the agent-backend manifests · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) · context strategy approximated at command level (FR-060/061) |
+| **Last validated** | **2026-07-04**, against [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) |
+| **Delivered** | full judiciary (oracle independence, complete gate suite, signed local trust spine), self-applied at High-risk (NFR-006), brownfield Stage Zero, emergency/deviation paths, observe & feedback loop, one-command **native** orchestration (`3pwr run`), headless read-path-isolated **oracle** dispatch (A3, oracle leg), three reference adapters (TypeScript, Python, Go), the `spec_integrity` gate (spec-lock), trust-spine hardening, a hardened native executive (RUNLIVE), and **phased execution** (PHASE, spec 013): a per-feature artifact workspace, hard plan/tasks artifact contracts, context-budgeted phases, one fresh headless session per phase, and parallel subagent dispatch for disjoint phases |
+| **Open residuals** | fuller A3 (the **coder** leg also headless, under a second different-family CLI) + a live non-Copilot end-to-end run · live design-oracle scanners + a live Go-toolchain gate run · catalog publishing of the agent-backend manifests · model-driven eval layer (FR-050) · cross-platform validation (NFR-003) |
 
 **This file is the only home of implementation status.** Every other document (README, AGENTS.md,
 CLAUDE.md) carries a durable summary and links here; when status changes, this file — and only this
@@ -18,7 +18,7 @@ file — is edited.
 > exactly how far we are **validated against the spec**, whether we're heading the right way, and what
 > to do next. The spec — [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`) — is the
 > single source of truth; this document is checked against it. It is a maintainer-facing status matrix —
-> the requirement IDs below are the point. Last updated after **plan 022 (DOCX)**.
+> the requirement IDs below are the point. Last updated after **plan 023 (PHASE)**.
 
 ---
 
@@ -76,9 +76,10 @@ The runnable sample is [`examples/validation-utils/`](../examples/validation-uti
 ```
 engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates, scanners, gaming, workkind,
                             #   design, mutation, characterize, deviations, conformance, covdiff, scope, lifecycle,
-                            #   orchestrate, runner, agents, prompts, artifacts, hosted, oracle, observe, deps,
-                            #   provenance, evals, ledger, verify, anchor, keys, verdict, speclock, config, canonical (+ tests/)
-.3powers/                   # in-repo trust spine: config/{risk-tiers,roles,design-oracles}.yaml, schemas/*.json,
+                            #   orchestrate, runner, agents, prompts, artifacts, phases, workspace, hosted, oracle,
+                            #   observe, deps, provenance, evals, ledger, verify, anchor, keys, verdict, speclock,
+                            #   config, canonical (+ tests/)
+.3powers/                   # in-repo trust spine: config/{risk-tiers,roles,design-oracles,context}.yaml, schemas/*.json,
                             #   adapters/{CONTRACT.md,typescript,python,go}, agents/*.yaml (native backends), eval/cases.yaml,
                             #   memory/constitution.md, templates/, semgrep-rules.yml, ledger.jsonl, keys/ledger.pub
 .github/                    # /3pwr.* judiciary command prompts for a hands-on manual drive (no Spec Kit)
@@ -96,7 +97,7 @@ plan/                       # the continuous plan series 001..022 (022 = DOCX: d
 |---|---|
 | **v0.1 — Trust-spine MVP** | ✅ complete (plans 001–003) |
 | **v0.5 — Full judiciary** | ✅ complete (plans 004–005) |
-| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; plan 017: **trust-spine hardening (HARDN)** — threat model, key custody + rotation + opt-in anchoring + external signing, oracle model attestation, conformance ID-binding/assertion checks, gaming flag, opt-in diff mutation; **plan 018: native executive (EXEC, spec 009)** — `3pwr run` drives headless agents directly via a provider-agnostic agent-runner; **plan 019: remove Spec Kit (SLIM, spec 010)** — substrate severed, `3pwr init` seeds agent manifests; **plan 021: live-executive hardening (RUNLIVE, spec 011)** — per-stage artifact contracts, robust dispatch (timeout/retry/streaming + `--json`), a gated live e2e proof, an async hosted backend, commit checkpoints; **plan 022: docs & de-cruft (DOCX, spec 012)** — STATUS/guides truthed-up to the native executive, `agentpins`/config-drift retired, `.specify/` relocated to `.3powers/`; remaining: catalog publishing) |
+| **v1.0 — Lifecycle & ecosystem** | ◑ in progress (plan 006: **High-risk self-application** + **brownfield Stage Zero**; plan 007: **emergency & deviation paths** §14; plan 008: **structural oracle independence** §7, ledger-anchored; plan 009: **portability & dependency stability** (deps-check + provider-agnostic Spec Kit extension); plan 010: **observe & feedback loop** §13; plan 011: **A3 live headless dispatch** — physical oracle read-path isolation (oracle leg); plan 012: **model diversity recommend-not-force**; plan 013: **orchestration front-end** `3pwr run`; plan 014: **hardening core** (betterleaks, work-kind inference FR-058, tier test-layers FR-064, richer TUI, LICENSE); plan 015: **work-kind-shaped gates** — defect-flow FR-008, design oracles FR-009, a **third (Go) adapter**; plan 016: **spec-integrity gate (spec-lock, SLOCK)** — the approved spec's hash sealed in the signed sign-off, enforced by a `spec_integrity` gate + `advance` + read-only `spec diff`; plan 017: **trust-spine hardening (HARDN)** — threat model, key custody + rotation + opt-in anchoring + external signing, oracle model attestation, conformance ID-binding/assertion checks, gaming flag, opt-in diff mutation; **plan 018: native executive (EXEC, spec 009)** — `3pwr run` drives headless agents directly via a provider-agnostic agent-runner; **plan 019: remove Spec Kit (SLIM, spec 010)** — substrate severed, `3pwr init` seeds agent manifests; **plan 021: live-executive hardening (RUNLIVE, spec 011)** — per-stage artifact contracts, robust dispatch (timeout/retry/streaming + `--json`), a gated live e2e proof, an async hosted backend, commit checkpoints; **plan 022: docs & de-cruft (DOCX, spec 012)** — STATUS/guides truthed-up to the native executive, `agentpins`/config-drift retired, `.specify/` relocated to `.3powers/`; **plan 023: phased execution (PHASE, spec 013)** — per-feature artifact workspace, hard plan/tasks artifact contracts, context-budgeted phases (FR-060/061), fresh session per phase, parallel subagent dispatch; remaining: catalog publishing) |
 
 **Requirement-level (✅ done · ◑ partial/approximated · ⬜ missing).** Unlisted FRs in a ✅ block are done.
 
@@ -118,8 +119,13 @@ FR-012 ✅ / FR-013 ◑ (**both legs now dispatched headlessly by the native run
 coder leg (EXEC/SLIM, plans 018/019) and `3pwr oracle dispatch` the oracle leg under a non-coder
 integration (plan 011); the residual is the *fuller* A3 — the coder leg under a **second, different-family**
 CLI + a live non-Copilot end-to-end run) · FR-062 ✅ (Phase-A/B ordering proven
-from the ledger seq; enforced at High-risk `advance`), FR-018 ◑ (advisory) · FR-060 ⬜, FR-061 ⬜
-(context strategy — harness-limited).
+from the ledger seq; enforced at High-risk `advance`), FR-018 ◑ (advisory) · **FR-060 ✅ / FR-061 ✅**
+(context strategy — delivered by **PHASE**, spec 013 / plan 023: the tasks artifact decomposes work into
+**context-budgeted phases** (deterministic byte-based estimate vs a configurable per-model budget,
+default ~110k tokens, `.3powers/config/context.yaml` — advisory-only), and the implement stage runs
+**one fresh headless session per phase**, reloading each phase's handoff set (spec + constitution +
+phase tasks + file scope) with no carried conversation; disjoint parallel-marked phases dispatch to
+**parallel subagent sessions**, with deterministic result ordering and the ledger verifying green).
 **Live executive hardening (RUNLIVE, spec 011 / plan 021) ✅:** the native executive is hardened —
 **per-stage artifact contracts** catch a stage that produced nothing/off-target as a named artifact failure,
 never a silent pass (RUNLIVE-FR-001/002/003); dispatch is **timeout-bounded, retried, streamed, and reported
@@ -390,6 +396,26 @@ relocated to `.3powers/memory/constitution.md` + `.3powers/templates/`, every re
 behavior changed (DOCX-NFR-001); no engine runtime path references `.specify/` or a Spec-Kit CLI
 (DOCX-NFR-002). Also folded in the plan-021 self-gate residue (`ruff format` on three stale files).
 
+**Plan 023 is done** ([`plan/023-phased-execution.md`](../plan/023-phased-execution.md)):
+✅ **phased execution (PHASE, spec 013)** — delivers the epic's context strategy (3PWR-FR-060/061) and the
+playbook's session LAWs at the engine level. **Feature workspace** (PHASE-FR-001): each new feature is one
+versioned folder — `specs/<f>/spec/spec.md` + a sibling `specs/<f>/artifacts/` for every other stage's
+output; legacy flat layouts stay resolvable (exactly one spec per feature, whichever layout). **Hard
+plan/tasks artifact contracts** (PHASE-FR-002): a plan/tasks dispatch that writes nothing is a named
+artifact failure — the lenient fallback now covers only genuinely artifact-less steps; checkpoint ledger
+entries carry the accepted artifact paths (PHASE-FR-003). **Prompt/context injection** (PHASE-FR-004/005):
+the plan/tasks stage prompts name their artifact, required sections, decomposition rules, and the sizing
+heuristic; every post-approval stage's prompt reloads the approved spec text + a prior-artifact digest
+reference — deterministically. **Templates** (PHASE-FR-006): phases as self-contained delegable units with
+per-phase handoff blocks, size estimates, `[P]` markers; zero `/speckit.*` residue. **Advisory context
+budget** (PHASE-FR-007/008/009): configurable per-model (`context.yaml`, default ~110k tokens), a
+deterministic bytes→tokens estimate per phase, an oversize warning that advises a split and never blocks.
+**Fresh session per phase + parallel subagents** (PHASE-FR-010/011/012): implement dispatches one new
+headless session per phase (the phaseless artifact = one session); parallel-marked, dependency-free,
+scope-disjoint phases run concurrently; results are ledger-recorded in deterministic artifact order after
+collection (verify stays green — PHASE-NFR-003); a phase failure names the phase and later phases are
+explicitly skipped, never silently passed. No trust-spine change; engine self-green (530 tests, ruff, mypy).
+
 Next, in priority order:
 - **Breadth (unchanged):** live design/Go runs (playwright/axe/schema-diff + a Go toolchain), model-driven
   eval layer (FR-050), cross-platform validation (NFR-003).
@@ -399,10 +425,10 @@ Next, in priority order:
 ## 7. Pointers
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md) · **Constitution:** [`.3powers/memory/constitution.md`](../.3powers/memory/constitution.md)
-- **Plans:** [`plan/`](../plan/) (001→022 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
+- **Plans:** [`plan/`](../plan/) (001→023 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
 - **References:** [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md); [`docs/references/speckit.md`](references/speckit.md) (historical — Spec Kit was removed by SLIM)
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
-- **Git:** feature branches per spec — recent: `feature/009-native-executive`, `feature/011-live-testing-agentic-mode`,
-  and `feature/012-docs-and-decruft` (this pass).
+- **Git:** feature branches per spec — recent: `feature/011-live-testing-agentic-mode`,
+  `feature/012-docs-and-decruft`, and `claude/spec-013-o3m8iz` (this pass — PHASE).
 - **External tools used by some gates** (optional; gates quarantine if absent): `gitleaks`, `osv-scanner`,
   `semgrep`; the TS adapter uses `biome`, `tsc`, `vitest`, `stryker`, `fast-check` via `npm`.

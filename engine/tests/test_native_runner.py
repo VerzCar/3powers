@@ -299,6 +299,19 @@ def _artifact_writer(spec_id="RUN"):
             d = cwd / "specs" / spec_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
+        elif "STAGE: Plan" in prompt:
+            # plan/tasks now carry hard artifact contracts (PHASE-FR-002) — the fake writes them
+            # into the feature workspace's artifacts folder (PHASE-FR-001) like a real agent would.
+            d = cwd / "specs" / spec_id / "artifacts"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        elif "STAGE: Tasks" in prompt:
+            d = cwd / "specs" / spec_id / "artifacts"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "tasks.md").write_text(
+                f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
+                encoding="utf-8",
+            )
         elif "STAGE: Oracle" in prompt:
             d = cwd / "tests" / "oracle" / spec_id
             d.mkdir(parents=True, exist_ok=True)
@@ -536,7 +549,16 @@ def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monke
 def _writer_no_implement():
     def fake(argv, **kw):
         p = argv[-1] if argv else ""
-        if "STAGE: Oracle" in p:
+        # plan/tasks now carry hard contracts too (PHASE-FR-002) — write them so the run reaches Build
+        if "STAGE: Plan" in p:
+            d = Path(kw["cwd"]) / "specs" / "RUN" / "artifacts"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
+        elif "STAGE: Tasks" in p:
+            d = Path(kw["cwd"]) / "specs" / "RUN" / "artifacts"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "tasks.md").write_text("# Tasks\n- [ ] T001 [RUN-FR-001] x\n", encoding="utf-8")
+        elif "STAGE: Oracle" in p:
             d = Path(kw["cwd"]) / "tests" / "oracle" / "RUN"
             d.mkdir(parents=True, exist_ok=True)
             (d / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")

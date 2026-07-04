@@ -58,10 +58,13 @@ def test_implement_is_a_change_contract():
 
 
 def test_unconfigured_stage_has_no_contract_and_falls_back():
-    """RUNLIVE-FR-003: a stage with no declared contract returns None (the caller stays lenient)."""
+    """RUNLIVE-FR-003: a stage with no declared contract returns None (the caller stays lenient).
+
+    PHASE-FR-002 removed `plan`/`tasks` from this lenient fallback — every artifact-producing action
+    stage now declares a contract; only genuinely artifact-less steps (clarify) stay lenient."""
     assert artifacts.contract_for("clarify") is None
-    assert artifacts.contract_for("plan") is None
-    assert artifacts.contract_for("tasks") is None
+    assert artifacts.contract_for("plan") is not None
+    assert artifacts.contract_for("tasks") is not None
 
 
 def test_verify_none_contract_is_lenient():

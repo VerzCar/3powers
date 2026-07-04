@@ -30,7 +30,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
@@ -75,9 +75,16 @@ class StageResult:
     artifact: str = ""
     outcome: str = ""
     detail: str = ""
+    # The accepted artifact's repo-relative path(s), recorded with the stage's ledger entry so the
+    # committed artifact trail is reconstructable from the signed ledger alone (PHASE-FR-003).
+    artifact_paths: list[str] = field(default_factory=list)
+    # Advisory notes (e.g. the context-budget oversize warnings, PHASE-FR-009) — never a failure.
+    warnings: list[str] = field(default_factory=list)
+    # Per-phase results when the stage ran as context-sized phases (PHASE-FR-010/012), artifact order.
+    phases: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
-        return {
+        d = {
             "step": self.step,
             "stage": self.stage,
             "ok": self.ok,
@@ -89,6 +96,13 @@ class StageResult:
             "outcome": self.outcome,
             "detail": self.detail,
         }
+        if self.artifact_paths:
+            d["artifact_paths"] = self.artifact_paths
+        if self.warnings:
+            d["warnings"] = self.warnings
+        if self.phases:
+            d["phases"] = self.phases
+        return d
 
 
 def dispatch_agent(
@@ -164,8 +178,28 @@ class CliAgentRunner:
         # (tests / a fake agent) is honored — the engine still issues no model call (EXEC-NFR-001).
         self._dispatcher = dispatcher or dispatch_agent
 
-    def dispatch(self, step: str, stage: str) -> DispatchResult:
-        prompt = prompts.assemble(step, intent=self.intent, spec_text=self.spec_text)
+    def dispatch(
+        self,
+        step: str,
+        stage: str,
+        *,
+        spec_text: Optional[str] = None,
+        context: str = "",
+        file_scope: str = "",
+    ) -> DispatchResult:
+        """Run one fresh headless session for ``step`` (EXEC-FR-001; PHASE-FR-005/010).
+
+        The optional per-dispatch blocks let the orchestrator inject the approved spec text, the
+        prior stage's artifact reference, and — for a build phase — that phase's tasks and declared
+        file scope, so no stage depends on the agent rediscovering its inputs (PHASE-FR-005). Each
+        call is a new agent process: no conversation state is carried between dispatches."""
+        prompt = prompts.assemble(
+            step,
+            intent=self.intent,
+            spec_text=self.spec_text if spec_text is None else spec_text,
+            context=context,
+            file_scope=file_scope,
+        )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
         rc, out, err = self._dispatcher(
             argv, cwd=self.cwd, stdin=stdin, timeout=self.timeout, stream=self.stream
@@ -259,6 +293,7 @@ def run_stage(
             duration_s=clock() - t0,
             outcome="ok",
             artifact=check.summary,
+            artifact_paths=list(check.matched),  # recorded with the ledger entry (PHASE-FR-003)
         )
     return StageResult(
         step=step,

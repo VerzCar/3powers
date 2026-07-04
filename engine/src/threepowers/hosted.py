@@ -134,10 +134,26 @@ class HostedAgentRunner:
             return "failed"
         return "running"
 
-    def dispatch(self, step: str, stage: str) -> DispatchResult:
+    def dispatch(
+        self,
+        step: str,
+        stage: str,
+        *,
+        spec_text: Optional[str] = None,
+        context: str = "",
+        file_scope: str = "",
+    ) -> DispatchResult:
         """Trigger → poll → collect one stage; a failed/timed-out hosted run is a dispatch failure naming the
-        stage (RUNLIVE-FR-008), never a gate verdict. No credential is read or logged (RUNLIVE-FR-009)."""
-        prompt = prompts.assemble(step, intent=self.intent, spec_text=self.spec_text)
+        stage (RUNLIVE-FR-008), never a gate verdict. No credential is read or logged (RUNLIVE-FR-009).
+        The per-dispatch prompt blocks mirror :meth:`CliAgentRunner.dispatch` so a hosted stage is judged
+        and contextualized identically to a local one (RUNLIVE-NFR-003, PHASE-FR-005)."""
+        prompt = prompts.assemble(
+            step,
+            intent=self.intent,
+            spec_text=self.spec_text if spec_text is None else spec_text,
+            context=context,
+            file_scope=file_scope,
+        )
         mapping = {
             "prompt": prompt,
             "model": self.model,

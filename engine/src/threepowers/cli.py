@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -59,6 +61,8 @@ from . import (
     observe,
     oracle,
     orchestrate,
+    phases,
+    prompts,
     provenance,
     runner as runnermod,
     runpreflight,
@@ -67,6 +71,7 @@ from . import (
     speclock,
     style,
     workkind,
+    workspace,
 )
 from .adapters import detect_adapter, run_cmd
 from .config import Settings, model_diversity_ok
@@ -90,10 +95,9 @@ def _settings(root: Optional[str]) -> Settings:
 def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
     if spec:
         return Path(spec).resolve()
-    # Native fallback: the newest spec under specs/ (no Spec Kit feature.json anymore).
-    specs = sorted(
-        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
-    )
+    # Native fallback: the newest spec under specs/ — exactly one per feature folder, whichever
+    # layout (the spec/ workspace subfolder or the legacy flat file — PHASE-FR-001).
+    specs = sorted(workspace.find_specs(s.root), key=lambda q: q.stat().st_mtime, reverse=True)
     if specs:
         return specs[0]
     raise FileNotFoundError("could not resolve a spec; pass --spec <path/to/spec.md>")
@@ -1905,13 +1909,12 @@ def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
 
 
 def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
-    """The spec the native verify stage gates against: --spec if given, else the newest specs/**/spec.md."""
+    """The spec the native run resolves: --spec if given, else the newest feature spec under specs/
+    (workspace or legacy layout — PHASE-FR-001)."""
     if getattr(args, "spec", None):
         p = Path(args.spec)
         return p if p.exists() else None
-    specs = sorted(
-        (s.root / "specs").glob("**/spec.md"), key=lambda q: q.stat().st_mtime, reverse=True
-    )
+    specs = sorted(workspace.find_specs(s.root), key=lambda q: q.stat().st_mtime, reverse=True)
     return specs[0] if specs else None
 
 
@@ -1978,6 +1981,169 @@ def _make_agent_runner(
     )
 
 
+def _dispatch_spec_text(s: Settings, step: str, spec_path: Optional[Path]) -> str:
+    """The approved-spec text a stage's prompt reloads (PHASE-FR-005).
+
+    Stages after the ``review-spec`` human gate (plan, tasks, oracle, implement, advance) get the
+    approved specification injected, so no stage depends on the agent rediscovering the law. Stages
+    before approval (specify, clarify) author/refine the spec and get none. Deterministic given the
+    tree (PHASE-NFR-001)."""
+    if orchestrate.step_index(step) <= orchestrate.step_index("review-spec"):
+        return ""
+    if spec_path is None:
+        return ""
+    try:
+        return spec_path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _prior_artifact_ref(s: Settings, step: str, result: runnermod.StageResult) -> str:
+    """A reference to (digest of) an accepted stage artifact for the NEXT stage's prompt (PHASE-FR-005)."""
+    if not result.artifact_paths:
+        return ""
+    path = result.artifact_paths[0]
+    try:
+        digest = hashlib.sha256((s.root / path).read_bytes()).hexdigest()[:12]
+    except OSError:
+        digest = ""
+    tail = f" (sha256 {digest})" if digest else ""
+    return f"prior stage '{step}' accepted artifact: {path}{tail} — read it before starting."
+
+
+def _implement_phases(s: Settings, spec_path: Optional[Path]) -> list[phases.Phase]:
+    """The ordered phases declared by the feature's tasks artifact, or ``[]`` (PHASE-FR-010).
+
+    An empty result — no tasks artifact, or one that declares no phases — means the implement stage
+    runs the whole task set as a single fresh session, preserving the pre-phase behavior as the
+    degenerate case."""
+    if spec_path is None:
+        return []
+    tasks_art = workspace.find_artifact(workspace.feature_dir_of(spec_path), "tasks")
+    if tasks_art is None:
+        return []
+    try:
+        return phases.parse_phases(tasks_art.read_text(encoding="utf-8"))
+    except OSError:
+        return []
+
+
+def _report_phase_estimates(
+    s: Settings, result: runnermod.StageResult, spec_path: Optional[Path], *, coder_model: str
+) -> None:
+    """Per-phase context estimates + the advisory oversize warnings after the tasks stage (PHASE-FR-008/009).
+
+    Each phase's deterministic estimate is reported; an over-budget phase gets a warning naming the
+    phase, its estimate, and the budget, advising a split — and the run proceeds. Written to stderr
+    (never the --json stdout) and carried on the stage result; no gate or verdict is touched
+    (PHASE-NFR-002)."""
+    phase_list = _implement_phases(s, spec_path)
+    if not phase_list:
+        return
+    budget = s.context_budget(coder_model)
+    prompt_text = prompts.stage_prompt_body("implement")
+    for ph in phase_list:
+        est = phases.phase_estimate(
+            s.root,
+            ph,
+            spec_path=spec_path,
+            constitution_path=s.constitution_path,
+            prompt_text=prompt_text,
+        )
+        print(
+            f"  · phase {ph.index} '{ph.name}': estimated ~{est} tokens (budget {budget})",
+            file=sys.stderr,
+        )
+        warn = phases.oversize_warning(ph, est, budget)
+        if warn:
+            result.warnings.append(warn)
+            print(f"  ⚠ {warn}", file=sys.stderr)
+
+
+def _dispatch_phased(
+    s: Settings,
+    step: str,
+    stage: str,
+    *,
+    backend,
+    agent_name: str,
+    retries: int,
+    spec_text: str,
+    context: str,
+    phase_list: list[phases.Phase],
+    verify_artifact,
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+) -> runnermod.StageResult:
+    """Run the implement stage phase by phase (PHASE-FR-010/011/012).
+
+    Each phase is a NEW headless session whose prompt reloads that phase's handoff set — the approved
+    spec, the constitution/rules, the phase's tasks, the declared file scope — with no conversation
+    state carried between phases (3PWR-FR-061). Phases marked parallel with disjoint declared scopes
+    and no dependency are dispatched concurrently; results are recorded in deterministic artifact
+    order via one ledger entry appended AFTER collection, from this thread — parallel completion never
+    touches the trust spine concurrently (PHASE-NFR-003). Any phase failure fails the stage naming the
+    phase(s); later phases are recorded as explicitly skipped, never as passed (PHASE-FR-012)."""
+    t0 = time.monotonic()
+    batches, notes = phases.schedule(phase_list)
+    for note in notes:
+        print(f"  · {note}", file=sys.stderr)
+    try:
+        constitution = s.constitution_path.read_text(encoding="utf-8")
+    except OSError:
+        constitution = ""
+    total = len(phase_list)
+    attempt_counts: list[int] = []  # list.append is atomic — safe across the batch threads
+
+    def run_one(ph: phases.Phase) -> tuple[bool, str]:
+        ctx = phases.handoff_context(ph, total, constitution_text=constitution)
+        if context:
+            ctx = f"{context}\n\n{ctx}"
+        file_scope = "\n".join(ph.file_scope)
+        res, attempts = runnermod.dispatch_with_retry(
+            lambda: backend.dispatch(
+                step, stage, spec_text=spec_text, context=ctx, file_scope=file_scope
+            ),
+            retries=retries,
+        )
+        attempt_counts.append(attempts)
+        return res.ok, ("" if res.ok else res.detail)
+
+    prun = phases.run_phases(batches, run_one)
+    results = [r.as_dict() for r in prun.results]
+    ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
+
+    def _result(
+        ok: bool, outcome: str, detail: str = "", artifact: str = "", paths: list[str] | None = None
+    ) -> runnermod.StageResult:
+        return runnermod.StageResult(
+            step=step,
+            stage=stage,
+            ok=ok,
+            agent=agent_name,
+            model=str(backend.model),
+            attempts=sum(attempt_counts),
+            duration_s=time.monotonic() - t0,
+            artifact=artifact,
+            outcome=outcome,
+            detail=detail,
+            artifact_paths=paths or [],
+            phases=results,
+        )
+
+    if not prun.ok:
+        return _result(False, "dispatch_failed", detail=prun.failure_detail)
+    check = verify_artifact()
+    if not check.ok:
+        return _result(
+            False,
+            "artifact_missing",
+            detail=f"stage '{step}' produced no expected artifact — {check.message}",
+        )
+    return _result(True, "ok", artifact=check.summary, paths=list(check.matched))
+
+
 def _native_runner(
     s: Settings,
     args: argparse.Namespace,
@@ -2023,6 +2189,10 @@ def _native_runner(
         stream=stream,
     )
 
+    # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
+    # knows the committed context boundary it continues from (PHASE-FR-005).
+    prior_box: dict[str, str] = {"ref": ""}
+
     def dispatch(step: str, stage: str) -> runnermod.StageResult:
         # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
         # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
@@ -2040,25 +2210,64 @@ def _native_runner(
             # A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.
             return artifacts.verify(contract, produced)
 
-        result = runnermod.run_stage(
-            step,
-            stage,
-            attempt=lambda: backend.dispatch(step, stage),
-            retries=retries,
-            verify_artifact=verify,
-            agent=agent_name,
-            model=str(backend.model),
-        )
+        # Assemble the stage's context: the approved spec text (post-approval stages) and the prior
+        # stage's accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).
+        spec_path = _resolve_run_spec(s, args)
+        spec_text = _dispatch_spec_text(s, step, spec_path)
+        context = prior_box["ref"]
+
+        phase_list = _implement_phases(s, spec_path) if step == "implement" else []
+        if phase_list:
+            # A phased tasks artifact: one fresh session per phase, parallel where the declared
+            # scopes are disjoint (PHASE-FR-010/011); a phaseless artifact stays a single dispatch.
+            result = _dispatch_phased(
+                s,
+                step,
+                stage,
+                backend=backend,
+                agent_name=agent_name,
+                retries=retries,
+                spec_text=spec_text,
+                context=context,
+                phase_list=phase_list,
+                verify_artifact=verify,
+                ledger=ledger,
+                sk=sk,
+                spec_id=spec_id,
+            )
+        else:
+            result = runnermod.run_stage(
+                step,
+                stage,
+                attempt=lambda: backend.dispatch(step, stage, spec_text=spec_text, context=context),
+                retries=retries,
+                verify_artifact=verify,
+                agent=agent_name,
+                model=str(backend.model),
+            )
+        if result.ok:
+            ref = _prior_artifact_ref(s, step, result)
+            if ref:
+                prior_box["ref"] = ref
+            if step == "tasks":
+                # Report each phase's deterministic context estimate; warn (never block) on an
+                # over-budget phase (PHASE-FR-008/009).
+                _report_phase_estimates(s, result, spec_path, coder_model=str(coder.model))
         if result.ok and auto_commit:
             produced = produced_box.get("paths", [])
             sha = runnermod.commit_checkpoint(s.root, spec_id, step, produced)
             if sha:
-                ledger.append(
-                    "run",
-                    {"kind": "checkpoint", "step": step, "stage": stage, "commit": sha},
-                    sk,
-                    spec_id=spec_id,
-                )
+                payload: dict[str, Any] = {
+                    "kind": "checkpoint",
+                    "step": step,
+                    "stage": stage,
+                    "commit": sha,
+                }
+                if result.artifact_paths:
+                    # The accepted artifact's path rides in the signed stage entry, so the committed
+                    # artifact trail is reconstructable from the ledger alone (PHASE-FR-003).
+                    payload["artifacts"] = result.artifact_paths
+                ledger.append("run", payload, sk, spec_id=spec_id)
         return result
 
     def run_verdict(stage: str) -> str:

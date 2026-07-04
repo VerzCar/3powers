@@ -68,6 +68,38 @@ class Settings:
         """Advisory onboarding preferences written by ``3pwr init`` (3PWR-ONBRD-FR-005)."""
         return self.dir / "config" / "onboarding.yaml"
 
+    @property
+    def context_config_path(self) -> Path:
+        """The advisory per-model context-budget configuration (PHASE-FR-007)."""
+        return self.dir / "config" / "context.yaml"
+
+    @property
+    def constitution_path(self) -> Path:
+        """The project constitution — part of every phase's reload set (PHASE-FR-008)."""
+        return self.dir / "memory" / "constitution.md"
+
+    def context_budget(self, model: str = "") -> int:
+        """The advisory context budget in tokens for ``model`` (PHASE-FR-007).
+
+        Read from ``context.yaml``: a per-model entry under ``models:`` wins, else the file's
+        ``budget_tokens``, else the shipped default (~110k). Deterministic — the same config bytes
+        always resolve the same budget — and strictly advisory: exceeding it warns and advises a
+        split, never a failed gate (PHASE-FR-009, PHASE-NFR-002)."""
+        from .phases import DEFAULT_BUDGET_TOKENS
+
+        data = _load_yaml(self.context_config_path)
+        candidate: Any = None
+        models = data.get("models") or {}
+        if model and isinstance(models, dict) and model in models:
+            candidate = models[model]
+        if candidate is None:
+            candidate = data.get("budget_tokens")
+        try:
+            n = int(candidate) if candidate is not None else 0
+        except (TypeError, ValueError):
+            n = 0
+        return n if n > 0 else DEFAULT_BUDGET_TOKENS
+
     def default_mode(self) -> str:
         """The recorded ``3pwr run`` autonomy default (advisory — ONBRD-FR-005): ``auto`` | ``commit``.
 
