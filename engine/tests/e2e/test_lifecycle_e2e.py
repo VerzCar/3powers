@@ -31,7 +31,7 @@ def test_run_dry_run_lifecycle_e2e(tmp_path, monkeypatch):
                 "E2E",
             ]
         )
-        == 0
+        == 3
     )
     # Resumable from the ledger (3PWR-FR-011/019): status reflects the paused human gate.
     assert main(["--root", str(repo), "run", "--status", "--spec-id", "E2E"]) == 0

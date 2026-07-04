@@ -26,7 +26,8 @@ Subcommands:
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
-2 = usage or environment error.
+2 = usage or environment error. `3pwr run` additionally uses the stable terminal contract
+(AUTOX-FR-009): 3 = paused at a human gate, 4 = setup/dispatch failure (never a gate verdict).
 """
 
 from __future__ import annotations
@@ -85,6 +86,13 @@ from .verify import verify_ledger
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
+# The stable `3pwr run` terminal contract (AUTOX-FR-009): one documented (status, exit-code) pair
+# per outcome, so a script can branch on the exit code alone —
+#   0 done · 1 gates_red (a real deterministic verdict; also rejected/aborted) · 2 usage ·
+#   3 paused_at_gate (a human gate awaits) · 4 setup/dispatch failure (preflight_failed,
+#   dispatch_failed, artifact_missing, verdict_error — never a gate verdict).
+EXIT_PAUSED = 3
+EXIT_SETUP = 4
 
 
 # --------------------------------------------------------------------------- helpers
@@ -2387,6 +2395,13 @@ def _native_runner(
                 # Report each phase's deterministic context estimate; warn (never block) on an
                 # over-budget phase (PHASE-FR-008/009).
                 _report_phase_estimates(s, result, spec_path, coder_model=str(coder.model))
+            # Record the completion itself — lightweight, additive (AUTOX-FR-010, extends
+            # RUNLIVE-FR-010): resume progress lives in the signed ledger, not only in checkpoint
+            # commits, so a failed `--no-auto-commit` run still resumes from the next stage.
+            stage_payload: dict[str, Any] = {"kind": "stage", "step": step, "stage": stage}
+            if result.artifact_paths:
+                stage_payload["artifacts"] = result.artifact_paths
+            ledger.append("run", stage_payload, sk, spec_id=spec_id)
         if result.ok and auto_commit:
             produced = produced_box.get("paths", [])
             sha = runnermod.commit_checkpoint(s.root, spec_id, step, produced)
@@ -2505,6 +2520,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if missing:
             # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
             # alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).
+            # Exits with the setup/dispatch code, distinct from usage and gates-red (AUTOX-FR-009).
             obj = {
                 "status": "preflight_failed",
                 "spec_id": spec_id,
@@ -2525,7 +2541,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 for alt in runpreflight.OFFLINE_ALTERNATIVES:
                     lines.append(f"    • {alt}")
                 print("\n".join(lines), file=sys.stderr)
-            return EXIT_USAGE
+            return EXIT_SETUP
 
     # The signer itself (a live run just verified it in preflight; --dry-run still needs one to
     # append its ledger records).
@@ -2533,7 +2549,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         sk = keys.resolve_signer(s.root)
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
-        return EXIT_USAGE
+        return EXIT_SETUP
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
@@ -2582,9 +2598,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
-        cp_step = orchestrate.last_checkpoint_step(ledger.entries(), spec_id)
-        if not pending and not cp_step:
-            print(f"error: no paused run to resume for {spec_id}", file=sys.stderr)
+        completed = orchestrate.last_completed_step(ledger.entries(), spec_id)
+        if not pending and not completed:
+            # No recorded progress at all — say so honestly and name the fresh start (AUTOX-FR-010).
+            print(
+                f"nothing to resume for {spec_id} — no recorded progress; start fresh: "
+                f'3pwr run "<intent>" --spec-id {spec_id}',
+                file=sys.stderr,
+            )
             return EXIT_USAGE
         if pending:
             # A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).
@@ -2652,7 +2673,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                     args.json,
                     human,
                 )
-                return EXIT_OK
+                # Paused-at-gate is distinguishable from completed by exit code alone (AUTOX-FR-009).
+                return EXIT_PAUSED
             fr = f" ({result.gate_fr})" if result.gate_fr else ""
             ans = input(f"  approve gate '{result.gate}'{fr}? [y/N] ").strip().lower()
             if ans not in ("y", "yes"):
@@ -2672,7 +2694,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
         print(str(exc), file=sys.stderr)
-        return EXIT_USAGE
+        return EXIT_SETUP
 
     if result.status == "failed":
         # Every terminal failure is recorded as a signed run-failure ledger entry BEFORE exiting
@@ -2736,7 +2758,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args.json,
                 human,
             )
-            return EXIT_USAGE
+            return EXIT_SETUP
         if result.is_artifact_missing:
             # A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a
             # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
@@ -2762,9 +2784,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args.json,
                 human,
             )
-            return EXIT_USAGE
+            return EXIT_SETUP
         # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
-        # "gates red", never route to the incident/observe-signal path; exit with a setup/usage status.
+        # "gates red", never route to the incident/observe-signal path; exit with the setup/dispatch code.
         record("dispatch_failed")
         _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
         detail = f" — {result.detail}" if result.detail else ""
@@ -2788,7 +2810,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             args.json,
             human,
         )
-        return EXIT_USAGE
+        return EXIT_SETUP
     if result.status == "aborted":
         _notify(args.notify, f"3pwr run {spec_id}: aborted")
         _print(

@@ -130,10 +130,10 @@ def test_cli_run_auto_stops_at_the_two_gates_then_completes(run_project):
         "--approver",
         "carlo",
     ]
-    assert main(start) == 0
+    assert main(start) == 3  # paused at a human gate (AUTOX-FR-009)
     assert _state(root, "RUN").pending_gate == "review-spec"  # FR-006
 
-    assert main(resume) == 0
+    assert main(resume) == 3
     assert _state(root, "RUN").pending_gate == "signoff"  # FR-037 (intermediates auto-approved)
 
     assert main(resume) == 0
@@ -157,9 +157,9 @@ def test_cli_run_commit_stops_at_intermediate_gate(run_project):
         "--spec-id",
         "C",
     ]
-    assert main([*base, "build X"]) == 0
+    assert main([*base, "build X"]) == 3
     assert _state(root, "C").pending_gate == "review-spec"
-    assert main([*base, "--resume", "--approver", "x"]) == 0
+    assert main([*base, "--resume", "--approver", "x"]) == 3
     assert _state(root, "C").pending_gate == "review-plan"  # commit stops here
 
 
@@ -167,7 +167,7 @@ def test_cli_run_failed_verdict_returns_nonzero(run_project):
     """A simulated red gate verdict stops the run (exit 1) after the spec gate is approved."""
     root = run_project
     base = ["--root", str(root), "run", "--dry-run", "--no-input", "--spec-id", "F"]
-    assert main([*base, "risky change"]) == 0  # pause at review-spec
+    assert main([*base, "risky change"]) == 3  # pause at review-spec
     assert main([*base, "--resume", "--simulate-fail", "--approver", "x"]) == 1  # verify fails
 
 
@@ -176,7 +176,7 @@ def test_cli_run_status(run_project):
     root = run_project
     assert (
         main(["--root", str(root), "run", "kick off", "--dry-run", "--no-input", "--spec-id", "S"])
-        == 0
+        == 3
     )
     assert main(["--root", str(root), "run", "--status", "--spec-id", "S"]) == 0
     assert _state(root, "S").pending_gate == "review-spec"

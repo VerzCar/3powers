@@ -503,7 +503,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
         lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
     )
 
-    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     rc = main(
         [
             "--root",
@@ -517,7 +517,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
             "c",
         ]
     )
-    assert rc == 0  # paused at the signoff gate — every executive stage dispatched
+    assert rc == 3  # paused at the signoff gate — every executive stage dispatched
 
     # PHASE-SC-001: the workspace holds the spec in spec/ and the other artifacts in artifacts/
     assert (root / "specs" / "RUN" / "spec" / "spec.md").is_file()
@@ -594,7 +594,7 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
         return rc
 
     monkeypatch.setattr(runner, "dispatch_agent", fake)
-    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     assert (
         main(
             [
@@ -609,7 +609,7 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
                 "c",
             ]
         )
-        == 0
+        == 3
     )
     impl = [p for p in prompts_seen if "STAGE: Implement" in p]
     assert len(impl) == 1 and "PHASE" not in impl[0].split("STAGE: Implement")[1].split("\n")[0]
@@ -634,7 +634,7 @@ def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypa
     )
     subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
     subprocess.run(["git", "commit", "-qm", "cfg"], cwd=root, check=True, capture_output=True)
-    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     rc = main(
         [
             "--root",
@@ -649,7 +649,7 @@ def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypa
         ]
     )
     err = capsys.readouterr().err
-    assert rc == 0  # the run reached the signoff gate — warned, never blocked
+    assert rc == 3  # the run reached the signoff gate — warned, never blocked
     assert "exceeds the context budget (10)" in err and "phase 1" in err
     assert "estimated ~" in err  # the estimate is reported per phase (PHASE-FR-008)
 

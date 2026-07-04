@@ -114,7 +114,7 @@ def test_deterministic_run_invokes_only_the_injectable_agent_seam(tmp_path, monk
     monkeypatch.setattr(runpreflight.shutil, "which", lambda c: f"/usr/bin/{c}")
 
     rc = main(["--root", str(repo), "run", "add x", "--no-input", "--spec-id", "LIVE"])
-    assert rc == 0 and seen  # the run advanced via the injectable dispatch seam only
+    assert rc == 3 and seen  # paused at the spec gate via the injectable dispatch seam only
 
 
 # --------------------------------------------------------------------------- the opt-in live proof (skipped by default)
@@ -210,8 +210,8 @@ def test_live_end_to_end_drives_a_real_agent(tmp_path, monkeypatch):
             "LIVE",
         ]
     )
-    assert rc == 0, "the first segment (Specify→spec gate) should pause cleanly, not dispatch-fail"
-    # Resume through the remaining gates until the run completes or stops without a dispatch failure.
+    assert rc == 3, "the first segment (Specify→spec gate) should pause cleanly, not dispatch-fail"
+    # Resume through the remaining gates until the run completes (0) or stops on a failure code.
     for _ in range(4):
         rc = main(
             [
@@ -226,7 +226,7 @@ def test_live_end_to_end_drives_a_real_agent(tmp_path, monkeypatch):
                 "live",
             ]
         )
-        if rc != 0:
+        if rc != 3:  # 3 = paused at the next human gate (AUTOX-FR-009) — keep resuming
             break
         status = main(["--root", str(repo), "run", "--status", "--spec-id", "LIVE"])
         assert status == 0
