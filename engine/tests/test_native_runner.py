@@ -118,7 +118,7 @@ def test_cli_agent_runner_dispatches_via_process_not_a_model(tmp_path):
     manifest = {"command": "claude", "prompt_flag": "-p", "model_flag": "--model"}
     seen: list[tuple] = []
 
-    def fake_dispatcher(argv, *, cwd, stdin, timeout, stream=False):
+    def fake_dispatcher(argv, *, cwd, stdin, timeout, stream=False, tee=None):
         seen.append((argv, cwd, stdin, timeout))
         return (0, "changes written", "")
 
@@ -136,7 +136,7 @@ def test_cli_agent_runner_reports_dispatch_failure(tmp_path):
     """EXEC-FR-016: a non-zero agent exit is a dispatch failure carrying the reason."""
     s = Settings(root=tmp_path)
 
-    def failing(argv, *, cwd, stdin, timeout, stream=False):
+    def failing(argv, *, cwd, stdin, timeout, stream=False, tee=None):
         return (127, "", "agent command not found: codex")
 
     r = CliAgentRunner(s, {"command": "codex"}, dispatcher=failing)
