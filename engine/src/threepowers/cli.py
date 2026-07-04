@@ -70,6 +70,7 @@ from . import (
     scope,
     speclock,
     style,
+    transcripts,
     workkind,
     workspace,
 )
@@ -2082,17 +2083,26 @@ def _make_agent_runner(
     intent: str,
     timeout: int,
     stream: bool,
+    transcripts_sink: Optional[transcripts.TranscriptSink] = None,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI (:class:`CliAgentRunner`) or,
     when the manifest declares ``mode: async-hosted``, the async hosted backend (:class:`HostedAgentRunner`,
     RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the
-    verdict is judged identically (RUNLIVE-NFR-003)."""
+    verdict is judged identically (RUNLIVE-NFR-003). The transcript sink persists each local attempt's
+    output (AUTOX-FR-008); a hosted backend's output lives with its hosting service."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
         )
     return CliAgentRunner(
-        s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout, stream=stream
+        s,
+        manifest,
+        model=model,
+        cwd=s.root,
+        intent=intent,
+        timeout=timeout,
+        stream=stream,
+        transcripts=transcripts_sink,
     )
 
 
@@ -2232,6 +2242,9 @@ def _dispatch_phased(
     def _result(
         ok: bool, outcome: str, detail: str = "", artifact: str = "", paths: list[str] | None = None
     ) -> runnermod.StageResult:
+        # Per-phase transcripts share the run's sink; the stage result names its directory so a
+        # phased failure still points at the persisted output (AUTOX-FR-008).
+        sink = getattr(backend, "transcripts", None)
         return runnermod.StageResult(
             step=step,
             stage=stage,
@@ -2243,6 +2256,7 @@ def _dispatch_phased(
             artifact=artifact,
             outcome=outcome,
             detail=detail,
+            transcript=sink.rel_dir if sink is not None else "",
             artifact_paths=paths or [],
             phases=results,
         )
@@ -2283,6 +2297,9 @@ def _native_runner(
     coder_agent = _resolve_coder_agent(s, args)
     oracle_agent = runpreflight.resolve_oracle_integration(s)
     coder_manifest = agents.load_agent(s, coder_agent)
+    # One transcript sink per run, shared by both roles: every stage attempt's output is persisted
+    # under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).
+    sink = transcripts.TranscriptSink(s.root, spec_id)
     coder = _make_agent_runner(
         s,
         coder_manifest,
@@ -2290,6 +2307,7 @@ def _native_runner(
         intent=intent,
         timeout=timeout,
         stream=stream,
+        transcripts_sink=sink,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -2302,6 +2320,7 @@ def _native_runner(
         intent=intent,
         timeout=timeout,
         stream=stream,
+        transcripts_sink=sink,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage

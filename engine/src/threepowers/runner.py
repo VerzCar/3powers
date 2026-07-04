@@ -29,10 +29,12 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import IO, TYPE_CHECKING, Callable, Optional, Protocol
 
 from . import agents, prompts
 from .config import Settings
@@ -40,10 +42,18 @@ from .orchestrate import Event, LIFECYCLE_STEPS, Outcome
 
 if TYPE_CHECKING:  # typing-only import (avoids a runtime import cycle)
     from .artifacts import ArtifactCheck
+    from .transcripts import TranscriptSink
 
 # Injected seams (EXEC-NFR-004): dispatch one action stage, or produce a verdict for one verify stage.
 Dispatcher = Callable[[str, str], "StageResult"]  # (step_id, stage) -> per-stage result
 VerdictFn = Callable[[str], str]  # (stage) -> "pass" | "fail" | "error"
+
+
+class TextSink(Protocol):
+    """Anything transcript lines can be teed into (a file, a redacting writer — AUTOX-FR-008)."""
+
+    def write(self, s: str) -> object: ...
+    def flush(self) -> None: ...
 
 
 @dataclass
@@ -119,6 +129,7 @@ def dispatch_agent(
     stdin: Optional[str] = None,
     timeout: int = 1800,
     stream: bool = False,
+    tee: Optional[TextSink] = None,
 ) -> tuple[int, str, str]:
     """Run an agent invocation as an external process (no shell) and return ``(rc, stdout, stderr)``.
 
@@ -127,25 +138,94 @@ def dispatch_agent(
     never from user input, so no shell/injection surface is opened.
 
     ``timeout`` bounds the attempt (RUNLIVE-FR-004): an over-long agent is terminated and reported as a
-    dispatch failure (rc 124), never a hang. When ``stream`` is set the child inherits the terminal so its
-    progress is visible live (RUNLIVE-FR-006); output is then not captured, so the failure detail degrades
-    to the exit code.
+    dispatch failure (rc 124), never a hang. ``tee`` receives every stdout/stderr line as it arrives —
+    the persisted transcript sink (AUTOX-FR-008). With ``stream`` set the lines are ALSO echoed to the
+    terminal live (RUNLIVE-FR-006); output is captured in both cases, so a streamed run no longer loses
+    its output.
     """
+    if tee is None and not stream:
+        # The plain captured path — unchanged behavior for programmatic callers with no sink.
+        try:
+            proc = subprocess.run(  # noqa: S603 — argv from a trusted manifest, shell disabled
+                argv,
+                cwd=str(cwd),
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
+        except FileNotFoundError as exc:
+            return 127, "", f"agent command not found: {exc}"
+        except subprocess.TimeoutExpired:
+            return 124, "", f"agent timed out after {timeout}s"
+
+    # The tee/stream path: pipe the child's output and pump it line by line into the capture
+    # buffers, the transcript sink, and — when streaming — the terminal (AUTOX-FR-008).
+    def note(msg: str) -> None:
+        if tee is not None:
+            tee.write(msg + "\n")
+            tee.flush()
+
     try:
-        proc = subprocess.run(  # noqa: S603 — argv from a trusted manifest, shell disabled
+        child = subprocess.Popen(  # noqa: S603 — argv from a trusted manifest, shell disabled
             argv,
             cwd=str(cwd),
-            input=stdin,
-            capture_output=not stream,
+            stdin=subprocess.PIPE if stdin is not None else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
-            check=False,
         )
-        return proc.returncode, (proc.stdout or ""), (proc.stderr or "")
     except FileNotFoundError as exc:
-        return 127, "", f"agent command not found: {exc}"
+        msg = f"agent command not found: {exc}"
+        note(msg)
+        return 127, "", msg
+
+    def pump(src: Optional[IO[str]], buf: list[str], echo: Optional[IO[str]]) -> None:
+        if src is None:
+            return
+        for line in src:
+            buf.append(line)
+            if tee is not None:
+                tee.write(line)
+                tee.flush()
+            if echo is not None:
+                echo.write(line)
+                echo.flush()
+
+    out_buf: list[str] = []
+    err_buf: list[str] = []
+    pumps = [
+        threading.Thread(
+            target=pump, args=(child.stdout, out_buf, sys.stdout if stream else None), daemon=True
+        ),
+        threading.Thread(
+            target=pump, args=(child.stderr, err_buf, sys.stderr if stream else None), daemon=True
+        ),
+    ]
+    for th in pumps:
+        th.start()
+    timed_out = False
+    if stdin is not None and child.stdin is not None:
+        try:
+            child.stdin.write(stdin)
+            child.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+    try:
+        child.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 124, "", f"agent timed out after {timeout}s"
+        child.kill()
+        child.wait()
+        timed_out = True
+    for th in pumps:
+        th.join(timeout=10)
+    if timed_out:
+        msg = f"agent timed out after {timeout}s"
+        note(msg)
+        return 124, "".join(out_buf), msg
+    return child.returncode, "".join(out_buf), "".join(err_buf)
 
 
 class CliAgentRunner:
@@ -172,6 +252,7 @@ class CliAgentRunner:
         timeout: int = 1800,
         stream: bool = False,
         dispatcher: Optional[Callable[..., tuple[int, str, str]]] = None,
+        transcripts: Optional["TranscriptSink"] = None,
     ) -> None:
         self.settings = settings
         self.manifest = manifest
@@ -181,6 +262,9 @@ class CliAgentRunner:
         self.spec_text = spec_text
         self.timeout = timeout
         self.stream = stream
+        # The per-run transcript sink (AUTOX-FR-008): every attempt's output is persisted,
+        # credential-redacted (AUTOX-NFR-002). None = no persistence (programmatic callers).
+        self.transcripts = transcripts
         # Resolve the module-level default at construction time so a monkeypatched ``dispatch_agent``
         # (tests / a fake agent) is honored — the engine still issues no model call (EXEC-NFR-001).
         self._dispatcher = dispatcher or dispatch_agent
@@ -208,13 +292,34 @@ class CliAgentRunner:
             file_scope=file_scope,
         )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
-        rc, out, err = self._dispatcher(
-            argv, cwd=self.cwd, stdin=stdin, timeout=self.timeout, stream=self.stream
-        )
+        # Persist this attempt's output to the run's transcript location (AUTOX-FR-008): teed even
+        # while streaming, so a streamed run no longer loses its output. The writer redacts
+        # credential-shaped env values before any byte lands on disk (AUTOX-NFR-002).
+        path: Optional[Path] = None
+        writer = None
+        if self.transcripts is not None:
+            path, writer = self.transcripts.open(step)
+        try:
+            rc, out, err = self._dispatcher(
+                argv, cwd=self.cwd, stdin=stdin, timeout=self.timeout, stream=self.stream, tee=writer
+            )
+        finally:
+            if writer is not None:
+                writer.close()
+        rel = ""
+        if path is not None:
+            try:
+                rel = str(path.relative_to(self.settings.root))
+            except ValueError:
+                rel = str(path)
         if rc != 0:
             detail = (err.strip() or out.strip() or f"agent exited {rc}")[:400]
-            return DispatchResult(False, detail=detail, model=self.model)
-        return DispatchResult(True, detail=step, model=self.model)
+            if self.transcripts is not None:
+                # The excerpt rides in messages and the failure ledger record — redact it like the
+                # transcript itself; nothing persisted may carry a credential (AUTOX-NFR-002).
+                detail = self.transcripts.redact_text(detail)
+            return DispatchResult(False, detail=detail, model=self.model, transcript=rel)
+        return DispatchResult(True, detail=step, model=self.model, transcript=rel)
 
 
 # --------------------------------------------------------------------------- retry / artifact policy (pure)
@@ -331,7 +436,11 @@ def _git(cwd: Path, args: list[str]) -> tuple[int, str, str]:
 
 
 def _changed_files(cwd: Path) -> list[str]:
-    """Repo-relative paths that are modified or untracked vs HEAD (empty when not a git repo)."""
+    """Repo-relative paths that are modified or untracked vs HEAD (empty when not a git repo).
+
+    Engine-written transcripts (``.3powers/runs/``, AUTOX-FR-008) are excluded even when the
+    trust-spine ``.gitignore`` is absent: they are never a stage's artifact and must not satisfy an
+    artifact contract or be swept into a checkpoint commit."""
     rc, out, _ = _git(cwd, ["status", "--porcelain", "--untracked-files=all"])
     if rc != 0:
         return []
@@ -342,7 +451,7 @@ def _changed_files(cwd: Path) -> list[str]:
         p = line[3:].strip().strip('"')
         if " -> " in p:  # a rename: XY old -> new
             p = p.split(" -> ", 1)[1].strip().strip('"')
-        if p:
+        if p and not p.startswith(".3powers/runs/"):
             paths.append(p)
     return paths
 
