@@ -329,6 +329,7 @@ Copilot), so the executive was brought in-house — A1′/A3′ (§3):
 | **SLIM** (spec 010) | delivered | Removes GitHub Spec Kit entirely (runner, vendored prompts/workflows, `--with-speckit`, the dependency pin); `3pwr init` seeds the agent manifests instead. |
 | **RUNLIVE** (spec 011) | delivered | Hardens the executive: per-stage **artifact contracts**, robust dispatch (timeout/retry/streaming), a **gated live end-to-end proof**, the **async hosted backend** (e.g. the GitHub Copilot coding agent for shops without a local headless CLI), and per-stage commit checkpoints. |
 | **DOCX** (spec 012) | delivered | Truth-up STATUS + docs to the native executive and retire the last Spec-Kit residue (the `agentpins` model-pin module + its config-drift feature; the `.specify/` tree, relocated to `.3powers/`). |
+| **PHASE** (spec 013) | draft | Phased execution: real `plan`/`tasks` stage prompts + hard artifact contracts in a per-feature workspace (`spec/` + artifacts folder, every stage leaving a checked, versioned artifact); an advisory per-model **context budget** (default ≈110k tokens) sizing plan phases; **one fresh session per phase** with the handoff set reloaded (delivers FR-060/061 at engine level); **parallel subagent dispatch** for disjoint-file-scope phases with deterministic ledger ordering. |
 
 The **judiciary** (§7–§9) — oracle independence, the gate suite, the signed trust spine — is unchanged by
 this track; only the executive substrate changed.
