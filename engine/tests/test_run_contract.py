@@ -55,9 +55,7 @@ def _stage_writer(spec_id="RUN", skip=()):
         elif "STAGE: Oracle" in prompt and "oracle" not in skip:
             d = cwd / "tests" / "oracle" / spec_id
             d.mkdir(parents=True, exist_ok=True)
-            (d / "test_oracle.py").write_text(
-                "def test_ok():\n    assert True\n", encoding="utf-8"
-            )
+            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt and "implement" not in skip:
             d = cwd / "src"
             d.mkdir(parents=True, exist_ok=True)
@@ -108,9 +106,7 @@ def _run_json(root: Path, *argv: str, capsys) -> tuple[int, dict]:
 def test_paused_at_gate_is_exit_3(run_repo, capsys):
     """AUTOX-FR-009: a run pausing at a human gate exits 3 with status paused_at_gate — a documented
     code distinct from both a completed run (0) and any failure."""
-    rc, obj = _run_json(
-        run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys
-    )
+    rc, obj = _run_json(run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys)
     assert rc == EXIT_PAUSED == 3 and obj["status"] == "paused_at_gate"
 
 
@@ -118,27 +114,21 @@ def test_preflight_failure_is_exit_4(run_repo, monkeypatch, capsys):
     """AUTOX-FR-009: an unmet prerequisite exits 4 (setup) with status preflight_failed — distinct
     from usage (2) and gates-red (1)."""
     monkeypatch.setattr(runpreflight.shutil, "which", lambda c: None)
-    rc, obj = _run_json(
-        run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys
-    )
+    rc, obj = _run_json(run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys)
     assert rc == EXIT_SETUP == 4 and obj["status"] == "preflight_failed"
 
 
 def test_dispatch_failed_is_exit_4(run_repo, monkeypatch, capsys):
     """AUTOX-FR-009: a dispatch failure exits 4 with status dispatch_failed."""
     monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (1, "", "boom"))
-    rc, obj = _run_json(
-        run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys
-    )
+    rc, obj = _run_json(run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys)
     assert rc == EXIT_SETUP and obj["status"] == "dispatch_failed"
 
 
 def test_artifact_missing_is_exit_4(run_repo, monkeypatch, capsys):
     """AUTOX-FR-009: a missing stage artifact exits 4 with status artifact_missing."""
     monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "did nothing", ""))
-    rc, obj = _run_json(
-        run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys
-    )
+    rc, obj = _run_json(run_repo, "run", "add x", "--no-input", "--spec-id", "RUN", capsys=capsys)
     assert rc == EXIT_SETUP and obj["status"] == "artifact_missing"
 
 
@@ -159,7 +149,9 @@ def test_gates_red_is_exit_1_and_verdict_error_is_exit_4(run_repo, monkeypatch, 
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_FAIL),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_FAIL
+        ),
     )
     rc, obj = _resume_to_verify(run_repo, capsys)
     assert rc == EXIT_FAIL == 1 and obj["status"] == "gates_red"
@@ -190,7 +182,9 @@ def test_done_is_exit_0(run_repo, monkeypatch, capsys):
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
     )
     rc, obj = _resume_to_verify(run_repo, capsys)
     assert rc == EXIT_PAUSED and obj["status"] == "paused_at_gate"  # sign-off gate
@@ -227,7 +221,10 @@ def test_each_outcome_maps_to_exactly_one_pair():
         "verdict_error": EXIT_SETUP,
     }
     # the four contract classes are mutually distinguishable by exit code alone
-    assert len({table["done"], table["gates_red"], table["paused_at_gate"], EXIT_SETUP, EXIT_USAGE}) == 5
+    assert (
+        len({table["done"], table["gates_red"], table["paused_at_gate"], EXIT_SETUP, EXIT_USAGE})
+        == 5
+    )
 
 
 # --------------------------------------------------------------------------- AUTOX-FR-010 (resume)

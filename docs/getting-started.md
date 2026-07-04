@@ -1,9 +1,112 @@
 # Getting Started
 
-A hands-on tour: install the engine, run the full gate suite on the bundled sample, read the verdict,
-and watch the local trust spine enforce a green-gate-plus-sign-off rule before anything "ships". Every
-command and its output below is real — you can reproduce it. New to the ideas? Skim
-[Concepts](concepts.md) first; terms of art are defined in the [glossary](glossary.md).
+Two paths through this page:
+
+- **[Your own repository → a green auto run](#end-user-path)** — the end-user path: install,
+  `3pwr init`, key export, agent setup, `3pwr ready`, `3pwr run --mode auto`. Start here if you are
+  bringing 3Powers to your project.
+- **[The maintainer walkthrough](#maintainer-walkthrough)** — a hands-on tour of this repo's bundled
+  sample: run the full gate suite, read the verdict, and watch the trust spine enforce
+  green-gates-plus-sign-off. Fully offline; no agent CLI needed.
+
+New to the ideas? Skim [Concepts](concepts.md) first; terms of art are defined in the
+[glossary](glossary.md).
+
+<a id="end-user-path"></a>
+## Your own repository to a green auto run
+
+Six steps, in order, each copy-runnable. At the end, `3pwr run "<intent>" --mode auto` drives the whole
+lifecycle in your repository, stopping only at the two human gates.
+
+### Step 1 — Install the engine
+
+You need [`uv`](https://docs.astral.sh/uv/) and `git`. Install `3pwr` from a clone of this repository:
+
+```bash
+git clone https://github.com/VerzCar/3powers && uv tool install ./3powers/engine
+3pwr --version        # prints the installed version (e.g. `3pwr 0.1.0`)
+```
+
+### Step 2 — Initialize your repository
+
+Run the guided onboarding **in your own project** (new or existing):
+
+```bash
+cd /path/to/your/repo
+3pwr init
+```
+
+It seeds the trust-spine layout (`.3powers/`), creates the signer with the private key **outside** the
+repo, sets up your language adapter, and closes with a readiness checklist that covers **every**
+prerequisite the auto run enforces — the same checks, one source, so "ready" here means the run will
+start. Unmet items are printed as exact commands in dependency order; do them, then continue.
+
+### Step 3 — Point the engine at your signing key
+
+`init` printed an export line — run it now and add it to your shell profile:
+
+```bash
+export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
+```
+
+### Step 4 — Roles + the agent CLI
+
+The auto run dispatches each lifecycle stage to a **headless coding-agent CLI**. Point the roles at the
+backends you have (manifests live in `.3powers/agents/`), with the oracle on a **different model
+family** than the coder (recommended, 3PWR-FR-022):
+
+```yaml
+# .3powers/config/roles.yaml
+roles:
+  coder:  { model_family: anthropic, integration: claude }
+  oracle: { model_family: openai,    integration: codex }
+```
+
+Install the agent CLIs the roles name and log in with each provider's own command (e.g. `claude
+login`) — **authentication belongs to the provider's CLI**; 3Powers only checks the CLI is present and
+will honestly report "authentication not verified". Single-model shop? Record the signed deviation the
+readiness check names and proceed.
+
+### Step 5 — Check readiness — one honest answer
+
+```bash
+3pwr ready
+```
+
+Re-runnable any time; read-only and offline. It performs the auto run's own preflight (signer, coder
+agent, different-family oracle) plus a dependency summary, and exits 0 only when
+`3pwr run --mode auto` will start. Every unmet item comes with its exact fix.
+
+### Step 6 — Run
+
+```bash
+3pwr run "<what you want built>" --mode auto
+```
+
+**What success looks like:** a live stage tracker streams each stage
+(specify → … → implement → verify), and the run stops exactly twice for you:
+
+1. **Spec approval** (3PWR-FR-006) — read the generated spec, then
+   `3pwr run --resume --spec-id RUN --approver <you>`;
+2. **Sign-off** (3PWR-FR-037) — review the evidence, then resume the same way.
+
+After the second approval the run completes ("lifecycle complete — advanced to Ship") and exits `0`.
+Progress, verdicts, and any failure are recorded in the signed ledger: check anytime with
+`3pwr run --status --spec-id RUN`. Scripts can branch on the [documented exit
+codes](cli-reference.md#run-exit-codes) — `0` done · `1` gates red · `2` usage · `3` paused at a human
+gate · `4` setup/dispatch failure.
+
+**If something fails:** the message names the stage, the failure class, and the persisted transcript
+path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an entry for each failure
+phrase, and `3pwr run --resume` continues from the last completed stage — completed stages never
+re-run.
+
+<a id="maintainer-walkthrough"></a>
+## The maintainer walkthrough (this repo, gates-only)
+
+Everything below is a hands-on tour **inside this repository**: run the full gate suite on the bundled
+sample, read the verdict, and watch the local trust spine enforce a green-gate-plus-sign-off rule
+before anything "ships". Every command and its output is real — you can reproduce it.
 
 ## Prerequisites
 
@@ -49,7 +152,7 @@ Installed 1 executable: 3pwr
 `3pwr` is now on your PATH. Check it:
 
 ```bash
-3pwr --version        # 3pwr 0.1.0
+3pwr --version        # prints the installed version
 ```
 
 ## 2. Create the independent signer

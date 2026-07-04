@@ -175,7 +175,9 @@ def signer_prereq(root: Path) -> Prereq:
     env_seed = os.environ.get("THREEPOWERS_SIGNING_KEY")
     try:
         signer = keys.resolve_signer(root)
-        _ = signer.key_id  # force key derivation: a malformed/short seed fails HERE, not at first signing
+        _ = (
+            signer.key_id
+        )  # force key derivation: a malformed/short seed fails HERE, not at first signing
     except FileNotFoundError:
         if env_file:
             return Prereq(

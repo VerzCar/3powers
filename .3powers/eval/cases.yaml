@@ -3,7 +3,7 @@
 # drops a non-negotiable property fails here instead of shipping silently.
 cases:
   - name: constitution-non-negotiables
-    file: .specify/memory/constitution.md
+    file: .3powers/memory/constitution.md
     must_contain:
       - "Separation of Powers"
       - "Oracle Independence"
@@ -31,19 +31,11 @@ cases:
       - "oracle"
       - "coder"
 
-  # Portability (3PWR-A1/A3): 3Powers must run under any Spec Kit-dispatchable integration, not
-  # Copilot-only. These block a regression to a provider-specific assumption (3PWR-FR-044/046).
+  # Portability (3PWR-A1/A3): the native executive drives any headless agent backend, never a
+  # single provider. These block a regression to a provider-specific assumption (3PWR-FR-044/046).
+  # (The absence of legacy-substrate wording is enforced by the AUTOX-FR-015 sweep test.)
   - name: roles-provider-agnostic
     file: .3powers/config/roles.yaml
     must_contain:
-      - "any agent Spec Kit can dispatch"
-
-  - name: extension-provider-agnostic
-    file: .specify/extensions/3powers/extension.yml
-    must_contain:
-      - "3pwr.oracle"
-      - "3pwr.verify"
-      - "provider-agnostic"
-      - "speckit_version"
-    must_not_contain:
-      - "integration: copilot"
+      - "no single provider"
+      - "headless_integrations"

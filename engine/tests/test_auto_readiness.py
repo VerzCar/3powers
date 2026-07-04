@@ -46,10 +46,14 @@ def _project(tmp_path: Path, *, roles: dict | None = None, agents: dict | None =
 
 @pytest.fixture()
 def signer_key(tmp_path, monkeypatch):
+    # Generate the key directly — a root-less `3pwr keygen` would resolve the REAL repo root from
+    # the cwd and overwrite its committed public key.
+    from threepowers import keys as keysmod
+
     keyfile = tmp_path / "signer.key"
+    keysmod.write_private(keyfile, keysmod.generate())
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     monkeypatch.delenv("THREEPOWERS_SIGNING_KEY", raising=False)
-    assert main(["keygen", "--out", str(keyfile)]) == 0
     return keyfile
 
 
@@ -99,9 +103,7 @@ def test_init_readiness_reports_unresolved_env_key(tmp_path, monkeypatch, capsys
     assert rc == 0  # init itself still completes — seeding is independent (spec edge case)
     report = json.loads(capsys.readouterr().out)
     assert report["auto_ready"] is False
-    signer = next(
-        c for c in report["auto_run"] if c["prerequisite"] == "resolvable signing key"
-    )
+    signer = next(c for c in report["auto_run"] if c["prerequisite"] == "resolvable signing key")
     assert not signer["ok"] and "THREEPOWERS_SIGNING_KEY_FILE" in signer["fix"]
 
 
@@ -213,3 +215,22 @@ def test_init_all_met_reports_auto_ready(tmp_path, monkeypatch, signer_key, caps
     assert rc == 0
     report = json.loads(capsys.readouterr().out)
     assert report["auto_ready"] is True and report["next_steps"] == []
+
+
+# --------------------------------------------------------------------------- AUTOX-NFR-001
+def test_readiness_is_deterministic_and_fully_offline(tmp_path, monkeypatch, signer_key, capsys):
+    """AUTOX-NFR-001: the readiness checks run with networking disabled, and identical state yields
+    identical output — no network or model call anywhere in the feature."""
+    import socket
+
+    def _no_network(*_a, **_k):
+        raise RuntimeError("readiness attempted a network call")
+
+    monkeypatch.setattr(socket, "socket", _no_network)
+    root = _project(tmp_path)
+    monkeypatch.setattr(runpreflight.shutil, "which", lambda c: f"/usr/bin/{c}")
+    assert main(["--root", str(root), "ready", "--json"]) == 0  # ran with sockets blocked
+    first = json.loads(capsys.readouterr().out)
+    assert main(["--root", str(root), "ready", "--json"]) == 0
+    second = json.loads(capsys.readouterr().out)
+    assert first == second  # identical state → identical output

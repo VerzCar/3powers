@@ -500,7 +500,9 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
     )
 
     assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
@@ -580,7 +582,9 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
     )
     # swap the fake's tasks content for a phaseless list by pre-creating the artifact the fake keeps
     orig = runner.dispatch_agent
@@ -626,7 +630,9 @@ def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypa
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
     )
     # a tiny budget makes every phase oversize (PHASE-FR-007: config changes the threshold)
     (root / ".3powers" / "config" / "context.yaml").write_text(

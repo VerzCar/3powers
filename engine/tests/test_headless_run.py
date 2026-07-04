@@ -153,7 +153,9 @@ def test_cli_live_run_preflight_fails_fast_never_gates_red(run_project, capsys):
     machine-readable form, never 'gates red', never the incident path."""
     root = run_project
     rc = main(["--root", str(root), "run", "build X", "--no-input", "--json", "--spec-id", "P"])
-    assert rc == 4  # the setup/dispatch code, distinct from usage (2) and gate failure (1) — AUTOX-FR-009
+    assert (
+        rc == 4
+    )  # the setup/dispatch code, distinct from usage (2) and gate failure (1) — AUTOX-FR-009
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["status"] == "preflight_failed"

@@ -277,18 +277,44 @@ agent named by its role in `.3powers/config/roles.yaml` — while streaming a li
 makes no model call itself). `auto` mode auto-approves the intermediate review gates and **stops only at
 the two mandatory human gates** — spec approval and sign-off; `commit` mode stops at every gate. It first
 classifies the intent and carries the inferred work-kind into the run so the verify step shapes the gate
-suite. Sign-offs and progress are recorded in the ledger, so a run is resumable; a red verdict stops the
-run, `--notify`s, and suggests `observe signal`.
-- `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` · `--spec-id SPEC_ID`
-  (run id, default `RUN`) · `--workflow WORKFLOW` · `--notify CMD` (best-effort notification hook) ·
-  `--resume` (record a sign-off + continue after a human gate) · `--status` (print the stage tracker) ·
-  `--dry-run` (simulate offline) · `--simulate-fail` (force a red verdict, for `--dry-run`) ·
-  `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
+suite. Sign-offs, per-stage completions, verdicts, and any terminal failure are recorded in the signed
+ledger, so a run is resumable and its state is always visible (`--status` / `3pwr status`).
+- `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
+  `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
+  `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--timeout N` /
+  `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (no per-stage checkpoint commits;
+  resume still works from the ledger) · `--notify CMD` (best-effort notification hook) ·
+  `--resume` (record a sign-off + continue after a human gate, or continue past a failure) ·
+  `--status` (print the stage tracker) · `--dry-run` (simulate offline) · `--simulate-fail` (force a
+  red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --resume --spec-id RUN --approver "$(git config user.name)"
 3pwr run --status --spec-id RUN
 ```
+
+<a id="run-exit-codes"></a>
+**The stable machine contract (AUTOX-FR-009).** Each terminal outcome maps to exactly one documented
+(JSON `status`, exit code) pair — a wrapper branches on the exit code alone, or on the `status` string
+under `--json`. This table is a stable interface:
+
+| Outcome | JSON `status` | Exit code |
+|---|---|---|
+| Lifecycle completed | `done` | `0` |
+| Deterministic gate suite failed at Verify | `gates_red` | `1` |
+| Human rejected a gate / run aborted | `rejected` / `aborted` | `1` |
+| Usage error (incl. nothing to resume) | — | `2` |
+| Paused at a human gate (spec approval / sign-off) | `paused_at_gate` | `3` |
+| Preflight refused before any dispatch | `preflight_failed` | `4` |
+| A stage's agent could not be executed | `dispatch_failed` | `4` |
+| A stage produced no declared artifact | `artifact_missing` | `4` |
+| The gate suite could not run at Verify | `verdict_error` | `4` |
+
+**Transcripts (AUTOX-FR-008, stable).** Every stage attempt's stdout/stderr — streamed or not — is
+persisted, credential-redacted, to `.3powers/runs/<spec-id>/<NN>-<step>-attempt<K>.log`; every failure
+message and failure ledger record names the transcript path. Failures are also recorded as signed
+`run`/`failure` ledger entries, so `3pwr run --status` and `3pwr status` show
+`failed at <stage> (<class>)` until a later record passes that stage.
 
 ### `revert` — reverse to a prior recorded state
 Appends a signed `reversal` entry returning a spec to its stage at a given ledger seq.
@@ -448,6 +474,21 @@ that needs adaptation.
 - `--manifest MANIFEST` (default `.3powers/config/dependencies.yaml`) · `--strict` (treat `warn` as blocking).
 ```bash
 3pwr deps-check
+```
+
+### `ready` — am I ready for `3pwr run --mode auto`?
+One honest answer, re-runnable any time (AUTOX-FR-003): performs the auto run's own preflight — a
+resolvable/usable signing key (an env-supplied key is validated, never trusted silently), a headless
+coder agent with its CLI on PATH, a different-family oracle (or a recorded diversity deviation) — plus
+a dependency summary. **The same shared checks** `3pwr init`'s readiness and the run's refusal use, so
+the three can never disagree. Read-only, fully offline, never a gate; a present agent CLI is reported
+honestly as "present; authentication not verified". Exits `0` ready, `1` not ready (each unmet item
+lists its exact fix).
+- `--integration INTEGRATION` (check against this coder backend instead of `roles.coder.integration`)
+  · `--spec-id SPEC_ID` (consider deviations recorded for this spec id).
+```bash
+3pwr ready
+3pwr ready --json      # {"ready": …, "checks": [...], "deps": …}
 ```
 
 ### `roles-check` — model-family diversity between two roles

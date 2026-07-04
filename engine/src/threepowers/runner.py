@@ -146,7 +146,8 @@ def dispatch_agent(
     if tee is None and not stream:
         # The plain captured path — unchanged behavior for programmatic callers with no sink.
         try:
-            proc = subprocess.run(  # noqa: S603 — argv from a trusted manifest, shell disabled
+            # argv comes from a trusted manifest and the shell is disabled — no injection surface.
+            proc = subprocess.run(
                 argv,
                 cwd=str(cwd),
                 input=stdin,
@@ -169,7 +170,8 @@ def dispatch_agent(
             tee.flush()
 
     try:
-        child = subprocess.Popen(  # noqa: S603 — argv from a trusted manifest, shell disabled
+        # argv comes from a trusted manifest and the shell is disabled — no injection surface.
+        child = subprocess.Popen(
             argv,
             cwd=str(cwd),
             stdin=subprocess.PIPE if stdin is not None else None,
@@ -301,7 +303,12 @@ class CliAgentRunner:
             path, writer = self.transcripts.open(step)
         try:
             rc, out, err = self._dispatcher(
-                argv, cwd=self.cwd, stdin=stdin, timeout=self.timeout, stream=self.stream, tee=writer
+                argv,
+                cwd=self.cwd,
+                stdin=stdin,
+                timeout=self.timeout,
+                stream=self.stream,
+                tee=writer,
             )
         finally:
             if writer is not None:
