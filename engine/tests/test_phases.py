@@ -493,12 +493,14 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     committed artifact per action stage in the workspace, dispatches implement once per phase (fresh
     sessions, parallel batch included), records phase results deterministically, and the ledger verifies."""
     import threepowers.cli as climod
-    from threepowers.verdict import STATUS_PASS
+    from threepowers.verdict import STATUS_PASS, Verdict
 
     root, prompts_seen = phased_project
     monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
     monkeypatch.setattr(
-        climod, "run_gates", lambda *a, **k: __import__("types").SimpleNamespace(result=STATUS_PASS)
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
     )
 
     assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
@@ -571,12 +573,14 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
 def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project, monkeypatch):
     """PHASE-FR-010: a tasks artifact declaring no phases runs implement as ONE fresh session."""
     import threepowers.cli as climod
-    from threepowers.verdict import STATUS_PASS
+    from threepowers.verdict import STATUS_PASS, Verdict
 
     root, prompts_seen = phased_project
     monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
     monkeypatch.setattr(
-        climod, "run_gates", lambda *a, **k: __import__("types").SimpleNamespace(result=STATUS_PASS)
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
     )
     # swap the fake's tasks content for a phaseless list by pre-creating the artifact the fake keeps
     orig = runner.dispatch_agent
@@ -615,12 +619,14 @@ def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypa
     """PHASE-FR-009 / PHASE-NFR-002: an over-budget phase yields the advisory warning and the run
     continues; the gate verdict is identical with and without the warning — the budget is never a gate."""
     import threepowers.cli as climod
-    from threepowers.verdict import STATUS_PASS
+    from threepowers.verdict import STATUS_PASS, Verdict
 
     root, prompts_seen = phased_project
     monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
     monkeypatch.setattr(
-        climod, "run_gates", lambda *a, **k: __import__("types").SimpleNamespace(result=STATUS_PASS)
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
     )
     # a tiny budget makes every phase oversize (PHASE-FR-007: config changes the threshold)
     (root / ".3powers" / "config" / "context.yaml").write_text(

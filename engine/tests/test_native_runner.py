@@ -394,15 +394,13 @@ def test_cli_native_run_dispatches_and_stops_at_spec_gate(native_project, capsys
 def test_cli_native_run_runs_gates_in_process_at_verify(native_project, monkeypatch, capsys):
     """EXEC-FR-006: resuming reaches Verify, where the deterministic gate suite runs IN-PROCESS."""
     import threepowers.cli as climod
-    from threepowers.verdict import STATUS_PASS
+    from threepowers.verdict import STATUS_PASS, Verdict
 
     calls: list = []
 
     def fake_gates(settings, target, **kw):
         calls.append(kw.get("tier"))
-        import types
-
-        return types.SimpleNamespace(result=STATUS_PASS)
+        return Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS)
 
     monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
     monkeypatch.setattr(climod, "run_gates", fake_gates)
@@ -588,11 +586,13 @@ def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, c
     import subprocess as sp
 
     import threepowers.cli as climod
-    from threepowers.verdict import STATUS_PASS
+    from threepowers.verdict import STATUS_PASS, Verdict
 
     monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
     monkeypatch.setattr(
-        climod, "run_gates", lambda *a, **k: __import__("types").SimpleNamespace(result=STATUS_PASS)
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
     )
 
     # Run 1: specify (committed as a checkpoint) → stop at review-spec.
