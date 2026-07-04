@@ -10,11 +10,13 @@ environment; it dispatches nothing.
 
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
-from . import agents, deviations
+from . import agents, deviations, keys
 from .config import Settings
 from .oracle import diverse, family_of
 
@@ -44,11 +46,16 @@ OFFLINE_ALTERNATIVES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class Prereq:
-    """One run prerequisite and, when unmet, the exact next step to resolve it (RUNX-FR-009)."""
+    """One run prerequisite and, when unmet, the exact next step to resolve it (RUNX-FR-009).
+
+    ``label`` is the honest status detail for a MET prerequisite (AUTOX-FR-004): it states exactly what
+    was probed and what was not — e.g. an agent CLI is "present; authentication not verified" because
+    authentication cannot be checked offline. No readiness line ever overstates what was checked."""
 
     name: str
     ok: bool
     fix: str = ""
+    label: str = ""
 
 
 def headless_set(settings: Settings) -> set[str]:
@@ -117,7 +124,13 @@ def _agent_prereq(
     cmd = agents.agent_command(manifest)
     if not command_present(cmd):
         return Prereq(label, False, f"install/enable the '{cmd}' CLI for agent '{agent}'")
-    return Prereq(label, True)
+    # The honest offline caveat (AUTOX-FR-004): PATH presence is probeable; provider authentication
+    # is not — say so rather than overstating what was checked.
+    return Prereq(
+        label,
+        True,
+        label=f"agent '{agent}' ('{cmd}' CLI) present; authentication not verified (offline check)",
+    )
 
 
 def check_native(
@@ -152,6 +165,71 @@ def check_native(
         )
     prqs.append(oracle_pr)
     return prqs
+
+
+def signer_prereq(root: Path) -> Prereq:
+    """A resolvable, USABLE signer — an environment-supplied key is validated (exists / readable /
+    well-formed), never trusted silently (AUTOX-FR-001)."""
+    name = "resolvable signing key"
+    env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
+    env_seed = os.environ.get("THREEPOWERS_SIGNING_KEY")
+    try:
+        signer = keys.resolve_signer(root)
+        _ = signer.key_id  # force key derivation: a malformed/short seed fails HERE, not at first signing
+    except FileNotFoundError:
+        if env_file:
+            return Prereq(
+                name,
+                False,
+                f"$THREEPOWERS_SIGNING_KEY_FILE points at a missing/unreadable file ({env_file}) — "
+                "fix the path, or run `3pwr keygen` and re-export the variable it prints",
+            )
+        return Prereq(
+            name,
+            False,
+            'run `3pwr keygen`, then: export THREEPOWERS_SIGNING_KEY_FILE="<the key path it prints>"',
+        )
+    except (ValueError, OSError, keys.ExternalSignerError) as exc:
+        source = (
+            f"$THREEPOWERS_SIGNING_KEY_FILE ({env_file})"
+            if env_file
+            else ("$THREEPOWERS_SIGNING_KEY" if env_seed else "the default key path")
+        )
+        return Prereq(
+            name,
+            False,
+            f"the signing key from {source} is not usable ({exc}) — "
+            "run `3pwr keygen` and re-export the variable it prints",
+        )
+    return Prereq(name, True, label=f"signer {signer.key_id}")
+
+
+def check_auto(
+    settings: Settings,
+    *,
+    coder_agent: str,
+    oracle_agent: str,
+    entries: list[dict],
+    spec_id: str | None,
+    command_present: Callable[[str], bool] | None = None,
+) -> list[Prereq]:
+    """Every prerequisite a live ``3pwr run --mode auto`` enforces before dispatching, as ONE shared
+    check set (AUTOX-FR-002): ``3pwr init``'s readiness, the standalone ``3pwr ready``, and the run's
+    own preflight all consume this list, so their verdicts cannot drift — one source of checks.
+
+    Ordered so the unmet items' fixes read as executable next steps in dependency order
+    (AUTOX-FR-005): signing key → coder agent (roles + CLI) → different-family oracle agent."""
+    return [
+        signer_prereq(settings.root),
+        *check_native(
+            settings,
+            coder_agent=coder_agent,
+            oracle_agent=oracle_agent,
+            entries=entries,
+            spec_id=spec_id,
+            command_present=command_present,
+        ),
+    ]
 
 
 def unmet(prqs: list[Prereq]) -> list[Prereq]:
