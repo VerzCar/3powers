@@ -42,7 +42,7 @@
   Write every requirement in EARS form (3PWR-FR-002) and namespace its ID with the Spec ID
   (3PWR-FR-059): [SPECID]-FR-### for functional, [SPECID]-NFR-### for non-functional.
   Each requirement MUST be measurable; an unmeasurable criterion blocks oracle authoring and is
-  routed back to /speckit.clarify (3PWR-FR-025). Give each an *Acceptance* line — the oracle
+  routed back to the Clarify stage (3PWR-FR-025). Give each an *Acceptance* line — the oracle
   (Phase A) is authored from these alone. Add a **Property** where input is parsed/validated/
   transformed (3PWR-FR-024). Do NOT put implementation detail here (3PWR-FR-007).
 -->

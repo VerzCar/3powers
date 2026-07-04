@@ -2,20 +2,21 @@
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+**Input**: Feature specification from `specs/[###-feature-name]/spec/spec.md`
+(legacy features keep `specs/[###-feature-name]/spec.md`)
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Output**: This file, committed to `specs/[###-feature-name]/artifacts/plan.md` — the Plan stage's
+artifact. A plan that was not written to the feature workspace fails the stage (PHASE-FR-002).
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+[Extract from feature spec: primary requirement + technical approach]
 
 ## Technical Context
 
 <!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
+  Replace with the project's technical details. Keep the spec free of these — implementation
+  detail belongs here, not in the law (3PWR-FR-007).
 -->
 
 **Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
@@ -38,13 +39,13 @@
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+*GATE: Must pass before design. Re-check after the phase decomposition below.*
 
-[Gates determined based on constitution file]
+[Gates determined from `.3powers/memory/constitution.md`]
 
 ## 3Powers Judicial Plan *(mandatory)*
 
-*GATE: Must be filled before `/speckit.tasks`.*
+*GATE: Must be filled before the Tasks stage.*
 
 ### Risk tier & gates
 
@@ -57,7 +58,7 @@
 |------|--------------|-------|
 | coder | [family A] | the executive builder |
 | oracle | [family B ≠ A] | judiciary; authors Phase-A tests; **must differ from coder** |
-| reviewer | [family C] | residual review (arrives v0.5) |
+| reviewer | [family C] | residual review |
 
 ### Phase-A oracle specification (3PWR-FR-020/062)
 
@@ -74,66 +75,50 @@ with its ID; property test where input is parsed/validated/transformed):
 Confirm before tasks: every requirement maps to ≥1 task and every task to a requirement. Flag any spec
 text that is actually implementation detail and route it out of the spec (3PWR-FR-007).
 
+## Phase Decomposition *(mandatory — PHASE-FR-004/006)*
+
+Split the work into small **ordered phases**, each sized so one *fresh* agent session — the approved
+spec + the constitution/rules + the phase's tasks + the files in its scope — fits comfortably inside
+the configured context budget (`.3powers/config/context.yaml`, default ~110k tokens; estimate ~4 bytes
+per token over those artifacts' bytes). Each committed artifact is a context boundary: the executive
+runs **each phase as a new headless session** that reloads its handoff set — never one long
+conversation across the whole feature.
+
+Rules:
+
+- Ordered phases; each phase is a coherent, self-contained chunk of the work.
+- One requirement per task; every task declares its file scope.
+- Each phase declares its **file scope** (the union of its tasks' files) and its **estimated context
+  size**; split any phase whose estimate exceeds the budget (the executive warns — advisory, never
+  blocking).
+- Mark independent phases with **disjoint file scopes** `[P]` — the executive may dispatch them to
+  parallel subagent sessions. Phases sharing files, or depending on another phase, run sequentially.
+
+| Phase | Name | File scope | Depends on | Est. context | Parallel? |
+|-------|------|------------|------------|--------------|-----------|
+| 1 | [name] | [files] | none | ~[N]k tokens | no |
+| 2 | [name] | [files] | Phase 1 | ~[N]k tokens | no |
+
 ## Project Structure
 
-### Documentation (this feature)
+### Documentation (this feature — the workspace, PHASE-FR-001)
 
 ```text
 specs/[###-feature]/
-├── plan.md              # This file (/speckit.plan command output)
-├── research.md          # Phase 0 output (/speckit.plan command)
-├── data-model.md        # Phase 1 output (/speckit.plan command)
-├── quickstart.md        # Phase 1 output (/speckit.plan command)
-├── contracts/           # Phase 1 output (/speckit.plan command)
-└── tasks.md             # Phase 2 output (/speckit.tasks command - NOT created by /speckit.plan)
+├── spec/
+│   └── spec.md          # the specification (Specify stage's artifact)
+└── artifacts/
+    ├── plan.md          # this file (Plan stage's artifact)
+    └── tasks.md         # Tasks stage's artifact
 ```
 
 ### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+[Replace with the concrete layout for this feature — real paths only.]
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: [Document the selected structure and reference the real directories above]
 
 ## Complexity Tracking
 
@@ -141,5 +126,4 @@ directories captured above]
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+| [e.g., 4th project] | [current need] | [why simpler insufficient] |

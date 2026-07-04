@@ -27,7 +27,8 @@ _STAGE_PROMPTS: dict[str, str] = {
         "risk tier (Cosmetic|Standard|High-risk), and explicit non-goals BEFORE any requirement. Write "
         "each requirement as '<SPECID>-FR-###: the system shall …' with a measurable Acceptance line. Do "
         "NOT put implementation detail (named stack, schema, vendor) in the spec. Write the spec to "
-        "specs/<feature>/spec.md — that file is the artifact this stage must produce."
+        "specs/<feature>/spec/spec.md — the feature workspace's spec/ subfolder — that file is the "
+        "artifact this stage must produce."
     ),
     "clarify": (
         "STAGE: Clarify. Find every ambiguous or unmeasurable requirement in the spec and resolve it into "
@@ -35,14 +36,33 @@ _STAGE_PROMPTS: dict[str, str] = {
         "before it can proceed."
     ),
     "plan": (
-        "STAGE: Plan. From the approved spec, produce an implementation plan: the files to change, the "
-        "approach per requirement, and the test layers (unit/integration/e2e) the risk tier demands. Do "
-        "not expand scope beyond the spec's requirements and non-goals."
+        "STAGE: Plan. From the approved spec, produce the implementation plan and write it to "
+        "specs/<feature>/artifacts/plan.md — that file is the artifact this stage must produce. "
+        "Required sections: Summary (primary requirement + approach); Judicial Plan (the spec's risk "
+        "tier, the gates it drives, the role → model-family table); Design (the files to change and the "
+        "approach per requirement); Test layers (unit/integration/e2e as the tier demands); and Phases. "
+        "Decompose the work into small ORDERED PHASES, each sized so one fresh agent session — the "
+        "approved spec + the constitution/rules + the phase's tasks + the files in its scope — fits "
+        "comfortably inside the configured context budget (default ~110k tokens; estimate ~4 bytes per "
+        "token over those artifacts' bytes). Each phase declares its file scope and its estimated "
+        "context size; split any phase whose estimate exceeds the budget. Mark independent phases with "
+        "disjoint file scopes '[P]' so they can be dispatched to parallel subagent sessions. Do not "
+        "expand scope beyond the spec's requirements and non-goals."
     ),
     "tasks": (
-        "STAGE: Tasks. Break the plan into ordered tasks, each tracing to exactly one requirement id and "
-        "declaring its file scope. Editing outside a task's declared file scope is a signal to stop and "
-        "re-spec."
+        "STAGE: Tasks. Break the plan into ordered tasks grouped into phases and write them to "
+        "specs/<feature>/artifacts/tasks.md — that file is the artifact this stage must produce. "
+        "Required sections: one '## Phase N: <name>' section per phase, in execution order, each "
+        "carrying a '**File scope**:' line (every file the phase may touch), a '**Depends on**:' line "
+        "('none' when independent), an '**Estimated context**:' line (~4 bytes/token over the spec + "
+        "rules + this phase's tasks + files in scope, against the configured budget, default ~110k "
+        "tokens), and a HANDOFF block naming what a fresh session must reload: the approved spec, the "
+        "constitution/rules, this phase's tasks, and the declared file scope. Each task is one line "
+        "'- [ ] T### [REQ-ID] description (files: …)' tracing to exactly ONE requirement id and "
+        "declaring its file scope; editing outside a task's declared file scope is a signal to stop and "
+        "re-spec. Split any phase whose estimate exceeds the budget. Mark independent phases with "
+        "disjoint file scopes '[P]' in the heading (or '**Parallel**: yes') so the executive can "
+        "dispatch them to parallel subagent sessions."
     ),
     "oracle": (
         "STAGE: Oracle (Phase A — judiciary). Author oracle tests SOLELY from the spec's acceptance "
