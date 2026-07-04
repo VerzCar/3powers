@@ -387,7 +387,7 @@ def test_cli_native_run_dispatches_and_stops_at_spec_gate(native_project, capsys
         ]
     )
     out = capsys.readouterr().out
-    assert rc == 0
+    assert rc == 3  # paused at the first mandatory human gate (AUTOX-FR-009)
     assert "review-spec" in out  # paused at the first mandatory human gate (FR-006)
 
 
@@ -406,7 +406,7 @@ def test_cli_native_run_runs_gates_in_process_at_verify(native_project, monkeypa
     monkeypatch.setattr(climod, "run_gates", fake_gates)
 
     assert (
-        main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+        main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     )
     # resume past the spec gate → auto mode drives plan..implement..verify, stopping at sign-off
     rc = main(
@@ -422,7 +422,7 @@ def test_cli_native_run_runs_gates_in_process_at_verify(native_project, monkeypa
             "carlo",
         ]
     )
-    assert rc == 0
+    assert rc == 3  # paused at the sign-off gate
     assert calls  # run_gates was invoked in-process at the Verify stage
     assert "signoff" in capsys.readouterr().out
 
@@ -520,7 +520,7 @@ def test_cli_json_emits_a_per_stage_result(native_project, capsys):
     rc = main(
         ["--root", str(native_project), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"]
     )
-    assert rc == 0
+    assert rc == 3
     obj = _json.loads(capsys.readouterr().out)
     assert obj["status"] == "paused_at_gate" and obj["gate"] == "review-spec"
     stages = obj["stages"]
@@ -538,7 +538,7 @@ def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monke
     monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "did nothing", ""))
     rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
     out = capsys.readouterr().out
-    assert rc == 2  # EXIT_USAGE — a setup/dispatch problem, not a gate verdict
+    assert rc == 4  # EXIT_SETUP — a setup/dispatch problem, not a gate verdict (AUTOX-FR-009)
     assert "artifact missing" in out and "Spec" in out
     assert "gates red" not in out  # never mislabeled a gate-red (SC-001)
 
@@ -597,7 +597,7 @@ def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, c
 
     # Run 1: specify (committed as a checkpoint) → stop at review-spec.
     assert (
-        main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 0
+        main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     )
 
     # Run 2 (resume): oracle is committed, but implement produces nothing → artifact_missing at Build.
@@ -615,7 +615,7 @@ def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, c
             "x",
         ]
     )
-    assert rc2 == 2 and "artifact missing" in capsys.readouterr().out
+    assert rc2 == 4 and "artifact missing" in capsys.readouterr().out
 
     # specify + oracle are committed checkpoints; implement is not.
     log = sp.run(
@@ -640,7 +640,7 @@ def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, c
             "x",
         ]
     )
-    assert rc3 == 0 and "signoff" in capsys.readouterr().out
+    assert rc3 == 3 and "signoff" in capsys.readouterr().out
     assert "implement" in seen
     assert "specify" not in seen and "oracle" not in seen and "plan" not in seen
     # the property (RUNLIVE-FR-010): implement succeeded exactly once — its checkpoint now exists
@@ -708,7 +708,7 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
     monkeypatch.setattr(hosted, "run_hosted_command", fake_hosted)
     rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
     out = capsys.readouterr().out
-    assert rc == 0 and "review-spec" in out  # the hosted-produced spec advanced the run to the gate
+    assert rc == 3 and "review-spec" in out  # the hosted-produced spec advanced the run to the gate
 
 
 def test_no_auto_commit_makes_no_checkpoint(native_project, capsys):
@@ -733,7 +733,7 @@ def test_no_auto_commit_makes_no_checkpoint(native_project, capsys):
             "RUN",
         ]
     )
-    assert rc == 0
+    assert rc == 3  # paused at the spec gate
     after = sp.run(
         ["git", "rev-list", "--count", "HEAD"],
         cwd=str(native_project),

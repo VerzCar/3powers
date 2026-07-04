@@ -139,17 +139,35 @@ def last_checkpoint_step(entries: list[dict], spec_id: str) -> str:
     return step
 
 
-def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = "") -> int:
-    """Where a ``--resume`` should re-enter the lifecycle (RUNLIVE-FR-010).
+def last_completed_step(entries: list[dict], spec_id: str) -> str:
+    """The last action step recorded COMPLETE for ``spec_id``, else '' (AUTOX-FR-010).
 
-    The later of: the step after the last approved human ``pending_gate`` (the EXEC behavior) and the step
-    after the last committed checkpoint. Taking the max means a mid-segment failure resumes from the next
-    *uncompleted* stage without re-dispatching a committed one, while a gate approval still advances past
-    the gate."""
+    Completion is read from the signed ledger's ``run`` entries — a committed ``checkpoint``
+    (RUNLIVE-FR-010) or the lightweight ``stage`` completion record written at stage success even with
+    auto-commit off — so a resume knows which stages must not be re-dispatched regardless of the
+    auto-commit setting, reconstructed offline from the repo alone."""
+    step = ""
+    for e in entries:
+        if e.get("spec_id") != spec_id or e.get("type") != "run":
+            continue
+        payload = e.get("payload", {})
+        if payload.get("kind") in ("checkpoint", "stage") and payload.get("step"):
+            step = str(payload["step"])
+    return step
+
+
+def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = "") -> int:
+    """Where a ``--resume`` should re-enter the lifecycle (RUNLIVE-FR-010, AUTOX-FR-010).
+
+    The later of: the step after the last approved human ``pending_gate`` (the EXEC behavior) and the
+    step after the last recorded completion — a committed checkpoint or a ``run``/``stage`` record, so
+    a failed ``--no-auto-commit`` run resumes too (given an intact working tree). Taking the max means
+    a mid-segment failure resumes from the next *uncompleted* stage without re-dispatching a completed
+    one, while a gate approval still advances past the gate."""
     start = resume_index(pending_gate) if pending_gate else 0
-    cp = last_checkpoint_step(entries, spec_id)
-    if cp:
-        start = max(start, step_index(cp) + 1)
+    done = last_completed_step(entries, spec_id)
+    if done:
+        start = max(start, step_index(done) + 1)
     return start
 
 

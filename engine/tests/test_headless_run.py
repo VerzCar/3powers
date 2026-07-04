@@ -153,7 +153,7 @@ def test_cli_live_run_preflight_fails_fast_never_gates_red(run_project, capsys):
     machine-readable form, never 'gates red', never the incident path."""
     root = run_project
     rc = main(["--root", str(root), "run", "build X", "--no-input", "--json", "--spec-id", "P"])
-    assert rc == 2  # setup/usage status, distinct from the gate-failure status (1)
+    assert rc == 4  # the setup/dispatch code, distinct from usage (2) and gate failure (1) — AUTOX-FR-009
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["status"] == "preflight_failed"
@@ -166,7 +166,7 @@ def test_cli_dry_run_needs_no_prerequisites(run_project):
     """RUNX-FR-012: the simulated dry-run dispatches nothing and needs neither workflow nor integration."""
     root = run_project
     rc = main(["--root", str(root), "run", "build X", "--dry-run", "--no-input", "--spec-id", "D"])
-    assert rc == 0  # pauses cleanly at the first human gate, offline
+    assert rc == 3  # pauses cleanly at the first human gate, offline (AUTOX-FR-009)
 
 
 def test_engine_dry_run_makes_no_network_call(run_project, monkeypatch):
@@ -177,7 +177,7 @@ def test_engine_dry_run_makes_no_network_call(run_project, monkeypatch):
 
     monkeypatch.setattr(socket, "socket", _no_network)
     root = run_project
-    assert main(["--root", str(root), "run", "x", "--dry-run", "--no-input", "--spec-id", "N"]) == 0
+    assert main(["--root", str(root), "run", "x", "--dry-run", "--no-input", "--spec-id", "N"]) == 3
 
 
 # --------------------------------------------------------------------------- RUNX-FR-010/011 (honest diagnostics)
@@ -217,7 +217,7 @@ def test_cli_gates_red_only_on_real_verdict(run_project, capsys):
     """RUNX-FR-011: a real red gate verdict reports gate-red, shows Verify reached, and exits 1."""
     root = run_project
     base = ["--root", str(root), "run", "--dry-run", "--no-input", "--spec-id", "G"]
-    assert main([*base, "risky"]) == 0  # pause at review-spec
+    assert main([*base, "risky"]) == 3  # pause at review-spec
     capsys.readouterr()
     rc = main([*base, "--resume", "--simulate-fail", "--approver", "x", "--json"])
     assert rc == 1  # gate-failure status
@@ -227,7 +227,7 @@ def test_cli_gates_red_only_on_real_verdict(run_project, capsys):
 
 
 def test_cli_dispatch_failure_is_not_gates_red(run_project, monkeypatch, capsys):
-    """EXEC-FR-016: a mid-run dispatch failure names the stage, exits 2, and is never 'gates red'."""
+    """EXEC-FR-016: a mid-run dispatch failure names the stage, exits 4, and is never 'gates red'."""
     import threepowers.cli as climod
 
     root = run_project
@@ -239,7 +239,7 @@ def test_cli_dispatch_failure_is_not_gates_red(run_project, monkeypatch, capsys)
         lambda *a, **k: orchestrate.RunResult("failed", stage="Build", verdict=""),
     )
     rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "DF"])
-    assert rc == 2  # distinct from the gate-failure status
+    assert rc == 4  # the setup/dispatch code — distinct from the gate-failure status (AUTOX-FR-009)
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["status"] == "dispatch_failed" and payload["stage"] == "Build"
@@ -279,7 +279,7 @@ def test_live_run_records_per_stage_provenance_and_ledger_verifies(run_project, 
     monkeypatch.setattr(climod, "_run_make_runner", lambda *a, **k: orchestrate.SimulatedRunner())
     # A run pauses at the first human gate after dispatching specify + clarify.
     rc = main(["--root", str(root), "run", "build X", "--no-input", "--spec-id", "PR"])
-    assert rc == 0
+    assert rc == 3  # paused at the first human gate (AUTOX-FR-009)
     entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
     dispatched = [
         e["payload"]
@@ -352,7 +352,7 @@ def test_cli_same_family_oracle_refused_at_preflight(tmp_path, monkeypatch, caps
     monkeypatch.setattr(runpreflight.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
     capsys.readouterr()  # flush the keygen output
     rc = main(["--root", str(root), "run", "x", "--no-input", "--json", "--spec-id", "SF"])
-    assert rc == 2
+    assert rc == 4
     payload = json.loads(capsys.readouterr().out)
     missing = {m["prerequisite"]: m["fix"] for m in payload["missing"]}
     assert "different-family oracle agent" in missing
