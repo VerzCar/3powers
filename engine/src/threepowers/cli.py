@@ -16,6 +16,8 @@ Subcommands:
                 (refusing the coder's model family), dispatch it headlessly + read-path
                 isolated (A3), verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
+  ready         am I ready for `3pwr run --mode auto`? — the full run preflight + a dependency
+                summary; read-only, offline, the same checks init and the run use (AUTOX-FR-003)
   run           drive the whole lifecycle loop (§6): auto mode stops only at the two mandatory
                 human gates (spec approval FR-006, sign-off FR-037); the native executive
                 dispatches each stage to a headless agent (EXEC-FR-001) and streams progress
@@ -672,8 +674,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         # (AUTOX-FR-002/005) — derived from the same checks the run preflight enforces.
         "auto_ready": not auto_unmet,
         "auto_run": [
-            {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix}
-            for p in auto_prqs
+            {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix} for p in auto_prqs
         ],
         "next_steps": [p.fix for p in auto_unmet],
     }
@@ -730,8 +731,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             lines.append(f"  {i}. {p.fix}")
     else:
         lines.append(
-            st.ok("✓")
-            + ' auto full mode ready — `3pwr run "<intent>" --mode auto` will start '
+            st.ok("✓") + ' auto full mode ready — `3pwr run "<intent>" --mode auto` will start '
             "(re-check any time: 3pwr ready)"
         )
 
@@ -3239,7 +3239,7 @@ def build_parser() -> argparse.ArgumentParser:
     ip.add_argument(
         "--oracle-integration",
         dest="oracle_integration",
-        help="Spec Kit integration for the judiciary model (e.g. copilot); default: --integration or copilot",
+        help="agent backend for the judiciary model (e.g. copilot); default: --integration or copilot",
     )
     ip.add_argument(
         "--oracle-label",
@@ -3593,7 +3593,7 @@ def build_parser() -> argparse.ArgumentParser:
     odp.add_argument(
         "--integration",
         default="claude",
-        help="Spec Kit integration for the oracle step (a non-coder family; default: claude)",
+        help="headless agent backend for the oracle step (a non-coder family; default: claude)",
     )
     odp.add_argument("--model", help="override the resolved oracle model as <family/model>")
     odp.add_argument("--base", help="clean git ref for the sanitized worktree (default: HEAD)")

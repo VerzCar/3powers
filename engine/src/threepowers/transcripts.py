@@ -34,9 +34,7 @@ def credential_values(env: Optional[Mapping[str, str]] = None) -> list[str]:
     recognizable suffix of it behind."""
     src = os.environ if env is None else env
     vals = {
-        v
-        for k, v in src.items()
-        if v and len(v) >= _MIN_SECRET_LEN and _CREDENTIAL_NAME.search(k)
+        v for k, v in src.items() if v and len(v) >= _MIN_SECRET_LEN and _CREDENTIAL_NAME.search(k)
     }
     return sorted(vals, key=len, reverse=True)
 

@@ -592,7 +592,9 @@ def test_checkpoint_resume_skips_committed_stages(native_project, monkeypatch, c
     monkeypatch.setattr(
         climod,
         "run_gates",
-        lambda *a, **k: Verdict(spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS),
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
     )
 
     # Run 1: specify (committed as a checkpoint) → stop at review-spec.

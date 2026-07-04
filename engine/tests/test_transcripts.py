@@ -163,9 +163,7 @@ def test_cli_failure_names_the_transcript_path(run_repo, monkeypatch, capsys):
         return (1, "", "kaput")
 
     monkeypatch.setattr(runner, "dispatch_agent", fake)
-    rc = main(
-        ["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"]
-    )
+    rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"])
     assert rc != 0
     obj = json.loads(capsys.readouterr().out)
     tpath = obj["transcript"]

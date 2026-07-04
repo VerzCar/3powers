@@ -56,9 +56,7 @@ def _spec_writer(spec_id="RUN"):
         elif "STAGE: Oracle" in prompt:
             d = cwd / "tests" / "oracle" / spec_id
             d.mkdir(parents=True, exist_ok=True)
-            (d / "test_oracle.py").write_text(
-                "def test_ok():\n    assert True\n", encoding="utf-8"
-            )
+            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt:
             d = cwd / "src"
             d.mkdir(parents=True, exist_ok=True)
