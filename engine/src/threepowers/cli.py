@@ -326,14 +326,19 @@ def _init_layout(s: Settings) -> str:
 
 
 def _readiness_checklist(
-    ready: dict[str, object], *, model_div_ok: bool
+    ready: dict[str, object],
+    *,
+    model_div_ok: bool,
+    auto_prqs: Optional[list[runpreflight.Prereq]] = None,
 ) -> list[tuple[str, str, str]]:
-    """Build the first-run readiness checklist (INITX-FR-009/010/011).
+    """Build the first-run readiness checklist (INITX-FR-009/010/011; AUTOX-FR-001/002).
 
     Each item is ``(label, status, detail)`` with status ∈ ``pass`` | ``warn`` | ``fail`` | ``todo``.
     A missing CI/CD configuration is a mandatory prerequisite for secure gate enforcement (fail,
     INITX-FR-010); a 3Powers-generated AGENTS.md starter is an unfinished TODO (INITX-FR-011). No item
-    is omitted (INITX-FR-009)."""
+    is omitted (INITX-FR-009). ``auto_prqs`` — the SAME check set the live run preflight enforces
+    (``runpreflight.check_auto``) — is appended per item, so init's "ready" and the run's refusal can
+    never drift (AUTOX-FR-002)."""
     items: list[tuple[str, str, str]] = []
     if ready.get("ci"):
         items.append(("CI/CD pipeline", "pass", "gates can run automatically on every change"))
@@ -375,6 +380,12 @@ def _readiness_checklist(
             else "oracle shares the coder's family (or is unset) — recommended to differ (3PWR-FR-022)",
         )
     )
+    # The auto full-mode prerequisites — sourced from the run's own preflight checks, so a "ready"
+    # here means `3pwr run --mode auto` will not refuse to start (AUTOX-FR-001/002).
+    for p in auto_prqs or []:
+        items.append(
+            (f"auto run: {p.name}", "pass" if p.ok else "fail", p.label if p.ok else p.fix)
+        )
     return items
 
 
@@ -612,8 +623,22 @@ def cmd_init(args: argparse.Namespace) -> int:
         not coder_fam or oracle.family_of(oracle_pin["model"]) != coder_fam
     )
 
+    # Auto full-mode readiness — the SAME check set the live run preflight enforces (AUTOX-FR-001/002):
+    # a resolvable/usable signer (env keys validated, never trusted silently), a headless coder agent
+    # with its CLI on PATH, and a different-family oracle. One source of checks — no drift possible.
+    coder_int = runpreflight.resolve_coder_integration(s, getattr(args, "integration", None))
+    oracle_int = runpreflight.resolve_oracle_integration(s)
+    auto_prqs = runpreflight.check_auto(
+        s,
+        coder_agent=coder_int,
+        oracle_agent=oracle_int,
+        entries=Ledger(s.ledger_path).entries(),
+        spec_id=None,
+    )
+    auto_unmet = runpreflight.unmet(auto_prqs)
+
     mode = "auto" if auto_mode else "commit"
-    checklist = _readiness_checklist(ready, model_div_ok=model_div_ok)
+    checklist = _readiness_checklist(ready, model_div_ok=model_div_ok, auto_prqs=auto_prqs)
     report: dict[str, Any] = {
         "root": str(root),
         "layout": layout_status,
@@ -634,6 +659,14 @@ def cmd_init(args: argparse.Namespace) -> int:
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
+        # The auto full-mode verdict + the remaining steps as exact fixes in dependency order
+        # (AUTOX-FR-002/005) — derived from the same checks the run preflight enforces.
+        "auto_ready": not auto_unmet,
+        "auto_run": [
+            {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix}
+            for p in auto_prqs
+        ],
+        "next_steps": [p.fix for p in auto_unmet],
     }
     if as_json:
         print(json.dumps(report, indent=2))
@@ -671,6 +704,26 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append(
             st.warn("  ⚠ no git repo detected")
             + " — `git init` to unlock diff-scoped brownfield gating"
+        )
+
+    # The remaining auto full-mode steps, as exact fixes in dependency order (AUTOX-FR-005):
+    # key → coder agent (roles + CLI) → different-family oracle. Derived from the same readiness
+    # result above — exactly the unmet items, nothing more.
+    lines.append("")
+    if auto_unmet:
+        lines.append(
+            st.head(
+                f"Auto full mode — {len(auto_unmet)} step(s) remaining, in order "
+                "(re-check any time: 3pwr ready):"
+            )
+        )
+        for i, p in enumerate(auto_unmet, 1):
+            lines.append(f"  {i}. {p.fix}")
+    else:
+        lines.append(
+            st.ok("✓")
+            + ' auto full mode ready — `3pwr run "<intent>" --mode auto` will start '
+            "(re-check any time: 3pwr ready)"
         )
 
     # Explained next steps (INITX-FR-012).
@@ -2329,12 +2382,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    try:
-        sk = keys.resolve_signer(s.root)
-    except FileNotFoundError as exc:
-        print(str(exc), file=sys.stderr)
-        return EXIT_USAGE
-
     # Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).
     coder_int = _resolve_coder_agent(s, args)
     oracle_int = runpreflight.resolve_oracle_integration(s)
@@ -2342,10 +2389,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     oracle_model = str(s.role("oracle").get("model") or "")
 
     # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):
-    # a headless coder agent + a different-family oracle agent. --dry-run needs none of this: it
-    # dispatches nothing and is always available offline (EXEC-FR-016).
+    # a resolvable signer, a headless coder agent, and a different-family oracle agent — the SAME
+    # shared check set init's readiness and `3pwr ready` report (AUTOX-FR-002), so they cannot
+    # disagree. --dry-run needs none of this: it dispatches nothing and is always available offline
+    # (EXEC-FR-016).
     if not args.dry_run and not args.status:
-        prqs = runpreflight.check_native(
+        prqs = runpreflight.check_auto(
             s,
             coder_agent=coder_int,
             oracle_agent=oracle_int,
@@ -2377,6 +2426,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                     lines.append(f"    • {alt}")
                 print("\n".join(lines), file=sys.stderr)
             return EXIT_USAGE
+
+    # The signer itself (a live run just verified it in preflight; --dry-run still needs one to
+    # append its ledger records).
+    try:
+        sk = keys.resolve_signer(s.root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
@@ -2864,6 +2921,73 @@ def cmd_deps_check(args: argparse.Namespace) -> int:
     return EXIT_OK if ok else EXIT_FAIL
 
 
+def cmd_ready(args: argparse.Namespace) -> int:
+    """Standalone, re-runnable auto-run readiness (AUTOX-FR-003): the full ``3pwr run --mode auto``
+    preflight — the SAME shared check set init and the run itself use (AUTOX-FR-002) — plus a
+    dependency summary (3PWR-FR-048), with one overall ready/not-ready verdict and a per-item fix.
+
+    Read-only and fully offline (AUTOX-NFR-001): it probes config, PATH, and the key custody chain,
+    changes nothing on disk, and is never a gate. Exits 0 when ready, 1 when not."""
+    s = _settings(args.root)
+    entries = Ledger(s.ledger_path).entries()
+    coder_int = runpreflight.resolve_coder_integration(s, getattr(args, "integration", None))
+    oracle_int = runpreflight.resolve_oracle_integration(s)
+    prqs = runpreflight.check_auto(
+        s,
+        coder_agent=coder_int,
+        oracle_agent=oracle_int,
+        entries=entries,
+        spec_id=getattr(args, "spec_id", None),
+    )
+    missing = runpreflight.unmet(prqs)
+
+    # Dependency summary (3PWR-FR-048) — informational; never flips the readiness verdict (never a gate).
+    deps_summary: Optional[dict[str, Any]] = None
+    manifest_path = s.dir / "config" / "dependencies.yaml"
+    if manifest_path.exists():
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        report = deps.check_dependencies(manifest, probe=lambda cmd: deps.run_probe(cmd, s.root))
+        deps_summary = {
+            "ok": report.ok,
+            "total": len(report.checks),
+            "drifted_or_missing": [
+                {"name": c.name, "status": c.status, "policy": c.policy} for c in report.drifted
+            ],
+        }
+
+    obj = {
+        "ready": not missing,
+        "checks": [
+            {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix} for p in prqs
+        ],
+        "deps": deps_summary,
+    }
+    st = style.styler(sys.stdout, as_json=getattr(args, "json", False))
+    lines = []
+    if missing:
+        lines.append(st.err("✗ not ready for `3pwr run --mode auto`") + " — remaining steps:")
+    else:
+        lines.append(st.ok("✓ ready for `3pwr run --mode auto`"))
+    for p in prqs:
+        detail = p.label if p.ok else p.fix
+        lines.append(f"  {st.mark('pass' if p.ok else 'fail')} {st.bold(p.name)}: {detail}")
+    if missing:
+        lines.append("  always available offline:")
+        for alt in runpreflight.OFFLINE_ALTERNATIVES:
+            lines.append(f"    • {alt}")
+    if deps_summary is not None:
+        drift = deps_summary["drifted_or_missing"]
+        if drift:
+            named = ", ".join(f"{d['name']} ({d['status']})" for d in drift)
+            lines.append(f"  ⚠ dependency summary: {named} — details: 3pwr deps-check")
+        else:
+            lines.append(
+                f"  ✓ dependency summary: {deps_summary['total']} component(s) within range"
+            )
+    _print(obj, getattr(args, "json", False), "\n".join(lines))
+    return EXIT_OK if not missing else EXIT_FAIL
+
+
 # --------------------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="3pwr", description="3Powers judiciary engine.")
@@ -3231,6 +3355,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dcp.add_argument("--strict", action="store_true", help="treat warn-policy drift as blocking")
     dcp.set_defaults(func=cmd_deps_check)
+
+    rdy = common(
+        sub.add_parser(
+            "ready",
+            help="am I ready for `3pwr run --mode auto`? — the full run preflight + a dependency "
+            "summary; read-only, offline, never a gate (AUTOX-FR-003)",
+        )
+    )
+    rdy.add_argument(
+        "--integration",
+        default=None,
+        help="check against this coder agent backend instead of roles.coder.integration",
+    )
+    rdy.add_argument(
+        "--spec-id",
+        dest="spec_id",
+        help="consider deviations recorded for this spec id (e.g. a model-diversity deviation)",
+    )
+    rdy.set_defaults(func=cmd_ready)
 
     lp = sub.add_parser("ledger", help="ledger operations")
     lsub = lp.add_subparsers(dest="ledger_cmd", required=True)
