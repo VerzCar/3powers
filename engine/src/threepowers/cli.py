@@ -1850,6 +1850,11 @@ def cmd_status(args: argparse.Namespace) -> int:
             "last_verdict": st.last_verdict,
             "signed_off": st.signed_off,
             "aborted": st.aborted,
+            # The most recent unresolved run failure, if any (AUTOX-FR-007).
+            "failed": st.failed,
+            "failed_stage": st.failed_stage,
+            "failed_class": st.failed_class,
+            "failed_at": st.failed_at,
         }
         for st in states.values()
     ]
@@ -1864,6 +1869,12 @@ def cmd_status(args: argparse.Namespace) -> int:
             flags.append("signed-off")
         if r["aborted"]:
             flags.append("ABORTED")
+        if r["failed"]:
+            # Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).
+            flags.append(
+                f"✗ failed at {r['failed_stage'] or '?'} ({r['failed_class']}) at "
+                f"{r['failed_at'] or '?'}"
+            )
         print(
             f"{r['spec_id']:<10} stage={r['stage']:<10} verdict={r['last_verdict']:<5} "
             f"{' '.join(flags)}"
@@ -1946,6 +1957,34 @@ def _run_signoff(
     ledger.append("signoff", payload, sk, spec_id=spec_id)
 
 
+def _record_run_failure(
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+    *,
+    stage: str,
+    failure_class: str,
+    attempts: int,
+    detail: str,
+    transcript: str = "",
+) -> None:
+    """Append the signed run-failure record before exiting (AUTOX-FR-006).
+
+    Stage, failure class, attempt count, and a bounded detail ride in a ``run``/``failure`` entry via
+    the existing append API — additive content only, so ``3pwr verify`` stays green (AUTOX-NFR-003).
+    The transcript field carries the persisted path, never the output itself (AUTOX-FR-008)."""
+    payload: dict[str, Any] = {
+        "kind": "failure",
+        "stage": stage or "",
+        "class": failure_class,
+        "attempts": int(attempts),
+        "detail": (detail or "")[:400],
+    }
+    if transcript:
+        payload["transcript"] = transcript
+    ledger.append("run", payload, sk, spec_id=spec_id)
+
+
 def _resolve_runner_kind(args: argparse.Namespace) -> str:
     """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to ``native``
     (EXEC-FR-013)."""
@@ -1971,12 +2010,25 @@ def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
     return specs[0] if specs else None
 
 
-def _native_verdict(s: Settings, args: argparse.Namespace, tier: str, kinds: list[str]) -> str:
+def _native_verdict(
+    s: Settings,
+    args: argparse.Namespace,
+    tier: str,
+    kinds: list[str],
+    *,
+    ledger: Optional[Ledger] = None,
+    sk=None,
+) -> str:
     """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
 
     Returns ``pass`` / ``fail``; returns ``error`` when the gates cannot even run (no spec resolvable, no
     adapter detected, bad tier) so the caller reports a setup/dispatch problem, never a false gate-red
-    (EXEC-FR-016). The engine computes the verdict itself — no subprocess dispatch, no model (3PWR-NFR-001)."""
+    (EXEC-FR-016). The engine computes the verdict itself — no subprocess dispatch, no model (3PWR-NFR-001).
+
+    When a ledger + signer are supplied, the verdict is recorded exactly as a standalone
+    ``3pwr gate run`` records it — written to ``verdicts/latest.json`` and appended as a signed
+    ``verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).
+    The verdict bytes themselves are unchanged (AUTOX-NFR-003)."""
     spec_path = _resolve_run_spec(s, args)
     if spec_path is None:
         return "error"
@@ -1992,6 +2044,16 @@ def _native_verdict(s: Settings, args: argparse.Namespace, tier: str, kinds: lis
         )
     except (KeyError, LookupError, FileNotFoundError, ValueError, OSError):
         return "error"
+    if ledger is not None and sk is not None:
+        s.verdicts_dir.mkdir(parents=True, exist_ok=True)
+        verdict.write(s.verdicts_dir / "latest.json")
+        ledger.append(
+            "verdict",
+            verdict.to_dict(),
+            sk,
+            spec_id=verdict.spec_id,
+            requirement_ids=verdict.requirement_ids(),
+        )
     return "pass" if verdict.result == STATUS_PASS else "fail"
 
 
@@ -2324,7 +2386,9 @@ def _native_runner(
         return result
 
     def run_verdict(stage: str) -> str:
-        return _native_verdict(s, args, tier, wk.kinds)
+        # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it
+        # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine.
+        return _native_verdict(s, args, tier, wk.kinds, ledger=ledger, sk=sk)
 
     return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
 
@@ -2375,8 +2439,25 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"\n  ⏸ paused at '{st.pending_gate}' — "
                 f"`3pwr run --resume --spec-id {spec_id} --approver <you>`"
             )
+        if st.failed:
+            # A recorded, unresolved run failure — distinct from paused and in-progress (AUTOX-FR-007).
+            human += (
+                f"\n  ✗ failed at {st.failed_stage or '?'} ({st.failed_class})"
+                f" at {st.failed_at or '?'} — `3pwr run --resume --spec-id {spec_id}`"
+            )
+            if st.failed_transcript:
+                human += f"\n    agent transcript: {st.failed_transcript}"
         _print(
-            {"spec_id": spec_id, "stage": st.stage, "pending_gate": st.pending_gate},
+            {
+                "spec_id": spec_id,
+                "stage": st.stage,
+                "pending_gate": st.pending_gate,
+                "failed": st.failed,
+                "failed_stage": st.failed_stage,
+                "failed_class": st.failed_class,
+                "failed_at": st.failed_at,
+                "failed_transcript": st.failed_transcript,
+            },
             args.json,
             human,
         )
@@ -2575,9 +2656,30 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_USAGE
 
     if result.status == "failed":
+        # Every terminal failure is recorded as a signed run-failure ledger entry BEFORE exiting
+        # (AUTOX-FR-006), so `--status`/`3pwr status` can say "failed at <stage> (<class>)"
+        # afterwards (AUTOX-FR-007). Attempts come from the failing stage's dispatch result.
+        failed_srs = [sr for sr in getattr(runner, "stage_results", []) if not sr.ok]
+        attempts = failed_srs[-1].attempts if failed_srs else 1
+        transcript = failed_srs[-1].transcript if failed_srs else ""
+
+        def record(cls: str) -> None:
+            _record_run_failure(
+                ledger,
+                sk,
+                spec_id,
+                stage=result.stage,
+                failure_class=cls,
+                attempts=attempts,
+                detail=result.detail or result.verdict,
+                transcript=transcript,
+            )
+
+        transcript_line = f"\n  agent transcript: {transcript}" if transcript else ""
         if result.is_gate_red:
             # A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,
             # show Verify reached. No incident/observe-signal suggestion — that is not the remedy.
+            record("gates_red")
             reached = result.stage or "Verify"
             _notify(args.notify, f"3pwr run {spec_id}: gates RED at {reached}")
             human = (
@@ -2593,20 +2695,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return EXIT_FAIL
         reached = result.stage or "an early stage"
-        if result.is_artifact_missing:
-            # A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a
-            # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
-            # resume pick up here without re-running completed stages (RUNLIVE-FR-010).
-            _notify(args.notify, f"3pwr run {spec_id}: artifact missing at {reached}")
+        if result.outcome == "verdict_error":
+            # The gate suite could not even run (no spec resolvable, no adapter, bad tier) — a
+            # setup problem, never a false gate-red (EXEC-FR-016).
+            record("verdict_error")
+            _notify(args.notify, f"3pwr run {spec_id}: verdict error at {reached}")
             human = (
                 f"{orchestrate.render_tracker(result.stage)}\n"
-                f"  ✗ artifact missing at {reached} — {result.detail}\n"
-                "  the stage's agent ran but did not produce what the stage is responsible for "
-                f"(not a gate verdict). Re-run or resume: `3pwr run --resume --spec-id {spec_id}`."
+                f"  ✗ verdict error at {reached} — the deterministic gate suite could not run "
+                "(not a gate verdict). Check the spec resolves (--spec), an adapter is detected, "
+                f"and the tier exists, then resume: `3pwr run --resume --spec-id {spec_id}`."
             )
             _print(
                 {
-                    "status": "artifact_missing",
+                    "status": "verdict_error",
                     "stage": result.stage,
                     "detail": result.detail,
                     "spec_id": spec_id,
@@ -2616,8 +2718,35 @@ def cmd_run(args: argparse.Namespace) -> int:
                 human,
             )
             return EXIT_USAGE
+        if result.is_artifact_missing:
+            # A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a
+            # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
+            # resume pick up here without re-running completed stages (RUNLIVE-FR-010).
+            record("artifact_missing")
+            _notify(args.notify, f"3pwr run {spec_id}: artifact missing at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(result.stage)}\n"
+                f"  ✗ artifact missing at {reached} — {result.detail}\n"
+                "  the stage's agent ran but did not produce what the stage is responsible for "
+                f"(not a gate verdict). Re-run or resume: `3pwr run --resume --spec-id {spec_id}`."
+                f"{transcript_line}"
+            )
+            _print(
+                {
+                    "status": "artifact_missing",
+                    "stage": result.stage,
+                    "detail": result.detail,
+                    "transcript": transcript,
+                    "spec_id": spec_id,
+                    "stages": _stages(),
+                },
+                args.json,
+                human,
+            )
+            return EXIT_USAGE
         # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
         # "gates red", never route to the incident/observe-signal path; exit with a setup/usage status.
+        record("dispatch_failed")
         _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
         detail = f" — {result.detail}" if result.detail else ""
         human = (
@@ -2626,12 +2755,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             f"problem, not a gate verdict){detail}.\n"
             "  confirm the coder integration is headless and available (`3pwr run` reports "
             f"prerequisites), then re-run — or resume: `3pwr run --resume --spec-id {spec_id}`."
+            f"{transcript_line}"
         )
         _print(
             {
                 "status": "dispatch_failed",
                 "stage": result.stage,
                 "detail": result.detail,
+                "transcript": transcript,
                 "spec_id": spec_id,
                 "stages": _stages(),
             },

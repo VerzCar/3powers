@@ -53,6 +53,8 @@ class DispatchResult:
     ok: bool
     detail: str = ""
     model: str = ""
+    # The persisted transcript path for this attempt, when one was written (AUTOX-FR-008).
+    transcript: str = ""
 
 
 @dataclass
@@ -75,6 +77,9 @@ class StageResult:
     artifact: str = ""
     outcome: str = ""
     detail: str = ""
+    # The persisted transcript path of the stage's LAST attempt (AUTOX-FR-008): a failure message
+    # names it, and the run-failure ledger record stores the path — never the content.
+    transcript: str = ""
     # The accepted artifact's repo-relative path(s), recorded with the stage's ledger entry so the
     # committed artifact trail is reconstructable from the signed ledger alone (PHASE-FR-003).
     artifact_paths: list[str] = field(default_factory=list)
@@ -96,6 +101,8 @@ class StageResult:
             "outcome": self.outcome,
             "detail": self.detail,
         }
+        if self.transcript:
+            d["transcript"] = self.transcript
         if self.artifact_paths:
             d["artifact_paths"] = self.artifact_paths
         if self.warnings:
@@ -267,6 +274,7 @@ def run_stage(
             duration_s=clock() - t0,
             outcome="dispatch_failed",
             detail=result.detail,
+            transcript=result.transcript,
         )
     resolved = result.model or model
     if verify_artifact is not None:
@@ -282,6 +290,7 @@ def run_stage(
                 duration_s=clock() - t0,
                 outcome="artifact_missing",
                 detail=f"stage '{step}' produced no expected artifact — {check.message}",
+                transcript=result.transcript,
             )
         return StageResult(
             step=step,
@@ -293,6 +302,7 @@ def run_stage(
             duration_s=clock() - t0,
             outcome="ok",
             artifact=check.summary,
+            transcript=result.transcript,
             artifact_paths=list(check.matched),  # recorded with the ledger entry (PHASE-FR-003)
         )
     return StageResult(
@@ -304,6 +314,7 @@ def run_stage(
         attempts=attempts,
         duration_s=clock() - t0,
         outcome="ok",
+        transcript=result.transcript,
     )
 
 
