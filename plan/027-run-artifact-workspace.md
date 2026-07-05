@@ -89,9 +89,11 @@ removed Spec Kit, the run flow also had no next-number counter to allocate `spec
   later stages in order, with append-only history intact; resume-never-allocates; dry-run allocating
   nothing; and a pre-SRCX ledger verifying unchanged with the folder binding resolving to `None`.
 - Self-application (NFR-006), diff-scoped to this branch: `3pwr gate run --path engine --adapter
-  python --spec specs/017-run-artifact-workspace/spec.md --tier Standard --base main` — see the
-  recorded verdict; `spec_integrity` skips pending the SRCX spec sign-off (a not-yet-approved spec is
-  never blocked).
+  python --spec specs/017-run-artifact-workspace/spec.md --tier Standard --base main` — **verdict
+  PASS**: format ✓, lint ✓, types ✓, tests ✓, diff_coverage **92.21% ≥ 80%** ✓, sast ✓,
+  dependency_scan ✓, secret_scan ✓, gate_gaming ✓, spec_conformance ✓ (**24 requirements traced**);
+  `spec_integrity` correctly *skipped* — no Spec-stage sign-off recorded yet for `SRCX` (a
+  not-yet-approved spec is never blocked).
 
 ## Handoff — notes
 
