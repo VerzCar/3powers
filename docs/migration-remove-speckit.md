@@ -29,8 +29,8 @@ These were Spec Kit runtime artifacts and are no longer read by the engine:
   `.specify/extensions.yml`, `.specify/*.json` (integration/init options), the extensions `.registry`.
 - The vendored `speckit.*` prompt/agent files under `.github/prompts/` and `.github/agents/`.
 
-**Keep**: your 3Powers constitution and the spec/plan/tasks authoring templates — these are engine-owned
-and still used.
+**Keep**: your 3Powers constitution, the plan/tasks authoring templates, and the per-stage agent
+templates (`.3powers/templates/agents/*.agent.md`, AGENTX) — these are engine-owned and still used.
 
 > **Update (DOCX, spec 012).** A later change **relocated** those engine-owned files out of `.specify/`:
 > the constitution now lives at `.3powers/memory/constitution.md` and the authoring templates at

@@ -188,6 +188,11 @@ non-destructively (AGENTX-FR-011..016). `require_dispatch` is explained where th
 comments, the rewritten file's header, and the CLI reference), and a same-family judiciary only ever
 warns, naming the signed deviation path (AGENTX-FR-017/018). An authoring-and-configuration layer only:
 no gate, threshold, verdict byte, exit code, ledger record, or human gate changed (AGENTX-NFR-002).
+Follow-up (template hardening): each agent template now carries a model-agnostic front-matter
+`description` (+ `name`) and a **defined output** — an explicit artifact skeleton plus a fixed
+"Completion report" — so a stage's result reads the same regardless of which backend model ran it; the
+three orphaned outer document templates (`spec/checklist/constitution-template.md`) were removed, while
+`plan/tasks-template.md` stay (the PHASE-FR-006 conformance test binds them as the document skeletons).
 
 **Judiciary — oracle (§7):** **FR-020 ✅** (`oracle seal` writes a spec-only bundle the judiciary authors
 from; the authoring record binds to its content hash), **FR-022 ✅** (checked on the *actual* recorded model

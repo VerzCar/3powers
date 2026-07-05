@@ -1,7 +1,9 @@
 ---
+name: tasks.agent
+description: "Breaks the approved plan into an ordered, phase-organized, requirement-traced task checklist that a machine executor can run — with parallel-safe phases marked. Runs at the Plan stage and writes specs/<feature>/artifacts/tasks.md. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: tasks
-artifact: specs/<feature>/artifacts/tasks.md
 role: planner
+artifact: specs/<feature>/artifacts/tasks.md
 ---
 
 # Tasks agent — an executable, phase-organized checklist
@@ -52,7 +54,49 @@ Within a phase, order tasks so that only true dependencies serialize them; indep
 (disjoint files, no dependency) may be executed together. The executor marks a completed task
 `[X]` — keep the checklist the single source of task state.
 
-## Artifact
+## Output — the tasks file's required structure
 
-Write the tasks to `specs/<feature>/artifacts/tasks.md` — that file is the artifact this stage
-must produce.
+Write the tasks to `specs/<feature>/artifacts/tasks.md` in this fixed shape, so every run yields
+the same document structure regardless of the model:
+
+```markdown
+# Tasks: <feature>
+
+**Input**: specs/<feature>/artifacts/plan.md (required) and specs/<feature>/spec/spec.md
+**Output**: this file, at specs/<feature>/artifacts/tasks.md — the Tasks stage's artifact
+
+## Phase 1: <name — a coherent chunk>
+**File scope**: <src/…, tests/…>
+**Depends on**: none
+**Estimated context**: ~<N>k tokens (budget ~110k)
+**Handoff**: the approved spec, the constitution/rules, this phase's tasks below, and the file scope above.
+
+- [ ] T001 [SPECX-FR-001] <description> (files: src/one.py, tests/test_one.py)
+- [ ] T002 [SPECX-FR-002] <description> (files: src/two.py)
+
+## Phase 2: <name> [P]
+**File scope**: <src/other/…> — disjoint from Phase 1
+**Depends on**: none
+**Estimated context**: ~<N>k tokens (budget ~110k)
+**Parallel**: yes
+**Handoff**: the approved spec, the constitution/rules, this phase's tasks below, and the file scope above.
+
+- [ ] T003 [SPECX-FR-003] <description> (files: src/other/three.py)
+
+## Dependencies & execution order
+- Phases execute in artifact order; a phase declaring `**Depends on**:` waits for the named phase(s).
+- `[P]` phases with disjoint scopes and no dependency may run concurrently; results record in artifact order.
+```
+
+That file is the artifact this stage must produce.
+
+## Completion report
+
+End your run with a report in EXACTLY this shape (same fields, same order):
+
+- **Stage**: Tasks — `done` | `blocked`
+- **Artifact**: `specs/<feature>/artifacts/tasks.md`
+- **Tasks / phases**: `<T>` tasks across `<N>` phases; `<K>` phases marked `[P]`
+- **Coverage**: every requirement has ≥1 task, and every task exactly one `[REQ-ID]`? `yes` | gaps
+- **Oversize phases**: any phase over the context budget (to be split), or `none`
+- **Notes**: one line, or `none`

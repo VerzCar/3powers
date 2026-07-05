@@ -1,7 +1,9 @@
 ---
+name: plan.agent
+description: "Produces the implementation plan from the approved spec — the judicial plan, the design, and the context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes specs/<feature>/artifacts/plan.md. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: plan
-artifact: specs/<feature>/artifacts/plan.md
 role: planner
+artifact: specs/<feature>/artifacts/plan.md
 ---
 
 # Plan agent — strategy before implementation
@@ -48,7 +50,57 @@ phase's and it has no unmet dependency — the executive dispatches `[P]` phases
 fresh sessions. Phases that share files or depend on another phase carry no marker and run
 sequentially.
 
-## Artifact
+## Output — the plan's required structure
 
-Write the plan to `specs/<feature>/artifacts/plan.md` — that file is the artifact this stage must
-produce.
+Write the plan to `specs/<feature>/artifacts/plan.md` in this fixed shape, so every run yields the
+same document structure regardless of the model:
+
+```markdown
+# Implementation Plan: <feature>
+
+**Spec**: <link to specs/<feature>/spec/spec.md>   **Spec ID / tier**: <SPECID> / <tier>
+
+## Summary
+<primary requirement(s) + chosen approach, with reasoning>
+
+## Technical Context
+<language/version, primary dependencies, storage, testing, target platform — all the HOW the spec
+kept out; mark unknowns NEEDS CLARIFICATION>
+
+## Judicial Plan
+- **Tier & gates**: <tier> → <gates this tier drives>
+- **Role → model-family**:
+  | Role | Model family | Notes |
+  |------|--------------|-------|
+  | coder | <family A> | the executive builder |
+  | oracle | <family B ≠ A> | judiciary; authors Phase-A tests; must differ from coder |
+  | reviewer | <family C> | residual review |
+- **Requirement → task coverage**: every requirement maps to ≥1 phase/task; flag any spec text
+  that is really implementation detail and route it out of the spec.
+
+## Design
+<the files to change and the approach per requirement id; integration points; constraints>
+
+## Test layers
+<unit / integration / e2e per the tier; each functional requirement's linked verification>
+
+## Phases
+| Phase | Name | File scope | Depends on | Est. context | Parallel? |
+|-------|------|------------|------------|--------------|-----------|
+| 1 | <name> | <files> | none | ~<N>k tokens | no |
+| 2 | <name> | <files> | Phase 1 | ~<N>k tokens | no |
+```
+
+That file is the artifact this stage must produce.
+
+## Completion report
+
+End your run with a report in EXACTLY this shape (same fields, same order):
+
+- **Stage**: Plan — `done` | `blocked`
+- **Artifact**: `specs/<feature>/artifacts/plan.md`
+- **Tier / gates**: `<tier>` → `<gate list>`
+- **Roles**: coder `<family>` · oracle `<family≠coder>` · reviewer `<family>`
+- **Phases**: `<N>` total, `<K>` marked `[P]` (disjoint scope, no dependency)
+- **Coverage**: every requirement mapped to a phase? `yes` | list the gaps
+- **Open questions / assumptions**: the unknowns you recorded, or `none`
