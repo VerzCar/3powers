@@ -313,6 +313,15 @@ the two mandatory human gates** — spec approval and sign-off; `commit` mode st
 classifies the intent and carries the inferred work-kind into the run so the verify step shapes the gate
 suite. Sign-offs, per-stage completions, verdicts, and any terminal failure are recorded in the signed
 ledger, so a run is resumable and its state is always visible (`--status` / `3pwr status`).
+
+**The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
+allocates `specs/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
+from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
+alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`, `tasks.md`,
+plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
+A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
+lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
+artifact is broken — never skipping it on the ledger record alone.
 - `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
   `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--timeout N` /
@@ -342,6 +351,8 @@ under `--json`. This table is a stable interface:
 | Preflight refused before any dispatch | `preflight_failed` | `4` |
 | A stage's agent could not be executed | `dispatch_failed` | `4` |
 | A stage produced no declared artifact | `artifact_missing` | `4` |
+| A completed stage's markdown is missing from its feature folder | `artifact_absent` | `4` |
+| A stage's on-disk markdown is recorded in no ledger entry | `artifact_unrecorded` | `4` |
 | The gate suite could not run at Verify | `verdict_error` | `4` |
 
 **Transcripts (AUTOX-FR-008, stable).** Every stage attempt's stdout/stderr — streamed or not — is

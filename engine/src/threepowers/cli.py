@@ -55,6 +55,7 @@ from . import (
     artifacts,
     canonical,
     catalog,
+    completion,
     config,
     covdiff,
     deps,
@@ -2553,6 +2554,21 @@ def _notify(cmd: Optional[str], message: str) -> None:
         run_cmd(f"{cmd} {shlex.quote(message)}", cwd=Path.cwd())
 
 
+def _run_feature_dir_from_ledger(s: Settings, entries: list[dict], spec_id: str) -> Optional[Path]:
+    """The run's bound feature folder, read back from the signed ``run``/``start`` entry (SRCX-FR-011).
+
+    The latest ``start`` entry carrying a ``feature_dir`` wins — recovered offline from the ledger
+    alone, no modification-time scan. ``None`` for a pre-SRCX run (legacy fallback applies)."""
+    rel = ""
+    for e in entries:
+        if e.get("spec_id") != spec_id or e.get("type") != "run":
+            continue
+        payload = e.get("payload", {})
+        if payload.get("kind") == "start" and payload.get("feature_dir"):
+            rel = str(payload["feature_dir"])
+    return (s.root / rel) if rel else None
+
+
 def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
     st = lifecycle.derive(ledger.entries()).get(spec_id)
     return st.pending_gate if st else ""
@@ -2627,12 +2643,16 @@ def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
     )
 
 
-def _resolve_run_spec(s: Settings, args: argparse.Namespace) -> Optional[Path]:
-    """The spec the native run resolves: --spec if given, else the newest feature spec under specs/
-    (workspace or legacy layout — PHASE-FR-001)."""
+def _resolve_run_spec(
+    s: Settings, args: argparse.Namespace, feature_dir: Optional[Path] = None
+) -> Optional[Path]:
+    """The spec the native run resolves: --spec if given, else the run's bound feature folder
+    (SRCX-FR-011 — no modification-time scan), else the newest feature spec under specs/ (legacy)."""
     if getattr(args, "spec", None):
         p = Path(args.spec)
         return p if p.exists() else None
+    if feature_dir is not None:
+        return workspace.spec_path(feature_dir)
     specs = sorted(workspace.find_specs(s.root), key=lambda q: q.stat().st_mtime, reverse=True)
     return specs[0] if specs else None
 
@@ -2645,6 +2665,7 @@ def _native_verdict(
     *,
     ledger: Optional[Ledger] = None,
     sk=None,
+    feature_dir: Optional[Path] = None,
 ) -> str:
     """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
 
@@ -2656,7 +2677,7 @@ def _native_verdict(
     ``3pwr gate run`` records it — written to ``verdicts/latest.json`` and appended as a signed
     ``verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).
     The verdict bytes themselves are unchanged (AUTOX-NFR-003)."""
-    spec_path = _resolve_run_spec(s, args)
+    spec_path = _resolve_run_spec(s, args, feature_dir)
     if spec_path is None:
         return "error"
     try:
@@ -2899,6 +2920,25 @@ def _dispatch_phased(
     return _result(True, "ok", artifact=check.summary, paths=list(check.matched))
 
 
+def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
+    """The deterministic prompt line naming the run's feature folder (SRCX-FR-001/008).
+
+    Injected into the agent-authored markdown stages (specify/clarify/plan/tasks) so the agent writes
+    the stage's artifact FLAT into the allocated folder — the same location the workspace computes and
+    the completion gate asserts (SRCX-FR-013's property)."""
+    if feature_dir is None:
+        return ""
+    try:
+        rel = feature_dir.relative_to(s.root).as_posix()
+    except ValueError:
+        rel = feature_dir.as_posix()
+    return (
+        f"FEATURE FOLDER: {rel} — the run's allocated feature workspace. Write this stage's markdown "
+        f"artifact FLAT into this folder (spec.md for Specify; <step>.md otherwise); create no spec/ "
+        f"or artifacts/ subfolder."
+    )
+
+
 def _native_runner(
     s: Settings,
     args: argparse.Namespace,
@@ -2908,11 +2948,13 @@ def _native_runner(
     sk,
     spec_id: str,
     stream: bool,
+    feature_dir: Optional[Path] = None,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
-    optionally checkpoint the stage (RUNLIVE-FR-010), and run the gate suite in-process at Verify
-    (EXEC-FR-006)."""
+    optionally checkpoint the stage (RUNLIVE-FR-010), write the oracle/implement records and run the
+    deterministic completion gate per producing stage (SRCX-FR-004/005/012), and run the gate suite
+    in-process at Verify (EXEC-FR-006)."""
     intent = args.intent or ""
     wk = workkind.classify(intent)
     tier = args.tier or wk.suggested_tier or s.default_tier()
@@ -2968,13 +3010,30 @@ def _native_runner(
             produced = runnermod.produced_paths(pre, post)
             produced_box["paths"] = produced
             # A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.
-            return artifacts.verify(contract, produced)
+            check = artifacts.verify(contract, produced)
+            if not check.ok:
+                # A completion-gate re-run (SRCX-FR-017) may regenerate a committed artifact
+                # byte-identical to HEAD — an empty diff. The stage still satisfies its contract
+                # when every artifact its PRIOR run/stage entry recorded is still on disk; the
+                # completion gate then re-asserts disk ∧ ledger. A fresh stage has no prior entry,
+                # so nothing is weakened for a first run (3PWR-FR-032).
+                prior = completion.recorded_stage_artifacts(ledger.entries(), spec_id).get(step)
+                if prior and all((s.root / p).is_file() for p in prior):
+                    return artifacts.ArtifactCheck(
+                        ok=True, expected=check.expected, matched=list(prior), produced=produced
+                    )
+            return check
 
-        # Assemble the stage's context: the approved spec text (post-approval stages) and the prior
-        # stage's accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).
-        spec_path = _resolve_run_spec(s, args)
+        # Assemble the stage's context: the approved spec text (post-approval stages), the run's
+        # feature folder (the agent-authored markdown stages — SRCX-FR-001), and the prior stage's
+        # accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).
+        spec_path = _resolve_run_spec(s, args, feature_dir)
         spec_text = _dispatch_spec_text(s, step, spec_path)
-        context = prior_box["ref"]
+        ctx_parts = []
+        if step in ("specify", "clarify", "plan", "tasks"):
+            ctx_parts.append(_feature_folder_context(s, feature_dir))
+        ctx_parts.append(prior_box["ref"])
+        context = "\n".join(p for p in ctx_parts if p)
 
         phase_list = _implement_phases(s, spec_path) if step == "implement" else []
         if phase_list:
@@ -3006,6 +3065,30 @@ def _native_runner(
                 model=str(backend.model),
             )
         if result.ok:
+            if step in completion.RECORD_STEPS and feature_dir is not None:
+                # The oracle/implement stages leave a markdown *record* in the feature folder linking
+                # their real outputs at their real repo paths (SRCX-FR-004/005). For a phased
+                # implement this runs on the collecting thread AFTER all phases completed, one record
+                # in deterministic order (SRCX-FR-006, SRCX-NFR-006).
+                scopes = {ph.index: ph.file_scope for ph in phase_list}
+                if step == "implement":
+                    # the record links the full produced change set (SRCX-FR-005's property)
+                    linked = produced_box.get("paths") or result.artifact_paths
+                else:
+                    linked = result.artifact_paths  # the contract-matched oracle test paths
+                rel = completion.write_record(
+                    s.root,
+                    feature_dir,
+                    step,
+                    spec_id=spec_id,
+                    linked=linked,
+                    phases=result.phases or None,
+                    phase_scopes=scopes,
+                )
+                if rel not in result.artifact_paths:
+                    result.artifact_paths.append(rel)
+                if rel not in produced_box.get("paths", []):
+                    produced_box.setdefault("paths", []).append(rel)
             ref = _prior_artifact_ref(s, step, result)
             if ref:
                 prior_box["ref"] = ref
@@ -3035,12 +3118,35 @@ def _native_runner(
                     # artifact trail is reconstructable from the ledger alone (PHASE-FR-003).
                     payload["artifacts"] = result.artifact_paths
                 ledger.append("run", payload, sk, spec_id=spec_id)
+        if result.ok and feature_dir is not None and completion.is_producing(step):
+            # The deterministic completion gate (SRCX-FR-012): the stage's declared markdown must
+            # exist on disk AND be recorded in a matching signed ledger entry before the run may
+            # advance — else the run blocks with a named, classified failure and the stage must be
+            # re-run (SRCX-FR-014/015). Pure given (disk state, ledger entries, step); one ledger
+            # read serves the check (SRCX-NFR-001/004).
+            recorded = completion.recorded_stage_artifacts(ledger.entries(), spec_id)
+            chk = completion.check_step(s.root, feature_dir, step, recorded)
+            if not chk.ok:
+                return runnermod.StageResult(
+                    step=step,
+                    stage=stage,
+                    ok=False,
+                    agent=agent_name,
+                    model=str(backend.model),
+                    attempts=result.attempts,
+                    duration_s=result.duration_s,
+                    outcome=chk.failure_class,
+                    detail=chk.message,
+                    transcript=result.transcript,
+                )
         return result
 
     def run_verdict(stage: str) -> str:
         # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it
         # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine.
-        return _native_verdict(s, args, tier, wk.kinds, ledger=ledger, sk=sk)
+        return _native_verdict(
+            s, args, tier, wk.kinds, ledger=ledger, sk=sk, feature_dir=feature_dir
+        )
 
     return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
 
@@ -3055,6 +3161,7 @@ def _run_make_runner(
     sk,
     spec_id: str,
     stream: bool,
+    feature_dir: Optional[Path] = None,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3062,7 +3169,14 @@ def _run_make_runner(
             verdict=("fail" if args.simulate_fail else "pass"), start_index=start_index
         )
     return _native_runner(
-        s, args, start_index, ledger=ledger, sk=sk, spec_id=spec_id, stream=stream
+        s,
+        args,
+        start_index,
+        ledger=ledger,
+        sk=sk,
+        spec_id=spec_id,
+        stream=stream,
+        feature_dir=feature_dir,
     )
 
 
@@ -3225,11 +3339,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             sk=sk,
             spec_id=spec_id,
             stream=stream,
+            feature_dir=feature_dir,
         )
 
     def _stages() -> list[dict]:
         """The per-stage machine-readable results of the dispatched stages, for --json (RUNLIVE-FR-006)."""
         return [sr.as_dict() for sr in getattr(runner, "stage_results", [])]
+
+    # The run's bound feature folder (SRCX-FR-008/010/011) — resolved per branch below.
+    feature_dir: Optional[Path] = None
 
     if args.resume:
         pending = _run_pending_gate(ledger, spec_id)
@@ -3245,28 +3363,64 @@ def cmd_run(args: argparse.Namespace) -> int:
         if pending:
             # A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).
             _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
+        # A resume resolves the EXISTING feature folder recorded for the run — never allocating a new
+        # one (SRCX-FR-010/011); a pre-SRCX run falls back to the resolvable spec's folder.
+        entries_now = (
+            ledger.entries()
+        )  # one read serves resume + the completion checks (SRCX-NFR-004)
+        feature_dir = _run_feature_dir_from_ledger(s, entries_now, spec_id)
+        if feature_dir is None:
+            legacy_spec = _resolve_run_spec(s, args)
+            feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
         # Re-enter after the later of the approved gate and the last committed checkpoint, so a mid-run
-        # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010).
-        start_index = orchestrate.resume_start_index(ledger.entries(), spec_id, pending)
+        # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)
+        # — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose
+        # artifact is broken becomes the re-entry point, never skipped on its ledger entry alone.
+        start_index = orchestrate.resume_start_index(entries_now, spec_id, pending)
+        start_index, broken = completion.resume_entry_index(
+            entries_now, spec_id, start_index, root=s.root, feature_dir=feature_dir
+        )
+        if broken is not None and not args.json:
+            print(f"  ⟲ resume re-enters at '{broken.step}' — {broken.message}", file=sys.stderr)
         runner = _make_runner(start_index)
         _record_dispatch(start_index)  # provenance for the resumed segment only (RUNX-FR-004/007)
     else:
         wk = workkind.classify(
             args.intent or ""
         )  # FR-058: shape the tier + oracle, not the sign-off
-        ledger.append(
-            "run",
-            {
-                "kind": "start",
-                "intent": args.intent or "",
-                "mode": mode,
-                "integration": args.integration,
-                "inferred_kinds": wk.kinds,
-                "suggested_tier": wk.suggested_tier,
-            },
-            sk,
-            spec_id=spec_id,
-        )
+        # Bind the run's feature folder (SRCX-FR-008/011): an explicit --spec names it; otherwise a
+        # LIVE run auto-allocates specs/<NNN>-<slug>/ deterministically from the intent. --dry-run and
+        # the simulator dispatch nothing and write no artifacts, so they allocate nothing.
+        if getattr(args, "spec", None):
+            spec_arg = Path(args.spec)
+            feature_dir = workspace.feature_dir_of(spec_arg) if spec_arg.exists() else None
+        elif _resolve_runner_kind(args) != "sim":
+            try:
+                feature_dir = workspace.allocate_feature_dir(s.root, args.intent or "")
+            except FileExistsError:
+                target = workspace.feature_folder_name(s.root / "specs", args.intent or "")
+                print(
+                    f"cannot start `3pwr run` — the feature folder specs/{target} is already "
+                    f"allocated (another run?); no folder is ever overwritten (SRCX-FR-008)",
+                    file=sys.stderr,
+                )
+                return EXIT_SETUP
+        start_payload: dict[str, Any] = {
+            "kind": "start",
+            "intent": args.intent or "",
+            "mode": mode,
+            "integration": args.integration,
+            "inferred_kinds": wk.kinds,
+            "suggested_tier": wk.suggested_tier,
+        }
+        if feature_dir is not None:
+            # The additive folder binding on the existing run/start payload (SRCX-FR-011): a later
+            # resume reads it back from the signed ledger alone — no mtime scan (SRCX-NFR-002).
+            try:
+                start_payload["feature_dir"] = feature_dir.relative_to(s.root).as_posix()
+            except ValueError:
+                start_payload["feature_dir"] = feature_dir.as_posix()
+        ledger.append("run", start_payload, sk, spec_id=spec_id)
         if not args.json and _verbosity(args) != "quiet":
             print(rst.header(f"3pwr run · {mode} mode", spec_id))
             print(
@@ -3420,6 +3574,31 @@ def cmd_run(args: argparse.Namespace) -> int:
                     "stage": result.stage,
                     "detail": result.detail,
                     "transcript": transcript,
+                    "spec_id": spec_id,
+                    "stages": _stages(),
+                },
+                args.json,
+                human,
+            )
+            return EXIT_SETUP
+        if result.outcome in (completion.CLASS_ABSENT, completion.CLASS_UNRECORDED):
+            # The deterministic stage-completion gate blocked the run (SRCX-FR-012/014/015): the
+            # stage's declared markdown and its matching signed ledger entry must BOTH exist. The
+            # named class is recorded (SRCX-FR-016) and surfaced by both status commands; the stage
+            # must be re-run — the non-gate-red setup/dispatch exit path.
+            record(result.outcome)
+            _notify(args.notify, f"3pwr run {spec_id}: stage completion failed at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(result.stage, rst)}\n"
+                f"  {rst.err('✗')} stage completion failed at {reached} — {result.detail}\n"
+                "  a stage is complete only when its artifact is on disk AND recorded in the signed "
+                f"ledger (not a gate verdict). Re-run the stage: `3pwr run --resume --spec-id {spec_id}`."
+            )
+            _print(
+                {
+                    "status": result.outcome,
+                    "stage": result.stage,
+                    "detail": result.detail,
                     "spec_id": spec_id,
                     "stages": _stages(),
                 },

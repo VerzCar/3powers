@@ -31,35 +31,42 @@ def _git_init(root: Path) -> None:
         subprocess.run(cmd, cwd=str(root), check=True, capture_output=True)
 
 
+def _feature_dir(prompt: str, cwd: Path, spec_id: str) -> Path:
+    """The allocated feature folder the engine names in the prompt (SRCX-FR-001/008)."""
+    import re
+
+    m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+    return cwd / (m.group(1) if m else f"specs/{spec_id}")
+
+
 def _stage_writer(spec_id="RUN", skip=()):
-    """A fake agent writing each stage's declared artifact, except the steps in ``skip``."""
+    """A fake agent writing each stage's declared artifact FLAT into the folder the prompt names
+    (SRCX-FR-001), except the steps in ``skip``."""
 
     def fake(argv, **kw):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
+        d = _feature_dir(prompt, cwd, spec_id)
         if "STAGE: Specify" in prompt and "specify" not in skip:
-            d = cwd / "specs" / spec_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "STAGE: Plan" in prompt and "plan" not in skip:
-            d = cwd / "specs" / spec_id / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt and "tasks" not in skip:
-            d = cwd / "specs" / spec_id / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
         elif "STAGE: Oracle" in prompt and "oracle" not in skip:
-            d = cwd / "tests" / "oracle" / spec_id
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+            t = cwd / "tests" / "oracle" / spec_id
+            t.mkdir(parents=True, exist_ok=True)
+            (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt and "implement" not in skip:
-            d = cwd / "src"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
+            src = cwd / "src"
+            src.mkdir(parents=True, exist_ok=True)
+            (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
         return (0, "changes written", "")
 
     return fake

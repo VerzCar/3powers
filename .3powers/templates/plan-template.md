@@ -2,7 +2,7 @@
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Feature specification from `specs/[###-feature-name]/spec/spec.md`
+**Input**: Feature specification from `specs/[###-feature-name]/spec.md`
 (legacy features keep `specs/[###-feature-name]/spec.md`)
 
 **Output**: This file, committed to `specs/[###-feature-name]/artifacts/plan.md` — the Plan stage's

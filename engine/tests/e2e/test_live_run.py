@@ -96,10 +96,13 @@ def test_deterministic_run_invokes_only_the_injectable_agent_seam(tmp_path, monk
 
     def fake_dispatch(argv, **kw):
         seen.append("dispatch")
+        import re
+
         from pathlib import Path
 
         if argv and "STAGE: Specify" in argv[-1]:
-            d = Path(kw["cwd"]) / "specs" / "LIVE"
+            m = re.search(r"FEATURE FOLDER: (\S+)", argv[-1])
+            d = Path(kw["cwd"]) / (m.group(1) if m else "specs/LIVE")
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: LIVE\n", encoding="utf-8")
         return (0, "ok", "")

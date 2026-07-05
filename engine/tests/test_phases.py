@@ -27,44 +27,45 @@ from threepowers.verify import verify_ledger
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-# --------------------------------------------------------------------------- workspace (PHASE-FR-001)
+# --------------------------------------------------------------------------- workspace (PHASE-FR-001 → SRCX-FR-001/002/003)
 def test_workspace_layout_resolves_spec_in_spec_subfolder(tmp_path):
-    """PHASE-FR-001: a fresh feature's spec lives in <feature>/spec/spec.md and resolves."""
+    """SRCX-FR-002: a legacy PHASE-split feature's spec (spec/spec.md) still resolves; writes are FLAT."""
     f = tmp_path / "specs" / "020-new"
     (f / "spec").mkdir(parents=True)
     (f / "spec" / "spec.md").write_text("# Spec\n", encoding="utf-8")
     assert workspace.spec_path(f) == f / "spec" / "spec.md"
     assert workspace.feature_dir_of(f / "spec" / "spec.md") == f
     assert workspace.artifacts_dir(f) == f / "artifacts"
-    assert workspace.stage_artifact_path(f, "plan") == f / "artifacts" / "plan.md"
-    assert workspace.stage_artifact_path(f, "specify") == f / "spec" / "spec.md"
+    # SRCX-FR-001 supersedes the split write locations: every producing step writes FLAT.
+    assert workspace.stage_artifact_path(f, "plan") == f / "plan.md"
+    assert workspace.stage_artifact_path(f, "specify") == f / "spec.md"
 
 
 def test_legacy_layout_still_resolves(tmp_path):
-    """PHASE-FR-001: a legacy feature (spec.md directly in the folder) remains resolvable."""
+    """SRCX-FR-002/NFR-003: a flat feature (spec.md directly in the folder — now canonical) resolves."""
     f = tmp_path / "specs" / "002-old"
     f.mkdir(parents=True)
     (f / "spec.md").write_text("# Spec\n", encoding="utf-8")
     assert workspace.spec_path(f) == f / "spec.md"
     assert workspace.feature_dir_of(f / "spec.md") == f
-    # a legacy tasks artifact next to the spec is still found
+    # a flat tasks artifact next to the spec is found (SRCX-FR-003)
     (f / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
     assert workspace.find_artifact(f, "tasks") == f / "tasks.md"
 
 
 def test_exactly_one_spec_per_feature_whichever_layout(tmp_path):
-    """PHASE-FR-001 (property): resolution finds exactly one specification per feature folder —
-    the workspace layout wins when both exist, and find_specs never yields a feature twice."""
+    """SRCX-FR-002 (property): resolution finds exactly one specification per feature folder —
+    the canonical FLAT layout wins when both exist, and find_specs never yields a feature twice."""
     f = tmp_path / "specs" / "021-mixed"
     (f / "spec").mkdir(parents=True)
-    (f / "spec" / "spec.md").write_text("new\n", encoding="utf-8")
-    (f / "spec.md").write_text("legacy\n", encoding="utf-8")
-    assert workspace.spec_path(f) == f / "spec" / "spec.md"
+    (f / "spec" / "spec.md").write_text("split\n", encoding="utf-8")
+    (f / "spec.md").write_text("flat\n", encoding="utf-8")
+    assert workspace.spec_path(f) == f / "spec.md"
     legacy = tmp_path / "specs" / "002-old"
     legacy.mkdir(parents=True)
     (legacy / "spec.md").write_text("old\n", encoding="utf-8")
     found = workspace.find_specs(tmp_path)
-    assert found == sorted([f / "spec" / "spec.md", legacy / "spec.md"])
+    assert found == sorted([f / "spec.md", legacy / "spec.md"])
     assert len(found) == len({workspace.feature_dir_of(p) for p in found})
 
 
@@ -99,12 +100,12 @@ def test_plan_tasks_prompts_name_artifact_sections_and_rules():
     """PHASE-FR-004: the plan/tasks prompt bodies name the artifact path, the required sections, the
     phase-decomposition rules, and the context-sizing heuristic — at specify/oracle depth."""
     plan = prompts.stage_prompt_body("plan")
-    assert "specs/<feature>/artifacts/plan.md" in plan
+    assert "specs/<feature>/plan.md" in plan
     assert "Required sections" in plan and "Phases" in plan
     assert "file scope" in plan and "[P]" in plan
     assert "110k tokens" in plan and "4 bytes per token" in plan
     tasks = prompts.stage_prompt_body("tasks")
-    assert "specs/<feature>/artifacts/tasks.md" in tasks
+    assert "specs/<feature>/tasks.md" in tasks
     assert "## Phase N" in tasks and "**File scope**" in tasks and "**Depends on**" in tasks
     assert "HANDOFF" in tasks and "Estimated context" in tasks
     assert "exactly ONE requirement id" in tasks
@@ -460,28 +461,27 @@ def phased_project(tmp_path, monkeypatch):
         prompt = argv[-1] if argv else ""
         with seen_lock:
             prompts_seen.append(prompt)
+        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        d = cwd / (m.group(1) if m else "specs/RUN")
         if "STAGE: Specify" in prompt:
-            d = cwd / "specs" / "RUN" / "spec"
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
         elif "STAGE: Plan" in prompt:
-            d = cwd / "specs" / "RUN" / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt:
-            d = cwd / "specs" / "RUN" / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(_TASKS_3PHASE, encoding="utf-8")
         elif "STAGE: Oracle" in prompt:
-            d = cwd / "tests" / "oracle" / "RUN"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
+            t = cwd / "tests" / "oracle" / "RUN"
+            t.mkdir(parents=True, exist_ok=True)
+            (t / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt:
-            m = re.search(r"PHASE (\d)/3", prompt)
-            name = f"impl_phase{m.group(1)}" if m else "impl"
-            d = cwd / "src"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / f"{name}.py").write_text("VALUE = 1\n", encoding="utf-8")
+            pm = re.search(r"PHASE (\d)/3", prompt)
+            name = f"impl_phase{pm.group(1)}" if pm else "impl"
+            src = cwd / "src"
+            src.mkdir(parents=True, exist_ok=True)
+            (src / f"{name}.py").write_text("VALUE = 1\n", encoding="utf-8")
         return (0, "ok", "")
 
     monkeypatch.setattr(runner, "dispatch_agent", fake)
@@ -521,10 +521,12 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     )
     assert rc == 3  # paused at the signoff gate — every executive stage dispatched
 
-    # PHASE-SC-001: the workspace holds the spec in spec/ and the other artifacts in artifacts/
-    assert (root / "specs" / "RUN" / "spec" / "spec.md").is_file()
-    assert (root / "specs" / "RUN" / "artifacts" / "plan.md").is_file()
-    assert (root / "specs" / "RUN" / "artifacts" / "tasks.md").is_file()
+    # SRCX-SC-001: the run auto-allocated its feature folder and every artifact lies FLAT in it
+    fdir = root / "specs" / "001-add-x"
+    assert (fdir / "spec.md").is_file()
+    assert (fdir / "plan.md").is_file()
+    assert (fdir / "tasks.md").is_file()
+    assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()
     log = subprocess.run(
         ["git", "log", "--pretty=%s"], cwd=str(root), capture_output=True, text=True
     ).stdout
@@ -545,7 +547,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
 
     # PHASE-FR-005: post-approval stages carry the prior stage's accepted artifact reference
     tasks_prompt = next(p for p in prompts_seen if "STAGE: Tasks" in p)
-    assert "prior stage 'plan' accepted artifact: specs/RUN/artifacts/plan.md" in tasks_prompt
+    assert "prior stage 'plan' accepted artifact: specs/001-add-x/plan.md" in tasks_prompt
 
     # PHASE-FR-003: the checkpoint ledger entries name the accepted artifact paths
     s = Settings(root=root)
@@ -555,9 +557,9 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
         for e in entries
         if e.get("type") == "run" and e.get("payload", {}).get("kind") == "checkpoint"
     }
-    assert "specs/RUN/artifacts/plan.md" in cp["plan"]["artifacts"]
-    assert "specs/RUN/artifacts/tasks.md" in cp["tasks"]["artifacts"]
-    assert "specs/RUN/spec/spec.md" in cp["specify"]["artifacts"]
+    assert "specs/001-add-x/plan.md" in cp["plan"]["artifacts"]
+    assert "specs/001-add-x/tasks.md" in cp["tasks"]["artifacts"]
+    assert "specs/001-add-x/spec.md" in cp["specify"]["artifacts"]
 
     # PHASE-FR-012/NFR-003: the phases entry records results in artifact order; the ledger verifies
     ph_entries = [
@@ -593,8 +595,11 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
         rc = orig(argv, **kw)
         prompt = argv[-1] if argv else ""
         if "STAGE: Tasks" in prompt:
-            p = Path(kw["cwd"]) / "specs" / "RUN" / "artifacts" / "tasks.md"
-            p.write_text("# Tasks\n- [ ] T001 [RUN-FR-001] everything\n", encoding="utf-8")
+            m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+            d = Path(kw["cwd"]) / (m.group(1) if m else "specs/RUN")
+            (d / "tasks.md").write_text(
+                "# Tasks\n- [ ] T001 [RUN-FR-001] everything\n", encoding="utf-8"
+            )
         return rc
 
     monkeypatch.setattr(runner, "dispatch_agent", fake)

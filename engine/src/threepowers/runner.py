@@ -483,8 +483,14 @@ def worktree_state(cwd: Path) -> dict[str, str]:
 
 
 def produced_paths(pre: dict[str, str], post: dict[str, str]) -> list[str]:
-    """The paths whose content changed between two :func:`worktree_state` snapshots (sorted, deduped)."""
+    """The paths whose content changed between two :func:`worktree_state` snapshots (sorted, deduped).
+
+    A path present in ``pre`` but absent from ``post`` also counts: the stage changed it back to its
+    committed content (e.g. re-writing a deleted-then-regenerated artifact on a completion-gate
+    re-run — SRCX-FR-017) — the dispatch really did produce it even though the working tree ends
+    clean for that path."""
     changed = {p for p, h in post.items() if pre.get(p) != h}
+    changed |= {p for p in pre if p not in post}
     return sorted(changed)
 
 

@@ -80,26 +80,26 @@ class ArtifactCheck:
 # committed artifact carries a hard contract: specify/oracle/implement (RUNLIVE) plus plan/tasks — which
 # PHASE-FR-002 removed from RUNLIVE-FR-003's lenient fallback, so a plan or tasks dispatch that writes no
 # artifact is a named failure, never a silent pass. Remaining steps (clarify/…) still fall back leniently.
-# The spec/plan/tasks patterns accept both the feature-workspace layout (specs/<f>/spec/spec.md,
-# specs/<f>/artifacts/<step>.md) and the legacy flat layout (PHASE-FR-001).
+# The spec/plan/tasks patterns accept the canonical FLAT layout (specs/<f>/<step>.md — SRCX-FR-001) and
+# the legacy PHASE split layout (specs/<f>/spec/spec.md, specs/<f>/artifacts/<step>.md — SRCX-FR-003).
 STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
     "specify": ArtifactContract(
         step="specify",
         kind="path",
-        expected="a spec file (specs/<feature>/spec/spec.md, or legacy specs/<feature>/spec.md)",
+        expected="a spec file (specs/<feature>/spec.md, or legacy specs/<feature>/spec/spec.md)",
         patterns=(r"(^|/)specs/.+/spec\.md$",),
     ),
     "plan": ArtifactContract(
         step="plan",
         kind="path",
-        expected="a plan artifact (specs/<feature>/artifacts/plan.md, or legacy specs/<feature>/plan.md)",
+        expected="a plan artifact (specs/<feature>/plan.md, or legacy specs/<feature>/artifacts/plan.md)",
         patterns=(r"(^|/)specs/.+/plan\.md$",),
     ),
     "tasks": ArtifactContract(
         step="tasks",
         kind="path",
         expected=(
-            "a tasks artifact (specs/<feature>/artifacts/tasks.md, or legacy specs/<feature>/tasks.md)"
+            "a tasks artifact (specs/<feature>/tasks.md, or legacy specs/<feature>/artifacts/tasks.md)"
         ),
         patterns=(r"(^|/)specs/.+/tasks\.md$",),
     ),

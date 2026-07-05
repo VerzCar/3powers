@@ -98,10 +98,14 @@ Confirmed in this environment:
 - Tag every task and commit with its originating, spec-namespaced requirement ID, e.g. `3PWR-FR-016`.
 - Write requirements in EARS form; every spec carries a risk tier and an explicit non-goals section.
 - Keep the authoritative spec in versioned `specs/`; do not move it to an external tracker.
-- **Feature workspace** (`PHASE-FR-001`): a new feature's spec lives at `specs/<feature>/spec/spec.md`;
-  every other stage artifact (plan, tasks, …) goes in the sibling `specs/<feature>/artifacts/` folder.
-  Legacy flat layouts (`specs/<feature>/spec.md`) remain readable. A plan/tasks stage that writes no
-  artifact fails its stage (`PHASE-FR-002`).
+- **Feature workspace** (`SRCX-FR-001`, spec 017 — supersedes `PHASE-FR-001`'s split): a new run's every
+  stage artifact lies FLAT in its auto-allocated feature folder `specs/<NNN>-<slug>/` — `spec.md`,
+  `plan.md`, `tasks.md`, plus the `oracle.md`/`implement.md` records linking the real test/code outputs
+  at their real repo paths (`SRCX-FR-004/005`). The legacy PHASE split layout
+  (`specs/<feature>/spec/spec.md` + the sibling `specs/<feature>/artifacts/` folder) stays readable. A
+  producing stage is complete only when its markdown is on disk AND named in a signed `run`/`stage`
+  ledger entry — else the run blocks and the stage re-runs, and `--resume` re-checks the disk
+  (`SRCX-FR-012/017`). A plan/tasks stage that writes no artifact fails its stage (`PHASE-FR-002`).
 - **Phase your tasks** (`PHASE-FR-004/006`): group tasks into ordered phases sized to the context budget
   (`.3powers/config/context.yaml`, ~110k tokens default; ~4 bytes/token over spec + rules + tasks +
   files in scope). Each phase declares its file scope, dependencies, an estimated context size, and a

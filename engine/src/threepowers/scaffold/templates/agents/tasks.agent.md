@@ -1,9 +1,9 @@
 ---
 name: tasks.agent
-description: "Breaks the approved plan into an ordered, phase-organized, requirement-traced task checklist that a machine executor can run — with parallel-safe phases marked. Runs at the Plan stage and writes specs/<feature>/artifacts/tasks.md. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Breaks the approved plan into an ordered, phase-organized, requirement-traced task checklist that a machine executor can run — with parallel-safe phases marked. Runs at the Plan stage and writes specs/<feature>/tasks.md, flat in the feature folder. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: tasks
 role: planner
-artifact: specs/<feature>/artifacts/tasks.md
+artifact: specs/<feature>/tasks.md
 ---
 
 # Tasks agent — an executable, phase-organized checklist
@@ -56,14 +56,15 @@ Within a phase, order tasks so that only true dependencies serialize them; indep
 
 ## Output — the tasks file's required structure
 
-Write the tasks to `specs/<feature>/artifacts/tasks.md` in this fixed shape, so every run yields
+Write the tasks to `specs/<feature>/tasks.md` — FLAT in the run's feature folder (the FEATURE FOLDER
+context block names it; create no spec/ or artifacts/ subfolder) — in this fixed shape, so every run yields
 the same document structure regardless of the model:
 
 ```markdown
 # Tasks: <feature>
 
-**Input**: specs/<feature>/artifacts/plan.md (required) and specs/<feature>/spec/spec.md
-**Output**: this file, at specs/<feature>/artifacts/tasks.md — the Tasks stage's artifact
+**Input**: specs/<feature>/plan.md (required) and specs/<feature>/spec.md
+**Output**: this file, at specs/<feature>/tasks.md — the Tasks stage's artifact
 
 ## Phase 1: <name — a coherent chunk>
 **File scope**: <src/…, tests/…>
@@ -95,7 +96,7 @@ That file is the artifact this stage must produce.
 End your run with a report in EXACTLY this shape (same fields, same order):
 
 - **Stage**: Tasks — `done` | `blocked`
-- **Artifact**: `specs/<feature>/artifacts/tasks.md`
+- **Artifact**: `specs/<feature>/tasks.md`
 - **Tasks / phases**: `<T>` tasks across `<N>` phases; `<K>` phases marked `[P]`
 - **Coverage**: every requirement has ≥1 task, and every task exactly one `[REQ-ID]`? `yes` | gaps
 - **Oversize phases**: any phase over the context budget (to be split), or `none`
