@@ -60,6 +60,7 @@ from . import (
     covdiff,
     deps,
     deviations,
+    gitflow,
     hosted,
     keys,
     lifecycle,
@@ -1500,6 +1501,32 @@ def cmd_advance(args: argparse.Namespace) -> int:
                 "record a `3pwr deviation --gate spec_integrity`"
             )
 
+    # 6. Git run discipline (GITX-FR-016): when the spec's run records a dedicated branch, a
+    #    stage-boundary advance refuses off the run branch or with the completed stage's work
+    #    uncommitted — naming the condition and the fix. Relaxable only via the named signed
+    #    deviations (GITX-FR-014); a pre-GITX ledger records no branch and is untouched.
+    git_branch = gitflow.branch_from_ledger(entries, spec_for_oracle)
+    if git_branch:
+        covered_git = deviations.covered_gates(active, spec_for_oracle)
+        git_cond = gitflow.precondition(s.root)
+        if git_cond:
+            reasons.append(f"git — {git_cond}")
+        else:
+            cur_branch = gitflow.current_branch(s.root)
+            if cur_branch != git_branch and deviations.GIT_RUN_BRANCH not in covered_git:
+                reasons.append(
+                    f"git — not on the run's dedicated branch '{git_branch}' (currently "
+                    f"'{cur_branch or 'detached HEAD'}'); `git checkout {git_branch}`, or record "
+                    f"`3pwr deviation --gate {deviations.GIT_RUN_BRANCH}`"
+                )
+            dirty = gitflow.uncommitted_run_paths(s.root, entries, spec_for_oracle)
+            if dirty and deviations.GIT_STAGE_COMMIT not in covered_git:
+                shown = ", ".join(dirty[:5]) + (" …" if len(dirty) > 5 else "")
+                reasons.append(
+                    f"git — the completed stage's work is not committed: {shown}; commit it on "
+                    f"'{git_branch}', or record `3pwr deviation --gate {deviations.GIT_STAGE_COMMIT}`"
+                )
+
     if reasons:
         cst = _styler(args)
         rows = [cst.status_row("fail", f"REFUSED to advance to '{args.stage}'")]
@@ -2510,6 +2537,19 @@ def cmd_status(args: argparse.Namespace) -> int:
                 f"by {d.get('approver', '?')}{tag}",
             )
         )
+    # Surface each run's git lifecycle state (GITX-FR-009): its dedicated branch and the committed
+    # stages — derived from the signed ledger alone, consistent with the existing status semantics.
+    for r in rows:
+        run_branch = gitflow.branch_from_ledger(ledger_entries, str(r["spec_id"]))
+        if run_branch:
+            done_steps = gitflow.committed_steps(ledger_entries, str(r["spec_id"]))
+            out.append(
+                sst.status_row(
+                    "info",
+                    f"{r['spec_id']}: run branch {run_branch}",
+                    f"committed stages: {', '.join(done_steps) or '—'}",
+                )
+            )
     # Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).
     for e in ledger_entries:
         if e.get("type") != "oracle" or (e.get("payload") or {}).get("kind") != "record":
@@ -2525,6 +2565,94 @@ def cmd_status(args: argparse.Namespace) -> int:
         for finding in p.get("advisory_findings", []):
             out.append(sst.status_row("warn", f"advisory (not a blocker): {finding}", indent=6))
     print("\n".join(out))
+    return EXIT_OK
+
+
+def cmd_git_start(args: argparse.Namespace) -> int:
+    """Establish the run's dedicated branch for a MANUAL drive (GITX-FR-016).
+
+    The command-by-command `/3pwr.*` path gets the same guarantees as `3pwr run`: a working git
+    repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named
+    from the run's SRCX identity (GITX-FR-003/004) — bound to the run in the signed ledger so a
+    later resume or `advance` recovers it offline (GITX-FR-005). Idempotent: an already-established
+    run re-enters its recorded branch and appends nothing new."""
+    s = _settings(args.root)
+    gst = _styler(args)
+    cond = gitflow.precondition(s.root)
+    if cond:
+        print(f"error: {cond}", file=sys.stderr)
+        return EXIT_USAGE
+    ledger = Ledger(s.ledger_path)
+    entries = ledger.entries()
+    prefs = gitflow.load_prefs(s.git_config_path)
+    if prefs.malformed and not args.json:
+        print(
+            "warning: .3powers/config/git.yaml is malformed — using the default git preferences",
+            file=sys.stderr,
+        )
+    # Resolve the run's feature identity: an explicit --feature wins, else the ledger's binding.
+    feature_dir: Optional[Path] = None
+    if args.feature:
+        p = Path(args.feature)
+        feature_dir = p if p.is_absolute() else (s.root / p)
+        if not feature_dir.is_dir():
+            print(f"error: feature folder not found: {args.feature}", file=sys.stderr)
+            return EXIT_USAGE
+    else:
+        feature_dir = _run_feature_dir_from_ledger(s, entries, args.spec_id)
+    recorded_branch = gitflow.branch_from_ledger(entries, args.spec_id)
+    identity = feature_dir.name if feature_dir is not None else workspace.slugify(args.spec_id)
+    branch = recorded_branch or gitflow.run_branch_name(prefs.branch_prefix, identity)
+    # The clean-start guard (GITX-FR-007) — the run's own recorded paths and its feature folder are
+    # tolerated; only unrelated changes refuse, relaxable via the signed deviation (GITX-FR-014).
+    covered = deviations.covered_gates(deviations.active_deviations(entries), args.spec_id)
+    if deviations.GIT_CLEAN_START not in covered:
+        prefix = ""
+        if feature_dir is not None:
+            try:
+                prefix = feature_dir.relative_to(s.root).as_posix() + "/"
+            except ValueError:
+                prefix = ""
+        unrelated = gitflow.unrelated_changes(
+            gitflow.uncommitted(s.root),
+            gitflow.recorded_run_paths(entries, args.spec_id),
+            prefix,
+        )
+        if unrelated:
+            print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
+            return EXIT_FAIL
+    b_err = gitflow.ensure_run_branch(s.root, branch, prefs.base_branch)
+    if b_err:
+        print(f"error: {b_err}", file=sys.stderr)
+        return EXIT_FAIL
+    appended: Optional[int] = None
+    if not recorded_branch:
+        # Bind the branch to the run — the same additive field on the existing run/start payload
+        # the orchestrated path records (GITX-FR-005, GITX-NFR-002).
+        try:
+            sk = keys.resolve_signer(s.root)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_USAGE
+        payload: dict[str, Any] = {"kind": "start", "mode": "manual", "branch": branch}
+        if feature_dir is not None:
+            try:
+                payload["feature_dir"] = feature_dir.relative_to(s.root).as_posix()
+            except ValueError:
+                payload["feature_dir"] = feature_dir.as_posix()
+        appended = ledger.append("run", payload, sk, spec_id=args.spec_id)["seq"]
+    rows = [
+        gst.status_row(
+            "pass",
+            f"on run branch {branch}" + (" (recorded)" if recorded_branch else " (bound)"),
+            f"ledger seq={appended}" if appended is not None else "already bound in the ledger",
+        )
+    ]
+    _print(
+        {"branch": branch, "spec_id": args.spec_id, "ledger_seq": appended},
+        args.json,
+        _compose(args, gst, title="git start", subject=args.spec_id, rows=rows),
+    )
     return EXIT_OK
 
 
@@ -2949,18 +3077,22 @@ def _native_runner(
     spec_id: str,
     stream: bool,
     feature_dir: Optional[Path] = None,
+    run_branch: str = "",
+    git_prefs: Optional[gitflow.GitPrefs] = None,
+    commit_relaxed: bool = False,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
-    optionally checkpoint the stage (RUNLIVE-FR-010), write the oracle/implement records and run the
-    deterministic completion gate per producing stage (SRCX-FR-004/005/012), and run the gate suite
-    in-process at Verify (EXEC-FR-006)."""
+    run the mandatory pre/post-stage git hooks — branch isolation + the agentically-messaged,
+    3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out
+    checkpoint) — write the oracle/implement records and run the deterministic completion gate per
+    producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""
     intent = args.intent or ""
     wk = workkind.classify(intent)
     tier = args.tier or wk.suggested_tier or s.default_tier()
     timeout = _dispatch_timeout(s, args)
     retries = _dispatch_retries(s, args)
-    auto_commit = s.auto_commit() and not getattr(args, "no_auto_commit", False)
+    prefs = git_prefs or gitflow.GitPrefs()
 
     coder_agent = _resolve_coder_agent(s, args)
     oracle_agent = runpreflight.resolve_oracle_integration(s)
@@ -2996,6 +3128,19 @@ def _native_runner(
     prior_box: dict[str, str] = {"ref": ""}
 
     def dispatch(step: str, stage: str) -> runnermod.StageResult:
+        # The mandatory PRE-STAGE git hook (GITX-FR-001): every stage of a live run happens on the
+        # run's dedicated branch — strayed mid-run (e.g. the user switched away), it switches back
+        # before dispatching; a switch git refuses is a named failure, never forced (GITX-NFR-003).
+        if run_branch:
+            b_err = gitflow.ensure_run_branch(s.root, run_branch, prefs.base_branch)
+            if b_err:
+                return runnermod.StageResult(
+                    step=step,
+                    stage=stage,
+                    ok=False,
+                    outcome=gitflow.CLASS_BRANCH_FAILED,
+                    detail=b_err,
+                )
         # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
         # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
         # High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.
@@ -3103,15 +3248,44 @@ def _native_runner(
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
-        if result.ok and auto_commit:
+        if result.ok and run_branch and not commit_relaxed:
+            # The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's
+            # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
+            # branch — never a blanket `add -A` — with an agent-written message carrying the stage
+            # and spec id (deterministic fallback — GITX-FR-011) and the 3pwr author applied
+            # per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty
+            # commit; paths a human already committed by hand are a no-op keeping the human's own
+            # author. After it, no run-produced change is left uncommitted (GITX-FR-008).
             produced = produced_box.get("paths", [])
-            sha = runnermod.commit_checkpoint(s.root, spec_id, step, produced)
-            if sha:
+            desc = gitflow.agent_commit_description(s.root, result.transcript)
+            commit = gitflow.commit_stage(
+                s.root,
+                produced,
+                message=gitflow.stage_commit_message(spec_id, step, desc),
+                author_name=prefs.author_name,
+                author_email=prefs.author_email,
+            )
+            if commit.error:
+                # Clean-stop would be violated (GITX-FR-008) — a named, recorded failure on the
+                # setup/dispatch path, never silently carried on.
+                return runnermod.StageResult(
+                    step=step,
+                    stage=stage,
+                    ok=False,
+                    agent=agent_name,
+                    model=str(backend.model),
+                    attempts=result.attempts,
+                    duration_s=result.duration_s,
+                    outcome=gitflow.CLASS_COMMIT_FAILED,
+                    detail=f"stage '{step}' could not be committed — {commit.error}",
+                    transcript=result.transcript,
+                )
+            if commit.sha:
                 payload: dict[str, Any] = {
                     "kind": "checkpoint",
                     "step": step,
                     "stage": stage,
-                    "commit": sha,
+                    "commit": commit.sha,
                 }
                 if result.artifact_paths:
                     # The accepted artifact's path rides in the signed stage entry, so the committed
@@ -3162,6 +3336,9 @@ def _run_make_runner(
     spec_id: str,
     stream: bool,
     feature_dir: Optional[Path] = None,
+    run_branch: str = "",
+    git_prefs: Optional[gitflow.GitPrefs] = None,
+    commit_relaxed: bool = False,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3177,6 +3354,9 @@ def _run_make_runner(
         spec_id=spec_id,
         stream=stream,
         feature_dir=feature_dir,
+        run_branch=run_branch,
+        git_prefs=git_prefs,
+        commit_relaxed=commit_relaxed,
     )
 
 
@@ -3230,6 +3410,21 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             if st.failed_transcript:
                 rows.append("      " + rst.dim(f"agent transcript: {st.failed_transcript}"))
+        # The run's git lifecycle state (GITX-FR-009): its dedicated branch and the per-stage
+        # committed indication — a deterministic function of the ledger and the local branches,
+        # no model and no network (GITX-NFR-001).
+        entries_st = ledger.entries()
+        run_branch_st = gitflow.branch_from_ledger(entries_st, spec_id)
+        committed_st = gitflow.committed_steps(entries_st, spec_id)
+        if run_branch_st:
+            on_it = gitflow.current_branch(s.root) == run_branch_st
+            rows.append(
+                rst.status_row(
+                    "info",
+                    f"run branch {run_branch_st}" + (" (checked out)" if on_it else ""),
+                    f"committed stages: {', '.join(committed_st) or '—'}",
+                )
+            )
         _print(
             {
                 "spec_id": spec_id,
@@ -3240,6 +3435,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "failed_class": st.failed_class,
                 "failed_at": st.failed_at,
                 "failed_transcript": st.failed_transcript,
+                "branch": run_branch_st,
+                "committed_steps": committed_st,
             },
             args.json,
             _compose(args, rst, title="3pwr run · status", subject=spec_id, rows=rows),
@@ -3304,6 +3501,33 @@ def cmd_run(args: argparse.Namespace) -> int:
     stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
     tracker = orchestrate.Tracker(sys.stdout, mode, st=rst)
 
+    # The git discipline (GITX): applied to every LIVE native run — mandatory, with the recorded
+    # signed deviation as the only relaxation (GITX-FR-014). --dry-run / the simulator dispatch
+    # nothing and write nothing, so the git hooks are a no-op there (the SRCX dry-run stance).
+    git_on = _resolve_runner_kind(args) == "native"
+    git_prefs = gitflow.load_prefs(s.git_config_path)
+    if git_on and git_prefs.malformed and not args.json:
+        print(
+            "warning: .3powers/config/git.yaml is malformed — using the default git preferences",
+            file=sys.stderr,
+        )
+    covered_guards = deviations.covered_gates(
+        deviations.active_deviations(ledger.entries()), spec_id
+    )
+    clean_start_relaxed = deviations.GIT_CLEAN_START in covered_guards
+    commit_relaxed = deviations.GIT_STAGE_COMMIT in covered_guards
+    if git_on and (getattr(args, "no_auto_commit", False) or not s.auto_commit()):
+        # The plain opt-out is SUPERSEDED (GITX-FR-014): the stage commit is mandatory; the only
+        # relaxation is the signed `git_stage_commit` deviation — warned, never silent.
+        if not commit_relaxed and not args.json:
+            print(
+                "warning: --no-auto-commit / defaults.auto_commit is superseded (GITX-FR-014) — "
+                "the per-stage commit is mandatory; relax it on the record with "
+                '`3pwr deviation --gate git_stage_commit --approver <you> --note "<why>"`',
+                file=sys.stderr,
+            )
+    run_branch = ""
+
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
             tracker.on_event(ev)
@@ -3340,6 +3564,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             spec_id=spec_id,
             stream=stream,
             feature_dir=feature_dir,
+            run_branch=run_branch,
+            git_prefs=git_prefs,
+            commit_relaxed=commit_relaxed,
         )
 
     def _stages() -> list[dict]:
@@ -3372,6 +3599,36 @@ def cmd_run(args: argparse.Namespace) -> int:
         if feature_dir is None:
             legacy_spec = _resolve_run_spec(s, args)
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
+        if git_on:
+            # The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from
+            # the signed ledger alone (a pre-GITX run derives the same deterministic name from its
+            # SRCX identity), refuse a dirty start whose changes the run did not produce, and
+            # re-enter the EXISTING branch — never a new one, never a new run number.
+            run_branch = gitflow.branch_from_ledger(entries_now, spec_id)
+            if not run_branch:
+                identity = (
+                    feature_dir.name if feature_dir is not None else workspace.slugify(spec_id)
+                )
+                run_branch = gitflow.run_branch_name(git_prefs.branch_prefix, identity)
+            if not clean_start_relaxed:
+                prefix = ""
+                if feature_dir is not None:
+                    try:
+                        prefix = feature_dir.relative_to(s.root).as_posix() + "/"
+                    except ValueError:
+                        prefix = ""
+                unrelated = gitflow.unrelated_changes(
+                    gitflow.uncommitted(s.root),
+                    gitflow.recorded_run_paths(entries_now, spec_id),
+                    prefix,
+                )
+                if unrelated:
+                    print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
+                    return EXIT_SETUP
+            b_err = gitflow.ensure_run_branch(s.root, run_branch, git_prefs.base_branch)
+            if b_err:
+                print(b_err, file=sys.stderr)
+                return EXIT_SETUP
         # Re-enter after the later of the approved gate and the last committed checkpoint, so a mid-run
         # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)
         # — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose
@@ -3388,6 +3645,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         wk = workkind.classify(
             args.intent or ""
         )  # FR-058: shape the tier + oracle, not the sign-off
+        if git_on and not clean_start_relaxed:
+            # The pre-stage git hook's clean-start guard (GITX-FR-007), BEFORE any side effect: a
+            # fresh run owns no paths yet, so any uncommitted change outside the engine's own state
+            # blocks — naming the paths and the signed deviation, never discarding them
+            # (GITX-NFR-003).
+            unrelated = gitflow.unrelated_changes(gitflow.uncommitted(s.root), set())
+            if unrelated:
+                print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
+                return EXIT_SETUP
         # Bind the run's feature folder (SRCX-FR-008/011): an explicit --spec names it; otherwise a
         # LIVE run auto-allocates specs/<NNN>-<slug>/ deterministically from the intent. --dry-run and
         # the simulator dispatch nothing and write no artifacts, so they allocate nothing.
@@ -3405,6 +3671,17 @@ def cmd_run(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return EXIT_SETUP
+        if git_on:
+            # Create + switch to the run's dedicated branch off the configured base BEFORE any
+            # stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity
+            # — GITX allocates no number and derives no slug — and the run never commits on the
+            # base branch. Detached HEAD / unborn repo: created off the current commit.
+            identity = feature_dir.name if feature_dir is not None else workspace.slugify(spec_id)
+            run_branch = gitflow.run_branch_name(git_prefs.branch_prefix, identity)
+            b_err = gitflow.ensure_run_branch(s.root, run_branch, git_prefs.base_branch)
+            if b_err:
+                print(b_err, file=sys.stderr)
+                return EXIT_SETUP
         start_payload: dict[str, Any] = {
             "kind": "start",
             "intent": args.intent or "",
@@ -3413,6 +3690,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             "inferred_kinds": wk.kinds,
             "suggested_tier": wk.suggested_tier,
         }
+        if run_branch:
+            # The additive branch binding on the existing run/start payload (GITX-FR-005): a later
+            # resume recovers the branch from the signed ledger alone — no branch scan, no
+            # guessing; no new entry type and no signing change (GITX-NFR-002).
+            start_payload["branch"] = run_branch
         if feature_dir is not None:
             # The additive folder binding on the existing run/start payload (SRCX-FR-011): a later
             # resume reads it back from the signed ledger alone — no mtime scan (SRCX-NFR-002).
@@ -3574,6 +3856,32 @@ def cmd_run(args: argparse.Namespace) -> int:
                     "stage": result.stage,
                     "detail": result.detail,
                     "transcript": transcript,
+                    "spec_id": spec_id,
+                    "stages": _stages(),
+                },
+                args.json,
+                human,
+            )
+            return EXIT_SETUP
+        if result.outcome in (gitflow.CLASS_COMMIT_FAILED, gitflow.CLASS_BRANCH_FAILED):
+            # The mandatory git hook could not hold its guarantee (GITX-FR-001/008/010): the stage
+            # commit failed, or the run branch could not be created/switched (never forced —
+            # GITX-NFR-003). Named, recorded, and exiting on the setup/dispatch path — never a
+            # gate verdict.
+            record(result.outcome)
+            _notify(args.notify, f"3pwr run {spec_id}: git discipline failed at {reached}")
+            human = (
+                f"{orchestrate.render_tracker(result.stage, rst)}\n"
+                f"  {rst.err('✗')} git discipline failed at {reached} — {result.detail}\n"
+                "  the run isolates its work on a dedicated branch and commits every producing "
+                f"stage (GITX). Fix the repository state, then resume: "
+                f"`3pwr run --resume --spec-id {spec_id}`."
+            )
+            _print(
+                {
+                    "status": result.outcome,
+                    "stage": result.stage,
+                    "detail": result.detail,
                     "spec_id": spec_id,
                     "stages": _stages(),
                 },
@@ -4314,6 +4622,22 @@ def build_parser() -> argparse.ArgumentParser:
     stp.add_argument("--spec-id", dest="spec_id")
     stp.set_defaults(func=cmd_status)
 
+    gitp = sub.add_parser("git", help="git run discipline: establish the run branch (GITX)")
+    gitsub = gitp.add_subparsers(dest="git_cmd", required=True)
+    gits = common(
+        gitsub.add_parser(
+            "start",
+            help="establish + bind the run's dedicated branch for a manual drive "
+            "(clean-start guarded — GITX-FR-016)",
+        )
+    )
+    gits.add_argument("--spec-id", dest="spec_id", required=True)
+    gits.add_argument(
+        "--feature",
+        help="the run's feature folder (specs/<NNN>-<slug>); default: the ledger's recorded binding",
+    )
+    gits.set_defaults(func=cmd_git_start)
+
     clp = common(
         sub.add_parser(
             "classify", help="infer the kind(s) of change + a suggested risk tier from your intent"
@@ -4378,7 +4702,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-auto-commit",
         dest="no_auto_commit",
         action="store_true",
-        help="do not commit each successful stage as a checkpoint (RUNLIVE-FR-010)",
+        help="SUPERSEDED (GITX-FR-014): the per-stage commit is mandatory; this flag only warns. "
+        "Relax on the record: `3pwr deviation --gate git_stage_commit`",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
     rnp.add_argument(

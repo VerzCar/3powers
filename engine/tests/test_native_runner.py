@@ -718,8 +718,9 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
     assert rc == 3 and "review-spec" in out  # the hosted-produced spec advanced the run to the gate
 
 
-def test_no_auto_commit_makes_no_checkpoint(native_project, capsys):
-    """RUNLIVE-FR-010 (edge): with auto-commit disabled the runner commits nothing."""
+def test_no_auto_commit_is_superseded_and_warns(native_project, capsys):
+    """GITX-FR-014 (supersedes RUNLIVE-FR-010's opt-out): `--no-auto-commit` no longer silently
+    disables the stage commit — it warns, names the signed deviation, and the commit happens."""
     import subprocess as sp
 
     before = sp.run(
@@ -740,11 +741,13 @@ def test_no_auto_commit_makes_no_checkpoint(native_project, capsys):
             "RUN",
         ]
     )
+    err = capsys.readouterr().err
     assert rc == 3  # paused at the spec gate
+    assert "superseded" in err and "git_stage_commit" in err  # warned, never silent
     after = sp.run(
         ["git", "rev-list", "--count", "HEAD"],
         cwd=str(native_project),
         capture_output=True,
         text=True,
     ).stdout.strip()
-    assert before == after  # no checkpoint commit was made
+    assert int(after) > int(before)  # the mandatory stage commit still happened

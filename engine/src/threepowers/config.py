@@ -82,6 +82,14 @@ class Settings:
         return self.dir / "config" / "ui.yaml"
 
     @property
+    def git_config_path(self) -> Path:
+        """The git-integration preferences — branch prefix, base branch, 3pwr author (GITX-FR-015).
+
+        Applied to the run's git handling only; a missing or malformed file falls back to the
+        documented defaults with at most one warning (see :mod:`threepowers.gitflow`)."""
+        return self.dir / "config" / "git.yaml"
+
+    @property
     def constitution_path(self) -> Path:
         """The project constitution — part of every phase's reload set (PHASE-FR-008)."""
         return self.dir / "memory" / "constitution.md"

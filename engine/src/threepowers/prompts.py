@@ -93,6 +93,22 @@ _STAGE_PROMPTS: dict[str, str] = {
 
 _GENERIC = "STAGE: {step}. Perform this lifecycle step for the intent below, staying within the spec's scope."
 
+# The producing stages whose prompt asks the agent for a commit description (GITX-FR-011): the
+# post-stage git hook records it as the stage commit's message. A fixed, deterministic block —
+# never a gate or ledger input; an agent that yields none falls back to the deterministic default.
+COMMIT_NOTE_STEPS: tuple[str, ...] = (
+    "specify",
+    "clarify",
+    "plan",
+    "tasks",
+    "oracle",
+    "implement",
+)
+_COMMIT_NOTE = (
+    "COMMIT MESSAGE: end your final output with a single line 'COMMIT: <one line describing what "
+    "this stage changed and why>' — the engine records it as this stage's git commit message."
+)
+
 # The lifecycle stages that carry a dedicated agent template (AGENTX-FR-001): every stage that
 # dispatches a headless agent. The template file for a step is ``<step>.agent.md``.
 TEMPLATE_STEPS: tuple[str, ...] = (
@@ -174,6 +190,10 @@ def assemble(
     repo-local stage template's (AGENTX-FR-005); it changes only the instruction body, never the
     surrounding context blocks or their order."""
     parts: list[str] = [_PREAMBLE, "", body.strip() or stage_prompt_body(step)]
+    if step in COMMIT_NOTE_STEPS:
+        # A fixed block outside the tunable instruction body (GITX-FR-011): a repo-local stage
+        # template cannot drop the commit-description request, and assembly stays deterministic.
+        parts += ["", _COMMIT_NOTE]
     if intent.strip():
         parts += ["", "INTENT:", intent.strip()]
     if spec_text.strip():

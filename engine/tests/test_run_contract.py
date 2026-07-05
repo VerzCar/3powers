@@ -236,8 +236,25 @@ def test_each_outcome_maps_to_exactly_one_pair():
 
 # --------------------------------------------------------------------------- AUTOX-FR-010 (resume)
 def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatch, capsys):
-    """AUTOX-FR-010 / AUTOX-SC-004: with auto-commit OFF, a run failing at the oracle stage resumes
-    AT oracle; stages 1..k-1 are recorded in the ledger and never re-dispatched."""
+    """AUTOX-FR-010 / AUTOX-SC-004: with the stage commit relaxed by a signed `git_stage_commit`
+    deviation (GITX-FR-014 — the plain flag is superseded), a run failing at the oracle stage
+    resumes AT oracle; stages 1..k-1 are recorded in the ledger and never re-dispatched."""
+    assert (
+        main(
+            [
+                "--root",
+                str(run_repo),
+                "deviation",
+                "--gate",
+                "git_stage_commit",
+                "--approver",
+                "t",
+                "--note",
+                "ledger-only resume test",
+            ]
+        )
+        == 0
+    )
     # Segment 1: specify+clarify complete (recorded as run/stage entries, no commits) → spec gate.
     assert (
         main(
@@ -247,7 +264,6 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
                 "run",
                 "add x",
                 "--no-input",
-                "--no-auto-commit",
                 "--spec-id",
                 "RUN",
             ]
@@ -263,7 +279,6 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
             "run",
             "--resume",
             "--no-input",
-            "--no-auto-commit",
             "--spec-id",
             "RUN",
             "--approver",
@@ -297,7 +312,6 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
             "run",
             "--resume",
             "--no-input",
-            "--no-auto-commit",
             "--spec-id",
             "RUN",
             "--approver",
