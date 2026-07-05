@@ -92,10 +92,14 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 3pwr advance --stage ship           # refuses unless gate green + ledger verifies + sign-off present + spec unchanged
 
 # The whole lifecycle in one command (§6, FR-011): auto mode stops ONLY at the two human gates (FR-006/037).
+# GITX (spec 018): git is a run precondition; the run refuses a dirty unrelated start, works on its own
+# branch `3pwr/<NNN>-<slug>` (reusing the SRCX identity), and commits each producing stage as `3pwr`
+# with an agent-written message — relaxable only via the signed git_* deviations (FR-057).
 3pwr classify "<intent>"                            # FR-058: infer work kind(s) + a suggested risk tier
 3pwr run "<intent>" --mode auto                     # streams a live stage tracker; native executive dispatches headless agents (EXEC-FR-001)
 3pwr run --resume --spec-id <ID> --approver <you>   # after a human gate: record sign-off + continue
-3pwr run --status --spec-id <ID>                    # stage tracker from the ledger   (try it offline: add --dry-run)
+3pwr run --status --spec-id <ID>                    # stage tracker + run branch/committed stages   (try it offline: add --dry-run)
+3pwr git start --spec-id <ID> --feature specs/<f>   # manual drive: establish + bind the run branch (GITX-FR-016)
 
 # Oracle independence (Phase A, §7): seal a spec-only bundle, author from it, then record + verify.
 # At High-risk, `advance` refuses unless independence holds (FR-020/021/022/062).

@@ -279,7 +279,10 @@ additionally requires oracle independence — a sealed spec-only bundle, an auth
 model family than the coder, authored *before* the implementation verdict. Advisory peek/touch findings
 are surfaced but never block. At **every tier** it also re-executes the **`spec_integrity`** check: a spec
 modified after its Spec-stage sign-off refuses with reason `spec_modified`, unless an active, signed
-`spec_integrity` deviation covers it (recorded in `deviations_applied`; revoking re-blocks).
+`spec_integrity` deviation covers it (recorded in `deviations_applied`; revoking re-blocks). When the
+spec's run records a dedicated **run branch** (GITX), a stage-boundary advance also refuses when the
+repository is not on that branch or the completed stage's work is uncommitted — naming the condition
+and the fix; relaxable only via the signed `git_run_branch` / `git_stage_commit` deviations.
 - `--stage STAGE` (required) · `--spec-id SPEC_ID`.
 ```bash
 3pwr advance --stage ship --spec-id VUTIL
@@ -322,13 +325,28 @@ plus the `oracle.md`/`implement.md` records linking the real test/code outputs a
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone.
+**The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
+git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
+`<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
+before any commit; a resume re-enters that same branch, recovered from the signed `run`/`start` entry's
+additive `branch` field. The run **refuses to start** when the working tree carries uncommitted changes
+not produced by the run (naming the paths and the `git_clean_start` deviation — the edits are never
+touched). After each producing stage, the post-stage hook commits exactly one commit staging only the
+run's produced paths, whose message is the agent's `COMMIT:` description (deterministic
+`3pwr(<spec-id>): <step>` fallback) and whose author is the configured `3pwr` identity — applied
+per-commit, never mutating the developer's git config, never force-pushing or rewriting history.
+Preferences (branch prefix, base branch, 3pwr author) live in `.3powers/config/git.yaml`; the
+discipline itself is mandatory and relaxable only via the signed deviations
+(`git_clean_start` / `git_stage_commit` / `git_run_branch`).
 - `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
   `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--timeout N` /
-  `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (no per-stage checkpoint commits;
-  resume still works from the ledger) · `--notify CMD` (best-effort notification hook) ·
+  `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (SUPERSEDED by GITX — warns and
+  commits anyway; relax with `3pwr deviation --gate git_stage_commit`) · `--notify CMD` (best-effort
+  notification hook) ·
   `--resume` (record a sign-off + continue after a human gate, or continue past a failure) ·
-  `--status` (print the stage tracker) · `--dry-run` (simulate offline) · `--simulate-fail` (force a
+  `--status` (print the stage tracker + the run branch and committed stages) · `--dry-run` (simulate
+  offline; no git required) · `--simulate-fail` (force a
   red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
@@ -353,6 +371,8 @@ under `--json`. This table is a stable interface:
 | A stage produced no declared artifact | `artifact_missing` | `4` |
 | A completed stage's markdown is missing from its feature folder | `artifact_absent` | `4` |
 | A stage's on-disk markdown is recorded in no ledger entry | `artifact_unrecorded` | `4` |
+| The run branch could not be created/switched (never forced) | `git_branch_failed` | `4` |
+| A producing stage's mandatory commit failed | `git_commit_failed` | `4` |
 | The gate suite could not run at Verify | `verdict_error` | `4` |
 
 **Transcripts (AUTOX-FR-008, stable).** Every stage attempt's stdout/stderr — streamed or not — is
@@ -360,6 +380,18 @@ persisted, credential-redacted, to `.3powers/runs/<spec-id>/<NN>-<step>-attempt<
 message and failure ledger record names the transcript path. Failures are also recorded as signed
 `run`/`failure` ledger entries, so `3pwr run --status` and `3pwr status` show
 `failed at <stage> (<class>)` until a later record passes that stage.
+
+### `git start` — establish the run branch for a manual drive
+Gives the command-by-command `/3pwr.*` drive the same git guarantees as `3pwr run` (GITX-FR-016): checks
+the git precondition, applies the clean-start guard (unrelated uncommitted changes refuse, naming the
+paths and the `git_clean_start` deviation), creates-or-re-enters the run's dedicated branch, and binds
+the branch to the spec-id in the signed ledger (the same additive `run`/`start` field the orchestrated
+path records). Idempotent — an already-established run re-enters its recorded branch and appends nothing.
+- `--spec-id SPEC_ID` (required) · `--feature specs/<NNN>-<slug>` (the run's feature folder; default:
+  the ledger's recorded binding).
+```bash
+3pwr git start --spec-id GITX --feature specs/018-git-lifecycle-integration
+```
 
 ### `revert` — reverse to a prior recorded state
 Appends a signed `reversal` entry returning a spec to its stage at a given ledger seq.
@@ -385,7 +417,8 @@ at the `advance` enforcement boundary; gates always run honestly, so the verdict
 ### `deviation` — relax named gates, reversibly
 Records a signed, reversible gate exception that lets `advance` accept specific red gates, with a reason, a
 human approver, and a way back (an expiry or an explicit revoke). Also the **sanctioned way to accept a
-`gate_gaming` flag**. Human sign-off and provenance are never deviatable.
+`gate_gaming` flag**, and the only relaxation of the git run discipline (`git_clean_start`,
+`git_stage_commit`, `git_run_branch` — GITX-FR-014). Human sign-off and provenance are never deviatable.
 - `--gate GATE` (repeatable; required unless `--revoke`) · `--approver APPROVER` (required to record) ·
   `--note NOTE` (reason) · `--until ISO8601` (auto-expiry) · `--revoke SEQ` (the way back) · `--spec-id SPEC_ID`
   (scope; default global).

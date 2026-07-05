@@ -41,8 +41,9 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Anchor the ledger head with an external witness | `3pwr anchor --push` · check with `3pwr verify --anchored` (`HARDN-FR-005`; opt-in — plain `verify` stays offline) |
 | Enforce + advance a stage | `3pwr advance --stage ship --spec-id <ID>` |
 | Infer work kind(s) + suggested tier | `3pwr classify "<intent>"` (`3PWR-FR-058`; deterministic; shapes the tier/gates + oracle, never the sign-off) |
-| Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--runner native\|sim] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; the native executive dispatches each stage to a headless agent, EXEC-FR-001) |
-| Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`) |
+| Drive the whole lifecycle loop | `3pwr run "<intent>" [--mode auto\|commit] [--runner native\|sim] [--resume\|--status] [--dry-run]` (`3PWR-FR-011`, §6; auto stops only at the two human gates FR-006/FR-037; the native executive dispatches each stage to a headless agent, EXEC-FR-001. GITX: a working git repo is a precondition; the run refuses a dirty unrelated start, isolates itself on `3pwr/<NNN>-<slug>`, and commits every producing stage as `3pwr`) |
+| Establish the run branch for a manual drive | `3pwr git start --spec-id <ID> [--feature specs/<NNN>-<slug>]` (`GITX-FR-016`; clean-start guarded, binds the branch in the signed ledger) |
+| Relax a gate, reversibly (deviation) | `3pwr deviation --gate <name> --approver <you> --note "<why>" [--until <iso>]` (`3PWR-FR-057`; revoke: `--revoke <seq>`; the git run discipline relaxes only this way — `git_clean_start`/`git_stage_commit`/`git_run_branch`, `GITX-FR-014`) |
 | Emergency fast path | `3pwr emergency --approver <you> --note "<why>"` (`3PWR-FR-056`; defers mutation+coverage; 1-day cleanup) |
 | Lifecycle status (per spec) | `3pwr status [--spec-id <ID>]` |
 | Two-way requirement↔task coverage | `3pwr coverage-check --spec <spec.md> --tasks <tasks.md>` |
