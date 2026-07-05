@@ -121,6 +121,68 @@ def _print(obj: dict, as_json: bool, human: str) -> None:
         print(human)
 
 
+def _resolve_ui(args: argparse.Namespace) -> tuple[dict[str, str], bool]:
+    """Resolve ui.yaml preferences (color_mode / verbosity / layout) + a malformed flag, once per run.
+
+    Tolerant of a not-yet-initialized repo: when no ``.3powers/`` is found (e.g. before ``3pwr init``)
+    the shipped defaults are used. Cached on ``args`` so the file is read at most once (CLIUX-FR-014)."""
+    cached = getattr(args, "_ui_cache", None)
+    if cached is not None:
+        return cached
+    prefs: dict[str, str] = {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+    malformed = False
+    try:
+        prefs, malformed = _settings(getattr(args, "root", None)).load_ui()
+    except (FileNotFoundError, OSError):
+        pass  # no initialized repo yet — use the shipped defaults
+    args._ui_cache = (prefs, malformed)
+    return prefs, malformed
+
+
+def _styler(args: argparse.Namespace, stream: Any = None) -> style.Styler:
+    """A :class:`style.Styler` for one command's human output, honoring ``--json`` / ``--yes`` and the
+    ui.yaml ``color_mode`` (CLIUX-FR-005/014). Machine output is never routed through it (CLIUX-FR-007)."""
+    prefs, _ = _resolve_ui(args)
+    return style.styler(
+        stream if stream is not None else sys.stdout,
+        as_json=getattr(args, "json", False),
+        assume_yes=getattr(args, "yes", False),
+        color_mode=prefs["color_mode"],
+    )
+
+
+def _verbosity(args: argparse.Namespace) -> str:
+    """The effective verbosity for this command (CLIUX-FR-013): ``quiet`` | ``normal`` | ``verbose``."""
+    prefs, _ = _resolve_ui(args)
+    return style.resolve_verbosity(
+        getattr(args, "quiet", False), getattr(args, "verbose", False), prefs["verbosity"]
+    )
+
+
+def _compose(
+    args: argparse.Namespace,
+    st: style.Styler,
+    *,
+    title: str = "",
+    subject: str = "",
+    rows: Optional[list[str]] = None,
+    extra: Optional[list[str]] = None,
+) -> str:
+    """Assemble a command's human output honoring verbosity (CLIUX-FR-004/006/013).
+
+    ``title`` renders a self-identifying header (hidden at ``quiet``); ``rows`` are the core result
+    lines (always shown); ``extra`` are verbose-only detail lines. Detail grows monotonically
+    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload (CLIUX-FR-007)."""
+    v = _verbosity(args)
+    out: list[str] = []
+    if title and v != "quiet":
+        out.append(st.header(title, subject))
+    out.extend(rows or [])
+    if v == "verbose":
+        out.extend(extra or [])
+    return "\n".join(out)
+
+
 def _git_out(root: Path, args: list[str]) -> str:
     """Shell out to git; empty string on any failure (best-effort, never blocks)."""
     try:
@@ -253,11 +315,18 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     keys.write_private(out, sk)
     keys.write_public(pub, sk.verify_key)
     label = "judiciary (oracle) signer" if role == "oracle" else "signer"
-    print(f"{label} identity created: {sk.key_id}")
-    print(f"  private key (keep OUTSIDE the repo): {out}")
-    print(f"  public key  (committed):             {pub}")
+    kst = _styler(args)
+    print(kst.status_row("pass", f"{label} identity created", sk.key_id))
+    print(
+        kst.kv(
+            [
+                ("private key (keep OUTSIDE the repo)", str(out)),
+                ("public key  (committed)", str(pub)),
+            ]
+        )
+    )
     print()
-    print("Point the engine at the private key with:")
+    print("  " + kst.dim("Point the engine at the private key with:"))
     print(f'  export {env_var}="{out}"')
     return EXIT_OK
 
@@ -303,6 +372,26 @@ def cmd_rotate_key(args: argparse.Namespace) -> int:
     env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
     if env_file and Path(env_file).resolve() != out:
         hint = f'\n  update the pointer:  export THREEPOWERS_SIGNING_KEY_FILE="{out}"'
+    rkt = _styler(args)
+    rows = [
+        rkt.status_row(
+            "pass",
+            f"key rotated: {old_sk.key_id} → {new_sk.key_id}",
+            f"ledger seq={entry['seq']}",
+        ),
+        rkt.kv(
+            [
+                ("new private key (OUTSIDE the repo)", str(out)),
+                ("committed public key updated", str(s.pubkey_path)),
+            ]
+        ),
+    ]
+    if hint:
+        rows.append(
+            rkt.status_row(
+                "warn", f'update the pointer: export THREEPOWERS_SIGNING_KEY_FILE="{out}"'
+            )
+        )
     _print(
         {
             "rotated": True,
@@ -312,9 +401,9 @@ def cmd_rotate_key(args: argparse.Namespace) -> int:
             "private_key": str(out),
         },
         args.json,
-        f"key rotated: {old_sk.key_id} → {new_sk.key_id} (ledger seq={entry['seq']})\n"
-        f"  new private key (OUTSIDE the repo): {out}\n"
-        f"  committed public key updated:       {s.pubkey_path}{hint}",
+        _compose(
+            args, rkt, title="rotate-key", subject=f"{old_sk.key_id} → {new_sk.key_id}", rows=rows
+        ),
     )
     return EXIT_OK
 
@@ -422,11 +511,18 @@ def cmd_commit_stage(args: argparse.Namespace) -> int:
     staged = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=s.root, check=False
     ).returncode
+    cst = _styler(args)
     if staged == 0:
         _print(
             {"committed": False, "reason": "nothing staged"},
             as_json,
-            "nothing staged — no stage commit made",
+            _compose(
+                args,
+                cst,
+                title="commit-stage",
+                subject=f"{spec_id}: {stage}",
+                rows=[cst.status_row("info", "nothing staged — no stage commit made")],
+            ),
         )
         return EXIT_OK
     msg = f"3pwr({spec_id}): {stage}"
@@ -437,11 +533,16 @@ def cmd_commit_stage(args: argparse.Namespace) -> int:
         print(f"error: git commit failed: {res.stderr.strip()}", file=sys.stderr)
         return EXIT_FAIL
     sha = _git_out(s.root, ["rev-parse", "--short", "HEAD"]).strip()
-    st = style.styler(sys.stdout, as_json=as_json)
     _print(
         {"committed": True, "message": msg, "commit": sha},
         as_json,
-        f"{st.ok('✓')} committed [{sha}] {msg}",
+        _compose(
+            args,
+            cst,
+            title="commit-stage",
+            subject=f"{spec_id}: {stage}",
+            rows=[cst.status_row("pass", f"committed [{sha}] {msg}")],
+        ),
     )
     return EXIT_OK
 
@@ -457,7 +558,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     (ONBRD-NFR-002)."""
     as_json = getattr(args, "json", False)
     interactive = _init_interactive(args)
-    st = style.styler(sys.stdout, as_json=as_json, assume_yes=getattr(args, "yes", False))
+    st = _styler(args)
 
     # 1) Target directory — default the current directory (ONBRD-FR-002).
     default_dir = str(Path(args.root).resolve() if args.root else Path.cwd())
@@ -792,13 +893,20 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
-    human = _format_verdict(
-        verdict, appended, style.styler(sys.stdout, as_json=getattr(args, "json", False))
-    )
+    gst = _styler(args)
+    human = _format_verdict(verdict, appended, gst)
     if args.report_only and verdict.result != STATUS_PASS:
-        human += "\n  ⓘ report-only: verdict emitted but not enforced"
+        human += "\n  " + gst.mark("info") + " report-only: verdict emitted but not enforced"
     _print(
-        {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")}, args.json, human
+        {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")},
+        args.json,
+        _compose(
+            args,
+            gst,
+            title="gate run",
+            subject=f"{verdict.spec_id or '?'} · {verdict.tier} · {verdict.adapter}",
+            rows=[human],
+        ),
     )
     # Report-only never blocks the developer's flow; ratchet to a blocking run
     # (optionally diff-scoped via --base/--paths) once the diff is clean (3PWR-FR-052).
@@ -815,10 +923,24 @@ def cmd_conformance(args: argparse.Namespace) -> int:
     roots = [Path(t).resolve() for t in args.tests] if args.tests else [s.root]
     gate = run_conformance(spec_path, roots)
     obj = {"gate": gate.gate, "status": gate.status, **gate.details}
-    human = f"spec-conformance: {gate.status.upper()} ({gate.details.get('spec_id', '?')})"
+    cst = _styler(args)
+    passed = gate.status == STATUS_PASS
+    rows = [
+        cst.status_row(
+            "pass" if passed else "fail",
+            f"spec-conformance {gate.status.upper()}",
+            gate.details.get("spec_id", "?"),
+        )
+    ]
     if gate.findings:
-        human += "\n  - " + "\n  - ".join(gate.findings)
-    _print(obj, args.json, human)
+        rows.append(cst.bullet(gate.findings))
+    _print(
+        obj,
+        args.json,
+        _compose(
+            args, cst, title="conformance", subject=gate.details.get("spec_id", ""), rows=rows
+        ),
+    )
     return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
 
 
@@ -829,9 +951,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     # by other users is a custody violation — surfaced here, where trust is re-derived.
     custody = keys.custody_findings(s.root)
     ok = res.ok and not custody
-    human = res.summary()
+    vst = _styler(args)
+    rows = [vst.status_row("pass" if res.ok else "fail", res.summary())]
     for c in custody:
-        human += f"\n  ✗ {c}"
+        rows.append(vst.status_row("fail", c))
     anchored: Optional[dict] = None
     if getattr(args, "anchored", False):
         # Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest
@@ -840,9 +963,13 @@ def cmd_verify(args: argparse.Namespace) -> int:
         anchored = {"ok": chk.ok, "anchor_seq": chk.anchor_seq, "problems": chk.problems}
         ok = ok and chk.ok
         if chk.ok:
-            human += f"\n  anchor OK — chain extends the witnessed head (seq={chk.anchor_seq})"
+            rows.append(
+                vst.status_row(
+                    "pass", f"anchor OK — chain extends the witnessed head (seq={chk.anchor_seq})"
+                )
+            )
         for p in chk.problems:
-            human += f"\n  ✗ {p}"
+            rows.append(vst.status_row("fail", p))
     _print(
         {
             "ok": ok,
@@ -852,7 +979,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
             **({"anchored": anchored} if anchored is not None else {}),
         },
         args.json,
-        human,
+        _compose(
+            args,
+            vst,
+            title="verify",
+            subject="ledger chain + signatures",
+            rows=rows,
+            extra=[vst.dim(f"{res.entries} entries checked")],
+        ),
     )
     return EXIT_OK if ok else EXIT_FAIL
 
@@ -891,6 +1025,7 @@ def cmd_anchor(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
+    ast = _styler(args)
     _print(
         {
             "anchored_seq": seq,
@@ -900,9 +1035,24 @@ def cmd_anchor(args: argparse.Namespace) -> int:
             "ledger_seq": receipt["seq"],
         },
         args.json,
-        f"anchored ledger head seq={seq} ({entry_hash}) as tag {msg}"
-        + (" — pushed" if args.push else " — local only; push it to complete the witness")
-        + f"\n  receipt: ledger seq={receipt['seq']}",
+        _compose(
+            args,
+            ast,
+            title="anchor",
+            subject=f"seq={seq}",
+            rows=[
+                ast.status_row(
+                    "pass",
+                    f"anchored ledger head seq={seq} ({entry_hash}) as tag {msg}"
+                    + (
+                        " — pushed"
+                        if args.push
+                        else " — local only; push it to complete the witness"
+                    ),
+                ),
+                ast.kv([("receipt", f"ledger seq={receipt['seq']}")]),
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -922,9 +1072,21 @@ def cmd_signoff(args: argparse.Namespace) -> int:
         payload.update(_spec_approval_payload(s, getattr(args, "spec", None)))
     entry = Ledger(s.ledger_path).append("signoff", payload, sk, spec_id=args.spec_id or "")
     sealed = f"; spec hash sealed ({payload['spec_hash']})" if payload.get("spec_hash") else ""
+    sst = _styler(args)
     print(
-        f"sign-off recorded by {args.approver} for stage '{args.stage}' "
-        f"(ledger seq={entry['seq']}){sealed}"
+        _compose(
+            args,
+            sst,
+            title="signoff",
+            subject=f"{args.spec_id or ''} · {args.stage}".strip(" ·"),
+            rows=[
+                sst.status_row(
+                    "pass",
+                    f"sign-off recorded by {args.approver} for stage '{args.stage}'",
+                    f"ledger seq={entry['seq']}{sealed}",
+                )
+            ],
+        )
     )
     return EXIT_OK
 
@@ -962,19 +1124,35 @@ def cmd_spec_diff(args: argparse.Namespace) -> int:
         "current_hash": lock.current_hash,
         "spec_path": lock.spec_path,
     }
+    dst = _styler(args)
     if lock.status == speclock.MATCH:
         _print(
             obj,
             args.json,
-            f"spec matches its approval hash (ledger seq={lock.approval_seq}, "
-            f"approver={lock.approver})\n  {lock.approved_hash}",
+            _compose(
+                args,
+                dst,
+                title="spec diff",
+                subject=args.spec_id or "",
+                rows=[
+                    dst.status_row(
+                        "pass",
+                        "spec matches its approval hash",
+                        f"ledger seq={lock.approval_seq}, approver={lock.approver}",
+                    ),
+                    "  " + dst.dim(lock.approved_hash or ""),
+                ],
+            ),
         )
         return EXIT_OK
 
-    lines = [
+    headline = (
         "spec MODIFIED after approval"
         if lock.status == speclock.MISMATCH
-        else f"approved spec file is MISSING: {lock.spec_path}",
+        else f"approved spec file is MISSING: {lock.spec_path}"
+    )
+    lines = [
+        dst.status_row("fail", headline),
         f"  approved: {lock.approved_hash} (ledger seq={lock.approval_seq}, "
         f"approver={lock.approver})",
         f"  current:  {lock.current_hash or '(missing file)'}",
@@ -999,7 +1177,11 @@ def cmd_spec_diff(args: argparse.Namespace) -> int:
         lines.append(diff_text)
     else:
         lines.append("  (no textual diff available — sign-off commit unknown or file missing)")
-    _print(obj, args.json, "\n".join(lines))
+    _print(
+        obj,
+        args.json,
+        _compose(args, dst, title="spec diff", subject=args.spec_id or "", rows=lines),
+    )
     return EXIT_FAIL
 
 
@@ -1123,9 +1305,13 @@ def cmd_advance(args: argparse.Namespace) -> int:
             )
 
     if reasons:
-        human = f"REFUSED to advance to '{args.stage}':\n  - " + "\n  - ".join(reasons)
-        for a in oracle_advisory:
-            human += f"\n  ⚑ advisory (not a blocker): {a}"
+        cst = _styler(args)
+        rows = [cst.status_row("fail", f"REFUSED to advance to '{args.stage}'")]
+        rows += [cst.status_row("fail", r, indent=4) for r in reasons]
+        rows += [
+            cst.status_row("warn", f"advisory (not a blocker): {a}", indent=4)
+            for a in oracle_advisory
+        ]
         _print(
             {
                 "advanced": False,
@@ -1134,7 +1320,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
                 "oracle_advisory": oracle_advisory,
             },
             args.json,
-            human,
+            _compose(args, cst, title="advance", subject=args.spec_id or args.stage, rows=rows),
         )
         return EXIT_FAIL
 
@@ -1158,9 +1344,13 @@ def cmd_advance(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
     note = f" under deviation {deviations_applied}" if deviations_applied else ""
-    human = f"advanced to '{args.stage}'{note} (ledger seq={entry['seq']})"
-    for a in oracle_advisory:
-        human += f"\n  ⚑ advisory (not a blocker): {a}"
+    cst = _styler(args)
+    rows = [
+        cst.status_row("pass", f"advanced to '{args.stage}'{note}", f"ledger seq={entry['seq']}")
+    ]
+    rows += [
+        cst.status_row("warn", f"advisory (not a blocker): {a}", indent=4) for a in oracle_advisory
+    ]
     _print(
         {
             "advanced": True,
@@ -1170,7 +1360,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
             **payload,
         },
         args.json,
-        human,
+        _compose(args, cst, title="advance", subject=args.spec_id or args.stage, rows=rows),
     )
     return EXIT_OK
 
@@ -1193,10 +1383,23 @@ def cmd_deviation(args: argparse.Namespace) -> int:
         entry = ledger.append(
             "deviation", {"revokes": args.revoke, "reason": args.note or ""}, sk, spec_id=""
         )
+        dvt = _styler(args)
         _print(
             {"revoked": args.revoke, "ledger_seq": entry["seq"]},
             args.json,
-            f"deviation at seq={args.revoke} revoked (ledger seq={entry['seq']})",
+            _compose(
+                args,
+                dvt,
+                title="deviation",
+                subject=f"revoke seq={args.revoke}",
+                rows=[
+                    dvt.status_row(
+                        "pass",
+                        f"deviation at seq={args.revoke} revoked",
+                        f"ledger seq={entry['seq']}",
+                    )
+                ],
+            ),
         )
         return EXIT_OK
 
@@ -1222,11 +1425,23 @@ def cmd_deviation(args: argparse.Namespace) -> int:
     payload = deviations.deviation_payload(args.gate, args.note or "", args.approver, args.until)
     entry = ledger.append("deviation", payload, sk, spec_id=args.spec_id or "")
     way_back = f"until {args.until}" if args.until else "revoke to end"
+    dvt = _styler(args)
     _print(
         {"gates": payload["gates"], "ledger_seq": entry["seq"]},
         args.json,
-        f"deviation recorded by {args.approver} for gate(s) {', '.join(payload['gates'])} "
-        f"({way_back}; ledger seq={entry['seq']})",
+        _compose(
+            args,
+            dvt,
+            title="deviation",
+            subject=", ".join(payload["gates"]),
+            rows=[
+                dvt.status_row(
+                    "warn",
+                    f"deviation recorded by {args.approver} for gate(s) {', '.join(payload['gates'])}",
+                    f"{way_back}; ledger seq={entry['seq']}",
+                )
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -1247,6 +1462,7 @@ def cmd_emergency(args: argparse.Namespace) -> int:
     )
     payload = deviations.emergency_payload(args.note or "", args.approver, hours)
     entry = Ledger(s.ledger_path).append("deviation", payload, sk, spec_id=args.spec_id or "")
+    est = _styler(args)
     _print(
         {
             "emergency": True,
@@ -1255,11 +1471,28 @@ def cmd_emergency(args: argparse.Namespace) -> int:
             "ledger_seq": entry["seq"],
         },
         args.json,
-        f"EMERGENCY fast path opened by {args.approver}: deferring "
-        f"{', '.join(deviations.EMERGENCY_DEFERRABLE)} until cleanup by {payload['cleanup_due']}.\n"
-        "  The security/secret gates, human sign-off, and provenance still apply.\n"
-        f"  Clean up within {hours}h (file a requirement + `3pwr deviation --revoke {entry['seq']}`) "
-        "or advance will block.",
+        _compose(
+            args,
+            est,
+            title="emergency",
+            subject=args.approver,
+            rows=[
+                est.status_row(
+                    "warn",
+                    f"EMERGENCY fast path opened by {args.approver}: deferring "
+                    f"{', '.join(deviations.EMERGENCY_DEFERRABLE)}",
+                    f"until cleanup by {payload['cleanup_due']}",
+                ),
+                est.status_row(
+                    "info", "the security/secret gates, human sign-off, and provenance still apply"
+                ),
+                est.status_row(
+                    "warn",
+                    f"clean up within {hours}h (file a requirement + "
+                    f"`3pwr deviation --revoke {entry['seq']}`) or advance will block",
+                ),
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -1270,13 +1503,27 @@ def cmd_ledger_show(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(entries, indent=2))
         return EXIT_OK
-    for e in entries:
-        print(
-            f"#{e['seq']:>3} {e['type']:<13} {e['timestamp']} "
-            f"{e.get('spec_id', ''):<8} sig={e['signer_key_id']}"
-        )
+    lst = _styler(args)
     if not entries:
-        print("(empty ledger)")
+        print(_compose(args, lst, title="ledger", rows=[lst.status_row("info", "empty ledger")]))
+        return EXIT_OK
+    table_rows = [
+        [
+            f"#{e['seq']}",
+            e["type"],
+            e["timestamp"],
+            e.get("spec_id", "") or "—",
+            e["signer_key_id"],
+        ]
+        for e in entries
+    ]
+    out = []
+    if _verbosity(args) != "quiet":
+        out.append(
+            lst.header("ledger", f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+        )
+    out.append(lst.table(table_rows, headers=["seq", "type", "timestamp", "spec", "signer"]))
+    print("\n".join(out))
     return EXIT_OK
 
 
@@ -1293,11 +1540,21 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
         active = deviations.active_deviations(Ledger(s.ledger_path).entries())
         dev_seq = deviations.diversity_deviation(active)  # global scope for a config-level check
     verdict = "OK" if ok else ("RELAXED" if dev_seq is not None else "VIOLATION")
-    human = f"model diversity ({level}) {args.role_a} vs {args.role_b}: {verdict}"
+    rct = _styler(args)
+    state = "pass" if ok else ("warn" if dev_seq is not None else "fail")
+    rows = [
+        rct.status_row(
+            state, f"model diversity ({level}) {args.role_a} vs {args.role_b}: {verdict}"
+        )
+    ]
     if dev_seq is not None:
-        human += (
-            f"\n  ⚑ relaxed by model_diversity deviation #{dev_seq} — "
-            f"a different {level} is recommended, not required"
+        rows.append(
+            rct.status_row(
+                "warn",
+                f"relaxed by model_diversity deviation #{dev_seq} — "
+                f"a different {level} is recommended, not required",
+                indent=4,
+            )
         )
     _print(
         {
@@ -1308,7 +1565,9 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
             "role_b": args.role_b,
         },
         args.json,
-        human,
+        _compose(
+            args, rct, title="roles-check", subject=f"{args.role_a} vs {args.role_b}", rows=rows
+        ),
     )
     return EXIT_OK if (ok or dev_seq is not None) else EXIT_FAIL
 
@@ -1342,6 +1601,7 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
         spec_id=spec_id,
         requirement_ids=sorted(criteria),
     )
+    ost = _styler(args)
     _print(
         {
             "sealed": str(out),
@@ -1350,8 +1610,20 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
             "ledger_seq": entry["seq"],
         },
         args.json,
-        f"sealed oracle bundle for {spec_id}: {len(criteria)} acceptance criteria → {out}\n"
-        f"  {bundle['bundle_hash']}; ledger seq={entry['seq']}",
+        _compose(
+            args,
+            ost,
+            title="oracle seal",
+            subject=spec_id,
+            rows=[
+                ost.status_row(
+                    "pass",
+                    f"sealed oracle bundle for {spec_id}: {len(criteria)} acceptance criteria",
+                    str(out),
+                ),
+                ost.kv([("bundle hash", bundle["bundle_hash"]), ("ledger", f"seq={entry['seq']}")]),
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -1385,6 +1657,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
             deviations.active_deviations(entries), args.spec_id
         )
         if diversity_dev is None:
+            ort = _styler(args)
             _print(
                 {
                     "recorded": False,
@@ -1394,9 +1667,26 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
                     "level": level,
                 },
                 args.json,
-                f"REFUSED: oracle model '{args.model}' is not diverse from the coder at {level} level — "
-                "the judiciary must differ. Diversity is recommended, not forced: record a "
-                "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
+                _compose(
+                    args,
+                    ort,
+                    title="oracle record",
+                    subject=args.spec_id,
+                    rows=[
+                        ort.status_row(
+                            "fail",
+                            f"REFUSED: oracle model '{args.model}' is not diverse from the coder "
+                            f"at {level} level",
+                        ),
+                        ort.status_row(
+                            "info",
+                            "the judiciary must differ. Diversity is recommended, not forced: "
+                            "record a `3pwr deviation --gate model_diversity --approver <you> "
+                            "--note ...` to proceed anyway",
+                            indent=4,
+                        ),
+                    ],
+                ),
             )
             return EXIT_FAIL
 
@@ -1439,17 +1729,24 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         spec_id=args.spec_id,
         requirement_ids=seal["payload"].get("requirement_ids", []),
     )
-    human = (
-        f"recorded oracle authoring for {args.spec_id} by {args.model} "
-        f"(family={fam}; {len(test_paths)} test file(s)); ledger seq={entry['seq']}"
-    )
-    if diversity_dev is not None:
-        human += (
-            f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} — "
-            f"same {level} as the coder; not the recommended posture"
+    ort = _styler(args)
+    rows = [
+        ort.status_row(
+            "pass",
+            f"recorded oracle authoring for {args.spec_id} by {args.model}",
+            f"family={fam}; {len(test_paths)} test file(s); ledger seq={entry['seq']}",
         )
-    for a in advisory:
-        human += f"\n  ⚑ advisory (not a blocker): {a}"
+    ]
+    if diversity_dev is not None:
+        rows.append(
+            ort.status_row(
+                "warn",
+                f"model diversity RELAXED by deviation #{diversity_dev} — "
+                f"same {level} as the coder; not the recommended posture",
+                indent=4,
+            )
+        )
+    rows += [ort.status_row("warn", f"advisory (not a blocker): {a}", indent=4) for a in advisory]
     _print(
         {
             "recorded": True,
@@ -1460,7 +1757,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
             "ledger_seq": entry["seq"],
         },
         args.json,
-        human,
+        _compose(args, ort, title="oracle record", subject=args.spec_id, rows=rows),
     )
     return EXIT_OK
 
@@ -1489,20 +1786,32 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
         diversity_level=s.diversity_level(),
         coder_model=s.coder_model(),
     )
-    lines = [f"oracle independence for {args.spec_id}: {'PASS' if ind.ok else 'FAIL'}"]
-    if ind.model_family:
-        lines.append(f"  oracle model family: {ind.model_family}")
-    if ind.isolation_method:
-        lines.append(
-            f"  read-path isolation: {ind.isolation_method} "
-            f"({'PASS' if ind.dispatch_ok else 'FAIL'})"
+    ovt = _styler(args)
+    rows = [
+        ovt.status_row(
+            "pass" if ind.ok else "fail",
+            f"oracle independence for {args.spec_id}: {'PASS' if ind.ok else 'FAIL'}",
         )
+    ]
+    kv_pairs = []
+    if ind.model_family:
+        kv_pairs.append(("oracle model family", ind.model_family))
     if ind.covered:
-        lines.append(f"  covered: {', '.join(ind.covered)}")
+        kv_pairs.append(("covered", ", ".join(ind.covered)))
+    if kv_pairs:
+        rows.append(ovt.kv(kv_pairs))
+    if ind.isolation_method:
+        rows.append(
+            ovt.status_row(
+                "pass" if ind.dispatch_ok else "fail",
+                f"read-path isolation: {ind.isolation_method}",
+                indent=4,
+            )
+        )
     for r in ind.reasons:
-        lines.append(f"  ✗ {r}")
+        rows.append(ovt.status_row("fail", r, indent=4))
     for a in ind.advisory:
-        lines.append(f"  ⚑ advisory (not a blocker): {a}")
+        rows.append(ovt.status_row("warn", f"advisory (not a blocker): {a}", indent=4))
     _print(
         {
             "ok": ind.ok,
@@ -1514,7 +1823,7 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
             "isolation_method": ind.isolation_method,
         },
         args.json,
-        "\n".join(lines),
+        _compose(args, ovt, title="oracle verify", subject=args.spec_id, rows=rows),
     )
     return EXIT_OK if ind.ok else EXIT_FAIL
 
@@ -1556,6 +1865,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             deviations.active_deviations(ledger.entries()), args.spec_id
         )
         if diversity_dev is None:
+            odt = _styler(args)
             _print(
                 {
                     "dispatched": False,
@@ -1565,9 +1875,25 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
                     "level": level,
                 },
                 args.json,
-                f"REFUSED: dispatch integration '{args.integration}' (model '{model}') is not diverse "
-                f"from the coder at {level} level — the judiciary must differ. Record a "
-                "`3pwr deviation --gate model_diversity --approver <you> --note ...` to proceed anyway.",
+                _compose(
+                    args,
+                    odt,
+                    title="oracle dispatch",
+                    subject=args.spec_id,
+                    rows=[
+                        odt.status_row(
+                            "fail",
+                            f"REFUSED: dispatch integration '{args.integration}' (model '{model}') "
+                            f"is not diverse from the coder at {level} level",
+                        ),
+                        odt.status_row(
+                            "info",
+                            "the judiciary must differ. Record a `3pwr deviation --gate "
+                            "model_diversity --approver <you> --note ...` to proceed anyway",
+                            indent=4,
+                        ),
+                    ],
+                ),
             )
             return EXIT_FAIL
 
@@ -1697,22 +2023,47 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             requirement_ids=req_ids,
         )
 
-        human = (
-            f"dispatched oracle authoring for {args.spec_id} under '{args.integration}' "
-            f"(family={fam}; {len(test_paths)} test file(s)); read-path isolation via git-worktree "
-            f"({info.file_count} files, implementation absent)\n"
-            f"  record seq={rec_entry['seq']}, dispatch seq={disp_entry['seq']}; "
-            f"manifest {info.manifest_hash}"
-        )
+        odt = _styler(args)
+        rows = [
+            odt.status_row(
+                "pass",
+                f"dispatched oracle authoring for {args.spec_id} under '{args.integration}'",
+                f"family={fam}; {len(test_paths)} test file(s)",
+            ),
+            odt.status_row(
+                "pass",
+                f"read-path isolation via git-worktree ({info.file_count} files, "
+                "implementation absent)",
+                indent=4,
+            ),
+            odt.kv(
+                [
+                    ("record", f"seq={rec_entry['seq']}"),
+                    ("dispatch", f"seq={disp_entry['seq']}"),
+                    ("manifest", info.manifest_hash),
+                ]
+            ),
+        ]
         if diversity_dev is not None:
-            human += (
-                f"\n  ⚠ model diversity RELAXED by deviation #{diversity_dev} — "
-                f"same {level} as the coder; not the recommended posture"
+            rows.append(
+                odt.status_row(
+                    "warn",
+                    f"model diversity RELAXED by deviation #{diversity_dev} — "
+                    f"same {level} as the coder; not the recommended posture",
+                    indent=4,
+                )
             )
         if args.dry_run:
-            human += "\n  ⓘ dry-run: worktree isolation built + attested; no live agent dispatched"
-        for a in advisory:
-            human += f"\n  ⚑ advisory (not a blocker): {a}"
+            rows.append(
+                odt.status_row(
+                    "info",
+                    "dry-run: worktree isolation built + attested; no live agent dispatched",
+                    indent=4,
+                )
+            )
+        rows += [
+            odt.status_row("warn", f"advisory (not a blocker): {a}", indent=4) for a in advisory
+        ]
         _print(
             {
                 "dispatched": True,
@@ -1729,7 +2080,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
                 "dispatch_seq": disp_entry["seq"],
             },
             args.json,
-            human,
+            _compose(args, odt, title="oracle dispatch", subject=args.spec_id, rows=rows),
         )
         return EXIT_OK
     finally:
@@ -1760,6 +2111,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
         spec_id=args.spec_id,
         requirement_ids=[args.nfr] if args.nfr else [],
     )
+    ost = _styler(args)
     _print(
         {
             "kind": args.kind,
@@ -1768,9 +2120,28 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
             "ledger_seq": entry["seq"],
         },
         args.json,
-        f"observed [{args.kind}] for {args.spec_id} → routed to the legislature as new intent {fb_id}\n"
-        f"  backlog: {backlog} (take it into a new `3pwr run` spec — not an in-place patch)\n"
-        f"  spec now at the Observe stage; ledger seq={entry['seq']}",
+        _compose(
+            args,
+            ost,
+            title="observe signal",
+            subject=f"{args.kind} · {args.spec_id}",
+            rows=[
+                ost.status_row(
+                    "pass",
+                    f"observed [{args.kind}] for {args.spec_id} → routed to the legislature "
+                    f"as new intent {fb_id}",
+                ),
+                ost.kv(
+                    [
+                        ("backlog", str(backlog)),
+                        ("next", "take it into a new `3pwr run` spec — not an in-place patch"),
+                    ]
+                ),
+                ost.status_row(
+                    "info", "spec now at the Observe stage", f"ledger seq={entry['seq']}"
+                ),
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -1786,12 +2157,16 @@ def cmd_observe_coverage(args: argparse.Namespace) -> int:
     if reg_path.exists():
         observability = yaml.safe_load(reg_path.read_text(encoding="utf-8")) or {}
     cov = observe.nfr_coverage(spec_path, observability)
-    lines = [
-        f"NFR instrumentation ({cov.spec_id}): "
-        f"{len(cov.instrumented)}/{len(cov.nfrs)} NFR(s) have a live check"
+    ost = _styler(args)
+    rows = [
+        ost.status_row(
+            "pass" if cov.ok else "warn",
+            f"NFR instrumentation: {len(cov.instrumented)}/{len(cov.nfrs)} NFR(s) have a live check",
+            cov.spec_id,
+        )
     ]
     for m in cov.missing:
-        lines.append(f"  ✗ {m}: no live production check registered")
+        rows.append(ost.status_row("fail", f"{m}: no live production check registered", indent=4))
     _print(
         {
             "spec_id": cov.spec_id,
@@ -1800,7 +2175,7 @@ def cmd_observe_coverage(args: argparse.Namespace) -> int:
             "missing": cov.missing,
         },
         args.json,
-        "\n".join(lines),
+        _compose(args, ost, title="observe coverage", subject=cov.spec_id, rows=rows),
     )
     return EXIT_OK if cov.ok else EXIT_FAIL
 
@@ -1826,11 +2201,24 @@ def cmd_observe_log_action(args: argparse.Namespace) -> int:
         sk,
         spec_id=args.spec_id or "",
     )
+    ost = _styler(args)
     _print(
         {"agent": args.agent, "seq": entry["seq"]},
         args.json,
-        f"logged runtime action by {args.agent} (runtime log seq={entry['seq']}; "
-        "tamper-evident — check with `3pwr observe verify-actions`)",
+        _compose(
+            args,
+            ost,
+            title="observe log-action",
+            subject=args.agent,
+            rows=[
+                ost.status_row(
+                    "pass",
+                    f"logged runtime action by {args.agent}",
+                    f"runtime log seq={entry['seq']}; tamper-evident — "
+                    "check with `3pwr observe verify-actions`",
+                )
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -1839,8 +2227,16 @@ def cmd_observe_verify_actions(args: argparse.Namespace) -> int:
     """Verify the runtime agent-action log's chain + signatures (3PWR-FR-055/040)."""
     s = _settings(args.root)
     res = verify_ledger(_actions_path(s), s.pubkey_path)
+    ost = _styler(args)
     _print(
-        {"ok": res.ok, "entries": res.entries, "problems": res.problems}, args.json, res.summary()
+        {"ok": res.ok, "entries": res.entries, "problems": res.problems},
+        args.json,
+        _compose(
+            args,
+            ost,
+            title="observe verify-actions",
+            rows=[ost.status_row("pass" if res.ok else "fail", res.summary())],
+        ),
     )
     return EXIT_OK if res.ok else EXIT_FAIL
 
@@ -1870,45 +2266,69 @@ def cmd_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(rows, indent=2))
         return EXIT_OK
+    sst = _styler(args)
+    out: list[str] = []
+    if _verbosity(args) != "quiet":
+        out.append(sst.header("status", args.spec_id or "all tracked specs"))
     if not rows:
-        print("(no tracked specs in the ledger)")
-    for r in rows:
-        flags = []
-        if r["signed_off"]:
-            flags.append("signed-off")
-        if r["aborted"]:
-            flags.append("ABORTED")
-        if r["failed"]:
-            # Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).
-            flags.append(
-                f"✗ failed at {r['failed_stage'] or '?'} ({r['failed_class']}) at "
-                f"{r['failed_at'] or '?'}"
+        out.append(sst.status_row("info", "no tracked specs in the ledger"))
+    else:
+        table_rows = []
+        for r in rows:
+            flags = []
+            if r["signed_off"]:
+                flags.append("signed-off")
+            if r["aborted"]:
+                flags.append("ABORTED")
+            if r["failed"]:
+                # Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).
+                flags.append(
+                    f"failed at {r['failed_stage'] or '?'} ({r['failed_class']}) at "
+                    f"{r['failed_at'] or '?'}"
+                )
+            state = (
+                "fail"
+                if (r["failed"] or r["aborted"])
+                else ("pass" if r["last_verdict"] == "pass" else "info")
             )
-        print(
-            f"{r['spec_id']:<10} stage={r['stage']:<10} verdict={r['last_verdict']:<5} "
-            f"{' '.join(flags)}"
-        )
+            table_rows.append(
+                [
+                    sst.mark(state),
+                    str(r["spec_id"]),
+                    str(r["stage"]),
+                    str(r["last_verdict"]),
+                    " ".join(flags),
+                ]
+            )
+        out.append(sst.table(table_rows, headers=["", "spec", "stage", "verdict", "notes"]))
     # Surface active deviations + overdue emergency cleanups (3PWR-FR-056/057).
     active = deviations.active_deviations(ledger_entries)
     overdue_seqs = {d.get("seq") for d in deviations.overdue_emergencies(ledger_entries)}
     for d in active:
         kind = "emergency" if d.get("emergency") else "deviation"
-        tag = "  ⚠ CLEANUP OVERDUE" if d.get("seq") in overdue_seqs else ""
-        print(
-            f"  ⚑ {kind} #{d.get('seq')}: gates={','.join(d.get('gates', []))} "
-            f"by {d.get('approver', '?')}{tag}"
+        tag = " — CLEANUP OVERDUE" if d.get("seq") in overdue_seqs else ""
+        out.append(
+            sst.status_row(
+                "warn" if tag else "todo",
+                f"{kind} #{d.get('seq')}: gates={','.join(d.get('gates', []))} "
+                f"by {d.get('approver', '?')}{tag}",
+            )
         )
     # Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).
     for e in ledger_entries:
         if e.get("type") != "oracle" or (e.get("payload") or {}).get("kind") != "record":
             continue
         p = e["payload"]
-        print(
-            f"  ⚖ oracle record #{e.get('seq')} {e.get('spec_id', '') or '(global)'}: "
-            f"model={p.get('model', '?')} family={p.get('model_family', '?')}"
+        out.append(
+            sst.status_row(
+                "info",
+                f"oracle record #{e.get('seq')} {e.get('spec_id', '') or '(global)'}: "
+                f"model={p.get('model', '?')} family={p.get('model_family', '?')}",
+            )
         )
         for finding in p.get("advisory_findings", []):
-            print(f"      ⚑ advisory (not a blocker): {finding}")
+            out.append(sst.status_row("warn", f"advisory (not a blocker): {finding}", indent=6))
+    print("\n".join(out))
     return EXIT_OK
 
 
@@ -1918,13 +2338,16 @@ def cmd_classify(args: argparse.Namespace) -> int:
     Deterministic (keyword heuristics, no model call — never perturbs the verdict, 3PWR-NFR-001). The
     inference shapes the tier + oracle strategy; it never bypasses the human sign-off (3PWR-FR-006)."""
     wk = workkind.classify(args.intent)
-    human = f"work kind(s): {', '.join(wk.kinds)}  |  suggested tier: {wk.suggested_tier}"
+    cst = _styler(args)
+    rows = [
+        cst.kv([("work kinds", ", ".join(wk.kinds) or "—"), ("suggested tier", wk.suggested_tier)])
+    ]
     if wk.signals:
-        human += f"\n  signals: {', '.join(wk.signals)}"
+        rows.append(cst.status_row("info", "signals", ", ".join(wk.signals)))
     _print(
         {"kinds": wk.kinds, "suggested_tier": wk.suggested_tier, "signals": wk.signals},
         args.json,
-        human,
+        _compose(args, cst, title="classify", rows=rows),
     )
     return EXIT_OK
 
@@ -2459,28 +2882,45 @@ def cmd_run(args: argparse.Namespace) -> int:
     ledger = Ledger(s.ledger_path)
     mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
     spec_id = args.spec_id or "RUN"
+    rst = _styler(
+        args
+    )  # human-output styler (color per --json/--yes/NO_COLOR/ui.yaml) — CLIUX-FR-005
 
     if args.status:
         st = lifecycle.derive(ledger.entries()).get(spec_id)
         if st is None:
             _print(
-                {"spec_id": spec_id, "found": False}, args.json, f"no run recorded for {spec_id}"
+                {"spec_id": spec_id, "found": False},
+                args.json,
+                _compose(
+                    args,
+                    rst,
+                    title="3pwr run · status",
+                    subject=spec_id,
+                    rows=[rst.status_row("info", f"no run recorded for {spec_id}")],
+                ),
             )
             return EXIT_OK
-        human = f"{spec_id}: {orchestrate.render_tracker(st.stage)}"
+        rows = [f"  {orchestrate.render_tracker(st.stage, rst)}"]
         if st.pending_gate:
-            human += (
-                f"\n  ⏸ paused at '{st.pending_gate}' — "
-                f"`3pwr run --resume --spec-id {spec_id} --approver <you>`"
+            rows.append(
+                rst.status_row(
+                    "warn",
+                    f"paused at '{st.pending_gate}'",
+                    f"`3pwr run --resume --spec-id {spec_id} --approver <you>`",
+                )
             )
         if st.failed:
             # A recorded, unresolved run failure — distinct from paused and in-progress (AUTOX-FR-007).
-            human += (
-                f"\n  ✗ failed at {st.failed_stage or '?'} ({st.failed_class})"
-                f" at {st.failed_at or '?'} — `3pwr run --resume --spec-id {spec_id}`"
+            rows.append(
+                rst.status_row(
+                    "fail",
+                    f"failed at {st.failed_stage or '?'} ({st.failed_class}) at {st.failed_at or '?'}",
+                    f"`3pwr run --resume --spec-id {spec_id}`",
+                )
             )
             if st.failed_transcript:
-                human += f"\n    agent transcript: {st.failed_transcript}"
+                rows.append("      " + rst.dim(f"agent transcript: {st.failed_transcript}"))
         _print(
             {
                 "spec_id": spec_id,
@@ -2493,7 +2933,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "failed_transcript": st.failed_transcript,
             },
             args.json,
-            human,
+            _compose(args, rst, title="3pwr run · status", subject=spec_id, rows=rows),
         )
         return EXIT_OK
 
@@ -2530,7 +2970,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             if args.json:
                 print(json.dumps(obj, indent=2))
             else:
-                est = style.styler(sys.stderr, as_json=False)
+                est = _styler(args, sys.stderr)
                 lines = [
                     est.err("✗ cannot start `3pwr run` — unmet prerequisites")
                     + " (no stage was dispatched):"
@@ -2553,7 +2993,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
-    tracker = orchestrate.Tracker(sys.stdout, mode)
+    tracker = orchestrate.Tracker(sys.stdout, mode, st=rst)
 
     def on_event(ev: orchestrate.Event) -> None:
         if not args.json:
@@ -2632,12 +3072,18 @@ def cmd_run(args: argparse.Namespace) -> int:
             sk,
             spec_id=spec_id,
         )
-        if not args.json:
-            print(f"▶ 3pwr run [{mode}] {spec_id}: {args.intent or ''}")
+        if not args.json and _verbosity(args) != "quiet":
+            print(rst.header(f"3pwr run · {mode} mode", spec_id))
             print(
-                f"  inferred work kind(s): {', '.join(wk.kinds)} · suggested tier: {wk.suggested_tier} "
-                "(you still approve the spec — FR-006)"
+                rst.kv(
+                    [
+                        ("intent", args.intent or "—"),
+                        ("work kinds", ", ".join(wk.kinds) or "—"),
+                        ("suggested tier", wk.suggested_tier),
+                    ]
+                )
             )
+            print("  " + rst.dim("you still approve the spec — FR-006"))
         runner = _make_runner(0)
         _record_dispatch(0)  # provenance for the first segment (up to the spec-approval gate)
     first_resuming = False  # start_index already positions native/sim runners; resume==run for both
@@ -2658,7 +3104,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             if not interactive:
                 fr = f" ({result.gate_fr})" if result.gate_fr else ""
                 human = (
-                    f"{orchestrate.render_tracker(result.stage)}\n  ⏸ HUMAN GATE '{result.gate}'{fr}"
+                    f"{orchestrate.render_tracker(result.stage, rst)}\n"
+                    f"  {rst.warn('⏸ HUMAN GATE')} '{result.gate}'{fr}"
                     f" — review, then `3pwr run --resume --spec-id {spec_id} --approver <you>`"
                 )
                 _print(
@@ -2724,8 +3171,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             reached = result.stage or "Verify"
             _notify(args.notify, f"3pwr run {spec_id}: gates RED at {reached}")
             human = (
-                f"{orchestrate.render_tracker(reached)}\n"
-                "  ✗ gates red — the deterministic gate suite failed. Inspect with "
+                f"{orchestrate.render_tracker(reached, rst)}\n"
+                f"  {rst.err('✗')} gates red — the deterministic gate suite failed. Inspect with "
                 "`3pwr gate run --spec <spec> --tier <tier>`, fix the failing gate(s), then "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
@@ -2742,8 +3189,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             record("verdict_error")
             _notify(args.notify, f"3pwr run {spec_id}: verdict error at {reached}")
             human = (
-                f"{orchestrate.render_tracker(result.stage)}\n"
-                f"  ✗ verdict error at {reached} — the deterministic gate suite could not run "
+                f"{orchestrate.render_tracker(result.stage, rst)}\n"
+                f"  {rst.err('✗')} verdict error at {reached} — the deterministic gate suite could not run "
                 "(not a gate verdict). Check the spec resolves (--spec), an adapter is detected, "
                 f"and the tier exists, then resume: `3pwr run --resume --spec-id {spec_id}`."
             )
@@ -2766,8 +3213,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             record("artifact_missing")
             _notify(args.notify, f"3pwr run {spec_id}: artifact missing at {reached}")
             human = (
-                f"{orchestrate.render_tracker(result.stage)}\n"
-                f"  ✗ artifact missing at {reached} — {result.detail}\n"
+                f"{orchestrate.render_tracker(result.stage, rst)}\n"
+                f"  {rst.err('✗')} artifact missing at {reached} — {result.detail}\n"
                 "  the stage's agent ran but did not produce what the stage is responsible for "
                 f"(not a gate verdict). Re-run or resume: `3pwr run --resume --spec-id {spec_id}`."
                 f"{transcript_line}"
@@ -2791,8 +3238,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
         detail = f" — {result.detail}" if result.detail else ""
         human = (
-            f"{orchestrate.render_tracker(result.stage)}\n"
-            f"  ✗ dispatch failed at {reached} — a stage could not be executed (a setup/dispatch "
+            f"{orchestrate.render_tracker(result.stage, rst)}\n"
+            f"  {rst.err('✗')} dispatch failed at {reached} — a stage could not be executed (a setup/dispatch "
             f"problem, not a gate verdict){detail}.\n"
             "  confirm the coder integration is headless and available (`3pwr run` reports "
             f"prerequisites), then re-run — or resume: `3pwr run --resume --spec-id {spec_id}`."
@@ -2816,15 +3263,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         _print(
             {"status": "aborted", "spec_id": spec_id, "stages": _stages()},
             args.json,
-            "  ⊘ run aborted",
+            f"  {rst.dim('⊘')} run aborted",
         )
         return EXIT_FAIL
 
     ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
     _notify(args.notify, f"3pwr run {spec_id}: lifecycle complete")
     human = (
-        f"{orchestrate.render_tracker('Observe')}\n  ✓ lifecycle complete — advanced to Ship; "
-        "observe feeds new intent"
+        f"{orchestrate.render_tracker('Observe', rst)}\n"
+        f"  {rst.ok('✓ lifecycle complete')} — advanced to Ship; observe feeds new intent"
     )
     _print({"status": "done", "spec_id": spec_id, "stages": _stages()}, args.json, human)
     return EXIT_OK
@@ -2853,11 +3300,23 @@ def cmd_revert(args: argparse.Namespace) -> int:
         sk,
         spec_id=spec_id,
     )
+    rvt = _styler(args)
     _print(
         {"reverted_to_seq": args.to, "to_stage": to_stage, "ledger_seq": entry["seq"]},
         args.json,
-        f"reverted {spec_id or '(global)'} to stage '{to_stage}' (state @seq={args.to}); "
-        f"recorded as ledger seq={entry['seq']}",
+        _compose(
+            args,
+            rvt,
+            title="revert",
+            subject=spec_id or "(global)",
+            rows=[
+                rvt.status_row(
+                    "pass",
+                    f"reverted {spec_id or '(global)'} to stage '{to_stage}' (state @seq={args.to})",
+                    f"ledger seq={entry['seq']}",
+                )
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -2873,7 +3332,18 @@ def cmd_abort(args: argparse.Namespace) -> int:
     entry = Ledger(s.ledger_path).append(
         "abort", {"reason": args.reason or ""}, sk, spec_id=args.spec_id
     )
-    print(f"aborted '{args.spec_id}' (ledger seq={entry['seq']})")
+    abt = _styler(args)
+    print(
+        _compose(
+            args,
+            abt,
+            title="abort",
+            subject=args.spec_id,
+            rows=[
+                abt.status_row("warn", f"aborted '{args.spec_id}'", f"ledger seq={entry['seq']}")
+            ],
+        )
+    )
     return EXIT_OK
 
 
@@ -2884,11 +3354,25 @@ def cmd_coverage_check(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     spec_path = _resolve_spec(s, args.spec)
     gate = two_way_coverage(spec_path, Path(args.tasks).resolve())
-    human = f"coverage-map: {gate.status.upper()} ({gate.details.get('spec_id', '?')})"
+    cst = _styler(args)
+    passed = gate.status == STATUS_PASS
+    rows = [
+        cst.status_row(
+            "pass" if passed else "fail",
+            f"coverage-map {gate.status.upper()}",
+            gate.details.get("spec_id", "?"),
+        )
+    ]
     if gate.findings:
-        human += "\n  - " + "\n  - ".join(gate.findings)
-    _print({"status": gate.status, **gate.details}, args.json, human)
-    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
+        rows.append(cst.bullet(gate.findings))
+    _print(
+        {"status": gate.status, **gate.details},
+        args.json,
+        _compose(
+            args, cst, title="coverage-check", subject=gate.details.get("spec_id", ""), rows=rows
+        ),
+    )
+    return EXIT_OK if passed else EXIT_FAIL
 
 
 def cmd_scope_check(args: argparse.Namespace) -> int:
@@ -2896,11 +3380,17 @@ def cmd_scope_check(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else None
     gate = scope.scope_check(Path(args.tasks).resolve(), s.root, base=args.base, target=target)
-    human = f"scope-check: {gate.status.upper()}"
+    sct = _styler(args)
+    passed = gate.status == STATUS_PASS
+    rows = [sct.status_row("pass" if passed else "fail", f"scope-check {gate.status.upper()}")]
     if gate.findings:
-        human += "\n  - " + "\n  - ".join(gate.findings)
-    _print({"status": gate.status, **gate.details}, args.json, human)
-    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
+        rows.append(sct.bullet(gate.findings))
+    _print(
+        {"status": gate.status, **gate.details},
+        args.json,
+        _compose(args, sct, title="scope-check", rows=rows),
+    )
+    return EXIT_OK if passed else EXIT_FAIL
 
 
 def cmd_provenance(args: argparse.Namespace) -> int:
@@ -2928,11 +3418,23 @@ def cmd_provenance(args: argparse.Namespace) -> int:
         sk,
         spec_id=args.spec_id or "",
     )
+    pst = _styler(args)
     _print(
         {"artifact": signed["artifact"], "ledger_seq": entry["seq"]},
         args.json,
-        f"provenance signed for {artifact.name} ({signed['artifact']['sha256']}); "
-        f"{len(signed['sbom']['components'])} SBOM components; ledger seq={entry['seq']}",
+        _compose(
+            args,
+            pst,
+            title="provenance",
+            subject=artifact.name,
+            rows=[
+                pst.status_row(
+                    "pass",
+                    f"provenance signed for {artifact.name} ({signed['artifact']['sha256']})",
+                    f"{len(signed['sbom']['components'])} SBOM components; ledger seq={entry['seq']}",
+                )
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -2957,17 +3459,30 @@ def cmd_deploy_gate(args: argparse.Namespace) -> int:
             reasons.append("public key not found")
         elif not provenance.verify_record(record, keys.load_public(s.pubkey_path)):
             reasons.append("provenance signature invalid")
+    dgt = _styler(args)
     if reasons:
+        rows = [dgt.status_row("fail", f"DEPLOY REFUSED for {artifact.name}")]
+        rows += [dgt.status_row("fail", r, indent=4) for r in reasons]
         _print(
             {"deployable": False, "reasons": reasons},
             args.json,
-            f"DEPLOY REFUSED for {artifact.name}:\n  - " + "\n  - ".join(reasons),
+            _compose(args, dgt, title="deploy-gate", subject=artifact.name, rows=rows),
         )
         return EXIT_FAIL
     _print(
         {"deployable": True, "artifact": digest},
         args.json,
-        f"deploy-gate PASS — provenance verified for {artifact.name}",
+        _compose(
+            args,
+            dgt,
+            title="deploy-gate",
+            subject=artifact.name,
+            rows=[
+                dgt.status_row(
+                    "pass", f"deploy-gate PASS — provenance verified for {artifact.name}"
+                )
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -2982,7 +3497,22 @@ def cmd_residual(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     payload = {"reviewer": args.reviewer, "note": args.note or "", "findings": args.findings or []}
     entry = Ledger(s.ledger_path).append("residual", payload, sk, spec_id=args.spec_id or "")
-    print(f"residual review recorded by {args.reviewer} (ledger seq={entry['seq']})")
+    rst = _styler(args)
+    print(
+        _compose(
+            args,
+            rst,
+            title="residual",
+            subject=args.spec_id or "",
+            rows=[
+                rst.status_row(
+                    "pass",
+                    f"residual review recorded by {args.reviewer}",
+                    f"ledger seq={entry['seq']}",
+                )
+            ],
+        )
+    )
     return EXIT_OK
 
 
@@ -3007,12 +3537,7 @@ def cmd_characterize(args: argparse.Namespace) -> int:
     except (FileNotFoundError, SyntaxError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
-    human = (
-        f"characterized {module_path.name} → spec {res.spec_id} "
-        f"({len(res.symbols)} symbol(s), {len(res.requirement_ids)} requirement(s))\n"
-        f"  spec:  {res.spec_path}\n"
-        f"  tests: {res.test_path}"
-    )
+    cst = _styler(args)
     _print(
         {
             "spec_id": res.spec_id,
@@ -3022,7 +3547,20 @@ def cmd_characterize(args: argparse.Namespace) -> int:
             "requirement_ids": res.requirement_ids,
         },
         args.json,
-        human,
+        _compose(
+            args,
+            cst,
+            title="characterize",
+            subject=module_path.name,
+            rows=[
+                cst.status_row(
+                    "pass",
+                    f"characterized {module_path.name} → spec {res.spec_id}",
+                    f"{len(res.symbols)} symbol(s), {len(res.requirement_ids)} requirement(s)",
+                ),
+                cst.kv([("spec", str(res.spec_path)), ("tests", str(res.test_path))]),
+            ],
+        ),
     )
     return EXIT_OK
 
@@ -3034,11 +3572,23 @@ def cmd_eval(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     cases = Path(args.cases).resolve() if args.cases else (s.dir / "eval" / "cases.yaml")
     gate = run_evals(s.root, cases)
-    human = f"eval: {gate.status.upper()} ({gate.details.get('passed')}/{gate.details.get('cases')} cases)"
+    cst = _styler(args)
+    passed = gate.status == STATUS_PASS
+    rows = [
+        cst.status_row(
+            "pass" if passed else "fail",
+            f"eval {gate.status.upper()}",
+            f"{gate.details.get('passed')}/{gate.details.get('cases')} cases",
+        )
+    ]
     if gate.findings:
-        human += "\n  - " + "\n  - ".join(gate.findings)
-    _print({"status": gate.status, **gate.details}, args.json, human)
-    return EXIT_OK if gate.status == STATUS_PASS else EXIT_FAIL
+        rows.append(cst.bullet(gate.findings))
+    _print(
+        {"status": gate.status, **gate.details},
+        args.json,
+        _compose(args, cst, title="eval", rows=rows),
+    )
+    return EXIT_OK if passed else EXIT_FAIL
 
 
 def cmd_deps_check(args: argparse.Namespace) -> int:
@@ -3056,23 +3606,29 @@ def cmd_deps_check(args: argparse.Namespace) -> int:
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
     report = deps.check_dependencies(manifest, probe=lambda cmd: deps.run_probe(cmd, s.root))
 
-    lines = [f"dependency compatibility ({manifest_path})"]
-    for c in report.checks:
-        if c.status == deps.OK:
-            sym = "✓"
-        elif c.status == deps.UNKNOWN:
-            sym = "ℹ"
-        else:
-            sym = "✗" if c.policy == "block" else "⚠"
-        note = "" if c.status == deps.OK else f" — {c.status} [{c.policy}]"
-        lines.append(
-            f"  {sym} {c.name:<14} installed={c.installed or '—':<14} "
-            f"supported={c.supported or '(any)'}{note}"
-        )
+    dst = _styler(args)
     strict_block = bool(args.strict and report.drifted)
     ok = report.ok and not strict_block
+    table_rows = []
+    for c in report.checks:
+        state = (
+            "pass"
+            if c.status == deps.OK
+            else (
+                "info" if c.status == deps.UNKNOWN else ("fail" if c.policy == "block" else "warn")
+            )
+        )
+        note = "" if c.status == deps.OK else f"{c.status} [{c.policy}]"
+        table_rows.append(
+            [dst.mark(state), c.name, c.installed or "—", c.supported or "(any)", note]
+        )
+    rows = [dst.table(table_rows, headers=["", "dependency", "installed", "supported", "status"])]
     if not ok:
-        lines.append("  → deps-check FAILED: a blocking dependency is out of range or absent")
+        rows.append(
+            dst.status_row(
+                "fail", "deps-check FAILED: a blocking dependency is out of range or absent"
+            )
+        )
     _print(
         {
             "ok": ok,
@@ -3088,7 +3644,7 @@ def cmd_deps_check(args: argparse.Namespace) -> int:
             ],
         },
         args.json,
-        "\n".join(lines),
+        _compose(args, dst, title="deps-check", subject=str(manifest_path), rows=rows),
     )
     return EXIT_OK if ok else EXIT_FAIL
 
@@ -3134,29 +3690,41 @@ def cmd_ready(args: argparse.Namespace) -> int:
         ],
         "deps": deps_summary,
     }
-    st = style.styler(sys.stdout, as_json=getattr(args, "json", False))
-    lines = []
+    rst = _styler(args)
+    rows = []
     if missing:
-        lines.append(st.err("✗ not ready for `3pwr run --mode auto`") + " — remaining steps:")
+        rows.append(
+            rst.status_row("fail", "not ready for `3pwr run --mode auto` — remaining steps:")
+        )
     else:
-        lines.append(st.ok("✓ ready for `3pwr run --mode auto`"))
+        rows.append(rst.status_row("pass", "ready for `3pwr run --mode auto`"))
     for p in prqs:
-        detail = p.label if p.ok else p.fix
-        lines.append(f"  {st.mark('pass' if p.ok else 'fail')} {st.bold(p.name)}: {detail}")
+        rows.append(
+            rst.status_row(
+                "pass" if p.ok else "fail", rst.bold(p.name), p.label if p.ok else p.fix, indent=4
+            )
+        )
     if missing:
-        lines.append("  always available offline:")
-        for alt in runpreflight.OFFLINE_ALTERNATIVES:
-            lines.append(f"    • {alt}")
+        rows.append("  " + rst.dim("always available offline:"))
+        rows.append(rst.bullet(runpreflight.OFFLINE_ALTERNATIVES, indent=4))
     if deps_summary is not None:
         drift = deps_summary["drifted_or_missing"]
         if drift:
             named = ", ".join(f"{d['name']} ({d['status']})" for d in drift)
-            lines.append(f"  ⚠ dependency summary: {named} — details: 3pwr deps-check")
-        else:
-            lines.append(
-                f"  ✓ dependency summary: {deps_summary['total']} component(s) within range"
+            rows.append(
+                rst.status_row("warn", f"dependency summary: {named}", "details: 3pwr deps-check")
             )
-    _print(obj, getattr(args, "json", False), "\n".join(lines))
+        else:
+            rows.append(
+                rst.status_row(
+                    "pass", f"dependency summary: {deps_summary['total']} component(s) within range"
+                )
+            )
+    _print(
+        obj,
+        getattr(args, "json", False),
+        _compose(args, rst, title="ready", subject="auto-run preflight", rows=rows),
+    )
     return EXIT_OK if not missing else EXIT_FAIL
 
 
@@ -3169,6 +3737,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     def common(sp):
         sp.add_argument("--json", action="store_true", help="machine-readable output")
+        v = sp.add_mutually_exclusive_group()
+        v.add_argument(
+            "--quiet", action="store_true", help="terser human output — result and failures only"
+        )
+        v.add_argument(
+            "--verbose", action="store_true", help="richer human output — extra per-step detail"
+        )
         return sp
 
     kp = common(sub.add_parser("keygen", help="create the independent signer identity"))
@@ -3664,6 +4239,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    _, ui_malformed = _resolve_ui(args)
+    if ui_malformed and not getattr(args, "json", False):
+        print(
+            "warning: .3powers/config/ui.yaml is malformed — using default output preferences",
+            file=sys.stderr,
+        )
     try:
         return int(args.func(args))
     except (FileNotFoundError, LookupError, KeyError, ValueError) as exc:

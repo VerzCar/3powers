@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
+from . import style
 from .lifecycle import STAGES, canonical_stage
 
 # The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
@@ -275,70 +276,124 @@ class SimulatedRunner:
 
 # --------------------------------------------------------------------------- progress rendering (pure)
 _MARK = {"done": "✓", "current": "▶", "todo": "·"}
+_MARK_ASCII = {"done": "v", "current": ">", "todo": "."}
+# Event glyphs, with an ASCII fallback for a stream that cannot encode the Unicode marks (CLIUX-NFR-004).
+_GLYPHS = {
+    "step": "▶",
+    "pass": "✓",
+    "fail": "✗",
+    "auto": "⏩",
+    "pause": "⏸",
+    "abort": "⊘",
+    "done": "✓",
+}
+_GLYPHS_ASCII = {
+    "step": ">",
+    "pass": "v",
+    "fail": "x",
+    "auto": ">>",
+    "pause": "||",
+    "abort": "/",
+    "done": "v",
+}
 
 
-def render_tracker(reached_stage: str) -> str:
-    """A one-line stage tracker: stages up to ``reached_stage`` are ✓, the reached one ▶, the rest ·."""
+def _glyphs(st: style.Styler) -> dict[str, str]:
+    return _GLYPHS_ASCII if st.ascii_only else _GLYPHS
+
+
+def render_tracker(reached_stage: str, st: style.Styler | None = None) -> str:
+    """A one-line stage tracker: stages up to ``reached_stage`` are ✓, the reached one ▶, the rest ·.
+
+    With a color-enabled ``st`` each cell is colored — done green, current bold-cyan, upcoming dim —
+    so the same "you are here" view reads consistently live and in ``--status`` (CLIUX-FR-008/012).
+    With no styler (the default) it is the plain glyph+name text, byte-for-byte as before."""
+    st = st or style.Styler()
+    m = _MARK_ASCII if st.ascii_only else _MARK
     reached = canonical_stage(reached_stage)
     idx = STAGES.index(reached) if reached in STAGES else -1
     cells = []
     for i, s in enumerate(STAGES):
-        mark = _MARK["done"] if i < idx else (_MARK["current"] if i == idx else _MARK["todo"])
-        cells.append(f"{mark} {s}")
+        if i < idx:
+            cells.append(st.ok(f"{m['done']} {s}"))
+        elif i == idx:
+            cells.append(st.head(f"{m['current']} {s}"))
+        else:
+            cells.append(st.dim(f"{m['todo']} {s}"))
     return "  ".join(cells)
 
 
-def format_event(ev: Event, mode: str) -> str:
-    """Human-readable one-liner for a streamed event."""
+def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
+    """Human-readable one-liner for a streamed event (CLIUX-FR-009).
+
+    With a color-enabled ``st`` the glyph and key words are colored — a running step, a green/red
+    verdict, a prominent paused gate, a red failure — distinct at a glance (CLIUX-FR-009). With no
+    styler the plain text is unchanged, byte-for-byte."""
+    st = st or style.Styler()
+    g = _glyphs(st)
     if ev.kind == "step":
-        return f"  ▶ {ev.stage:<8} {ev.step}"
+        return f"  {st.head(g['step'])} {ev.stage:<8} {ev.step}"
     if ev.kind == "verdict":
-        sym = "✓" if ev.detail == "pass" else "✗"
+        sym = st.ok(g["pass"]) if ev.detail == "pass" else st.err(g["fail"])
         return f"  {sym} {ev.stage:<8} {ev.step} → verdict {ev.detail.upper()}"
     if ev.kind == "gate-auto":
-        return f"  ⏩ {ev.stage:<8} {ev.step} — intermediate gate auto-approved ({mode} mode)"
+        return f"  {st.dim(g['auto'])} {ev.stage:<8} {ev.step} — intermediate gate auto-approved ({mode} mode)"
     if ev.kind == "gate-stop":
         fr = MANDATORY_GATES.get(ev.step)
         tag = f" — HUMAN GATE ({fr})" if fr else " — review gate (commit mode)"
-        return f"  ⏸ {ev.stage:<8} {ev.step}{tag}: awaiting your commitment"
+        return f"  {st.warn(g['pause'])} {ev.stage:<8} {ev.step}{st.warn(tag)}: awaiting your commitment"
     if ev.kind == "failed":
         # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/artifact
         # failure is reported distinctly and names the stage reached (RUNX-FR-010/011, RUNLIVE-FR-002).
         if ev.step == "gate_red" or ev.detail == "fail":
-            return "  ✗ gates red — the deterministic gate suite failed"
+            return (
+                f"  {st.err(g['fail'])} {st.err('gates red')} — the deterministic gate suite failed"
+            )
         where = f" at {ev.stage}" if ev.stage else ""
         if ev.step == "artifact_missing":
-            return f"  ✗ artifact missing{where} — {ev.detail}"
+            return f"  {st.err(g['fail'])} artifact missing{where} — {ev.detail}"
         extra = f": {ev.detail}" if ev.detail else ""
         return (
-            f"  ✗ dispatch failed{where} — a stage could not be executed "
+            f"  {st.err(g['fail'])} dispatch failed{where} — a stage could not be executed "
             f"(not a gate verdict){extra}"
         )
     if ev.kind == "aborted":
-        return "  ⊘ aborted"
+        return f"  {st.dim(g['abort'])} aborted"
     if ev.kind == "done":
-        return "  ✓ lifecycle complete"
-    return f"  · {ev.kind}"
+        return f"  {st.ok(g['done'])} lifecycle complete"
+    return f"  {st.dim('·')} {ev.kind}"
 
 
 # --------------------------------------------------------------------------- richer progress (dependency-free)
 _TERMINAL_KINDS = ("gate-stop", "done", "failed", "aborted")
 
 
-def tracker_frame(reached_stage: str, ev: Event) -> str:
-    """One rendered progress frame (pure, testable): the stage tracker + the current activity line."""
-    return f"{render_tracker(reached_stage)}   {format_event(ev, '').strip()}"
+def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None) -> str:
+    """One rendered progress frame (pure, testable): the stage tracker + the current activity line.
+
+    On a TTY this is the persistent, colored "you are here" header — the full stage strip re-rendered
+    with the running step alongside it (CLIUX-FR-008/009)."""
+    return f"{render_tracker(reached_stage, st)}   {format_event(ev, '', st).strip()}"
 
 
 class Tracker:
-    """A dependency-free progress view for ``3pwr run``. On a TTY it redraws a single stage-tracker
-    line **in place** (``\\r`` + clear-line) as steps stream; off a TTY (pipe / ``--json``) it falls
-    back to the plain streamed ``format_event`` log. No ``rich``/``curses`` dependency (NFR-014)."""
+    """A dependency-free progress view for ``3pwr run``. On a TTY it redraws a colored, persistent
+    stage header **in place** (``\\r`` + clear-line) as steps stream — the "you are here" view
+    (CLIUX-FR-008/009); off a TTY (pipe / ``--json``) it falls back to the plain streamed
+    ``format_event`` log with no ANSI/control codes (CLIUX-FR-011). No ``rich``/``curses`` dependency
+    (INITX-NFR-004, CLIUX-FR-003). Color is tied to the TTY: the off-TTY log is always plain, even
+    under ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
 
-    def __init__(self, stream, mode: str, *, tty: Optional[bool] = None) -> None:
+    def __init__(
+        self, stream, mode: str, *, tty: Optional[bool] = None, st: style.Styler | None = None
+    ) -> None:
         self._stream = stream
         self._mode = mode
         self._tty = bool(getattr(stream, "isatty", lambda: False)()) if tty is None else tty
+        # Color only on the live in-place header (a TTY). The off-TTY log is ALWAYS plain — a disabled
+        # styler wins even over a passed-in enabled one (e.g. color_mode: always) so a piped/captured
+        # run never carries escapes (CLIUX-FR-011).
+        self._st = (st if st is not None else style.styler(stream)) if self._tty else style.Styler()
         self._reached = "Discovery"
         self._live = False  # an in-place line is currently drawn
 
@@ -346,15 +401,15 @@ class Tracker:
         if ev.stage:
             self._reached = ev.stage
         if not self._tty:
-            self._stream.write(format_event(ev, self._mode) + "\n")
+            self._stream.write(format_event(ev, self._mode, self._st) + "\n")
             self._stream.flush()
             return
         if ev.kind in _TERMINAL_KINDS:
             if self._live:  # finalize the in-place line before the terminal detail
                 self._stream.write("\r\033[2K")
                 self._live = False
-            self._stream.write(format_event(ev, self._mode) + "\n")
+            self._stream.write(format_event(ev, self._mode, self._st) + "\n")
         else:
-            self._stream.write("\r\033[2K" + tracker_frame(self._reached, ev))
+            self._stream.write("\r\033[2K" + tracker_frame(self._reached, ev, self._st))
             self._live = True
         self._stream.flush()

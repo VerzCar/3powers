@@ -1,0 +1,28 @@
+# 3Powers CLI output preferences (CLIUX-FR-014/015).
+#
+# Presentation only: these settings shape *human* output. They NEVER change machine-readable output
+# (`--json`), exit codes, verdict bytes, or the ledger, and they are never a gate input. A missing or
+# malformed file falls back to these same shipped defaults, so deleting this file changes nothing.
+#
+# Precedence (highest wins):  an explicit flag  >  environment  >  this file  >  the default.
+#   color:      `--json` / `--yes` force color OFF; then NO_COLOR / THREEPOWERS_FORCE_COLOR (env);
+#               then `color_mode` below; then auto — color only on an interactive terminal.
+#   verbosity:  `--quiet` / `--verbose` (flags)  >  `verbosity` below  >  normal.
+version: 1
+
+# color_mode: auto | always | never
+#   auto   — color only on an interactive TTY (the default; respects NO_COLOR).
+#   always — force color even when piped (rarely wanted; `--json` still stays clean).
+#   never  — never emit color.
+color_mode: auto
+
+# verbosity: quiet | normal | verbose
+#   quiet   — result and failures only.
+#   normal  — a structured summary (the default).
+#   verbose — adds per-step detail (durations, attempts, artifact / transcript paths).
+verbosity: normal
+
+# layout: normal | compact
+#   normal  — headers with blank-line separation between sections.
+#   compact — trims blank lines for dense terminals.
+layout: normal
