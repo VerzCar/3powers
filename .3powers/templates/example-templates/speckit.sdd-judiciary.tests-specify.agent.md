@@ -1,0 +1,1 @@
+../../.specify/extensions/sdd-judiciary/.specify-dev/agent-commands/copilot/speckit.sdd-judiciary.tests-specify.agent.md
