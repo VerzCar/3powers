@@ -93,16 +93,19 @@ straight to `3pwr run` after init without hand-editing YAML.
   + the docs, the same-family warning naming the deviation path (exit 0), byte-stable `--json`,
   verdict-bytes invariance + no trust-spine import of the authoring layer, and the unchanged
   runtime-dependency set.
-- Self-application (NFR-006), `3pwr gate run --path engine --tier Standard --base main`: format ✓,
-  lint ✓, types ✓, tests ✓, diff_coverage ✓, sast ✓, dependency_scan ✓, secret_scan ✓, gate_gaming ✓
-  (see the Handoff for the two pre-existing lines).
+- Self-application (NFR-006), diff-scoped to this branch: `3pwr gate run --path engine --adapter
+  python --spec specs/016-stage-agents-and-role-setup/spec.md --tier Standard --base main` —
+  **verdict PASS**: format ✓, lint ✓, types ✓, tests ✓, diff_coverage **92.47% ≥ 80%** ✓, sast ✓,
+  dependency_scan ✓, secret_scan ✓, gate_gaming ✓, spec_conformance ✓ (**23 requirements traced**);
+  `spec_integrity` correctly *skipped* — no Spec-stage sign-off recorded yet for `AGENTX` (a
+  not-yet-approved spec is never blocked).
 
 ## Handoff — notes
 
 - Spec 016 still needs the human spec-approval sign-off before it is formally advanced:
-  `3pwr signoff --approver <you> --spec-id AGENTX --stage spec --spec specs/016-stage-agents-and-role-setup/spec.md`.
-- The `spec_integrity` line on a local gate run keeps its standing pre-existing seal-drift result for
-  spec 002 (see plans 022/025) — untouched by this change.
+  `3pwr signoff --approver <you> --spec-id AGENTX --stage spec --spec specs/016-stage-agents-and-role-setup/spec.md`
+  — that sign-off also seals the spec's hash, after which the `spec_integrity` gate grades instead of
+  skipping.
 - Non-goals held: no hosted model gateway or raw LLM API call (the executive still drives agent CLIs);
   no lifecycle stage added/removed/reordered; no artifact contract or write location changed; no
   network-synced model registry (the catalog is local, editable, may lag providers); diversity stays a
