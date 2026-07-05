@@ -41,6 +41,10 @@ def _project(tmp_path: Path, *, roles: dict | None = None, agents: dict | None =
     }
     for name, data in (agents if agents is not None else default_agents).items():
         (adir / f"{name}.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    # A working git repository is a run precondition (GITX-FR-002) — part of the shared check set.
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True, capture_output=True)
     return root
 
 

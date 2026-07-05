@@ -26,8 +26,19 @@ from typing import Any
 
 # A named non-gate requirement a deviation MAY relax (3PWR-FR-057): model diversity (FR-022) is
 # recommended, not forced — a same-family/same-model oracle proceeds only under a signed deviation.
+# The GITX git-discipline guards (GITX-FR-014) relax the same way: the clean-start guard, the
+# mandatory per-stage commit, and the run-branch isolation at stage boundaries — each maps to
+# exactly one named gate, and a relaxation is always a signed, revocable ledger entry.
 MODEL_DIVERSITY = "model_diversity"
-DEVIATABLE_REQUIREMENTS: tuple[str, ...] = (MODEL_DIVERSITY,)
+GIT_CLEAN_START = "git_clean_start"
+GIT_STAGE_COMMIT = "git_stage_commit"
+GIT_RUN_BRANCH = "git_run_branch"
+DEVIATABLE_REQUIREMENTS: tuple[str, ...] = (
+    MODEL_DIVERSITY,
+    GIT_CLEAN_START,
+    GIT_STAGE_COMMIT,
+    GIT_RUN_BRANCH,
+)
 
 # Gates an emergency fast path MAY defer (3PWR-FR-056).
 EMERGENCY_DEFERRABLE: tuple[str, ...] = ("mutation", "diff_coverage")

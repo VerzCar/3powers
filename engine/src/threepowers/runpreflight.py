@@ -167,6 +167,30 @@ def check_native(
     return prqs
 
 
+def _git_on_path(cmd: str) -> bool:
+    """The default PATH probe for :func:`git_prereq` (injected in tests — EXEC-NFR-004)."""
+    return shutil.which(cmd) is not None
+
+
+def git_prereq(root: Path, command_present: Callable[[str], bool] | None = None) -> Prereq:
+    """A working git repository — a PRECONDITION for starting a run (GITX-FR-002).
+
+    Git on PATH and ``root`` inside a work tree (a ``.git`` directory — or file, for a linked
+    worktree — on the path upward). A pure function of the repository/environment state: offline,
+    deterministic, no subprocess needed for the work-tree test (GITX-NFR-001)."""
+    name = "working git repository"
+    if command_present is None:
+        command_present = _git_on_path
+    if not command_present("git"):
+        return Prereq(name, False, "install git — a run requires version control (GITX-FR-002)")
+    for candidate in [root.resolve(), *root.resolve().parents]:
+        if (candidate / ".git").exists():
+            return Prereq(name, True, label="git present; repository detected")
+    return Prereq(
+        name, False, "run `git init` — the target is not inside a git repository (GITX-FR-002)"
+    )
+
+
 def signer_prereq(root: Path) -> Prereq:
     """A resolvable, USABLE signer — an environment-supplied key is validated (exists / readable /
     well-formed), never trusted silently (AUTOX-FR-001)."""
@@ -220,9 +244,11 @@ def check_auto(
     own preflight all consume this list, so their verdicts cannot drift — one source of checks.
 
     Ordered so the unmet items' fixes read as executable next steps in dependency order
-    (AUTOX-FR-005): signing key → coder agent (roles + CLI) → different-family oracle agent."""
+    (AUTOX-FR-005): signing key → working git repository (GITX-FR-002) → coder agent (roles + CLI)
+    → different-family oracle agent."""
     return [
         signer_prereq(settings.root),
+        git_prereq(settings.root, command_present),
         *check_native(
             settings,
             coder_agent=coder_agent,

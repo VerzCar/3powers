@@ -494,25 +494,6 @@ def produced_paths(pre: dict[str, str], post: dict[str, str]) -> list[str]:
     return sorted(changed)
 
 
-def commit_checkpoint(cwd: Path, spec_id: str, step: str, paths: list[str]) -> Optional[str]:
-    """Commit a stage's produced ``paths`` as a checkpoint, returning the short SHA (RUNLIVE-FR-010).
-
-    The message is ``3pwr(<spec-id>): <step>`` so the commit is attributable to the stage. Stages only the
-    named paths (never a blanket ``add -A``) so it never sweeps unrelated changes; returns ``None`` when
-    there is nothing to commit or git is unavailable — the run then simply carries on without a checkpoint.
-    """
-    if not paths:
-        return None
-    if _git(cwd, ["add", "--", *paths])[0] != 0:
-        return None
-    if _git(cwd, ["diff", "--cached", "--quiet"])[0] == 0:  # nothing actually staged
-        return None
-    if _git(cwd, ["commit", "-m", f"3pwr({spec_id}): {step}"])[0] != 0:
-        return None
-    rc, out, _ = _git(cwd, ["rev-parse", "--short", "HEAD"])
-    return out.strip() or None if rc == 0 else None
-
-
 class NativeRunner:
     """Drive the lifecycle headlessly via injected dispatch + verdict callables (EXEC-FR-001/006).
 

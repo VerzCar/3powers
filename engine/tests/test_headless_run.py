@@ -43,6 +43,10 @@ def run_project(tmp_path, monkeypatch):
     keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
+    # A working git repository is a run precondition (GITX-FR-002).
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True, capture_output=True)
     return root
 
 

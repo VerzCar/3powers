@@ -12,6 +12,22 @@ release is **v0.5.0**, matching the latest released milestone below.
 
 ### Added
 
+- **Git-integrated run lifecycle (GITX).** Git handling is now a mandatory pre/post-stage hook on every
+  live run and the manual `/3pwr.*` drive: a working git repository is a run precondition (reported by
+  the shared `ready`/init/preflight check set); every run is isolated to a dedicated branch
+  `3pwr/<NNN>-<slug>` — reusing the SRCX run identity, created off the configured base, bound to the run
+  as one additive `branch` field on the signed `run`/`start` entry, and re-entered on resume; a run
+  refuses to start atop uncommitted changes it did not produce (naming the paths, leaving them
+  untouched) and leaves nothing it produced uncommitted after any stage; each producing stage is exactly
+  one commit staging only the run's produced paths, with an agent-written `COMMIT:` message
+  (deterministic `3pwr(<spec-id>): <step>` fallback) authored per-commit as the configured `3pwr`
+  identity — the developer's git config is never mutated and no history is rewritten. The discipline is
+  mandatory: `--no-auto-commit` is superseded (warns, no longer disables) and the only relaxations are
+  the signed, revocable `git_clean_start`/`git_stage_commit`/`git_run_branch` deviations. New:
+  `3pwr git start` (manual-drive branch establishment), git-aware `advance` boundary checks,
+  `.3powers/config/git.yaml` (branch prefix / base / 3pwr author, tolerant defaults), and the run
+  branch + committed stages surfaced by both status commands. (plan 028)
+
 - **Open-source launch readiness (OSSRD).** A CI workflow gates every pull request to `main` (engine
   lint, types, tests, and offline ledger verification, as required checks); a
   [glossary](docs/glossary.md) defines every term of art (trust spine, oracle, Phase A/B, residual,

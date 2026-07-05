@@ -44,7 +44,7 @@ class SpecState:
     # record, cleared by any later progress (a stage completing, a gate, a verdict, a sign-off…).
     # The latest failure wins; earlier ones remain in the append-only ledger as history.
     failed_stage: str = ""
-    failed_class: str = ""  # dispatch_failed | artifact_missing | artifact_absent | artifact_unrecorded | gates_red | verdict_error
+    failed_class: str = ""  # dispatch_failed | artifact_missing | artifact_absent | artifact_unrecorded | gates_red | verdict_error | git_commit_failed | git_branch_failed
     failed_at: str = ""  # the failure entry's timestamp
     failed_transcript: str = ""  # the persisted transcript path, when one was recorded
 

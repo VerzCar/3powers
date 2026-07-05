@@ -1,0 +1,28 @@
+# 3Powers git-integration preferences (GITX-FR-015).
+#
+# Applied to the run's git handling ONLY: the dedicated run branch, the clean-start guard, and the
+# per-stage commit's 3pwr author attribution. Never a gate, verdict, or ledger input. A missing or
+# malformed file falls back to these same shipped defaults (a malformed file warns once).
+#
+# The discipline itself is mandatory (GITX-FR-014): this file tunes names and identity — it cannot
+# disable a guard. The only relaxation is a recorded signed deviation on a named guard:
+#   3pwr deviation --gate git_clean_start  --approver <you> --note "<why>"   # the clean-start guard
+#   3pwr deviation --gate git_stage_commit --approver <you> --note "<why>"   # the mandatory stage commit
+#   3pwr deviation --gate git_run_branch   --approver <you> --note "<why>"   # branch isolation at boundaries
+version: 1
+
+# The prefix of every run's dedicated branch; the branch is <branch_prefix><NNN>-<slug>, reusing
+# SRCX's already-allocated run identity (GITX-FR-003 — never a new run number).
+branch_prefix: "3pwr/"
+
+# The branch a fresh run's branch is created off. When it does not resolve (e.g. the repo uses a
+# different default branch, a detached HEAD, or an unborn repo), the run branch is created off the
+# current commit instead — never forced, never clobbering (GITX-NFR-003).
+base_branch: main
+
+# The author identity for commits 3pwr itself creates (GITX-FR-012). Applied PER COMMIT via
+# `git -c user.name=… -c user.email=…` — the developer's own git config is never mutated
+# (GITX-NFR-004); a commit a human makes by hand keeps the human's own author.
+author:
+  name: 3pwr
+  email: 3pwr@3powers.local
