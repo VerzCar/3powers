@@ -74,6 +74,14 @@ class Settings:
         return self.dir / "config" / "context.yaml"
 
     @property
+    def ui_config_path(self) -> Path:
+        """Optional human-output preferences — color mode, verbosity, layout (CLIUX-FR-014).
+
+        Presentation only: never a gate, verdict, or ledger input. A missing or malformed file falls
+        back to the shipped defaults, so its absence changes nothing (CLIUX-FR-015)."""
+        return self.dir / "config" / "ui.yaml"
+
+    @property
     def constitution_path(self) -> Path:
         """The project constitution — part of every phase's reload set (PHASE-FR-008)."""
         return self.dir / "memory" / "constitution.md"
@@ -154,6 +162,46 @@ class Settings:
             (_load_yaml(self.onboarding_path).get("defaults") or {}).get("tier") or ""
         ).strip()
         return tier or "Standard"
+
+    def load_ui(self) -> tuple[dict[str, str], bool]:
+        """Resolved UI preferences from ``ui.yaml`` + whether the file was malformed (CLIUX-FR-014/015).
+
+        Human-output presentation only — never a gate or ledger input. Tolerant and never raises: a
+        missing file yields the shipped defaults with ``malformed=False``; a file that is not valid
+        YAML (or not a mapping) yields the defaults with ``malformed=True`` so the caller can warn once
+        (CLIUX-FR-015). Deterministic and pure in the file bytes. Only recognized keys/values are
+        honored; anything else falls back to its default."""
+        defaults = {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+        allowed = {
+            "color_mode": ("auto", "always", "never"),
+            "verbosity": ("quiet", "normal", "verbose"),
+            "layout": ("normal", "compact"),
+        }
+        path = self.ui_config_path
+        if not path.exists():
+            return defaults, False
+        data: Any = {}
+        malformed = False
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            malformed = True
+            data = {}
+        if data is None:
+            data = {}  # an empty file is valid — use the defaults
+        elif not isinstance(data, dict):
+            malformed = True  # a scalar/list is not a preferences mapping
+            data = {}
+        prefs = dict(defaults)
+        for key, choices in allowed.items():
+            val = str(data.get(key) or "").strip().lower()
+            if val in choices:
+                prefs[key] = val
+        return prefs, malformed
+
+    def ui_preferences(self) -> dict[str, str]:
+        """The resolved UI preferences (CLIUX-FR-014); shorthand for ``load_ui()[0]``."""
+        return self.load_ui()[0]
 
     def load_risk_tiers(self) -> dict[str, Any]:
         return _load_yaml(self.risk_tiers_path)
