@@ -352,6 +352,9 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
         where = f" at {ev.stage}" if ev.stage else ""
         if ev.step == "artifact_missing":
             return f"  {st.err(g['fail'])} artifact missing{where} — {ev.detail}"
+        if ev.step in ("artifact_absent", "artifact_unrecorded"):
+            # The SRCX completion gate blocked the stage (SRCX-FR-014/015) — named, actionable.
+            return f"  {st.err(g['fail'])} stage completion failed{where} — {ev.detail}"
         extra = f": {ev.detail}" if ev.detail else ""
         return (
             f"  {st.err(g['fail'])} dispatch failed{where} — a stage could not be executed "

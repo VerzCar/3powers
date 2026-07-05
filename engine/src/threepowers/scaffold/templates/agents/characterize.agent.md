@@ -37,7 +37,7 @@ input channel exists.
 
 Produce two artifacts, in fixed shapes:
 
-- A **reconstructed spec** under `specs/<NNN>-<module>-characterization/spec/spec.md`, following
+- A **reconstructed spec** under `specs/<NNN>-<module>-characterization/spec.md`, following
   the same section order the Specify stage uses (Spec ID, risk tier, non-goals, requirements with
   Acceptance, success criteria) — describing observed behavior, not desired behavior.
 - **Characterization tests** under the project's test tree, one or more per reconstructed

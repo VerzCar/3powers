@@ -33,34 +33,36 @@ def _git_init(root: Path) -> None:
 
 
 def _spec_writer(spec_id="RUN"):
-    """A fake agent that writes each stage's declared artifact (mirrors the native-runner suite)."""
+    """A fake agent that writes each stage's declared artifact (mirrors the native-runner suite),
+    flat into the feature folder the prompt names (SRCX-FR-001)."""
 
     def fake(argv, **kw):
+        import re
+
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
+        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
         if "STAGE: Specify" in prompt:
-            d = cwd / "specs" / spec_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "STAGE: Plan" in prompt:
-            d = cwd / "specs" / spec_id / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt:
-            d = cwd / "specs" / spec_id / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
         elif "STAGE: Oracle" in prompt:
-            d = cwd / "tests" / "oracle" / spec_id
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+            t = cwd / "tests" / "oracle" / spec_id
+            t.mkdir(parents=True, exist_ok=True)
+            (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt:
-            d = cwd / "src"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
+            src = cwd / "src"
+            src.mkdir(parents=True, exist_ok=True)
+            (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
         return (0, "changes written", "")
 
     return fake

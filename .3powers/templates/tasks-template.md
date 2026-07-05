@@ -6,7 +6,7 @@ description: "Task list template for feature implementation — context-sized ph
 # Tasks: [FEATURE NAME]
 
 **Input**: `specs/[###-feature-name]/artifacts/plan.md` (required) and
-`specs/[###-feature-name]/spec/spec.md` (legacy features keep `spec.md` in the feature folder)
+`specs/[###-feature-name]/spec.md` (flat in the feature folder — SRCX-FR-001; legacy split features keep `spec/spec.md`)
 
 **Output**: This file, committed to `specs/[###-feature-name]/artifacts/tasks.md` — the Tasks stage's
 artifact. A tasks artifact that was not written to the feature workspace fails the stage (PHASE-FR-002).
@@ -48,7 +48,7 @@ Each `## Phase N: <name>` section carries, in this order:
 **Estimated context**: ~[N]k tokens (budget ~110k)
 
 **Handoff** (what a fresh session reloads): the approved spec
-(`specs/[###-feature]/spec/spec.md`), the constitution/rules
+(`specs/[###-feature]/spec.md`), the constitution/rules
 (`.3powers/memory/constitution.md`), this phase's tasks below, and the file scope above.
 
 - [ ] T001 [SPECID-FR-001] [Description] (files: src/[file1].py, tests/test_[file1].py)

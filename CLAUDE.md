@@ -36,12 +36,14 @@ High-risk** (NFR-006); three reference adapters (TypeScript, Python, Go); struct
 with headless, read-path-isolated **oracle** dispatch (A3, oracle leg); one-command orchestration
 (`3pwr run`, stopping only at the two human gates FR-006/FR-037); brownfield Stage Zero; emergency &
 deviation paths; the observe & feedback loop; the spec-lock (SLOCK) + trust-hardening (HARDN)
-mechanisms; and **phased execution** (PHASE, spec 013): each feature gets a versioned workspace
-(`specs/<f>/spec/spec.md` + `specs/<f>/artifacts/{plan,tasks,…}.md`; the legacy flat layout stays
-readable), every action stage's artifact is verified against its declared contract, plans decompose work into
-**context-budgeted phases** (advisory ~110k-token default, `.3powers/config/context.yaml`), and the
-implement stage runs **one fresh headless session per phase** — in parallel for `[P]`-marked phases
-with disjoint file scopes.
+mechanisms; and **phased execution** (PHASE, spec 013) with the **run artifact workspace** (SRCX, spec
+017) layered on top: each run gets one auto-allocated, FLAT feature folder (`specs/<NNN>-<slug>/` holding
+`spec.md`, `plan.md`, `tasks.md`, `oracle.md`, `implement.md`; SRCX supersedes PHASE's `spec/spec.md` +
+`artifacts/` split, which stays readable for existing features), every producing stage's markdown is
+ledger-tracked and gated by a deterministic artifact-∧-ledger completion check — on `--resume` too —
+and plans decompose work into **context-budgeted phases** (advisory ~110k-token default,
+`.3powers/config/context.yaml`), the implement stage running **one fresh headless session per phase** —
+in parallel for `[P]`-marked phases with disjoint file scopes.
 
 ## Repository layout
 
@@ -58,8 +60,9 @@ engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
 .github/{prompts,agents}/   # /3pwr.{oracle,verify,review,signoff,advance,characterize} command prompts for a manual drive (no Spec Kit)
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs
-                            #   new features use the workspace layout: <f>/spec/spec.md + <f>/artifacts/{plan,tasks,…}.md
-                            #   (PHASE-FR-001); pre-013 features keep the legacy flat <f>/spec.md — both resolve
+                            #   a run's artifacts lie FLAT in its auto-allocated folder: specs/<NNN>-<slug>/
+                            #   {spec,plan,tasks,oracle,implement}.md (SRCX-FR-001); the PHASE split layout
+                            #   (<f>/spec/spec.md + <f>/artifacts/) and the pre-013 flat <f>/spec.md both resolve
 examples/validation-utils/  # the runnable TypeScript sample (spec id VUTIL)
 docs/references/            # trust-spine tooling reference + historical Spec Kit reference (removed by SLIM, spec 010)
 plan/                       # the continuous plan series (001, 002, 003, …)

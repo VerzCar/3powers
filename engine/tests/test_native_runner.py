@@ -287,39 +287,40 @@ def _artifact_writer(spec_id="RUN"):
     """A fake agent that, like a real one, writes each stage's declared artifact (RUNLIVE-FR-001).
 
     Detects the stage from the assembled prompt (the final argv) and produces the file the artifact contract
-    expects, so a native run advances past Specify/Oracle/Implement. No model call — the engine issues none
-    (EXEC-NFR-001, RUNLIVE-NFR-001)."""
+    expects — flat in the feature folder the prompt names (SRCX-FR-001) — so a native run advances past
+    Specify/Oracle/Implement. No model call — the engine issues none (EXEC-NFR-001, RUNLIVE-NFR-001)."""
 
     def fake(argv, **kw):
+        import re
+
         from pathlib import Path
 
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
+        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
         if "STAGE: Specify" in prompt:
-            d = cwd / "specs" / spec_id
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "STAGE: Plan" in prompt:
-            # plan/tasks now carry hard artifact contracts (PHASE-FR-002) — the fake writes them
-            # into the feature workspace's artifacts folder (PHASE-FR-001) like a real agent would.
-            d = cwd / "specs" / spec_id / "artifacts"
+            # plan/tasks carry hard artifact contracts (PHASE-FR-002) — the fake writes them
+            # flat into the run's feature folder (SRCX-FR-001) like a real agent would.
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt:
-            d = cwd / "specs" / spec_id / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
         elif "STAGE: Oracle" in prompt:
-            d = cwd / "tests" / "oracle" / spec_id
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+            t = cwd / "tests" / "oracle" / spec_id
+            t.mkdir(parents=True, exist_ok=True)
+            (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt:
-            d = cwd / "src"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
+            src = cwd / "src"
+            src.mkdir(parents=True, exist_ok=True)
+            (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
         return (0, "changes written", "")
 
     return fake
@@ -546,20 +547,23 @@ def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monke
 # --------------------------------------------------------------------------- commit checkpoints + resume (RUNLIVE-FR-010)
 def _writer_no_implement():
     def fake(argv, **kw):
+        import re
+
         p = argv[-1] if argv else ""
-        # plan/tasks now carry hard contracts too (PHASE-FR-002) — write them so the run reaches Build
+        cwd = Path(kw["cwd"])
+        m = re.search(r"FEATURE FOLDER: (\S+)", p)
+        d = cwd / (m.group(1) if m else "specs/RUN")
+        # plan/tasks carry hard contracts too (PHASE-FR-002) — write them flat so the run reaches Build
         if "STAGE: Plan" in p:
-            d = Path(kw["cwd"]) / "specs" / "RUN" / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in p:
-            d = Path(kw["cwd"]) / "specs" / "RUN" / "artifacts"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text("# Tasks\n- [ ] T001 [RUN-FR-001] x\n", encoding="utf-8")
         elif "STAGE: Oracle" in p:
-            d = Path(kw["cwd"]) / "tests" / "oracle" / "RUN"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
+            t = cwd / "tests" / "oracle" / "RUN"
+            t.mkdir(parents=True, exist_ok=True)
+            (t / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
         return (0, "ok", "")  # Implement writes nothing → artifact_missing
 
     return fake
@@ -701,7 +705,8 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
             return (0, "completed", "")
         if argv[:2] == ["gh", "collect"]:
             if state["step"] == "specify":  # the hosted run's branch carries the produced spec
-                d = Path(cwd) / "specs" / "RUN"
+                # the run deterministically allocated specs/010-add-x (SRCX-FR-008: max 009 + 1)
+                d = Path(cwd) / "specs" / "010-add-x"
                 d.mkdir(parents=True, exist_ok=True)
                 (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
             return (0, "checked out", "")

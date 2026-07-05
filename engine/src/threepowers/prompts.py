@@ -38,8 +38,8 @@ _STAGE_PROMPTS: dict[str, str] = {
         "risk tier (Cosmetic|Standard|High-risk), and explicit non-goals BEFORE any requirement. Write "
         "each requirement as '<SPECID>-FR-###: the system shall …' with a measurable Acceptance line. Do "
         "NOT put implementation detail (named stack, schema, vendor) in the spec. Write the spec to "
-        "specs/<feature>/spec/spec.md — the feature workspace's spec/ subfolder — that file is the "
-        "artifact this stage must produce."
+        "specs/<feature>/spec.md — FLAT in the run's feature folder, no spec/ or artifacts/ subfolder — "
+        "that file is the artifact this stage must produce."
     ),
     "clarify": (
         "STAGE: Clarify. Find every ambiguous or unmeasurable requirement in the spec and resolve it into "
@@ -48,7 +48,8 @@ _STAGE_PROMPTS: dict[str, str] = {
     ),
     "plan": (
         "STAGE: Plan. From the approved spec, produce the implementation plan and write it to "
-        "specs/<feature>/artifacts/plan.md — that file is the artifact this stage must produce. "
+        "specs/<feature>/plan.md — FLAT in the run's feature folder — that file is the artifact this "
+        "stage must produce. "
         "Required sections: Summary (primary requirement + approach); Judicial Plan (the spec's risk "
         "tier, the gates it drives, the role → model-family table); Design (the files to change and the "
         "approach per requirement); Test layers (unit/integration/e2e as the tier demands); and Phases. "
@@ -62,7 +63,8 @@ _STAGE_PROMPTS: dict[str, str] = {
     ),
     "tasks": (
         "STAGE: Tasks. Break the plan into ordered tasks grouped into phases and write them to "
-        "specs/<feature>/artifacts/tasks.md — that file is the artifact this stage must produce. "
+        "specs/<feature>/tasks.md — FLAT in the run's feature folder — that file is the artifact this "
+        "stage must produce. "
         "Required sections: one '## Phase N: <name>' section per phase, in execution order, each "
         "carrying a '**File scope**:' line (every file the phase may touch), a '**Depends on**:' line "
         "('none' when independent), an '**Estimated context**:' line (~4 bytes/token over the spec + "

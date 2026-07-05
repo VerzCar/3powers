@@ -1,9 +1,9 @@
 ---
 name: specify.agent
-description: "Turns a raw intent into the feature specification — the law every later stage answers to. Runs at the Spec stage and writes specs/<feature>/spec/spec.md. Backend-neutral: the same instructions and output apply to any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Turns a raw intent into the feature specification — the law every later stage answers to. Runs at the Spec stage and writes specs/<feature>/spec.md, flat in the feature folder. Backend-neutral: the same instructions and output apply to any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: specify
 role: planner
-artifact: specs/<feature>/spec/spec.md
+artifact: specs/<feature>/spec.md
 ---
 
 # Specify agent — turn intent into the law
@@ -42,7 +42,8 @@ arguments or run external scripts.
 
 ## Output — the spec's required structure
 
-Write the spec to `specs/<feature>/spec/spec.md` with these sections, in this order. This
+Write the spec to `specs/<feature>/spec.md` — FLAT in the run's feature folder (the FEATURE FOLDER
+context block names it; create no spec/ or artifacts/ subfolder) — with these sections, in this order. This
 structure is fixed so every run produces the same shape of document regardless of the model:
 
 ```markdown
@@ -90,7 +91,7 @@ End your run with a report in EXACTLY this shape (same fields, same order — so
 identically no matter which model ran it):
 
 - **Stage**: Specify — `done` | `blocked`
-- **Artifact**: `specs/<feature>/spec/spec.md`
+- **Artifact**: `specs/<feature>/spec.md`
 - **Spec ID / tier**: `<SPECID>` / `<tier>`
 - **Requirements**: `<N>` FR, `<M>` NFR, `<K>` success criteria
 - **Open clarifications**: the `[NEEDS CLARIFICATION]` markers left (≤3), or `none`

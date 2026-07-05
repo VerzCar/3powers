@@ -1,9 +1,9 @@
 ---
 name: plan.agent
-description: "Produces the implementation plan from the approved spec — the judicial plan, the design, and the context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes specs/<feature>/artifacts/plan.md. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Produces the implementation plan from the approved spec — the judicial plan, the design, and the context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes specs/<feature>/plan.md, flat in the feature folder. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: plan
 role: planner
-artifact: specs/<feature>/artifacts/plan.md
+artifact: specs/<feature>/plan.md
 ---
 
 # Plan agent — strategy before implementation
@@ -52,13 +52,14 @@ sequentially.
 
 ## Output — the plan's required structure
 
-Write the plan to `specs/<feature>/artifacts/plan.md` in this fixed shape, so every run yields the
+Write the plan to `specs/<feature>/plan.md` — FLAT in the run's feature folder (the FEATURE FOLDER
+context block names it; create no spec/ or artifacts/ subfolder) — in this fixed shape, so every run yields the
 same document structure regardless of the model:
 
 ```markdown
 # Implementation Plan: <feature>
 
-**Spec**: <link to specs/<feature>/spec/spec.md>   **Spec ID / tier**: <SPECID> / <tier>
+**Spec**: <link to specs/<feature>/spec.md>   **Spec ID / tier**: <SPECID> / <tier>
 
 ## Summary
 <primary requirement(s) + chosen approach, with reasoning>
@@ -98,7 +99,7 @@ That file is the artifact this stage must produce.
 End your run with a report in EXACTLY this shape (same fields, same order):
 
 - **Stage**: Plan — `done` | `blocked`
-- **Artifact**: `specs/<feature>/artifacts/plan.md`
+- **Artifact**: `specs/<feature>/plan.md`
 - **Tier / gates**: `<tier>` → `<gate list>`
 - **Roles**: coder `<family>` · oracle `<family≠coder>` · reviewer `<family>`
 - **Phases**: `<N>` total, `<K>` marked `[P]` (disjoint scope, no dependency)
