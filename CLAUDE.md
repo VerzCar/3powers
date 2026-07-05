@@ -54,7 +54,7 @@ engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
   config/{risk-tiers,roles,dependencies,observability,design-oracles,context}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go
-  agents/*.yaml (native agent backends)   memory/constitution.md   templates/{spec,plan,tasks,…}.md
+  agents/*.yaml (native agent backends)   memory/constitution.md   templates/agents/*.agent.md (per-stage agent templates, AGENTX) + templates/{plan,tasks}-template.md
   ledger.jsonl  keys/ledger.pub   feedback/<spec>.md  runtime/actions.jsonl  (private key OUTSIDE the repo — NFR-005)
 .github/{prompts,agents}/   # /3pwr.{oracle,verify,review,signoff,advance,characterize} command prompts for a manual drive (no Spec Kit)
 specs/                      # authoritative specs (FR-010); the epic + per-feature specs

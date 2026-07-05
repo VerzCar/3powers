@@ -153,6 +153,8 @@ class HostedAgentRunner:
             spec_text=self.spec_text if spec_text is None else spec_text,
             context=context,
             file_scope=file_scope,
+            # The same repo-local stage-template resolution as the local runner (AGENTX-FR-005).
+            body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
         )
         mapping = {
             "prompt": prompt,

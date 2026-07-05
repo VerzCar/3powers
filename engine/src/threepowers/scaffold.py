@@ -144,6 +144,30 @@ def seed_gitignore(settings: Settings) -> str:
     return _copy_if_missing(SCAFFOLD_DIR / "gitignore", settings.dir / ".gitignore")
 
 
+_TEMPLATES_SCAFFOLD_DIR = SCAFFOLD_DIR / "templates" / "agents"
+
+
+def bundled_stage_templates() -> list[str]:
+    """The per-stage agent templates the engine ships — one per dispatched stage (AGENTX-FR-001)."""
+    if not _TEMPLATES_SCAFFOLD_DIR.is_dir():
+        return []
+    return sorted(p.name for p in _TEMPLATES_SCAFFOLD_DIR.glob("*.agent.md"))
+
+
+def seed_stage_templates(settings: Settings) -> dict[str, str]:
+    """Copy the bundled stage agent templates into ``.3powers/templates/agents/`` (AGENTX-FR-009).
+
+    Non-clobbering and idempotent (ONBRD-FR-008/009): a hand-edited template is never overwritten,
+    and re-running converges to the same on-disk state. Each template is the editable instruction
+    body the executive dispatches for that stage (AGENTX-FR-005)."""
+    out: dict[str, str] = {}
+    if not _TEMPLATES_SCAFFOLD_DIR.is_dir():
+        return out
+    for src in sorted(_TEMPLATES_SCAFFOLD_DIR.glob("*.agent.md")):
+        out[src.name] = _copy_if_missing(src, settings.stage_templates_dir / src.name)
+    return out
+
+
 def write_onboarding(
     settings: Settings, *, auto_mode: bool, tier: str = "Standard", auto_commit: bool = True
 ) -> None:
@@ -168,29 +192,74 @@ def write_onboarding(
     )
 
 
-def set_role_model(
-    settings: Settings, role: str, *, model: str, integration: str = "", label: str = ""
-) -> None:
-    """Record a judiciary role's concrete model + integration in ``roles.yaml`` (INITX-FR-002/003).
+# The explanatory header rewritten role files keep (AGENTX-FR-017): `require_dispatch` and the
+# diversity stance stay explained WHERE THE CONFIG LIVES, even after yaml.safe_dump drops the
+# scaffold template's comments. Deterministic bytes — the same write always yields the same file.
+_ROLES_HEADER = (
+    "# 3Powers role \u2192 agent-backend + model binding (written by `3pwr init` /\n"
+    "# `3pwr config roles setup`; safe to hand-edit).\n"
+    "# Each role block: model_family, model, integration (an agent backend under\n"
+    "# .3powers/agents/), label (a human-friendly name).\n"
+    "#\n"
+    "# oracle.require_dispatch (default false) is the High-risk read-path-isolation policy\n"
+    "# (3PWR-FR-021, epic A3): when true, a High-risk `advance` refuses unless an ISOLATED\n"
+    "# HEADLESS-DISPATCH attestation (`3pwr oracle dispatch`) proves the oracle was authored with\n"
+    "# the implementation/plan/tasks/contracts physically absent from its worktree. Leave it false\n"
+    "# while authoring the oracle in-IDE; enable it once the project adopts headless oracle\n"
+    "# authoring at High-risk.\n"
+    "#\n"
+    "# Model diversity (oracle/reviewer vs coder) is RECOMMENDED, never forced (3PWR-FR-022): a\n"
+    "# same-family setup proceeds under a signed, reversible deviation \u2014\n"
+    '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`\n'
+    "# (3PWR-FR-057).\n"
+)
 
-    Merges into the existing roles configuration (seeding it first if absent). The file is rewritten,
-    so the template's explanatory comments are dropped once a value is customized — the fields stay
-    valid and are documented in the CLI/docs. Other roles' fields are preserved."""
+
+def set_role_model(
+    settings: Settings,
+    role: str,
+    *,
+    model: str,
+    integration: str = "",
+    label: str = "",
+    model_family: str = "",
+    require_dispatch: Optional[bool] = None,
+) -> None:
+    """Record a role's concrete model + integration in ``roles.yaml`` (INITX-FR-002/003, AGENTX-FR-012).
+
+    Merges into the existing roles configuration (seeding it first if absent), preserving every
+    other role and unrelated field (AGENTX-NFR-003). ``model_family`` wins when given (a catalog
+    entry's family — AGENTX-FR-015); otherwise the family is derived from the model id where it
+    encodes one. For the oracle role, ``require_dispatch`` is always present in the written block
+    (AGENTX-FR-012): an explicit value wins, an existing value is preserved, else the documented
+    default ``false``. The rewritten file keeps an explanatory header (AGENTX-FR-017)."""
+    from .catalog import derive_family
+
     path = settings.roles_path
     data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
     roles = data.setdefault("roles", {})
     block = dict(roles.get(role) or {})
     block["model"] = model
-    fam = model.split("/", 1)[0].strip()
+    fam = (model_family or derive_family(model)).strip()
     if fam:
         block["model_family"] = fam
     if integration:
         block["integration"] = integration
     if label:
         block["label"] = label
+    if role == "oracle":
+        if require_dispatch is not None:
+            block["require_dispatch"] = bool(require_dispatch)
+        else:
+            block.setdefault("require_dispatch", False)
+    elif require_dispatch is not None:
+        block["require_dispatch"] = bool(require_dispatch)
     roles[role] = block
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    path.write_text(
+        _ROLES_HEADER + yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
 
 
 def is_outside_repo(path: Path, root: Path) -> bool:

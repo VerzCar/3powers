@@ -86,6 +86,22 @@ class Settings:
         """The project constitution — part of every phase's reload set (PHASE-FR-008)."""
         return self.dir / "memory" / "constitution.md"
 
+    @property
+    def stage_templates_dir(self) -> Path:
+        """The per-stage agent templates — one editable markdown per dispatched stage (AGENTX-FR-001).
+
+        A repo-local ``<step>.agent.md`` here supplies that stage's instruction body; an absent,
+        empty, or unreadable file falls back to the engine's built-in instruction (AGENTX-FR-005)."""
+        return self.dir / "templates" / "agents"
+
+    @property
+    def models_catalog_path(self) -> Path:
+        """The per-integration model/label catalog — editable data, not code (AGENTX-FR-015/016).
+
+        Read by init and ``3pwr config roles setup`` to offer per-role model choices; a missing or
+        malformed file falls back to the shipped catalog defaults plus free-form entry."""
+        return self.dir / "config" / "models.yaml"
+
     def context_budget(self, model: str = "") -> int:
         """The advisory context budget in tokens for ``model`` (PHASE-FR-007).
 
@@ -235,11 +251,14 @@ class Settings:
         return (self.load_roles().get("roles") or {}).get(name) or {}
 
     def coder_family(self) -> str:
-        """The coder's model *family* — from its full ``model`` if present, else ``model_family``."""
+        """The coder's model *family* — the explicit ``model_family`` when declared, else derived
+        from its full ``model`` id. The explicit field wins because catalog-listed bindings may use
+        bare, integration-native model ids (e.g. Copilot's ``claude-opus-4.8``) whose family the id
+        does not encode (AGENTX-FR-012/015)."""
         from .oracle import family_of
 
         c = self.role("coder")
-        return (family_of(str(c.get("model") or "")) or str(c.get("model_family") or "")).strip()
+        return (str(c.get("model_family") or "") or family_of(str(c.get("model") or ""))).strip()
 
     def role_model_pin(self, name: str) -> dict[str, str] | None:
         """The concrete model pin for a role — ``{model, integration, label}`` — or ``None`` (INITX-FR-003).

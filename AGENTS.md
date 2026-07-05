@@ -24,6 +24,8 @@ The signer's private key lives **outside** the repo; point the engine at it once
 | Install the engine (provides `3pwr`) | `uv tool install ./engine` |
 | Engine dev env / tests | `uv sync --extra dev` · `uv run pytest` (in `engine/`) |
 | Create the signer identity | `3pwr keygen` |
+| Headless-CLI + role→model setup (writes a run-ready `roles.yaml`) | `3pwr config roles setup [--integration <cli>] [--planner/--coder/--oracle/--reviewer <model>]` (`AGENTX-FR-014`; init offers the same walk; models come from the editable catalog `.3powers/config/models.yaml`) |
+| Tune a stage's agent instructions | edit `.3powers/templates/agents/<stage>.agent.md` (`AGENTX-FR-001/005`; absent/empty → the engine's built-in instruction) |
 | Run the gate suite | `3pwr gate run --path <target> --spec specs/<feature>/spec.md --tier <Cosmetic\|Standard\|High-risk>` |
 | Run with mutation, scoped to files | `3pwr gate run … --tier High-risk --mutation --paths <file …>` (per-capability tier, §4) |
 | Brownfield: emit, don't block | `3pwr gate run … --report-only` (`3PWR-FR-052`) |
