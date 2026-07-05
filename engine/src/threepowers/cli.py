@@ -54,6 +54,7 @@ from . import (
     anchor,
     artifacts,
     canonical,
+    catalog,
     config,
     covdiff,
     deps,
@@ -494,6 +495,193 @@ def _checklist_lines(st: style.Styler, items: list[tuple[str, str, str]]) -> lis
     return [f"  {st.mark(status)} {st.bold(label)}: {detail}" for label, status, detail in items]
 
 
+# The configurable roles the setup walks, in the order they are asked (AGENTX-FR-012).
+_SETUP_ROLES = ("planner", "coder", "oracle", "reviewer")
+
+
+def _warn_diversity(s: Settings, st: style.Styler) -> list[str]:
+    """Warn (stderr) when the oracle or reviewer resolves to the coder's family (AGENTX-FR-018).
+
+    Diversity is recommended, never forced (3PWR-FR-022/057): the warning names the signed
+    deviation path and the setup always proceeds. Warnings go to stderr so a ``--json`` run's
+    stdout stays byte-identical (INITX-FR-014). Returns the roles warned about."""
+    coder_fam = s.coder_family()
+    hit: list[str] = []
+    if not coder_fam:
+        return hit
+    for role in ("oracle", "reviewer"):
+        r = s.role(role)
+        # The explicit model_family wins — catalog bindings may use bare, integration-native ids
+        # whose family the id does not encode (AGENTX-FR-012/015).
+        fam = (
+            str(r.get("model_family") or "") or oracle.family_of(str(r.get("model") or ""))
+        ).strip()
+        if fam and fam == coder_fam:
+            hit.append(role)
+            print(
+                st.warn(
+                    f"⚠ {role} resolves to the coder's model family ({coder_fam}) — model "
+                    "diversity is recommended (3PWR-FR-022)."
+                ),
+                file=sys.stderr,
+            )
+    if hit:
+        print(
+            st.dim(
+                "    proceed by recording a signed deviation: 3pwr deviation "
+                '--gate model_diversity --approver <you> --note "single-model dev"'
+            ),
+            file=sys.stderr,
+        )
+    return hit
+
+
+def _roles_setup_flow(
+    s: Settings,
+    st: style.Styler,
+    *,
+    interactive: bool,
+    integration: Optional[str] = None,
+    role_models: Optional[dict[str, str]] = None,
+) -> dict[str, Any]:
+    """The shared headless-CLI + role→model setup (AGENTX-FR-011/012/014/015).
+
+    One pass: declare the headless integration you use (no provider is forced — AGENTX-FR-011),
+    then bind each configurable role — planner, coder, oracle, reviewer — to a model drawn from
+    the per-integration catalog or entered free-form (AGENTX-FR-016), writing a complete block
+    (``model_family``/``model``/``integration``/``label``, ``require_dispatch`` for the oracle)
+    so ``3pwr run`` needs no manual role editing (AGENTX-FR-012/013).
+
+    Non-interactive (AGENTX-NFR-004): prompts for nothing; explicit choices are applied, and a
+    role with no binding yet receives the catalog's documented default for the integration —
+    already-bound roles are preserved untouched (non-destructive, AGENTX-FR-014/NFR-003).
+    Deterministic and offline (AGENTX-NFR-001); diversity only ever warns (AGENTX-FR-018)."""
+    cat = catalog.load_catalog(s)
+    roles_cfg = s.load_roles()
+    known = [str(i) for i in (roles_cfg.get("headless_integrations") or [])]
+    for name in catalog.integrations(cat):
+        if name not in known:
+            known.append(name)
+    current = str(((roles_cfg.get("roles") or {}).get("coder") or {}).get("integration") or "")
+    default_intg = integration or current.strip() or (known[0] if known else "claude")
+    chosen = integration or _ask_choice(
+        "Which headless coding-agent CLI do you use (have installed)?",
+        known,
+        default_intg,
+        interactive=interactive,
+    )
+    entries = catalog.models_for(cat, chosen)
+    default_entry = catalog.default_for(cat, chosen)
+    custom_opt = "custom (type a model id)"
+    written: dict[str, Any] = {}
+    for role in _SETUP_ROLES:
+        explicit = str((role_models or {}).get(role) or "").strip()
+        cur_model = str(s.role(role).get("model") or "").strip()
+        if explicit:
+            model = explicit
+        elif interactive:
+            options = [e["model"] for e in entries] + [custom_opt]
+            default_opt = (
+                cur_model
+                if cur_model in options
+                else (default_entry["model"] if default_entry else custom_opt)
+            )
+            pick = _ask_choice(
+                f"Model for the {role} role ({chosen})",
+                options,
+                default_opt,
+                interactive=interactive,
+            )
+            model = (
+                _ask(
+                    "  model id (free-form / BYOK)",
+                    cur_model or (default_entry or {}).get("model", ""),
+                    interactive=interactive,
+                )
+                if pick == custom_opt
+                else pick
+            )
+        elif cur_model:
+            # Non-interactive, no explicit choice: an existing binding is the documented
+            # default — preserved untouched (AGENTX-FR-014 / NFR-003/004).
+            written[role] = {"status": "kept", "model": cur_model}
+            continue
+        else:
+            model = (default_entry or {}).get("model", "")
+        if not model:
+            written[role] = {"status": "kept", "model": cur_model or None}
+            continue
+        entry = catalog.entry_for(cat, chosen, model)
+        family = entry["family"] if entry else catalog.derive_family(model)
+        label = entry["label"] if entry else model
+        if interactive and entry is None:
+            label = _ask("  friendly label", label, interactive=interactive)
+        scaffold.set_role_model(
+            s, role, model=model, integration=chosen, label=label, model_family=family
+        )
+        written[role] = {
+            "status": "written",
+            "model": model,
+            "model_family": family,
+            "integration": chosen,
+            "label": label,
+        }
+    warned = _warn_diversity(s, st)
+    return {"integration": chosen, "roles": written, "diversity_warned": warned}
+
+
+def cmd_config_roles_setup(args: argparse.Namespace) -> int:
+    """(Re)run the headless-CLI + role→model setup without reinitializing (AGENTX-FR-014).
+
+    The same integration + per-role selection init performs, non-destructively: only the roles
+    reconfigured here are rewritten; every other roles.yaml field is preserved (AGENTX-NFR-003).
+    Non-interactive (``--yes``/``--json``/no TTY) prompts for nothing and applies the documented
+    defaults (AGENTX-NFR-004). Dispatch configuration only — no gate, verdict, ledger, or human
+    gate is touched (AGENTX-NFR-002), and model diversity only ever warns (AGENTX-FR-018)."""
+    s = _settings(args.root)
+    as_json = getattr(args, "json", False)
+    interactive = _init_interactive(args)
+    st = _styler(args)
+    report = _roles_setup_flow(
+        s,
+        st,
+        interactive=interactive,
+        integration=getattr(args, "integration", None),
+        role_models={role: getattr(args, role, None) or "" for role in _SETUP_ROLES},
+    )
+    rows = []
+    for role, info in report["roles"].items():
+        if info.get("status") == "written":
+            rows.append(
+                st.status_row(
+                    "pass",
+                    f"{role}: {info.get('label') or info.get('model')} "
+                    f"({info.get('model')} · {info.get('integration')})",
+                )
+            )
+        else:
+            rows.append(st.status_row("info", f"{role}: kept — {info.get('model') or 'unset'}"))
+    rows.append(
+        st.status_row(
+            "info",
+            "oracle.require_dispatch: the High-risk read-path-isolation policy (3PWR-FR-021/A3) — "
+            "default false; see .3powers/config/roles.yaml",
+        )
+    )
+    _print(
+        report,
+        as_json,
+        _compose(
+            args,
+            st,
+            title="config roles setup",
+            subject=report["integration"],
+            rows=rows,
+        ),
+    )
+    return EXIT_OK
+
+
 def cmd_commit_stage(args: argparse.Namespace) -> int:
     """Auto-commit after a successful lifecycle stage (INITX-FR-006).
 
@@ -652,17 +840,20 @@ def cmd_init(args: argparse.Namespace) -> int:
     adapter_status = scaffold.materialize_adapter(s, lang) if lang else "none"
 
     # 8) Config selection — accept the recommended defaults or customize the choices that can
-    #    never weaken a gate: the judiciary model + the default risk tier (INITX-FR-001/002).
+    #    never weaken a gate: the default risk tier + the headless-CLI/role→model bindings
+    #    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,
+    #    so a non-interactive init prompts for nothing and stays run-ready (AGENTX-NFR-004).
     tier = getattr(args, "tier", None) or s.default_tier()
     oracle_model = getattr(args, "oracle_model", None)
     oracle_integration = getattr(args, "oracle_integration", None)
     oracle_label = getattr(args, "oracle_label", None)
     customized = bool(oracle_model or getattr(args, "tier", None))
+    roles_report: Optional[dict[str, Any]] = None
     if (
         interactive
         and not oracle_model
         and not _ask_yesno(
-            "Use the recommended 3Powers defaults (risk tier + judiciary model)?",
+            "Use the recommended 3Powers defaults (risk tier + role→model bindings)?",
             True,
             interactive=interactive,
         )
@@ -674,21 +865,11 @@ def cmd_init(args: argparse.Namespace) -> int:
             "High-risk",
         ]
         tier = _ask_choice("Default risk tier for new specs?", tiers, tier, interactive=interactive)
-        cur = s.role_model_pin("oracle") or {}
-        oracle_model = _ask(
-            "Oracle (judiciary) model as <family>/<model>",
-            cur.get("model") or "anthropic/claude-opus-4-8",
-            interactive=interactive,
-        )
-        oracle_integration = _ask(
-            "  its agent backend (.3powers/agents/)",
-            cur.get("integration") or getattr(args, "integration", None) or "claude",
-            interactive=interactive,
-        )
-        oracle_label = _ask(
-            "  friendly label for the agent frontmatter",
-            cur.get("label") or oracle_model,
-            interactive=interactive,
+        # Declare the installed headless CLI, then walk planner/coder/oracle/reviewer against the
+        # per-integration model catalog — a complete, run-ready roles.yaml in one pass
+        # (AGENTX-FR-011/012/013; the same flow as `3pwr config roles setup`, AGENTX-FR-014).
+        roles_report = _roles_setup_flow(
+            s, st, interactive=interactive, integration=getattr(args, "integration", None)
         )
     if oracle_model:
         coder_fam = s.coder_family()
@@ -721,19 +902,25 @@ def cmd_init(args: argparse.Namespace) -> int:
     # 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
     agents_status = scaffold.seed_agents_md(root)
 
-    # 10) Seed the native agent-backend manifests + the 3Powers constitution (offline, non-clobber).
-    #     `3pwr run` drives these agents directly — no Spec Kit (EXEC-FR-004; SLIM removed the substrate).
+    # 10) Seed the native agent-backend manifests, the per-stage agent templates, and the 3Powers
+    #     constitution (offline, non-clobber). `3pwr run` drives these agents directly — no Spec Kit
+    #     (EXEC-FR-004; SLIM removed the substrate) — and each dispatched stage's editable
+    #     instructions live in .3powers/templates/agents/ (AGENTX-FR-001/009).
     agents_seeded = scaffold.seed_agents(s)  # .3powers/agents/*.yaml
+    templates_seeded = scaffold.seed_stage_templates(s)  # .3powers/templates/agents/*.agent.md
     constitution_status = scaffold.seed_constitution(root)
     ready = scaffold.readiness(root)
 
     # Judiciary model-diversity readiness (needs config): a concrete oracle model in a family
-    # different from the coder's (INITX-FR-002 / 3PWR-FR-022).
+    # different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family
+    # wins over prefix-derivation — catalog bindings may use bare ids (AGENTX-FR-012/015).
     oracle_pin = s.role_model_pin("oracle")
     coder_fam = s.coder_family()
-    model_div_ok = oracle_pin is not None and (
-        not coder_fam or oracle.family_of(oracle_pin["model"]) != coder_fam
-    )
+    oracle_fam = (
+        str(s.role("oracle").get("model_family") or "")
+        or oracle.family_of((oracle_pin or {}).get("model", ""))
+    ).strip()
+    model_div_ok = oracle_pin is not None and (not coder_fam or oracle_fam != coder_fam)
 
     # Auto full-mode readiness — the SAME check set the live run preflight enforces (AUTOX-FR-001/002):
     # a resolvable/usable signer (env keys validated, never trusted silently), a headless coder agent
@@ -768,6 +955,8 @@ def cmd_init(args: argparse.Namespace) -> int:
         "agents_md": agents_status,
         "constitution": constitution_status,
         "agents": agents_seeded,
+        "stage_templates": templates_seeded,
+        "roles_setup": roles_report,
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
@@ -805,6 +994,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     seeded = [n for n, stt in agents_seeded.items() if stt == "created"]
     if seeded:
         lines.append("  agent backends seeded (.3powers/agents/): " + ", ".join(sorted(seeded)))
+    tpl_seeded = [n for n, stt in templates_seeded.items() if stt == "created"]
+    if tpl_seeded:
+        lines.append(
+            f"  stage agent templates seeded (.3powers/templates/agents/): {len(tpl_seeded)} "
+            "editable per-stage instruction file(s)"
+        )
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
     # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
@@ -2597,7 +2792,7 @@ def _report_phase_estimates(
     if not phase_list:
         return
     budget = s.context_budget(coder_model)
-    prompt_text = prompts.stage_prompt_body("implement")
+    prompt_text = prompts.resolve_body("implement", s.stage_templates_dir)
     for ph in phase_list:
         est = phases.phase_estimate(
             s.root,
@@ -4232,6 +4427,34 @@ def build_parser() -> argparse.ArgumentParser:
     spd.add_argument("--spec-id", dest="spec_id", required=True)
     spd.add_argument("--spec", help="path to the spec.md (default: the path recorded at approval)")
     spd.set_defaults(func=cmd_spec_diff)
+
+    cfp = sub.add_parser("config", help="project configuration surfaces")
+    cfsub = cfp.add_subparsers(dest="config_cmd", required=True)
+    crp = cfsub.add_parser("roles", help="role → model/integration bindings (roles.yaml)")
+    crsub = crp.add_subparsers(dest="roles_cmd", required=True)
+    crs = common(
+        crsub.add_parser(
+            "setup",
+            help="(re)run the headless-CLI + per-role model setup without reinitializing "
+            "(AGENTX-FR-014)",
+        )
+    )
+    crs.add_argument(
+        "--yes",
+        action="store_true",
+        help="non-interactive: prompt for nothing and apply the documented defaults",
+    )
+    crs.add_argument(
+        "--integration",
+        help="the headless agent backend to bind roles to (e.g. claude, codex, copilot); "
+        "default: the configured coder integration",
+    )
+    for setup_role in _SETUP_ROLES:
+        crs.add_argument(
+            f"--{setup_role}",
+            help=f"model for the {setup_role} role (a catalog id for the integration, or free-form)",
+        )
+    crs.set_defaults(func=cmd_config_roles_setup)
 
     return p
 

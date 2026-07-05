@@ -292,6 +292,10 @@ class CliAgentRunner:
             spec_text=self.spec_text if spec_text is None else spec_text,
             context=context,
             file_scope=file_scope,
+            # A repo-local stage template supplies the instruction body when present; absent/empty/
+            # unreadable falls back to the built-in instruction (AGENTX-FR-005). Only the body
+            # changes — the context blocks and their order stay fixed (EXEC-FR-005).
+            body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
         )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
         # Persist this attempt's output to the run's transcript location (AUTOX-FR-008): teed even

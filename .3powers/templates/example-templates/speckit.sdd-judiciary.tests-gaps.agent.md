@@ -1,1 +1,0 @@
-../../.specify/extensions/sdd-judiciary/.specify-dev/agent-commands/copilot/speckit.sdd-judiciary.tests-gaps.agent.md

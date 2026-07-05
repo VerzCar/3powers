@@ -74,6 +74,40 @@ and an existing constitution. For the autonomous lifecycle you also need the con
 (`.3powers/memory/constitution.md`) and an agent backend on PATH for each role; `init` reports what's
 missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
+`init` also seeds one **editable agent template per dispatched stage** into
+`.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks, oracle,
+implement, review, characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
+stage's instruction body when present; an absent, empty, or unreadable template falls back to the
+engine's built-in instruction (AGENTX-FR-005). Seeding is non-clobbering — a hand-edited template is
+never overwritten. Declining the recommended defaults interactively also walks the **headless-CLI +
+role→model setup** below (AGENTX-FR-011/012).
+
+### `config roles setup` — the headless-CLI + role→model setup, any time
+Binds each configurable role — planner, coder, oracle, reviewer — to a headless integration and a
+model, without reinitializing (AGENTX-FR-014). Interactive by default: pick the integration you have
+installed (no provider is forced), then pick each role's model from the per-integration catalog in
+`.3powers/config/models.yaml` — editable data with a documented default; a model the catalog does not
+list is accepted free-form (BYOK), its family derived where the id encodes it (AGENTX-FR-015/016).
+Each role gets a complete `roles.yaml` block — `model_family`, `model`, `integration`, `label` — so
+`3pwr run` needs no manual role editing (AGENTX-FR-012/013). Non-destructive: only the roles you
+reconfigure are rewritten; every other field is preserved.
+- `--integration NAME` — the agent backend to bind roles to (e.g. `claude`, `codex`, `copilot`).
+- `--planner/--coder/--oracle/--reviewer MODEL` — set a role's model directly (catalog id or free-form).
+- `--yes` / `--json` — non-interactive: prompt for nothing, apply the documented defaults; `--json`
+  stdout is byte-stable.
+```bash
+3pwr config roles setup                                   # guided
+3pwr config roles setup --yes --integration copilot \
+    --planner claude-opus-4.8 --coder gpt-5.5             # scripted
+```
+**`require_dispatch`** (written on the oracle role, default `false`) is the High-risk read-path-isolation
+policy (3PWR-FR-021, epic A3): when `true`, a High-risk `advance` refuses unless an isolated
+headless-dispatch attestation (`3pwr oracle dispatch`) proves the oracle was authored with the
+implementation, plan, tasks, and contracts physically absent from its worktree. Leave it `false` while
+authoring the oracle in-IDE; enable it once the project adopts headless oracle authoring at High-risk.
+A judiciary role sharing the coder's model family only ever **warns** — diversity is recommended, never
+forced; proceed with `3pwr deviation --gate model_diversity …` (3PWR-FR-022/057, AGENTX-FR-018).
+
 ---
 
 ## Gates & verification

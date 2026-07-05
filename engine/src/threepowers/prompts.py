@@ -1,10 +1,18 @@
-"""Engine-owned lifecycle stage prompts (EXEC-FR-005).
+"""Engine-owned lifecycle stage prompts (EXEC-FR-005) + per-stage agent templates (AGENTX-FR-001/005).
 
 3Powers owns its executive, so it owns the instructions each stage's agent runs — no external template
-package is required. :func:`assemble` composes a stage prompt deterministically from the engine-owned
-template for the step plus the run's context (intent, the approved spec, prior-stage notes, and the
+package is required. :func:`assemble` composes a stage prompt deterministically from the instruction
+body for the step plus the run's context (intent, the approved spec, prior-stage notes, and the
 declared file scope). The same inputs always yield the same prompt, so prompt assembly never introduces
 run-to-run variance (supports EXEC-FR-005's property and 3PWR-NFR-001).
+
+A project can SEE and TUNE each stage's instructions (AGENTX-FR-001): a repo-local stage template at
+``.3powers/templates/agents/<step>.agent.md`` — a readable markdown file with a small metadata header
+(stage, artifact, role) — supplies that stage's instruction body when present; when the template is
+absent, empty, or unreadable, the engine's built-in instruction below applies unchanged
+(AGENTX-FR-005). Template resolution is deterministic and offline: identical template bytes and
+identical run context yield identical assembled-prompt bytes, and a template changes only the
+instruction body, never the surrounding context blocks or their order.
 
 These prompts carry the 3Powers discipline the ``.github/agents/*.agent.md`` files carried under the old
 substrate: EARS requirements with namespaced IDs, an explicit risk tier and non-goals, task file-scope,
@@ -12,6 +20,9 @@ and — for the oracle step — authoring purely from acceptance criteria withou
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
 
 # A short standing preamble prepended to every stage prompt.
 _PREAMBLE = (
@@ -80,10 +91,68 @@ _STAGE_PROMPTS: dict[str, str] = {
 
 _GENERIC = "STAGE: {step}. Perform this lifecycle step for the intent below, staying within the spec's scope."
 
+# The lifecycle stages that carry a dedicated agent template (AGENTX-FR-001): every stage that
+# dispatches a headless agent. The template file for a step is ``<step>.agent.md``.
+TEMPLATE_STEPS: tuple[str, ...] = (
+    "discovery",
+    "specify",
+    "clarify",
+    "plan",
+    "tasks",
+    "oracle",
+    "implement",
+    "review",
+    "characterize",
+)
+
+
+def template_path(templates_dir: Path, step: str) -> Path:
+    """The well-known repo-local template location for a step (AGENTX-FR-001)."""
+    return templates_dir / f"{step}.agent.md"
+
+
+def template_body(text: str) -> str:
+    """The instruction body of a stage template — its markdown minus the metadata header.
+
+    The header is a leading YAML front-matter block (``---`` … ``---``) declaring the stage, the
+    artifact, and the role (AGENTX-FR-004); it orients readers and is not part of the dispatched
+    instructions. Pure and deterministic: the same bytes always yield the same body."""
+    lines = text.splitlines()
+    if lines and lines[0].strip() == "---":
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                return "\n".join(lines[i + 1 :]).strip()
+    return text.strip()
+
+
+def stage_template_body(templates_dir: Optional[Path], step: str) -> str:
+    """The repo-local template's instruction body for ``step``, or ``""`` (AGENTX-FR-005).
+
+    ``""`` — template absent, empty (no body after its header), or unreadable — means "use the
+    built-in instruction"; the executive never dispatches an empty or broken prompt and never
+    crashes on a malformed template. Deterministic and fully offline (AGENTX-NFR-001)."""
+    if templates_dir is None:
+        return ""
+    path = template_path(templates_dir, step)
+    try:
+        if not path.is_file():
+            return ""
+        return template_body(path.read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+
 
 def stage_prompt_body(step: str) -> str:
     """The engine-owned instruction body for a lifecycle step (generic fallback for unknown steps)."""
     return _STAGE_PROMPTS.get(step) or _GENERIC.format(step=step)
+
+
+def resolve_body(step: str, templates_dir: Optional[Path] = None) -> str:
+    """The instruction body the executive dispatches for ``step`` (AGENTX-FR-005).
+
+    The repo-local stage template wins when it yields a non-empty body; otherwise the engine's
+    built-in instruction for the step applies unchanged."""
+    return stage_template_body(templates_dir, step) or stage_prompt_body(step)
 
 
 def assemble(
@@ -93,14 +162,16 @@ def assemble(
     spec_text: str = "",
     context: str = "",
     file_scope: str = "",
+    body: str = "",
 ) -> str:
     """Compose the full stage prompt deterministically (EXEC-FR-005).
 
     Order is fixed: preamble, the step's instruction body, then whichever context blocks are present
     (intent, spec, prior notes, file scope). Empty blocks are omitted so the output is a pure function of
-    the non-empty inputs.
-    """
-    parts: list[str] = [_PREAMBLE, "", stage_prompt_body(step)]
+    the non-empty inputs. ``body`` — when non-empty — overrides the built-in instruction body with a
+    repo-local stage template's (AGENTX-FR-005); it changes only the instruction body, never the
+    surrounding context blocks or their order."""
+    parts: list[str] = [_PREAMBLE, "", body.strip() or stage_prompt_body(step)]
     if intent.strip():
         parts += ["", "INTENT:", intent.strip()]
     if spec_text.strip():
