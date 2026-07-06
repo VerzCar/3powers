@@ -18,16 +18,17 @@ projects and (b) reflect that `examples/` is gone.
 
 ## Decisions recorded
 
-Authored non-interactively as recommendations (this plan was produced in an autonomous session).
-Each decision below is the plan's working assumption; the open-questions section at the end lists
-the ones worth a maintainer's confirmation before implementation starts.
+Authored non-interactively as recommendations; **confirmed by the user on 2026-07-06** with one
+change: the default headless integration is **copilot**, not claude (easier access, and model
+families can be switched within the one backend). The former open questions and their resolutions
+are recorded at the end. The plan is **finalized**.
 
 | # | Decision | Recommendation | Rationale |
 |---|---|---|---|
 | 1 | Where does a run actually execute? | **Ephemeral sandbox copy.** Each committed project is a plain template tree (`e2e/<name>/project/`, no inner `.git`). The notebook's provisioning cells copy it to a throwaway directory, `git init` + initial commit, `3pwr keygen` with a sandbox-scoped key, `3pwr init --yes --language <lang>`, then seed the shared headless config. | 3Powers uses Git as substrate — a real `3pwr run` creates branches, a ledger, `specs/`, verdicts. Running in-place would either nest git repos inside this repo or pollute it with run artifacts on every e2e execution. A sandbox makes runs repeatable, disposable, and safe to parallelize; it is also literally the "dedicated sandbox" the intent asks for. |
 | 2 | Notebook execution + the easy run command | **`./e2e/run.sh <typescript|python|go>`** wrapping **papermill** from a small uv-managed harness (`e2e/harness/`). Parameters cell per notebook: `INTENT`, `INTEGRATION`, `MODE`, `TIER`, `KEEP_SANDBOX`, `DRY_RUN`. The executed notebook (with outputs) is written to the sandbox, never back into the repo; committed notebooks keep cleared outputs. | Papermill gives parameterized, headless, deterministic top-to-bottom execution — exactly "fixed written notebook configuration". A bash wrapper keeps the entry point one memorable command per project; uv pins the notebook toolchain the same way the engine pins its own. |
 | 3 | How the two human gates are handled in a "complete run" | The notebook drives `3pwr run "$INTENT" --mode auto --no-input`, expects the documented pause at the spec gate (exit 3), surfaces the spec for inspection, then continues with `3pwr run --resume --approver "$APPROVER"`; same again at sign-off. `run.sh` defaults `APPROVER` to `e2e-harness`. | The gates are **exercised, never bypassed** — the resume path is the CLI's own sanctioned mechanism and the ledger records the approver. When an agent drives the notebook, the agent *is* the reviewing human-stand-in and can genuinely read the spec between cells; when a human drives it, they approve for real. |
-| 4 | Shared headless integration | **One config, `e2e/config/`** (`roles.yaml` naming the coder/oracle integrations + model families, optional `models.yaml`), seeded into every sandbox by the shared bootstrap after `3pwr init`. Default integration: `claude` (any backend listed in the engine's `headless_integrations` works; the parameter cell overrides per run). | "Configured once and used for all the sample projects" — the config lives in exactly one place; projects never carry their own copy. |
+| 4 | Shared headless integration | **One config, `e2e/config/`** (`roles.yaml` naming the coder/oracle integrations + model families, optional `models.yaml`), seeded into every sandbox by the shared bootstrap after `3pwr init`. Default integration: **`copilot`** (user decision: easiest access, and one backend that can switch between model families — which also makes coder-vs-oracle family diversity a pure config choice). Any backend listed in the engine's `headless_integrations` works; the parameter cell overrides per run. | "Configured once and used for all the sample projects" — the config lives in exactly one place; projects never carry their own copy. |
 | 5 | What "enterprise-ready, not too detailed" means | Per project: layered `src/` (config → domain → service), typed error handling, a small logging abstraction, unit **and** integration tests, strict format/lint/types wired exactly as the adapter manifest expects, LCOV coverage at the adapter's `coverage_path`, the adapter's mutation tool configured, a lockfile, `README.md`, `.gitignore`, `.editorconfig`. **Explicitly excluded:** Dockerfiles, Kubernetes/IaC, CI pipelines, auth, databases, external network calls. | The samples must be rich enough that a `3pwr run` does representative work (real layers to modify, real tests to extend) and every adapter gate has something genuine to chew on — but every extra artifact is surface the e2e kit must keep green forever. |
 | 6 | Fate of `specs/001-validation-utils/` | **Keep, untouched.** Only `examples/validation-utils/` is deleted. | The spec artifacts are history bound into the signed ledger; deleting or editing them risks tripping `verify`/`spec_integrity` and erases the traceability record. Dangling references *from docs* to the deleted example are fixed in Track D; the spec folder itself is an internal artifact and may reference the past freely. |
 | 7 | CI involvement | Full lifecycle runs are **agent/human-driven only** (they dispatch a live coding agent — cost, credentials, nondeterminism). A cheap deterministic path exists for automation: `./e2e/run.sh <lang> --check` provisions the sandbox and runs baseline gates + `3pwr run --dry-run`, no agent dispatch. Wiring `--check` into CI is a follow-up, not part of this plan. | Keeps the e2e kit honest (the real thing needs a real agent) without leaving zero machine-checkable surface. |
@@ -118,8 +119,9 @@ sandbox — that is the kit's standing invariant, checked by the notebooks' base
   `harness/bootstrap.py`: sandbox copy, git init, dependency install per language, key + init +
   config overlay. One implementation, three thin per-notebook call sites.
 - `e2e/config/roles.yaml`: the single headless-integration config (decision 4) — coder
-  integration, oracle integration + family (kept different from the coder's, honoring the
-  diversity recommendation), `require_dispatch` left at default.
+  integration **`copilot`**, oracle integration also `copilot` but pinned to a **different model
+  family** (honoring the diversity recommendation; copilot makes the family switch a config-only
+  change), `require_dispatch` left at default.
 - `e2e/run.sh`: maps `<lang>` → notebook, forwards `--intent/--integration/--check/--keep`,
   executes via `uv run --project e2e/harness papermill …`, writes the executed notebook + run log
   to the sandbox's artifact dir, and propagates the notebook's exit status.
@@ -238,16 +240,19 @@ test ! -d examples && echo examples-gone
 
 ---
 
-## Open questions (recommendations recorded above; confirm before implementation)
+## Open questions — resolved 2026-07-06
 
-1. **Project domains/names (Track B):** `typescript-orders` / `python-inventory` / `go-ratelimit`
-   as proposed, or different domains?
-2. **Default headless integration (decision 4):** `claude` as the seeded default in
-   `e2e/config/roles.yaml`, with the oracle pinned to a different family — acceptable, and which
-   backends are actually installed where the kit will run?
-3. **`specs/001-validation-utils/` (decision 6):** confirm it stays untouched as history while its
-   subject project is deleted.
-4. **CI (decision 7):** confirm full runs stay out of CI and the `--check` smoke wiring is a
-   separate follow-up.
-5. **Approver identity (decision 3):** is `e2e-harness` acceptable as the recorded approver for
-   e2e runs' human gates, or should the driving agent/user always pass their own name?
+All resolved by the user; the plan is **finalized**.
+
+1. **Default headless integration (decision 4):** **`copilot`** is the seeded default in
+   `e2e/config/roles.yaml` — chosen for easiest access and because a single copilot backend can
+   switch model families, which also makes the coder-vs-oracle family diversity a config-only
+   choice. (Was: `claude`.)
+2. **`specs/001-validation-utils/` (decision 6):** **confirmed** — stays untouched as history while
+   its subject project (`examples/validation-utils/`) is deleted.
+3. **CI (decision 7):** **confirmed** — full lifecycle runs stay out of CI; the `--check` smoke
+   wiring into CI is a separate follow-up, not part of this plan.
+4. **Approver identity (decision 3):** **confirmed** — `e2e-harness` is acceptable as the recorded
+   approver for e2e runs' human gates (`run.sh` default; overridable per run).
+5. **Project domains/names (Track B):** accepted as proposed — `typescript-orders` /
+   `python-inventory` / `go-ratelimit`.
