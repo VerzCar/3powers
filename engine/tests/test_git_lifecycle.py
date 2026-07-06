@@ -333,8 +333,13 @@ def test_stage_commit_stages_only_produced_paths_with_agent_message(run_repo, ca
     specify = next(s for s in subjects if s.startswith("3pwr(RUN): specify"))
     assert "authored the specify work for the run" in specify  # the agent-written description
     files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
-    # only the produced path plus the engine's ledger (RUNID-FR-005) — never add -A
-    assert sorted(files) == [".3powers/ledger.jsonl", "specs/001-add-x/spec.md"]
+    # only the produced path plus the engine's ledger (RUNID-FR-005) and the run's progress file
+    # (PROGFILE-FR-008) — never add -A
+    assert sorted(files) == [
+        ".3powers/ledger.jsonl",
+        "specs/001-add-x/progress.md",
+        "specs/001-add-x/spec.md",
+    ]
 
 
 def test_missing_agent_message_falls_back_deterministically(run_repo, monkeypatch, capsys):

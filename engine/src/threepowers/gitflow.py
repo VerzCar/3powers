@@ -52,6 +52,12 @@ DEFAULT_AUTHOR_EMAIL = "3pwr@3powers.local"
 # ignores the whole prefix (GITX-FR-007's property scopes the guard to work outside the run).
 ENGINE_STATE_PREFIX = ".3powers/"
 
+# The engine-written run progress file inside a feature workspace (PROGFILE-FR-001). A paused or
+# failed run legitimately leaves it updated after its last stage commit, so — like the ledger — it
+# is engine-owned state the clean-start guard never treats as a developer's unrelated work
+# (PROGFILE-NFR-002).
+_PROGRESS_FILE = re.compile(r"^specs/[^/]+/progress\.md$")
+
 # Bound for the agent-written description folded into a commit subject (GITX-FR-011).
 _MESSAGE_MAX_LEN = 200
 _COMMIT_LINE = re.compile(r"^\s*COMMIT:\s*(\S.*)$", re.MULTILINE)
@@ -186,12 +192,13 @@ def unrelated_changes(
 
     Pure and deterministic given its inputs (GITX-NFR-001). "Produced by the run" is the run's
     recorded produced-path set plus anything inside the run's feature folder; the engine's own
-    trust-spine state under ``.3powers/`` (ledger appends, verdicts, transcripts, seeded config) is
-    never a developer's unrelated work and is ignored."""
+    trust-spine state under ``.3powers/`` (ledger appends, verdicts, transcripts, seeded config)
+    and any feature workspace's engine-written ``progress.md`` (PROGFILE-NFR-002) are never a
+    developer's unrelated work and are ignored."""
     owned = set(run_paths)
     out: list[str] = []
     for p in changed:
-        if p in owned or p.startswith(ENGINE_STATE_PREFIX):
+        if p in owned or p.startswith(ENGINE_STATE_PREFIX) or _PROGRESS_FILE.match(p):
             continue
         if feature_prefix and p.startswith(feature_prefix):
             continue

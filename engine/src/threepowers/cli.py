@@ -71,6 +71,7 @@ from . import (
     oracle,
     orchestrate,
     phases,
+    progress,
     prompts,
     provenance,
     runner as runnermod,
@@ -3297,6 +3298,29 @@ def _report_phase_estimates(
             print(f"  ⚠ {warn}", file=sys.stderr)
 
 
+def _warn_if_unanswered(s: Settings, ph: phases.Phase, transcript_rel: str, spec_id: str) -> None:
+    """Advisory stall check after one phase session ends (PHASEPR-FR-005).
+
+    Scans the last 500 bytes of the session's persisted transcript for unanswered-question
+    patterns and, on a match, prints a warning naming the phase plus the run's ``--status`` hint.
+    Strictly advisory (PHASEPR-NFR-002): it never raises, never retries, and never changes a stage
+    outcome, ledger entry, or exit code — a missing/unreadable transcript reads as empty and stays
+    silent."""
+    if not transcript_rel:
+        return
+    tail = transcripts.tail_text(s.root / transcript_rel, limit=500)
+    if not transcripts.unanswered_question(tail):
+        return
+    print(
+        f"  ⚠ phase {ph.index} ended with a possible unanswered question — review the transcript",
+        file=sys.stderr,
+    )
+    print(
+        f"    (run: 3pwr run --status --spec-id {spec_id} to see the full transcript path)",
+        file=sys.stderr,
+    )
+
+
 def _dispatch_phased(
     s: Settings,
     step: str,
@@ -3334,7 +3358,13 @@ def _dispatch_phased(
     attempt_counts: list[int] = []  # list.append is atomic — safe across the batch threads
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
-        ctx = phases.handoff_context(ph, total, constitution_text=constitution)
+        ctx = phases.handoff_context(
+            ph,
+            total,
+            constitution_text=constitution,
+            spec_id=spec_id,
+            completed_summary=phases.completed_phases_summary(phase_list, ph.index),
+        )
         if context:
             ctx = f"{context}\n\n{ctx}"
         file_scope = "\n".join(ph.file_scope)
@@ -3345,6 +3375,7 @@ def _dispatch_phased(
             retries=retries,
         )
         attempt_counts.append(attempts)
+        _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
     prun = phases.run_phases(batches, run_one)
@@ -3404,6 +3435,17 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
     )
 
 
+def _progress_safe(update: Callable[[], Any]) -> None:
+    """Run one progress-file update, degrading any error to a stderr warning (PROGFILE-NFR-001).
+
+    The progress file is an operator convenience view of the signed ledger — an IO problem writing
+    it must never fail a run or a stage, so every trigger call goes through this guard."""
+    try:
+        update()
+    except Exception as exc:  # any progress-write problem degrades to a warning, never a failure
+        print(f"warning: progress.md not updated — {exc}", file=sys.stderr)
+
+
 def _native_runner(
     s: Settings,
     args: argparse.Namespace,
@@ -3421,6 +3463,7 @@ def _native_runner(
     echo: Optional[TextSink] = None,
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
     verdict_box: Optional[dict[str, Any]] = None,
+    progress_reporter: Optional[progress.Reporter] = None,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
@@ -3595,6 +3638,10 @@ def _native_runner(
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
+            if progress_reporter is not None:
+                # The stage-complete trigger (PROGFILE-FR-007), BEFORE the post-stage commit below,
+                # so the committed progress.md already shows this stage ✓ done (PROGFILE-FR-008).
+                _progress_safe(lambda: progress_reporter.stage_completed(step, stage))
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's
             # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
@@ -3612,6 +3659,17 @@ def _native_runner(
                 ledger_rel = str(s.ledger_path.relative_to(s.root))
                 if ledger_rel not in produced:
                     produced = [*produced, ledger_rel]
+            if produced and feature_dir is not None:
+                # The run's progress file rides the same stage commit (PROGFILE-FR-008): committed
+                # alongside the stage artifact and the ledger whenever it exists — never forcing a
+                # commit for a stage that produced nothing, never duplicating a listed path.
+                prog = feature_dir / progress.FILENAME
+                try:
+                    prog_rel = str(prog.relative_to(s.root))
+                except ValueError:
+                    prog_rel = ""
+                if prog_rel and prog.is_file() and prog_rel not in produced:
+                    produced = [*produced, prog_rel]
             desc = gitflow.agent_commit_description(s.root, result.transcript)
             commit = gitflow.commit_stage(
                 s.root,
@@ -3709,6 +3767,7 @@ def _run_make_runner(
     echo: Optional[TextSink] = None,
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
     verdict_box: Optional[dict[str, Any]] = None,
+    progress_reporter: Optional[progress.Reporter] = None,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3731,6 +3790,7 @@ def _run_make_runner(
         echo=echo,
         on_progress=on_progress,
         verdict_box=verdict_box,
+        progress_reporter=progress_reporter,
     )
 
 
@@ -4102,6 +4162,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     # The Verify stage's full verdict dict lands here (filled by _native_verdict), so a gate-red
     # event can render each failed gate inline with the run's resolved identity (GDIAG-FR-001/006).
     verdict_box: dict[str, Any] = {}
+    # The run's progress-file reporter (PROGFILE-FR-001) — bound once the live run's feature folder
+    # is resolved below; absent (a dry-run / simulated / folder-less run), no file is written.
+    progress_box: dict[str, progress.Reporter] = {}
 
     def on_event(ev: orchestrate.Event) -> None:
         if ev.kind == "failed" and (ev.step == "gate_red" or ev.detail == "fail"):
@@ -4110,6 +4173,22 @@ def cmd_run(args: argparse.Namespace) -> int:
             if verdict_box.get("verdict"):
                 ev.data.setdefault("verdict", verdict_box["verdict"])
             ev.data.setdefault("spec_id", spec_id)
+        rep = progress_box.get("reporter")
+        if rep is not None:
+            # The progress file's lifecycle triggers (PROGFILE-FR-007), at the same choke point:
+            # stage start, gate verdict pass/fail, human-gate pause, run failure, completion. The
+            # stage-complete trigger fires inside the runner's dispatch, before the stage commit.
+            if ev.kind == "step":
+                _progress_safe(lambda: rep.stage_started(ev.step, ev.stage))
+            elif ev.kind == "verdict":
+                failed_names = progress.failed_gate_names(verdict_box.get("verdict") or {})
+                _progress_safe(lambda: rep.verdict(ev.detail, failed_names))
+            elif ev.kind == "gate-stop":
+                _progress_safe(lambda: rep.paused(ev.step, ev.stage))
+            elif ev.kind == "failed":
+                _progress_safe(lambda: rep.failed(ev.step, ev.stage, ev.detail))
+            elif ev.kind == "done":
+                _progress_safe(lambda: rep.completed())
         if not args.json:
             tracker.on_event(ev)
 
@@ -4155,6 +4234,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # dispatch starts, not one whole segment later; on_event self-guards under --json.
             on_progress=on_event,
             verdict_box=verdict_box,
+            progress_reporter=progress_box.get("reporter"),
         )
 
     def _stages() -> list[dict]:
@@ -4209,6 +4289,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         if feature_dir is None:
             legacy_spec = _resolve_run_spec(s, args)
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
+        if git_on and feature_dir is not None:
+            # Rebind the run's progress file to the recorded workspace (PROGFILE-FR-001): the
+            # resumed segment's triggers keep updating specs/<NNN>-<slug>/progress.md.
+            progress_box["reporter"] = progress.Reporter(
+                feature_dir,
+                spec_id=spec_id,
+                tier=args.tier
+                or workkind.classify(args.intent or "").suggested_tier
+                or s.default_tier(),
+            )
         if git_on:
             # The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from
             # the signed ledger alone (a pre-GITX run derives the same deterministic name from its
@@ -4306,6 +4396,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             # (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).
             spec_id = feature_dir.name.split("-")[0]
             tracker.retitle(spec_id)
+        if git_on and feature_dir is not None:
+            # The run's human-readable progress file (PROGFILE-FR-001): bound to the allocated
+            # workspace and the resolved identity, written at every lifecycle trigger below. A
+            # dry-run / simulated run allocates no folder and writes no file.
+            progress_box["reporter"] = progress.Reporter(
+                feature_dir,
+                spec_id=spec_id,
+                tier=args.tier or wk.suggested_tier or s.default_tier(),
+            )
         if git_on:
             # Create + switch to the run's dedicated branch off the configured base BEFORE any
             # stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity

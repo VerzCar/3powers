@@ -328,18 +328,64 @@ def run_phases(
     return run
 
 
-def handoff_context(phase: Phase, total: int, *, constitution_text: str = "") -> str:
+def completed_phases_summary(phase_list: list[Phase], current_index: int) -> str:
+    """The one-line "phases already completed" summary for the phase prompt (PHASEPR-FR-004).
+
+    Names every phase preceding ``current_index`` in artifact order — e.g.
+    ``Phase 1 (HeaderComponent styles), Phase 2 (ButtonComponent)`` — so a fresh session never
+    redoes earlier work; returns ``"none"`` for the first phase (nothing is invented). A pure,
+    deterministic function of the parsed phase list and the index (PHASEPR-NFR-001)."""
+    done = [p for p in phase_list if p.index < current_index]
+    if not done:
+        return "none"
+    return ", ".join(f"Phase {p.index} ({p.name})" for p in done)
+
+
+def handoff_context(
+    phase: Phase,
+    total: int,
+    *,
+    constitution_text: str = "",
+    spec_id: str = "",
+    completed_summary: str = "none",
+) -> str:
     """The per-phase handoff block a fresh session's prompt reloads (PHASE-FR-010).
 
-    Carries the phase position, its tasks, and the constitution/rules text; the approved spec and the
-    file scope travel in their own prompt blocks (:func:`threepowers.prompts.assemble`), so the whole
-    handoff set is reloaded with no carried conversation state (3PWR-FR-061). Deterministic given the
-    inputs (PHASE-NFR-001)."""
+    Carries the PHASE INSTRUCTION contract (PHASEPR-FR-001/002/003): scope limited to the declared
+    phase's tasks and file scope, ``[P]`` tasks dispatched concurrently via subagents, completion
+    markers (``[x]`` done / ``[!]`` + reason) written back to tasks.md, no operator questions —
+    plus the completed-phases summary (PHASEPR-FR-004), the phase's tasks, and the
+    constitution/rules text. The approved spec and the file scope travel in their own prompt blocks
+    (:func:`threepowers.prompts.assemble`), so the whole handoff set is reloaded with no carried
+    conversation state (3PWR-FR-061). Deterministic given the inputs (PHASE-NFR-001,
+    PHASEPR-NFR-001)."""
+    run_label = f" for run {spec_id}" if spec_id else ""
     parts = [
+        "═══════════════════ PHASE INSTRUCTION ════════════════════════",
         f"PHASE {phase.index}/{total}: {phase.name}",
-        "This session is fresh: reload everything from this handoff — the approved spec (above), the "
-        "constitution/rules (below), this phase's tasks, and the declared file scope. Implement ONLY "
-        "this phase's tasks; do not touch files outside the declared scope.",
+        f"You are implementing Phase {phase.index} of {total}{run_label}.",
+        "",
+        f'SCOPE: implement only the tasks explicitly listed under "## Phase {phase.index}" in the '
+        "tasks below.",
+        "Do NOT modify files outside the declared file scope for this phase.",
+        "Do NOT implement tasks from other phases.",
+        "",
+        "PARALLEL TASKS: any task marked [P] in this phase may be dispatched concurrently via "
+        "subagents.",
+        "Dispatch all [P]-marked tasks in parallel, then collect their results before proceeding.",
+        "",
+        "COMPLETION: when you have finished every task in this phase, update tasks.md:",
+        "mark each completed task with `[x]` in its checkbox. If a task cannot be completed,",
+        "mark it `[!]` and append a one-line reason.",
+        "",
+        "CLARIFICATIONS: do not ask the operator for input. If something is unclear, make the most",
+        "reasonable decision and document your assumption in a comment in the code (not in "
+        "tasks.md).",
+        "",
+        "This session is fresh: reload everything from this handoff — the approved spec (above), "
+        "the constitution/rules (below), this phase's tasks, and the declared file scope.",
+        "",
+        f"Phases already completed: {completed_summary or 'none'}",
     ]
     if phase.body:
         parts += ["", "PHASE TASKS:", phase.body]

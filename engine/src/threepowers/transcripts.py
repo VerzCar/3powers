@@ -50,6 +50,47 @@ def _safe_id(spec_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", spec_id or "RUN") or "RUN"
 
 
+def tail_text(path: Path, limit: int = 500) -> str:
+    """The last ``limit`` bytes of a transcript, decoded leniently (PHASEPR-FR-005).
+
+    Reads only the tail (seek from the end), so scanning a large transcript stays cheap. A missing
+    or unreadable file yields ``""`` — the advisory scan must introduce no new failure mode."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as fh:
+            fh.seek(max(0, size - limit))
+            return fh.read(limit).decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+# The clarify phrases the stall scan matches case-insensitively (PHASEPR-FR-005). Deliberately few
+# and literal: this is an advisory hint, not a classifier — a miss costs one unread question, a
+# fancy heuristic costs determinism.
+_CLARIFY_PHRASES = ("i need clarification", "could you clarify")
+
+
+def unanswered_question(tail: str) -> bool:
+    """Whether a transcript tail looks like a session that ended on an unanswered question
+    (PHASEPR-FR-005) — a pure, deterministic predicate.
+
+    Matches, case-insensitively: a trailing ``?`` (by construction nothing follows it), or a
+    clarify phrase (``I need clarification`` / ``Could you clarify``) with no subsequent fenced
+    code block — a fence after the question means the session produced work past it. Empty input
+    never matches."""
+    text = tail.strip()
+    if not text:
+        return False
+    if text.endswith("?"):
+        return True
+    low = text.lower()
+    for phrase in _CLARIFY_PHRASES:
+        pos = low.rfind(phrase)
+        if pos != -1 and "```" not in low[pos:]:
+            return True
+    return False
+
+
 class RedactingWriter:
     """A minimal text sink that redacts credential values before every write (AUTOX-NFR-002).
 

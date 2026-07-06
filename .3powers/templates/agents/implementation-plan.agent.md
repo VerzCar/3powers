@@ -74,8 +74,9 @@ Each task is one checklist line:
 - `(files: …)` — the task's own file scope, always explicit and exact.
 
 Within a phase, order tasks so that only true dependencies serialize them; independent tasks
-(disjoint files, no dependency) may be executed together. The executor marks a completed task
-`[X]` — keep the checklist the single source of task state.
+(disjoint files, no dependency) may be executed together. The executor marks each finished task
+`[x]` in its checkbox — and a task it cannot complete `[!]` with a one-line reason appended —
+keeping the checklist the single source of task state.
 
 ## Output destination
 
