@@ -129,9 +129,7 @@ def test_spec_id_derives_from_workspace_nnn(run_repo, capsys):
 def test_explicit_spec_id_always_wins(run_repo, capsys):
     """RUNID-FR-002: an explicit --spec-id is the run's identity unchanged — the allocated
     workspace NNN never overrides it."""
-    rc = main(
-        ["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "PAY"]
-    )
+    rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "PAY"])
     obj = json.loads(capsys.readouterr().out)
     assert rc == EXIT_PAUSED and obj["spec_id"] == "PAY"
     assert (run_repo / "specs" / "030-add-x").is_dir()  # the workspace still allocated its NNN

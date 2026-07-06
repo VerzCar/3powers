@@ -22,6 +22,7 @@ def test_parse_lcov(tmp_path):
 
 
 def test_diff_coverage_scopes_to_changed_lines():
+    """3PWR-FR-029: coverage is measured on the changed lines only, not the whole repository."""
     lcov = {"/proj/src/validate.ts": {1: 1, 2: 0, 3: 5}}
     # Only line 3 (covered) changed → 100%.
     pct, uncovered = diff_coverage(lcov, {"/proj/src/validate.ts": {3}})

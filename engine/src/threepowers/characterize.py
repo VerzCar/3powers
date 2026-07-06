@@ -234,8 +234,20 @@ def characterize_module(
 _SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".rb"}
 # Dirs never worth characterizing — vendored deps, build output, tool caches, the trust spine itself.
 _SKIP_DIRS = {
-    ".3powers", "node_modules", "__pycache__", "venv", ".venv", "dist", "build", "vendor",
-    "target", "site-packages", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    ".3powers",
+    "node_modules",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "dist",
+    "build",
+    "vendor",
+    "target",
+    "site-packages",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
 }
 
 
@@ -279,9 +291,7 @@ def characterize_path(
         if not files:
             raise FileNotFoundError(f"no source files to characterize under: {target}")
         return [
-            characterize_module(
-                repo_root, f, specs_dir=specs_dir, tests_dir=tests_dir or f.parent
-            )
+            characterize_module(repo_root, f, specs_dir=specs_dir, tests_dir=tests_dir or f.parent)
             for f in files
         ]
     return [

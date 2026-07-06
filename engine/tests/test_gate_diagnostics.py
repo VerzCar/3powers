@@ -44,9 +44,7 @@ def _project(
     tp = tmp_path / ".3powers"
     (tp / "config").mkdir(parents=True)
     (tp / "adapters" / "a").mkdir(parents=True)
-    (tp / "config" / "risk-tiers.yaml").write_text(
-        _RISK.format(gates=tier_gates), encoding="utf-8"
-    )
+    (tp / "config" / "risk-tiers.yaml").write_text(_RISK.format(gates=tier_gates), encoding="utf-8")
     (tp / "adapters" / "a" / "adapter.yaml").write_text(adapter_yaml, encoding="utf-8")
     proj = tmp_path / "p"
     proj.mkdir()
@@ -119,9 +117,7 @@ def test_gate_run_rejects_id_combined_with_spec(tmp_path, capsys):
     """GDIAG-FR-003: `--id` and `--spec` are mutually exclusive — a clear error, nonzero exit."""
     root = _repo(tmp_path)
     with pytest.raises(SystemExit) as exc:
-        main(
-            ["--root", str(root), "gate", "run", "--id", "030", "--spec", "x/spec.md"]
-        )
+        main(["--root", str(root), "gate", "run", "--id", "030", "--spec", "x/spec.md"])
     assert exc.value.code == EXIT_USAGE
     assert "not allowed with" in capsys.readouterr().err
 
@@ -199,8 +195,19 @@ def test_cmd_gate_run_exits_setup_with_the_install_hint(tmp_path, capsys):
     s, proj = _project(tmp_path, _ADAPTER_MISSING_FMT)
     rc = main(
         [
-            "--root", str(tmp_path), "gate", "run", "--path", str(proj),
-            "--tier", "T", "--adapter", "a", "--no-ledger", "--spec", str(proj / "spec.md"),
+            "--root",
+            str(tmp_path),
+            "gate",
+            "run",
+            "--path",
+            str(proj),
+            "--tier",
+            "T",
+            "--adapter",
+            "a",
+            "--no-ledger",
+            "--spec",
+            str(proj / "spec.md"),
         ]
     )
     err = capsys.readouterr().err

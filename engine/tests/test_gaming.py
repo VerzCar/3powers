@@ -39,6 +39,7 @@ def test_clean_diff_passes(tmp_path):
 
 
 def test_added_suppression_is_flagged(tmp_path):
+    """3PWR-FR-035: an added lint/type suppression is flagged as gate-gaming for human review."""
     _init(tmp_path)
     _commit(tmp_path, "a.py", "x = 1\n")
     (tmp_path / "a.py").write_text(f"x = 1  {_TYPE_IGNORE}\ny = 2  {_NOQA}\n", encoding="utf-8")
@@ -48,6 +49,7 @@ def test_added_suppression_is_flagged(tmp_path):
 
 
 def test_removed_assertion_is_flagged(tmp_path):
+    """3PWR-FR-035: a deleted test assertion is flagged as gate-gaming for human review."""
     _init(tmp_path)
     _commit(tmp_path, "t.py", "def test():\n    assert foo()\n    assert bar()\n")
     (tmp_path / "t.py").write_text("def test():\n    assert foo()\n", encoding="utf-8")

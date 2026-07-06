@@ -605,7 +605,17 @@ def test_phase_stall_warning_is_advisory_and_never_alters_control_flow(
     monkeypatch.setattr(runner, "dispatch_agent", stalled)
     assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
     rc = main(
-        ["--root", str(root), "run", "--resume", "--no-input", "--spec-id", "RUN", "--approver", "c"]
+        [
+            "--root",
+            str(root),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "c",
+        ]
     )
     assert rc == 3  # identical to the no-warning run: paused at sign-off, never failed
     err = capsys.readouterr().err

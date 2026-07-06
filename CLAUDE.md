@@ -21,6 +21,10 @@ It owns a **native, provider-agnostic executive** — `3pwr run` dispatches head
 directly — uses Git as substrate, and is agnostic to model family, language, LLM provider, and CI/CD
 platform.
 
+**Implementation status lives in exactly one place: [docs/STATUS.md](docs/STATUS.md)** — the current
+milestone, the validation date, and the open residuals. Do not infer scope or progress from this file;
+read STATUS.
+
 ## Build / test / gate commands
 
 Authoritative pinned versions live in the lockfiles (`engine/uv.lock`,
@@ -43,9 +47,11 @@ independence, brownfield Stage Zero, deviations/emergency, observe — is docume
 dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
 and in `auto` mode stops only at the two human gates (spec approval, sign-off). Post-approval stage
 prompts reload the approved spec + the prior stage's artifact reference; a phased tasks
-artifact makes implement run **one fresh session per phase** — concurrently for `[P]`-marked phases with
+artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with
 disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
-budget in `.3powers/config/context.yaml`. For a hands-on,
+budget in `.3powers/config/context.yaml`. Each run's artifacts lie flat in its auto-allocated feature
+folder `specs/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy split layout
+(`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stays readable. For a hands-on,
 step-by-step run, drive the stages with the `3pwr` CLI and the judiciary `/3pwr.*` prompts (`/3pwr.oracle`
 → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`);
 

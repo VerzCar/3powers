@@ -6,6 +6,8 @@ Guidance for AI coding agents working in this repository. This file complements 
 
 3Powers is an **open-source judiciary kit for spec-driven, agentic software delivery**. It restores the separation of powers when AI writes software: the spec is the law (legislative), agents build (executive), and an independent oracle plus a deterministic gate suite plus human review judge the result (judicial).
 
+**Implementation status lives in exactly one place: [docs/STATUS.md](docs/STATUS.md)** — the current milestone, the validation date, and the open residuals. Do not infer scope or progress from this file; read STATUS.
+
 Key technologies: Python ≥ 3.10 in `engine/` (a uv-managed, src-layout package shipping the `3pwr` CLI; runtime deps only `cryptography` and `PyYAML`), a runnable TypeScript sample in `examples/validation-utils/`, and declarative language adapters (TypeScript, Python, Go).
 
 Repository layout:
@@ -40,6 +42,8 @@ examples/validation-utils/  # runnable TypeScript sample project
 ## Development workflow
 
 - Engine work happens inside `engine/` — source in `engine/src/threepowers/`, tests in `engine/tests/`.
+- A `3pwr` run's stage artifacts lie flat in the run's auto-allocated feature folder `specs/<NNN>-<slug>/` — `spec.md`, `plan.md`, `tasks.md`, `oracle.md`, `implement.md`, plus the engine-maintained `progress.md`. The legacy split layout (`specs/<feature>/spec/spec.md` + the sibling `specs/<feature>/artifacts/` folder) stays readable.
+- Tasks artifacts group work into ordered phases sized to the context budget (`.3powers/config/context.yaml`); phases marked `[P]` with disjoint file scopes are dispatched in parallel as fresh sessions. The budget is advisory — an oversize phase warns, never blocks.
 - The full `3pwr` command surface (gate runs, ledger verification, lifecycle runs, oracle, brownfield, deviations, …) is documented in [docs/cli-reference.md](docs/cli-reference.md). Consult it there; it is not duplicated in this file.
 - The engine gates its own code (self-application): keep any engine change green under ruff, mypy, and pytest before declaring it done.
 

@@ -18,6 +18,7 @@ def _init(repo):
 
 
 def test_modified_line_is_counted(tmp_path):
+    """3PWR-FR-029: the changed-line set that scopes diff coverage comes from the real git diff."""
     _init(tmp_path)
     f = tmp_path / "a.py"
     f.write_text("l1\nl2\nl3\n")

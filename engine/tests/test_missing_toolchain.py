@@ -72,7 +72,7 @@ def _project(tmp_path, gate_yaml):
     (tp / "config" / "risk-tiers.yaml").write_text(_RISK, encoding="utf-8")
     (tp / "adapters" / "a" / "adapter.yaml").write_text(
         'language: a\ndetect: ["d"]\ntest_roots: ["tests"]\n'
-        "toolchain:\n  biome: { install: \"npm i -D @biomejs/biome\" }\n"
+        'toolchain:\n  biome: { install: "npm i -D @biomejs/biome" }\n'
         f"gates:\n{gate_yaml}\n",
         encoding="utf-8",
     )
@@ -85,7 +85,8 @@ def _project(tmp_path, gate_yaml):
 def test_run_gates_flags_missing_tool(tmp_path):
     """A gate whose required tool is absent → verdict carries missing_tool + an actionable finding."""
     s, proj = _project(
-        tmp_path, '  format: { cmd: "definitely-not-a-real-tool-xyz ci .", parser: biome, requires: biome }'
+        tmp_path,
+        '  format: { cmd: "definitely-not-a-real-tool-xyz ci .", parser: biome, requires: biome }',
     )
     v = run_gates(s, proj, tier="T", spec_path=None, adapter_name="a", report_only=True)
     fmt = next(g for g in v.gates if g.gate == "format")
@@ -97,12 +98,23 @@ def test_run_gates_flags_missing_tool(tmp_path):
 def test_cmd_gate_run_prints_install_cta(tmp_path, capsys):
     """`gate run` prints a consolidated install call-to-action when a tool is missing (3PWR-FR-034)."""
     s, proj = _project(
-        tmp_path, '  format: { cmd: "definitely-not-a-real-tool-xyz ci .", parser: biome, requires: biome }'
+        tmp_path,
+        '  format: { cmd: "definitely-not-a-real-tool-xyz ci .", parser: biome, requires: biome }',
     )
     rc = cli.main(
         [
-            "--root", str(tmp_path), "gate", "run", "--path", str(proj),
-            "--tier", "T", "--adapter", "a", "--report-only", "--no-ledger",
+            "--root",
+            str(tmp_path),
+            "gate",
+            "run",
+            "--path",
+            str(proj),
+            "--tier",
+            "T",
+            "--adapter",
+            "a",
+            "--report-only",
+            "--no-ledger",
         ]
     )
     out = capsys.readouterr().out

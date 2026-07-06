@@ -345,7 +345,12 @@ alone. Every producing stage leaves its markdown FLAT in that folder — `spec.m
 plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
-artifact is broken — never skipping it on the ledger record alone.
+artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
+human-readable **`progress.md`** in the same folder — the stage table with status glyphs and
+completion times, per-phase detail during a phased build, the current state, the last verdict,
+copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
+every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
+with each producing stage, so the run's state is readable at a glance even mid-run.
 **The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
@@ -377,7 +382,17 @@ alters the run, and with none configured no network call is made. On a capable T
 active step, a heartbeat spinner with elapsed time, and the running / paused-at-gate / failed state
 — while agent stdout prints above it into ordinary, fully scrollable history; off a TTY, under
 `--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain streamed log, and the
-terminal is always restored on exit or Ctrl-C.
+terminal is always restored on exit or Ctrl-C. When the verify stage goes red, the run prints a
+structured failure summary — one row per failed gate (`name · tool`) with its first actionable error
+line, followed by ready-to-run commands:
+
+```
+✗  gates failed (2 of 11):
+     format · biome     ↳ 2 files would be reformatted
+     tests  · vitest    ↳ 1 test failed
+     Resume:  3pwr run --resume --spec-id 042
+     Inspect: 3pwr gate run --id 042
+```
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
