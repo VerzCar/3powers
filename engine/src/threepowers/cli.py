@@ -46,7 +46,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -3382,6 +3382,7 @@ def _native_runner(
     commit_relaxed: bool = False,
     revise: str = "",
     echo: Optional[TextSink] = None,
+    on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
@@ -3630,7 +3631,9 @@ def _native_runner(
             s, args, tier, wk.kinds, ledger=ledger, sk=sk, feature_dir=feature_dir
         )
 
-    return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
+    return NativeRunner(
+        dispatch=dispatch, run_verdict=run_verdict, start_index=start_index, on_progress=on_progress
+    )
 
 
 def _run_make_runner(
@@ -3649,6 +3652,7 @@ def _run_make_runner(
     commit_relaxed: bool = False,
     revise: str = "",
     echo: Optional[TextSink] = None,
+    on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3669,6 +3673,7 @@ def _run_make_runner(
         commit_relaxed=commit_relaxed,
         revise=revise,
         echo=echo,
+        on_progress=on_progress,
     )
 
 
@@ -3808,6 +3813,47 @@ def _run_revise(
         human,
     )
     return EXIT_PAUSED
+
+
+def _gate_decision(gate: str, fr: str) -> str:
+    """The three-action interactive choice at a paused human gate (STEER-FR-005): approve / revise /
+    reject — the same vocabulary the non-interactive pause prints as commands.
+
+    Empty input and EOF mean reject — the conservative default: nothing advances without an explicit
+    approval (3PWR-FR-006). An unrecognized answer re-prompts."""
+    aliases = {
+        "a": "approve",
+        "approve": "approve",
+        "y": "approve",
+        "yes": "approve",
+        "r": "revise",
+        "revise": "revise",
+        "x": "reject",
+        "reject": "reject",
+        "n": "reject",
+        "no": "reject",
+    }
+    while True:
+        try:
+            raw = (
+                input(f"  gate '{gate}'{fr} — [a]pprove / [r]evise / reject [x]? ").strip().lower()
+            )
+        except EOFError:
+            return "reject"
+        if not raw:
+            return "reject"
+        decision = aliases.get(raw)
+        if decision:
+            return decision
+        print("  answer a (approve), r (revise), or x (reject)")
+
+
+def _prompt_line(prompt: str) -> str:
+    """One line of interactive input; EOF reads as empty (never raises at a gate pause)."""
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return ""
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -4037,6 +4083,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             # The streamed agent conversation prints ABOVE the live bar, into ordinary scrollback
             # (STEER-FR-012); with no bar (off-TTY/degraded) the echo stays the process's stdout.
             echo=(tracker.echo_sink() if (stream and tracker.live) else None),
+            # Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its
+            # dispatch starts, not one whole segment later; on_event self-guards under --json.
+            on_progress=on_event,
         )
 
     def _stages() -> list[dict]:
@@ -4282,21 +4331,58 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(
                     line
                 )  # the three actions, on-screen at the interactive pause too (STEER-FR-005)
-            ans = input(f"  approve gate '{result.gate}'{fr}? [y/N] ").strip().lower()
-            if ans not in ("y", "yes"):
-                ledger.append(
-                    "run", {"kind": "complete", "stage": result.stage}, sk, spec_id=spec_id
+            while True:
+                decision = _gate_decision(result.gate, fr)
+                if decision != "revise":
+                    break
+                # Revise-with-message, inline (STEER-FR-005/006): take the feedback here, re-run the
+                # paused stage with it, and come back to the SAME gate for a fresh decision.
+                feedback = _prompt_line("  feedback for the revision (required): ")
+                if not feedback:
+                    print("  revise needs feedback — nothing was changed")
+                    continue
+                rc_rev = _run_revise(
+                    s,
+                    args,
+                    ledger,
+                    sk,
+                    spec_id,
+                    result.gate,
+                    feedback,
+                    feature_dir=feature_dir,
+                    run_branch=run_branch,
+                    git_prefs=git_prefs,
+                    commit_relaxed=commit_relaxed,
+                    rst=rst,
                 )
+                if rc_rev != EXIT_PAUSED:
+                    return rc_rev  # the revise failed with its own actionable report
+            if decision == "reject":
+                reason = _prompt_line("  reason (optional): ")
+                payload: dict[str, Any] = {"kind": "complete", "stage": result.stage}
+                if reason:
+                    payload["reason"] = reason
+                ledger.append("run", payload, sk, spec_id=spec_id)
+                why = f" — {reason}" if reason else ""
                 _print(
-                    {"status": "rejected", "gate": result.gate, "spec_id": spec_id},
+                    {
+                        "status": "rejected",
+                        "gate": result.gate,
+                        "spec_id": spec_id,
+                        **({"reason": reason} if reason else {}),
+                    },
                     args.json,
-                    f"  ⊘ gate '{result.gate}' rejected — run stopped",
+                    f"  ⊘ gate '{result.gate}' rejected — run stopped{why}",
                 )
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
             _record_dispatch(
                 orchestrate.resume_start_index(ledger.entries(), spec_id, result.gate)
             )  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)
+            if not args.json:
+                # The gate pause finalized the bar; the approved run's next segment gets it back on
+                # screen immediately (STEER-FR-012/013).
+                tracker.begin()
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
         print(str(exc), file=sys.stderr)

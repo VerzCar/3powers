@@ -528,12 +528,28 @@ class NativeRunner:
         run_verdict: VerdictFn,
         steps: Optional[list[tuple[str, str, str]]] = None,
         start_index: int = 0,
+        on_progress: Optional[Callable[[Event], None]] = None,
     ) -> None:
         self._dispatch = dispatch
         self._verdict = run_verdict
         self._steps = steps if steps is not None else LIFECYCLE_STEPS
         self._i = start_index
         self.stage_results: list[StageResult] = []
+        # Live event delivery (STEER-FR-013): each event is surfaced the moment it happens — a
+        # stage's step event BEFORE its dispatch, so the run's live bar tracks the walk in real
+        # time instead of one whole segment late. The batched ``Outcome.events`` history is kept
+        # unchanged; ``drive`` skips its replay when events were already delivered live.
+        self._progress = on_progress
+
+    @property
+    def delivers_live_events(self) -> bool:
+        """Whether events reach the caller the moment they happen (STEER-FR-013) — ``drive`` then
+        skips the end-of-segment history replay so nothing is reported twice."""
+        return self._progress is not None
+
+    def _live(self, ev: Event) -> None:
+        if self._progress is not None:
+            self._progress(ev)
 
     def _walk(self) -> Outcome:
         events: list[Event] = []
@@ -543,6 +559,8 @@ class NativeRunner:
             if kind == "gate":
                 return Outcome("gate", gate=sid, stage=stage, events=events)
             if kind == "verdict":
+                # Announce the suite BEFORE it runs (STEER-FR-013) — a long gate run shows live too.
+                self._live(Event("step", sid, stage))
                 v = self._verdict(stage)
                 if v == "error":
                     # The gate suite could not run (e.g. no spec resolved) — a setup/dispatch failure,
@@ -555,12 +573,17 @@ class NativeRunner:
                         detail="the deterministic gate suite could not run",
                         events=events,
                     )
-                events.append(Event("verdict", sid, stage, v))
+                ev = Event("verdict", sid, stage, v)
+                events.append(ev)
+                self._live(ev)
                 if v != "pass":
                     return Outcome(
                         "failed", stage=stage, verdict=v, outcome="gate_red", events=events
                     )
             else:  # action — dispatch to the agent under the retry/artifact policy
+                # Announce the stage BEFORE dispatching it (STEER-FR-013): the live bar names the
+                # running step and stage for the whole — possibly minutes-long — dispatch.
+                self._live(Event("step", sid, stage))
                 res = self._dispatch(sid, stage)
                 self.stage_results.append(res)
                 if not res.ok:
