@@ -63,7 +63,7 @@ def test_one_agent_template_per_dispatched_stage(tmp_path):
     """AGENTX-FR-001: after init, one readable markdown agent template exists per dispatched stage."""
     s = _proj(tmp_path)
     for step in STAGES:
-        p = s.stage_templates_dir / f"{step}.agent.md"
+        p = prompts.template_path(s.stage_templates_dir, step)
         assert p.is_file(), f"missing stage template {p.name}"
         assert prompts.template_body(p.read_text(encoding="utf-8")), f"{p.name} has no body"
     assert prompts.TEMPLATE_STEPS == STAGES
@@ -77,8 +77,8 @@ def test_templates_carry_merged_structure_and_no_substrate_machinery():
     # merged from the reference plan agent + the native planning agent:
     for token in ("Judicial Plan", "context budget", "[P]", "file scope", "Think first"):
         assert token.lower() in plan.lower(), f"plan template lost merged structure: {token!r}"
-    tasks = (BUNDLED / "tasks.agent.md").read_text(encoding="utf-8")
-    # merged from the reference tasks agent + the implementation-plan agent:
+    tasks = (BUNDLED / "implementation-plan.agent.md").read_text(encoding="utf-8")
+    # merged from the reference implementation-plan agent + the tasks-checklist template:
     for token in ("- [ ] T###", "[REQ-ID]", "Depends on", "HANDOFF", "checklist"):
         assert token in tasks, f"tasks template lost merged structure: {token!r}"
     for p in sorted(BUNDLED.glob("*.agent.md")):
@@ -92,7 +92,9 @@ def test_templates_preserve_threepowers_discipline():
     """AGENTX-FR-003: each template states the discipline (directly and via the standing preamble
     the executive always prepends): spec is the law / no gate weakening / file scope / traceability."""
     for step in STAGES:
-        body = prompts.template_body((BUNDLED / f"{step}.agent.md").read_text(encoding="utf-8"))
+        body = prompts.template_body(
+            prompts.template_path(BUNDLED, step).read_text(encoding="utf-8")
+        )
         assert "spec" in body.lower(), f"{step} template never mentions the spec"
         assert "requirement" in body.lower() or "law" in body.lower() or "scope" in body.lower()
         # the assembled prompt always carries the standing discipline preamble:
@@ -108,7 +110,7 @@ def test_templates_declare_stage_artifact_role_and_reference_context_blocks():
     """AGENTX-FR-004: each template's header names its stage, artifact, and role; its body refers to
     the supplied run-context blocks and no external argument/script input channel."""
     for step in STAGES:
-        text = (BUNDLED / f"{step}.agent.md").read_text(encoding="utf-8")
+        text = prompts.template_path(BUNDLED, step).read_text(encoding="utf-8")
         fm = _front_matter(text)
         assert fm.get("stage") == step
         assert str(fm.get("artifact") or "").strip(), f"{step} declares no artifact"
@@ -164,7 +166,7 @@ def test_template_resolution_is_deterministic_and_changes_only_the_body(tmp_path
 def test_plan_and_tasks_templates_demand_context_budgeted_phases():
     """AGENTX-FR-006: the plan/tasks templates decompose work into ordered phases with file scope,
     dependencies, and an estimated context size against the configured budget."""
-    for name in ("plan.agent.md", "tasks.agent.md"):
+    for name in ("plan.agent.md", "implementation-plan.agent.md"):
         text = (BUNDLED / name).read_text(encoding="utf-8").lower()
         assert "phase" in text
         assert "file scope" in text
@@ -175,7 +177,7 @@ def test_plan_and_tasks_templates_demand_context_budgeted_phases():
 def test_tasks_template_binds_parallel_marker_to_disjoint_scope_and_no_dependency():
     """AGENTX-FR-007: the tasks template allows [P] only for disjoint, dependency-free phases and
     forbids reading it as a licence to run overlapping/dependent phases concurrently."""
-    text = (BUNDLED / "tasks.agent.md").read_text(encoding="utf-8")
+    text = (BUNDLED / "implementation-plan.agent.md").read_text(encoding="utf-8")
     assert "[P]" in text
     assert "disjoint" in text
     assert "dependency" in text.lower()
@@ -199,10 +201,11 @@ def test_seeding_is_idempotent_and_never_clobbers_a_hand_edited_template(tmp_pat
     s = _proj(tmp_path)
     edited = s.stage_templates_dir / "plan.agent.md"
     edited.write_text("---\nstage: plan\n---\nMY TUNED PLAN\n", encoding="utf-8")
-    (s.stage_templates_dir / "tasks.agent.md").unlink()  # a removed template is re-seeded
+    # a removed template is re-seeded:
+    (s.stage_templates_dir / "implementation-plan.agent.md").unlink()
     out = scaffold.seed_stage_templates(s)
     assert out["plan.agent.md"] == "kept"
-    assert out["tasks.agent.md"] == "created"
+    assert out["implementation-plan.agent.md"] == "created"
     assert edited.read_text(encoding="utf-8").endswith("MY TUNED PLAN\n")
     again = scaffold.seed_stage_templates(s)
     assert all(v == "kept" for v in again.values())
@@ -519,7 +522,7 @@ def test_init_reports_seeded_templates_and_stays_promptless(tmp_path, capsys):
     assert _init(root, "--language", "python", "--json", key=tmp_path / "k.key") == 0
     payload = json.loads(capsys.readouterr().out)
     seeded = payload["stage_templates"]
-    assert set(seeded) == {f"{s}.agent.md" for s in STAGES}
+    assert set(seeded) == {prompts.template_name(s) for s in STAGES}
     assert all(v == "created" for v in seeded.values())
 
 

@@ -75,8 +75,9 @@ and an existing constitution. For the autonomous lifecycle you also need the con
 missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
 `init` also seeds one **editable agent template per dispatched stage** into
-`.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks, oracle,
-implement, review, characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
+`.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
+template is named for its agent, `implementation-plan.agent.md` —, oracle, implement, review,
+characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
 stage's instruction body when present; an absent, empty, or unreadable template falls back to the
 engine's built-in instruction (AGENTX-FR-005). Seeding is non-clobbering — a hand-edited template is
 never overwritten. Declining the recommended defaults interactively also walks the **headless-CLI +

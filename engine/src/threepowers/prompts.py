@@ -7,7 +7,8 @@ declared file scope). The same inputs always yield the same prompt, so prompt as
 run-to-run variance (supports EXEC-FR-005's property and 3PWR-NFR-001).
 
 A project can SEE and TUNE each stage's instructions (AGENTX-FR-001): a repo-local stage template at
-``.3powers/templates/agents/<step>.agent.md`` — a readable markdown file with a small metadata header
+``.3powers/templates/agents/<step>.agent.md`` (the tasks step's file is named for its agent,
+``implementation-plan.agent.md``) — a readable markdown file with a small metadata header
 (stage, artifact, role) — supplies that stage's instruction body when present; when the template is
 absent, empty, or unreadable, the engine's built-in instruction below applies unchanged
 (AGENTX-FR-005). Template resolution is deterministic and offline: identical template bytes and
@@ -110,7 +111,8 @@ _COMMIT_NOTE = (
 )
 
 # The lifecycle stages that carry a dedicated agent template (AGENTX-FR-001): every stage that
-# dispatches a headless agent. The template file for a step is ``<step>.agent.md``.
+# dispatches a headless agent. The template file for a step is ``<step>.agent.md`` unless the step
+# has a dedicated agent name in ``_TEMPLATE_NAMES``.
 TEMPLATE_STEPS: tuple[str, ...] = (
     "discovery",
     "specify",
@@ -123,10 +125,19 @@ TEMPLATE_STEPS: tuple[str, ...] = (
     "characterize",
 )
 
+# Steps whose agent template carries a name other than the step's: the tasks step is authored by
+# the implementation-plan agent (the detail-level plan derived from the high-level plan).
+_TEMPLATE_NAMES: dict[str, str] = {"tasks": "implementation-plan"}
+
+
+def template_name(step: str) -> str:
+    """The agent-template filename for a step (AGENTX-FR-001)."""
+    return f"{_TEMPLATE_NAMES.get(step, step)}.agent.md"
+
 
 def template_path(templates_dir: Path, step: str) -> Path:
     """The well-known repo-local template location for a step (AGENTX-FR-001)."""
-    return templates_dir / f"{step}.agent.md"
+    return templates_dir / template_name(step)
 
 
 def template_body(text: str) -> str:

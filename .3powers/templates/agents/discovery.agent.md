@@ -32,10 +32,17 @@ channel exists.
 5. **State candidate non-goals**: what this work should explicitly NOT do, so the spec can bound
    its scope from the start.
 
+## Output destination
+
+Write the discovery note to the destination the engine has given — the FEATURE FOLDER (or
+explicit destination path) named in this prompt's run-context blocks. If the engine has given no
+destination, default to `specs-source/<feature>/discovery.md`.
+
 ## Output — the discovery note
 
 Produce a concise discovery note in this fixed structure, so the handoff to Specify reads the same
-regardless of the model:
+regardless of the model. Ground every claim in evidence — name the files and specs it comes from;
+an unexamined guess is an open question, not a finding:
 
 ```markdown
 # Discovery: <short name>
@@ -67,7 +74,7 @@ introduces no requirement ids.
 End your run with a report in EXACTLY this shape (same fields, same order):
 
 - **Stage**: Discovery — `done` | `blocked`
-- **Output**: the discovery note (path if written, else inline)
+- **Output**: the discovery note path (the engine-given destination, or the default)
 - **Work kind / tier (suggested)**: `<kind>` / `<tier>`
 - **Open questions**: `<count>` — the highest-impact one named
 - **Candidate non-goals**: `<count>`

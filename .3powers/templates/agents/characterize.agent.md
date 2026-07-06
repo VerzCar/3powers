@@ -35,9 +35,11 @@ input channel exists.
 
 ## Output — the reconstructed spec + pinning tests
 
-Produce two artifacts, in fixed shapes:
+Produce two artifacts, in fixed shapes. Write the reconstructed spec to the destination the
+engine has given in this prompt's run-context blocks; if none has been given, default to
+`specs-source/<module>-characterization/spec.md`:
 
-- A **reconstructed spec** under `specs/<NNN>-<module>-characterization/spec.md`, following
+- A **reconstructed spec** at that destination, following
   the same section order the Specify stage uses (Spec ID, risk tier, non-goals, requirements with
   Acceptance, success criteria) — describing observed behavior, not desired behavior.
 - **Characterization tests** under the project's test tree, one or more per reconstructed
