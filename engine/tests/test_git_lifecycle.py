@@ -579,13 +579,13 @@ def test_dry_run_needs_no_git_and_touches_nothing(tmp_path, monkeypatch):
 
 
 def test_no_new_runtime_dependency():
-    """GITX-NFR-005: git rides the existing subprocess path — the engine's runtime dependency set
-    is unchanged (cryptography + PyYAML only)."""
+    """GITX-NFR-005: git rides the existing subprocess path — no git-related runtime dependency.
+    The full set is {cryptography, PyYAML, rich}; rich is the rendering dependency TRIX-FR-001
+    permits, unrelated to the git integration."""
     import tomllib
 
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     deps = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
-    assert sorted(d.split(">=")[0].split("==")[0].strip() for d in deps) == [
-        "PyYAML",
-        "cryptography",
-    ]
+    names = sorted(d.split(">=")[0].split("==")[0].strip() for d in deps)
+    assert names == ["PyYAML", "cryptography", "rich"]
+    assert not any("git" in d.lower() for d in deps)  # nothing git-related was added

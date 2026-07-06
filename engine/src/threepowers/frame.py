@@ -1,23 +1,25 @@
-"""The persistent live run bar — a bottom-anchored status bar over ordinary scrollback (STEER, spec 019).
+"""The persistent live run bar — a bottom-anchored status bar over ordinary scrollback (STEER spec 019, TRIX spec 026).
 
 CLIUX's tracker redrew ONE line in place; STEER's first cut pinned a header over a DECSTBM scroll
 region — but terminals DISCARD lines scrolled out of a partial region, so the streamed agent
-conversation never reached scrollback. This module advances that to a **bottom-anchored live bar**
+conversation never reached scrollback. This module renders a **bottom-anchored live bar**
 (STEER-FR-012): the eight lifecycle stages with done / current / upcoming marks, the active step, a
 heartbeat spinner with the elapsed time (STEER-FR-013), and the gate guidance stay painted on the
 LAST rows of the terminal, while the event log and the dispatched agent's stdout print ABOVE it into
 the terminal's ordinary flow — the full conversation lands in scrollback, nothing is lost.
 
-The implementation stays inside the CLIUX boundary (STEER-FR-014): **no third-party dependency, no
-network, no alternate screen buffer, no scroll region** — only ANSI control sequences the terminal
-already understands (cursor-up, erase-below, SGR). Rendering is a pure function of the frame state,
-the width, and the styler (STEER-NFR-003): identical inputs yield identical bytes; the heartbeat is
-a human-output-only decoration on top.
+The rendering engine is ``rich`` (TRIX-FR-003/004): :class:`LiveFrame` wraps a non-highlighting
+``rich.console.Console`` and a ``rich.live.Live`` region pinned at the bottom of the terminal.
+Every escape byte is emitted by rich — the hand-rolled cursor-math implementation is gone
+(TRIX-FR-008) — and **no alternate screen buffer and no scroll region** are ever used, preserving
+scrollback exactly as before. Bar content is still a pure function of the frame state, the width,
+and the styler (STEER-NFR-003): identical inputs yield identical text; the heartbeat is a
+human-output-only decoration on top.
 
-Degradation is total and safe (STEER-FR-015, STEER-NFR-004): off a TTY, under ``NO_COLOR``, on a
-dumb/width-unknown terminal, or below the minimum size, :func:`build` yields no bar and the caller
-keeps the plain streamed event log — no ``\\r`` redraws, no escapes. Teardown always restores the
-cursor and leaves the bar's last state as ordinary lines (STEER-FR-016).
+Degradation is total and safe (STEER-FR-015, STEER-NFR-004, TRIX-FR-007): off a TTY, under
+``NO_COLOR``, on a dumb/width-unknown terminal, or below the minimum size, :func:`build` yields no
+bar and the caller keeps the plain streamed event log — no ``\\r`` redraws, no escapes. Teardown
+always restores the cursor and leaves the bar's last state as ordinary lines (STEER-FR-016).
 """
 
 from __future__ import annotations
@@ -31,6 +33,10 @@ import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Optional, TextIO
 
+from rich.console import Console
+from rich.live import Live
+from rich.text import Text
+
 from . import style
 from .lifecycle import STAGES
 
@@ -39,9 +45,6 @@ BAR_HEIGHT = 5
 # Below this the terminal "cannot support the live bar" and the plain log applies (STEER-FR-015).
 MIN_COLS = 40
 MIN_ROWS = BAR_HEIGHT + 4
-
-# The print-above primitive: column 1, up to the bar's first row, wipe it and everything below.
-_ERASE_BAR = f"\r\033[{BAR_HEIGHT - 1}A\033[J"
 
 # How often the heartbeat repaints while a stage runs — human-only; tests drive it directly.
 HEARTBEAT_SECONDS = 0.12
@@ -68,8 +71,16 @@ def format_elapsed(seconds: float) -> str:
 
 
 # Every terminal control sequence in one alternation: CSI, OSC (BEL- or ST-terminated), then any
-# remaining two-byte escape (ESC 7 / ESC 8 / ESC c …) or a trailing lone ESC.
+# remaining two-byte escape (ESC 7 / ESC 8 / ESC c …) or a trailing lone ESC. Strip/sanitize
+# matchers only — never used to construct output (TRIX-FR-008).
 _CTRL_RE = re.compile(r"\033\[[0-9;:?]*[ -/]*[@-~]|\033\][^\033\a]*(?:\a|\033\\)?|\033.?")
+_SGR_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _printable(text: str) -> str:
+    """``text`` with every C0 control (except tab) and DEL removed — the plain-text filter
+    :func:`sanitize_line` applies between the SGR runs it preserves (STEER-NFR-003)."""
+    return "".join(ch for ch in text if ch == "\t" or (ch >= " " and ch != "\x7f"))
 
 
 def sanitize_line(text: str) -> str:
@@ -78,9 +89,16 @@ def sanitize_line(text: str) -> str:
     SGR color sequences (``CSI … m``) pass through so a dispatched agent's colored output stays
     colored; everything else — cursor addressing, erases, OSC titles, ``\\r``, other C0 controls —
     is stripped, so a streamed line can never corrupt the live bar or the terminal state
-    (STEER-FR-012/016). Pure (STEER-NFR-003)."""
+    (STEER-FR-012/016, TRIX-FR-005). Pure (STEER-NFR-003)."""
     text = _CTRL_RE.sub(lambda m: m.group(0) if m.group(0).endswith("m") else "", text)
-    return "".join(ch for ch in text if ch == "\t" or ch == "\033" or (ch >= " " and ch != "\x7f"))
+    parts: list[str] = []
+    pos = 0
+    for m in _SGR_RE.finditer(text):
+        parts.append(_printable(text[pos : m.start()]))
+        parts.append(m.group(0))
+        pos = m.end()
+    parts.append(_printable(text[pos:]))
+    return "".join(parts)
 
 
 @dataclass(frozen=True)
@@ -263,19 +281,21 @@ def supported(
 
 
 class LiveFrame:
-    """The bottom-anchored live bar on one terminal stream (STEER-FR-012..016).
+    """The bottom-anchored live bar on one terminal stream (STEER-FR-012..016, TRIX-FR-003/004).
 
-    ``open`` paints the ``BAR_HEIGHT``-row bar at the cursor and hides the cursor; ``emit`` prints a
-    content line ABOVE the bar — erase the bar, write the (sanitized) line into the terminal's
-    ordinary flow so the full event log and agent conversation land in scrollback, repaint; ``note``
-    folds a run event into the state and repaints; :meth:`heartbeat` advances the spinner + elapsed
-    time while a stage runs (a background ticker drives it in production, tests call it directly);
-    ``close`` leaves the bar's last state as ordinary lines and restores the cursor, idempotently, so
-    exception paths and normal exits converge (STEER-NFR-004). One re-entrant lock serializes every
-    write — the event thread, the agent-output pump threads, and the ticker never interleave. No
-    scroll region and no alternate screen buffer are ever used: DECSTBM discards lines scrolled out
-    of a partial region, which is exactly the history loss this design replaces (STEER-FR-012). A
-    ``SIGWINCH`` re-lays the bar out (STEER-FR-016)."""
+    A thin lifecycle wrapper around ``rich.live.Live`` on a non-highlighting
+    ``rich.console.Console``: ``open`` starts the live display (rich hides the cursor and pins the
+    bar's rows at the bottom); ``emit`` prints a content line ABOVE the bar — rich moves the live
+    region down and the (sanitized) line lands in the terminal's ordinary flow, so the full event
+    log and agent conversation stay in scrollback; ``note`` folds a run event into the state and
+    refreshes; :meth:`heartbeat` advances the spinner + elapsed time while a stage runs (a
+    background ticker drives it in production, tests call it directly); ``close`` stops the live
+    display, leaving the bar's last state as ordinary lines with the cursor restored, idempotently,
+    so exception paths and normal exits converge (STEER-NFR-004). One re-entrant lock serializes
+    every write — the event thread, the agent-output pump threads, and the ticker never interleave.
+    No scroll region and no alternate screen buffer are ever used: DECSTBM discards lines scrolled
+    out of a partial region, which is exactly the history loss this design replaces (STEER-FR-012).
+    A ``SIGWINCH`` re-lays the bar out (STEER-FR-016)."""
 
     def __init__(
         self,
@@ -302,9 +322,12 @@ class LiveFrame:
         self._heartbeat = max(0.0, float(heartbeat))
         self._stop = threading.Event()
         self._ticker: Optional[threading.Thread] = None
+        self._console: Optional[Console] = None
+        self._live: Optional[Live] = None
 
     # ------------------------------------------------------------------ lifecycle
     def open(self) -> None:
+        """Start the live display — the bar appears at the bottom, cursor hidden (TRIX-FR-004)."""
         with self._lock:
             if self._open:
                 return
@@ -314,11 +337,22 @@ class LiveFrame:
             self._open = True
             if self._since is None:
                 self._since = self._clock()
-            # Hide the cursor while the bar owns the bottom rows and paint the current state; the
-            # newlines between the bar's lines scroll prior content up into scrollback naturally.
             try:
-                self._stream.write("\033[?25l" + self._bar())
-                self._stream.flush()
+                # A dedicated non-highlighting console on the run's stream: agent content passes
+                # through unmodified (TRIX-FR-005), and rich owns every escape byte (TRIX-FR-008).
+                self._console = Console(
+                    file=self._stream,
+                    force_terminal=True,
+                    width=self._cols,
+                    height=self._rows,
+                    highlight=False,
+                )
+                # auto_refresh off: repaints happen deterministically on note/emit/heartbeat —
+                # the frame's own ticker drives the heartbeat cadence (STEER-FR-013).
+                self._live = Live(
+                    self._bar(), console=self._console, auto_refresh=False, transient=False
+                )
+                self._live.start(refresh=True)
             except (OSError, ValueError):
                 pass  # never let the bar take the run down (STEER-NFR-004)
         self._install_winch()
@@ -332,10 +366,12 @@ class LiveFrame:
                 return
             self._open = False
             try:
-                self._stream.write("\033[?25h" + "\n")
-                self._stream.flush()
+                if self._live is not None:
+                    self._live.stop()
             except (OSError, ValueError):
                 pass  # a vanished stream must not raise on teardown (STEER-NFR-004)
+            self._live = None
+            self._console = None
         self._stop_ticker()
         self._restore_winch()
 
@@ -366,18 +402,23 @@ class LiveFrame:
     def emit(self, text: str) -> None:
         """Print content ABOVE the bar, into the terminal's ordinary flow (STEER-FR-012).
 
-        The event log and the dispatched agent's whole conversation stay in scrollback — erase the
-        bar, write the sanitized line(s), repaint the bar below them. Thread-safe: the runner's pump
-        threads and the event thread share the frame's lock. On a closed frame this is a plain
-        write, so no caller ever needs to care about the bar's lifecycle."""
+        The event log and the dispatched agent's whole conversation stay in scrollback — rich
+        prints the sanitized line(s) above the live region and repaints the bar below them
+        (TRIX-FR-004/005). Thread-safe: the runner's pump threads and the event thread share the
+        frame's lock. On a closed frame this is a plain write, so no caller ever needs to care
+        about the bar's lifecycle."""
         payload = "\n".join(sanitize_line(ln) for ln in text.split("\n"))
         with self._lock:
             try:
-                if self._open:
-                    self._stream.write(_ERASE_BAR + payload + "\n" + self._bar())
+                if self._open and self._console is not None and self._live is not None:
+                    # Text.from_ansi keeps the agent's SGR color; the non-highlighting console
+                    # never reformats the content (TRIX-FR-005); the explicit refresh flushes the
+                    # printed line above the bar deterministically.
+                    self._console.print(Text.from_ansi(payload))
+                    self._live.refresh()
                 else:
                     self._stream.write(payload + "\n")
-                self._stream.flush()
+                    self._stream.flush()
             except (OSError, ValueError):
                 pass  # never let output routing take the run down (STEER-NFR-004)
 
@@ -401,9 +442,9 @@ class LiveFrame:
                 self._repaint()
 
     # ------------------------------------------------------------------ rendering
-    def _bar(self) -> str:
-        """The bar's ``BAR_HEIGHT`` rows as one write — no trailing newline, cursor rests on its
-        last row so :data:`_ERASE_BAR` can find the bar again."""
+    def _bar(self) -> Text:
+        """The bar's ``BAR_HEIGHT`` rows as the live region's renderable — the pure
+        :func:`frame_lines` text, parsed so its styler color survives rich's rendering."""
         running = self._state.status == "running"
         spin = spinner_glyph(self._spin, self._st.ascii_only) if running else ""
         elapsed = (
@@ -411,17 +452,16 @@ class LiveFrame:
             if running and self._since is not None
             else ""
         )
-        return "\n".join(
-            frame_lines(
-                self._state, self._cols, self._st, self._subject, spinner=spin, elapsed=elapsed
-            )
+        lines = frame_lines(
+            self._state, self._cols, self._st, self._subject, spinner=spin, elapsed=elapsed
         )
+        return Text.from_ansi("\n".join(lines), no_wrap=True)
 
     def _repaint(self) -> None:
-        """Erase the bar in place and paint the current state (lock held by the caller)."""
+        """Refresh the live region with the current state (lock held by the caller)."""
         try:
-            self._stream.write(_ERASE_BAR + self._bar())
-            self._stream.flush()
+            if self._live is not None:
+                self._live.update(self._bar(), refresh=True)
         except (OSError, ValueError):
             pass  # never let a repaint take the run down (STEER-NFR-004)
 
@@ -433,6 +473,9 @@ class LiveFrame:
             self._cols, self._rows = (
                 self._fixed_size if self._fixed_size is not None else _size(self._stream, (80, 24))
             )
+            if self._console is not None:
+                self._console.width = self._cols
+                self._console.height = self._rows
             self._repaint()
 
     # ------------------------------------------------------------------ heartbeat ticker

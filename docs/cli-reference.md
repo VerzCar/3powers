@@ -380,8 +380,11 @@ pause, failure, and completion — best-effort and fully isolated: a broken chan
 alters the run, and with none configured no network call is made. On a capable TTY the run shows a
 **persistent bottom-anchored live bar** — the eight stages with done/current/upcoming marks, the
 active step, a heartbeat spinner with elapsed time, and the running / paused-at-gate / failed state
-— while agent stdout prints above it into ordinary, fully scrollable history; off a TTY, under
-`--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain streamed log, and the
+— rendered by the [Rich](https://github.com/Textualize/rich) library, while agent stdout streams
+above it, content unchanged and without syntax highlighting, into ordinary, fully scrollable
+history (no alternate screen, no scroll region). The degradation contracts are unchanged: off a
+TTY, under `--json`/`NO_COLOR`/`--yes`, or on a dumb/tiny terminal the output degrades to the plain
+streamed log with no escape codes, `--json` payloads never pass through the renderer, and the
 terminal is always restored on exit or Ctrl-C. When the verify stage goes red, the run prints a
 structured failure summary — one row per failed gate (`name · tool`) with its first actionable error
 line, followed by ready-to-run commands:

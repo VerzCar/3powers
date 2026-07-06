@@ -1,0 +1,10 @@
+{
+  "kinds": [
+    "defect"
+  ],
+  "suggested_tier": "Standard",
+  "signals": [
+    "defect:crash",
+    "defect:fix"
+  ]
+}

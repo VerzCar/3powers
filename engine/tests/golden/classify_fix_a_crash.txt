@@ -1,0 +1,4 @@
+▌ classify
+  work kinds      defect
+  suggested tier  Standard
+  ⓘ signals  defect:crash, defect:fix

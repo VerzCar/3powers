@@ -506,11 +506,12 @@ def test_non_interactive_setup_is_promptless_and_json_byte_stable(tmp_path, caps
 
 # --------------------------------------------------------------------------- AGENTX-NFR-005 (no new dependency)
 def test_no_new_runtime_dependency():
-    """AGENTX-NFR-005: the engine's runtime dependency set is unchanged (cryptography + PyYAML)."""
+    """AGENTX-NFR-005: the stage-agent layer added no runtime dependency — the set is exactly
+    {cryptography, PyYAML, rich} (rich being the rendering dependency TRIX-FR-001 permits)."""
     text = (REPO / "engine" / "pyproject.toml").read_text(encoding="utf-8")
     block = text.split("dependencies = [", 1)[1].split("]", 1)[0]
     deps = {ln.strip().strip('",') for ln in block.splitlines() if ln.strip()}
-    assert deps == {"cryptography>=42", "PyYAML>=6"}
+    assert deps == {"cryptography>=42", "PyYAML>=6", "rich>=13.7,<15"}
 
 
 # --------------------------------------------------------------------------- init integration (AGENTX-FR-009/011)

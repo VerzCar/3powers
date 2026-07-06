@@ -421,7 +421,7 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
     return f"  {st.dim('·')} {ev.kind}"
 
 
-# --------------------------------------------------------------------------- richer progress (dependency-free)
+# --------------------------------------------------------------------------- richer progress
 _TERMINAL_KINDS = ("gate-stop", "done", "failed", "aborted")
 
 
@@ -434,14 +434,15 @@ def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None)
 
 
 class Tracker:
-    """A dependency-free progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
+    """The progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
     live bar** at the bottom of the terminal — the eight stages with done/current/upcoming marks, the
     active step, and a heartbeat spinner with the elapsed time — while the event log and the
     dispatched agent's stdout print ABOVE it into ordinary, fully scrollable history (STEER-FR-012/013,
     advancing CLIUX-FR-008/009's single in-place line). Off a TTY (pipe / ``--json``), under
     ``NO_COLOR``, or on a terminal that cannot support the bar, it degrades to the plain streamed
     ``format_event`` log with no ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015,
-    CLIUX-FR-011). No ``rich``/``curses`` dependency (INITX-NFR-004, CLIUX-FR-003, STEER-FR-014).
+    CLIUX-FR-011). The bar is rendered by ``rich`` behind the frame API (TRIX-FR-003/004; the
+    machine contracts are unchanged).
     Color is tied to the TTY: the off-TTY log is always plain, even under
     ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
 
