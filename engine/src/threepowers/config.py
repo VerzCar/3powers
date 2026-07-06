@@ -90,6 +90,15 @@ class Settings:
         return self.dir / "config" / "git.yaml"
 
     @property
+    def notifications_config_path(self) -> Path:
+        """The opt-in notification channels for a paused/failed/completed run (STEER-FR-010).
+
+        Convenience only — never a trust or enforcement channel (STEER-NFR-001): a missing file
+        disables notifications; a malformed file warns once and falls back (see
+        :mod:`threepowers.notify`). Secrets are referenced from the environment (STEER-NFR-002)."""
+        return self.dir / "config" / "notifications.yaml"
+
+    @property
     def constitution_path(self) -> Path:
         """The project constitution — part of every phase's reload set (PHASE-FR-008)."""
         return self.dir / "memory" / "constitution.md"
