@@ -79,9 +79,9 @@ def test_tracker_plain_fallback_off_tty():
 
 
 def test_tracker_on_unsupported_tty_degrades_to_plain_log():
-    """STEER-FR-015 (supersedes the CLIUX single in-place line): a TTY that cannot carry the pinned
-    region (here: a stream with no real terminal behind it) degrades to the existing plain streamed
-    event log — no ``\\r`` in-place redraws, no pinned-region control codes."""
+    """STEER-FR-015 (supersedes the CLIUX single in-place line): a TTY that cannot carry the live
+    bar (here: a stream with no real terminal behind it) degrades to the existing plain streamed
+    event log — no ``\\r`` in-place redraws, no live-bar control codes."""
     import io
 
     buf = io.StringIO()

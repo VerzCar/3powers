@@ -714,7 +714,9 @@ def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
     lf.close()  # idempotent — the exception path may close again (STEER-NFR-004)
     out = buf.getvalue()
     assert "\033[?25l" in out and "\033[?25h" in out  # cursor hidden while owned, restored after
-    assert re.search(r"\033\[\d+;\d+r", out) is None and "\033[r" not in out  # never a scroll region
+    assert (
+        re.search(r"\033\[\d+;\d+r", out) is None and "\033[r" not in out
+    )  # never a scroll region
     assert out.count("\033[?25h") == 1  # close is idempotent
     assert "\033[?1049" not in out  # never the alternate screen buffer (non-goal)
     # an interrupted run converges through the same idempotent close (the CLI's finally)
