@@ -1,7 +1,7 @@
 ---
 description: "Generate an implementation plan for new features or refactoring existing code."
 name: "Implementation Plan Generation Mode"
-tools: [vscode, execute, read, agent, browser, edit, search, web, todo]
+tools: "*"
 ---
 
 # Implementation Plan Generation Mode

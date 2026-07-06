@@ -1,7 +1,7 @@
 ---
 description: "Strategic planning and architecture assistant focused on thoughtful analysis before implementation. Helps developers understand codebases, clarify requirements, and develop comprehensive implementation strategies."
 name: "Plan Mode - Strategic Planning & Architecture"
-tools: [vscode/memory, vscode/runCommand, vscode/vscodeAPI, vscode/extensions, vscode/askQuestions, vscode/toolSearch, execute/runTask, execute/createAndRunTask, read/readFile, read/viewImage, agent, edit/createDirectory, edit/createFile, edit/editFiles, edit/editNotebook, search, web, browser, todo]
+tools: "*"
 ---
 
 # Plan Mode - Strategic Planning & Architecture Assistant
