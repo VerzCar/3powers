@@ -51,8 +51,8 @@ in parallel for `[P]`-marked phases with disjoint file scopes.
 engine/                     # the `3pwr` engine — Python, shipped as a uv tool
   src/threepowers/          #   cli, gates, mutation, characterize, deviations, conformance, covdiff, oracle,
                             #   observe, deps, workkind, design, speclock, orchestrate, runner, agents, prompts,
-                            #   artifacts, phases, workspace, hosted, adapters, scanners, ledger, verify, anchor,
-                            #   keys, verdict, config, canonical
+                            #   artifacts, phases, workspace, hosted, steering, notify, frame, adapters, scanners,
+                            #   ledger, verify, anchor, keys, verdict, config, canonical
   tests/                    #   pytest suite (the engine gates itself — A6/NFR-006)
 .3powers/                   # in-repo trust spine (self-contained; FR-071)
   config/{risk-tiers,roles,dependencies,observability,design-oracles,context}.yaml   schemas/*.json   adapters/{CONTRACT.md,<lang>/adapter.yaml}  # <lang> ∈ typescript,python,go

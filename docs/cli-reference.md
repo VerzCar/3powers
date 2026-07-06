@@ -338,19 +338,42 @@ per-commit, never mutating the developer's git config, never force-pushing or re
 Preferences (branch prefix, base branch, 3pwr author) live in `.3powers/config/git.yaml`; the
 discipline itself is mandatory and relaxable only via the signed deviations
 (`git_clean_start` / `git_stage_commit` / `git_run_branch`).
-- `intent` (positional) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
+**Steering the run (STEER).** The intent can come from a **file**: `3pwr run --file my-intent.md`
+uses the file's contents as the intent, and `3pwr run --file my-intent.md "<inline>"` appends the
+inline text as an instruction — resolved deterministically (file first) and recorded verbatim in the
+ledger `start` entry; a missing/empty/binary/directory `--file` fails fast with exit code 4 and no
+`start` entry. At every human-gate pause the run presents **three actions** with copy-pasteable
+commands and the artifact under review: **approve** (`--resume --approver <you>` — records the
+sign-off and continues), **reject** (`3pwr abort` — stops), and **revise**
+(`--resume --revise "<feedback>"` or `--revise-file <path>` — re-dispatches the paused stage with the
+original intent, the current artifact, and the feedback, records the revision in the signed ledger,
+and returns to the *same* gate; empty feedback or a revise outside a gate is refused). Opt-in
+**notification channels** in `.3powers/config/notifications.yaml` (Slack / Teams / email / macOS
+desktop; secrets referenced from the environment, e.g. `THREEPOWERS_SLACK_WEBHOOK`) fire on gate
+pause, failure, and completion — best-effort and fully isolated: a broken channel never blocks or
+alters the run, and with none configured no network call is made. On a capable TTY the run shows a
+**persistent pinned frame** — the eight stages with done/current/upcoming marks, the active step,
+and the running / paused-at-gate / failed state — while agent stdout streams in a reserved region
+below it; off a TTY, under `--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain
+streamed log, and the terminal is always restored on exit or Ctrl-C.
+- `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
+  appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
   `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--timeout N` /
   `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (SUPERSEDED by GITX — warns and
   commits anyway; relax with `3pwr deviation --gate git_stage_commit`) · `--notify CMD` (best-effort
-  notification hook) ·
+  notification hook; fires alongside the configured channels) ·
   `--resume` (record a sign-off + continue after a human gate, or continue past a failure) ·
+  `--revise MSG` / `--revise-file PATH` (with `--resume`: revise the paused stage with feedback and
+  return to the same gate) ·
   `--status` (print the stage tracker + the run branch and committed stages) · `--dry-run` (simulate
   offline; no git required) · `--simulate-fail` (force a
   red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
+3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"
 3pwr run --resume --spec-id RUN --approver "$(git config user.name)"
+3pwr run --resume --spec-id RUN --revise "tighten the non-goals; leave out point 5"
 3pwr run --status --spec-id RUN
 ```
 

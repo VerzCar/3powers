@@ -12,6 +12,26 @@ release is **v0.5.0**, matching the latest released milestone below.
 
 ### Added
 
+- **Run steering (STEER).** Three operator seams around `3pwr run` closed. *File-based intent*:
+  `3pwr run --file my-intent.md ["<inline>"]` uses the file's contents as the intent, appending inline
+  text as an instruction by one pure deterministic rule (file first); only the resolved text is
+  recorded — verbatim — in the signed `start` entry, and a missing/empty/binary/directory file fails
+  fast with the setup exit code and no ledger entry. *Approve / reject / revise*: every human-gate
+  pause now presents three actions with copy-pasteable commands and the artifact under review;
+  `3pwr run --resume --spec-id <ID> --revise "<feedback>"` (or `--revise-file`) re-dispatches the
+  paused stage with the original intent, the current artifact, and the feedback — under the full
+  retry/artifact/git/completion policy — records the revision (feedback + outcome) via the existing
+  run-entry append path, and returns to the *same* gate; approval still requires the human sign-off.
+  *Notifications*: opt-in, best-effort channels in `.3powers/config/notifications.yaml` — Slack,
+  Microsoft Teams, email, and macOS desktop, standard-library only, secrets referenced from the
+  environment — fire actionable messages on gate pause / failure / completion with per-channel event
+  routing; a broken channel never blocks or alters the run, and with none configured no network call
+  is made (`--notify` keeps working alongside). *The persistent live frame*: on a capable TTY the run
+  pins the eight-stage tracker (done/current/upcoming marks, active step, running / paused-at-gate /
+  failed states with gate guidance) above a reserved ANSI scroll region agent stdout streams into —
+  no new dependency, no alternate screen; off-TTY / `--json` / `NO_COLOR` / dumb terminals keep the
+  plain streamed log escape-free, and teardown always restores the terminal, on Ctrl-C too. (plan 029)
+
 - **Git-integrated run lifecycle (GITX).** Git handling is now a mandatory pre/post-stage hook on every
   live run and the manual `/3pwr.*` drive: a working git repository is a run precondition (reported by
   the shared `ready`/init/preflight check set); every run is isolated to a dedicated branch
