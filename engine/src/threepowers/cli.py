@@ -64,6 +64,7 @@ from . import (
     hosted,
     keys,
     lifecycle,
+    notify,
     observe,
     oracle,
     orchestrate,
@@ -75,6 +76,7 @@ from . import (
     scaffold,
     scope,
     speclock,
+    steering,
     style,
     transcripts,
     workkind,
@@ -2682,6 +2684,27 @@ def _notify(cmd: Optional[str], message: str) -> None:
         run_cmd(f"{cmd} {shlex.quote(message)}", cwd=Path.cwd())
 
 
+def _notify_event(s: Settings, args: argparse.Namespace, event: str, message: str) -> None:
+    """Fire ``event`` at the ``--notify`` hook AND every configured channel (STEER-FR-009/011).
+
+    Best-effort and fully isolated from the trust path (STEER-NFR-001): the channels are loaded at
+    most once per invocation (a malformed file warns once — STEER-FR-010), delivery never raises,
+    and every problem is at most a one-line stderr warning that never carries a secret value
+    (STEER-NFR-002). With no ``notifications.yaml`` and no ``--notify``, nothing happens and no
+    network call is made."""
+    _notify(
+        args.notify, message
+    )  # the existing command hook keeps working alongside (STEER-FR-011)
+    channels = getattr(args, "_notify_channels", None)
+    if channels is None:
+        channels, warns = notify.load_channels(s.notifications_config_path)
+        for w in warns:
+            print(f"warning: {w}", file=sys.stderr)
+        args._notify_channels = channels
+    for w in notify.dispatch(channels, event, f"3pwr run {args.spec_id or 'RUN'}", message):
+        print(f"warning: {w}", file=sys.stderr)
+
+
 def _run_feature_dir_from_ledger(s: Settings, entries: list[dict], spec_id: str) -> Optional[Path]:
     """The run's bound feature folder, read back from the signed ``run``/``start`` entry (SRCX-FR-011).
 
@@ -2700,6 +2723,34 @@ def _run_feature_dir_from_ledger(s: Settings, entries: list[dict], spec_id: str)
 def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
     st = lifecycle.derive(ledger.entries()).get(spec_id)
     return st.pending_gate if st else ""
+
+
+def _run_intent_from_ledger(entries: list[dict], spec_id: str) -> str:
+    """The run's resolved intent, read back from the latest signed ``run``/``start`` entry.
+
+    A revise re-dispatches the paused stage WITH the original intent (STEER-FR-006) — recovered from
+    the ledger alone (STEER-FR-004's reproducibility), never re-asked."""
+    intent = ""
+    for e in entries:
+        if e.get("spec_id") != spec_id or e.get("type") != "run":
+            continue
+        payload = e.get("payload", {})
+        if payload.get("kind") == "start" and payload.get("intent"):
+            intent = str(payload["intent"])
+    return intent
+
+
+def _gate_pause_rows(rst: style.Styler, spec_id: str, artifact: str) -> list[str]:
+    """The three human-gate actions, each with its copy-pasteable command, plus the artifact under
+    review (STEER-FR-005) — one source for the pause screen and the interactive prompt."""
+    rows = []
+    if artifact:
+        rows.append(f"  {rst.dim('review:'.ljust(9))}{artifact}")
+    rows.extend(
+        f"  {rst.dim((name + ':').ljust(9))}{rst.bold(cmd)}"
+        for name, cmd in steering.gate_actions(spec_id)
+    )
+    return rows
 
 
 def _run_signoff(
@@ -3080,6 +3131,7 @@ def _native_runner(
     run_branch: str = "",
     git_prefs: Optional[gitflow.GitPrefs] = None,
     commit_relaxed: bool = False,
+    revise: str = "",
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
@@ -3178,6 +3230,10 @@ def _native_runner(
         if step in ("specify", "clarify", "plan", "tasks"):
             ctx_parts.append(_feature_folder_context(s, feature_dir))
         ctx_parts.append(prior_box["ref"])
+        if revise:
+            # The revise re-dispatch carries the human's gate feedback + the artifact under review
+            # (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).
+            ctx_parts.append(revise)
         context = "\n".join(p for p in ctx_parts if p)
 
         phase_list = _implement_phases(s, spec_path) if step == "implement" else []
@@ -3339,6 +3395,7 @@ def _run_make_runner(
     run_branch: str = "",
     git_prefs: Optional[gitflow.GitPrefs] = None,
     commit_relaxed: bool = False,
+    revise: str = "",
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3357,7 +3414,146 @@ def _run_make_runner(
         run_branch=run_branch,
         git_prefs=git_prefs,
         commit_relaxed=commit_relaxed,
+        revise=revise,
     )
+
+
+def _run_revise(
+    s: Settings,
+    args: argparse.Namespace,
+    ledger: Ledger,
+    sk,
+    spec_id: str,
+    gate: str,
+    feedback: str,
+    *,
+    feature_dir: Optional[Path],
+    run_branch: str,
+    git_prefs: Optional[gitflow.GitPrefs],
+    commit_relaxed: bool,
+    rst: style.Styler,
+) -> int:
+    """Revise-with-message at a paused human gate (STEER-FR-006..008).
+
+    Re-dispatches the stage that owns the artifact under review — with the ORIGINAL intent (read back
+    from the signed ``start`` entry), the current artifact, and the human's feedback — records the
+    revision (feedback + outcome) via the existing run-entry append path, and returns the run to the
+    SAME gate for review: the pause is re-recorded so approval still requires the human sign-off. The
+    revise dispatch runs under the very same retry/artifact/git/completion policy as a first run."""
+    step, stage = steering.revise_target(gate)
+    if not step:
+        print(f"error: gate '{gate}' has no revisable stage", file=sys.stderr)
+        return EXIT_USAGE
+    gate_stage = next(
+        (stg for sid, _kind, stg in orchestrate.LIFECYCLE_STEPS if sid == gate), stage
+    )
+    artifact = steering.gate_artifact(s.root, feature_dir, gate)
+    if _resolve_runner_kind(args) == "sim":
+        # --dry-run / the simulator dispatch nothing (the SRCX dry-run stance) — the revise is
+        # recorded and the gate re-presented, so the whole loop stays visible offline.
+        result = runnermod.StageResult(
+            step=step, stage=stage, ok=True, outcome="ok", detail="simulated (dry-run)"
+        )
+    else:
+        args.intent = _run_intent_from_ledger(ledger.entries(), spec_id)  # STEER-FR-006
+        runner = _native_runner(
+            s,
+            args,
+            0,
+            ledger=ledger,
+            sk=sk,
+            spec_id=spec_id,
+            stream=_run_stream(args),
+            feature_dir=feature_dir,
+            run_branch=run_branch,
+            git_prefs=git_prefs,
+            commit_relaxed=commit_relaxed,
+            revise=steering.revise_context(gate, artifact, feedback),
+        )
+        try:
+            result = runner.dispatch_once(step, stage)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_SETUP
+    # The revision is auditable from the ledger alone (STEER-FR-008): feedback + outcome ride the
+    # EXISTING run-entry append path — no new entry type, no signing change, `3pwr verify` unchanged.
+    ledger.append(
+        "run",
+        {
+            "kind": "revise",
+            "gate": gate,
+            "step": step,
+            "feedback": feedback,
+            "ok": result.ok,
+            "outcome": result.outcome or ("ok" if result.ok else "failed"),
+            "detail": (result.detail or "")[:400],
+        },
+        sk,
+        spec_id=spec_id,
+    )
+    # The run returns to the SAME gate (STEER-FR-006): re-record the pause so the ledger-derived
+    # state stays paused-at-gate and a later plain --resume still records the human sign-off.
+    ledger.append("run", {"kind": "gate", "gate": gate, "stage": gate_stage}, sk, spec_id=spec_id)
+    if not result.ok:
+        detail = f" — {result.detail}" if result.detail else ""
+        _notify_event(
+            s,
+            args,
+            notify.EVENT_FAILURE,
+            notify.failure_message(spec_id, "revise failed", gate_stage),
+        )
+        human = (
+            f"{orchestrate.render_tracker(gate_stage, rst)}\n"
+            f"  {rst.err('✗')} revise failed at '{step}'{detail}\n"
+            f"  the artifact under review is unchanged; the run remains paused at '{gate}'."
+        )
+        _print(
+            {
+                "status": "revise_failed",
+                "gate": gate,
+                "step": step,
+                "detail": result.detail,
+                "spec_id": spec_id,
+                "stages": [result.as_dict()],
+            },
+            args.json,
+            human,
+        )
+        return EXIT_SETUP
+    _notify_event(
+        s,
+        args,
+        notify.EVENT_GATE,
+        "revised — "
+        + notify.gate_message(
+            spec_id,
+            gate,
+            gate_stage,
+            orchestrate.MANDATORY_GATES.get(gate, ""),
+            artifact,
+            steering.gate_actions(spec_id),
+        ),
+    )
+    action_rows = "\n".join(_gate_pause_rows(rst, spec_id, artifact))
+    human = (
+        f"{orchestrate.render_tracker(gate_stage, rst)}\n"
+        f"  {rst.ok('✓')} revised '{step}' with your feedback — back at "
+        f"{rst.warn('HUMAN GATE')} '{gate}' for review:\n{action_rows}"
+    )
+    _print(
+        {
+            "status": "paused_at_gate",
+            "gate": gate,
+            "gate_fr": orchestrate.MANDATORY_GATES.get(gate, ""),
+            "stage": gate_stage,
+            "spec_id": spec_id,
+            "revised": step,
+            "stages": [result.as_dict()],
+        },
+        args.json,
+        human,
+    )
+    return EXIT_PAUSED
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -3443,6 +3639,23 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
+    # File-based intent (STEER-FR-001..003): resolve --file (+ the optional inline instruction)
+    # BEFORE any side effect — a bad file fails fast with the setup exit code and no ledger entry
+    # is written; every downstream consumer sees ONLY the resolved intent (STEER-FR-004).
+    if getattr(args, "file", None):
+        if args.resume:
+            print(
+                "error: --file feeds a fresh run's intent — to revise at a paused gate use "
+                "--revise/--revise-file",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        resolved_intent, ierr = steering.resolve_intent(args.file, args.intent)
+        if ierr:
+            print(f"error: {ierr}", file=sys.stderr)
+            return EXIT_SETUP
+        args.intent = resolved_intent
+
     # Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).
     coder_int = _resolve_coder_agent(s, args)
     oracle_int = runpreflight.resolve_oracle_integration(s)
@@ -3499,7 +3712,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
     stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
-    tracker = orchestrate.Tracker(sys.stdout, mode, st=rst)
+    tracker = orchestrate.Tracker(sys.stdout, mode, st=rst, subject=spec_id)
 
     # The git discipline (GITX): applied to every LIVE native run — mandatory, with the recorded
     # signed deviation as the only relaxation (GITX-FR-014). --dry-run / the simulator dispatch
@@ -3577,8 +3790,30 @@ def cmd_run(args: argparse.Namespace) -> int:
     feature_dir: Optional[Path] = None
 
     if args.resume:
+        revising = bool(
+            getattr(args, "revise", None) is not None or getattr(args, "revise_file", None)
+        )
         pending = _run_pending_gate(ledger, spec_id)
         completed = orchestrate.last_completed_step(ledger.entries(), spec_id)
+        feedback = ""
+        if revising:
+            # The third gate action (STEER-FR-006/007): a revise outside a paused gate, or with
+            # empty feedback, is an actionable error leaving the artifact and gate state unchanged.
+            if not pending:
+                st_now = lifecycle.derive(ledger.entries()).get(spec_id)
+                where = f"stage {st_now.stage}" if st_now else "no recorded run"
+                print(
+                    f"error: nothing to revise — {spec_id} is not paused at a human gate "
+                    f"(current state: {where})",
+                    file=sys.stderr,
+                )
+                return EXIT_USAGE
+            feedback, ferr = steering.resolve_feedback(
+                getattr(args, "revise_file", None), getattr(args, "revise", None)
+            )
+            if ferr:
+                print(f"error: {ferr}", file=sys.stderr)
+                return EXIT_USAGE
         if not pending and not completed:
             # No recorded progress at all — say so honestly and name the fresh start (AUTOX-FR-010).
             print(
@@ -3587,7 +3822,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return EXIT_USAGE
-        if pending:
+        if pending and not revising:
             # A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).
             _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
         # A resume resolves the EXISTING feature folder recorded for the run — never allocating a new
@@ -3629,6 +3864,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             if b_err:
                 print(b_err, file=sys.stderr)
                 return EXIT_SETUP
+        if revising:
+            # Re-dispatch the paused stage with the original intent, the current artifact, and the
+            # feedback, then return to the SAME gate (STEER-FR-006..008).
+            return _run_revise(
+                s,
+                args,
+                ledger,
+                sk,
+                spec_id,
+                pending,
+                feedback,
+                feature_dir=feature_dir,
+                run_branch=run_branch,
+                git_prefs=git_prefs,
+                commit_relaxed=commit_relaxed,
+                rst=rst,
+            )
         # Re-enter after the later of the approved gate and the last committed checkpoint, so a mid-run
         # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)
         # — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose
@@ -3728,16 +3980,27 @@ def cmd_run(args: argparse.Namespace) -> int:
                 sk,
                 spec_id=spec_id,
             )
-            _notify(
-                args.notify,
-                f"3pwr run {spec_id}: gate '{result.gate}' ({result.gate_fr or 'review'}) awaits your commitment",
+            gate_artifact = steering.gate_artifact(s.root, feature_dir, result.gate)
+            _notify_event(
+                s,
+                args,
+                notify.EVENT_GATE,
+                notify.gate_message(
+                    spec_id,
+                    result.gate,
+                    result.stage,
+                    result.gate_fr,
+                    gate_artifact,
+                    steering.gate_actions(spec_id),
+                ),
             )
             if not interactive:
                 fr = f" ({result.gate_fr})" if result.gate_fr else ""
+                action_rows = "\n".join(_gate_pause_rows(rst, spec_id, gate_artifact))
                 human = (
                     f"{orchestrate.render_tracker(result.stage, rst)}\n"
                     f"  {rst.warn('⏸ HUMAN GATE')} '{result.gate}'{fr}"
-                    f" — review, then `3pwr run --resume --spec-id {spec_id} --approver <you>`"
+                    f" — review, then choose (STEER-FR-005):\n{action_rows}"
                 )
                 _print(
                     {
@@ -3754,6 +4017,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 # Paused-at-gate is distinguishable from completed by exit code alone (AUTOX-FR-009).
                 return EXIT_PAUSED
             fr = f" ({result.gate_fr})" if result.gate_fr else ""
+            for line in _gate_pause_rows(rst, spec_id, gate_artifact):
+                print(
+                    line
+                )  # the three actions, on-screen at the interactive pause too (STEER-FR-005)
             ans = input(f"  approve gate '{result.gate}'{fr}? [y/N] ").strip().lower()
             if ans not in ("y", "yes"):
                 ledger.append(
@@ -3773,6 +4040,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
         print(str(exc), file=sys.stderr)
         return EXIT_SETUP
+    finally:
+        # The pinned frame never outlives the run — scroll region reset, cursor restored, on normal
+        # exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004). Idempotent: a frame
+        # already finalized by a terminal event is a no-op here.
+        tracker.close()
 
     if result.status == "failed":
         # Every terminal failure is recorded as a signed run-failure ledger entry BEFORE exiting
@@ -3800,7 +4072,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             # show Verify reached. No incident/observe-signal suggestion — that is not the remedy.
             record("gates_red")
             reached = result.stage or "Verify"
-            _notify(args.notify, f"3pwr run {spec_id}: gates RED at {reached}")
+            _notify_event(
+                s, args, notify.EVENT_FAILURE, notify.failure_message(spec_id, "gates red", reached)
+            )
             human = (
                 f"{orchestrate.render_tracker(reached, rst)}\n"
                 f"  {rst.err('✗')} gates red — the deterministic gate suite failed. Inspect with "
@@ -3818,7 +4092,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             # The gate suite could not even run (no spec resolvable, no adapter, bad tier) — a
             # setup problem, never a false gate-red (EXEC-FR-016).
             record("verdict_error")
-            _notify(args.notify, f"3pwr run {spec_id}: verdict error at {reached}")
+            _notify_event(
+                s,
+                args,
+                notify.EVENT_FAILURE,
+                notify.failure_message(spec_id, "verdict error", reached),
+            )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
                 f"  {rst.err('✗')} verdict error at {reached} — the deterministic gate suite could not run "
@@ -3842,7 +4121,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
             # resume pick up here without re-running completed stages (RUNLIVE-FR-010).
             record("artifact_missing")
-            _notify(args.notify, f"3pwr run {spec_id}: artifact missing at {reached}")
+            _notify_event(
+                s,
+                args,
+                notify.EVENT_FAILURE,
+                notify.failure_message(spec_id, "artifact missing", reached),
+            )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
                 f"  {rst.err('✗')} artifact missing at {reached} — {result.detail}\n"
@@ -3869,7 +4153,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             # GITX-NFR-003). Named, recorded, and exiting on the setup/dispatch path — never a
             # gate verdict.
             record(result.outcome)
-            _notify(args.notify, f"3pwr run {spec_id}: git discipline failed at {reached}")
+            _notify_event(
+                s,
+                args,
+                notify.EVENT_FAILURE,
+                notify.failure_message(spec_id, "git discipline failed", reached),
+            )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
                 f"  {rst.err('✗')} git discipline failed at {reached} — {result.detail}\n"
@@ -3895,7 +4184,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             # named class is recorded (SRCX-FR-016) and surfaced by both status commands; the stage
             # must be re-run — the non-gate-red setup/dispatch exit path.
             record(result.outcome)
-            _notify(args.notify, f"3pwr run {spec_id}: stage completion failed at {reached}")
+            _notify_event(
+                s,
+                args,
+                notify.EVENT_FAILURE,
+                notify.failure_message(spec_id, "stage completion failed", reached),
+            )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
                 f"  {rst.err('✗')} stage completion failed at {reached} — {result.detail}\n"
@@ -3917,7 +4211,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
         # "gates red", never route to the incident/observe-signal path; exit with the setup/dispatch code.
         record("dispatch_failed")
-        _notify(args.notify, f"3pwr run {spec_id}: dispatch failed at {reached}")
+        _notify_event(
+            s,
+            args,
+            notify.EVENT_FAILURE,
+            notify.failure_message(spec_id, "dispatch failed", reached),
+        )
         detail = f" — {result.detail}" if result.detail else ""
         human = (
             f"{orchestrate.render_tracker(result.stage, rst)}\n"
@@ -3941,7 +4240,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_SETUP
     if result.status == "aborted":
-        _notify(args.notify, f"3pwr run {spec_id}: aborted")
+        _notify_event(s, args, notify.EVENT_FAILURE, f"3pwr run {spec_id}: aborted")
         _print(
             {"status": "aborted", "spec_id": spec_id, "stages": _stages()},
             args.json,
@@ -3950,7 +4249,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
-    _notify(args.notify, f"3pwr run {spec_id}: lifecycle complete")
+    _notify_event(s, args, notify.EVENT_COMPLETION, notify.completion_message(spec_id))
     human = (
         f"{orchestrate.render_tracker('Observe', rst)}\n"
         f"  {rst.ok('✓ lifecycle complete')} — advanced to Ship; observe feeds new intent"
@@ -4651,6 +4950,12 @@ def build_parser() -> argparse.ArgumentParser:
         "intent", nargs="?", help="the human's one-paragraph intent (omit with --resume/--status)"
     )
     rnp.add_argument(
+        "--file",
+        default=None,
+        help="read the run's intent from a text file (markdown preferred); inline intent text is "
+        "appended to it as an instruction (STEER-FR-001/002)",
+    )
+    rnp.add_argument(
         "--mode",
         choices=["auto", "commit"],
         default=None,
@@ -4713,6 +5018,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume",
         action="store_true",
         help="continue after a human gate (records the sign-off first)",
+    )
+    rnp.add_argument(
+        "--revise",
+        default=None,
+        help="with --resume, at a paused human gate: re-run the paused stage with this feedback "
+        "and return to the same gate (STEER-FR-006)",
+    )
+    rnp.add_argument(
+        "--revise-file",
+        dest="revise_file",
+        default=None,
+        help="read the revise feedback from a text file (same resolution rule as --file)",
     )
     rnp.add_argument(
         "--status", action="store_true", help="show the run's stage tracker from the ledger"

@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
-from . import style
+from . import frame, style
 from .lifecycle import STAGES, canonical_stage
 
 # The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
@@ -380,39 +380,74 @@ def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None)
 
 
 class Tracker:
-    """A dependency-free progress view for ``3pwr run``. On a TTY it redraws a colored, persistent
-    stage header **in place** (``\\r`` + clear-line) as steps stream — the "you are here" view
-    (CLIUX-FR-008/009); off a TTY (pipe / ``--json``) it falls back to the plain streamed
-    ``format_event`` log with no ANSI/control codes (CLIUX-FR-011). No ``rich``/``curses`` dependency
-    (INITX-NFR-004, CLIUX-FR-003). Color is tied to the TTY: the off-TTY log is always plain, even
-    under ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
+    """A dependency-free progress view for ``3pwr run``. On a capable TTY it pins a **persistent
+    stage frame** at the top of the terminal — the eight stages with done/current/upcoming marks, the
+    active step, and a running indicator — while the event log and the dispatched agent's stdout
+    stream in a reserved scroll region below it (STEER-FR-012, advancing CLIUX-FR-008/009's single
+    in-place line). Off a TTY (pipe / ``--json``), under ``NO_COLOR``, or on a terminal that cannot
+    support the pinned region, it degrades to the plain streamed ``format_event`` log with no
+    ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015, CLIUX-FR-011). No
+    ``rich``/``curses`` dependency (INITX-NFR-004, CLIUX-FR-003, STEER-FR-014). Color is tied to the
+    TTY: the off-TTY log is always plain, even under ``THREEPOWERS_FORCE_COLOR``, so a
+    captured/piped run never carries escapes (CLIUX-FR-011)."""
 
     def __init__(
-        self, stream, mode: str, *, tty: Optional[bool] = None, st: style.Styler | None = None
+        self,
+        stream,
+        mode: str,
+        *,
+        tty: Optional[bool] = None,
+        st: style.Styler | None = None,
+        subject: str = "",
+        frame_view: Optional["frame.LiveFrame"] = None,
     ) -> None:
         self._stream = stream
         self._mode = mode
+        self._subject = subject
         self._tty = bool(getattr(stream, "isatty", lambda: False)()) if tty is None else tty
-        # Color only on the live in-place header (a TTY). The off-TTY log is ALWAYS plain — a disabled
+        # Color only on the live TTY view. The off-TTY log is ALWAYS plain — a disabled
         # styler wins even over a passed-in enabled one (e.g. color_mode: always) so a piped/captured
         # run never carries escapes (CLIUX-FR-011).
         self._st = (st if st is not None else style.styler(stream)) if self._tty else style.Styler()
         self._reached = "Discovery"
-        self._live = False  # an in-place line is currently drawn
+        # The pinned frame (STEER-FR-012) — only when the terminal can carry it (STEER-FR-015);
+        # ``frame_view`` lets tests inject one deterministically.
+        self._frame = (
+            frame_view
+            if frame_view is not None
+            else (frame.build(stream, st=self._st, subject=subject) if self._tty else None)
+        )
+
+    def close(self) -> None:
+        """Tear the pinned frame down — scroll region reset, cursor restored (STEER-FR-016).
+
+        Idempotent, so the exception path (``finally``) and the terminal-event path converge."""
+        if self._frame is not None:
+            self._frame.close()
 
     def on_event(self, ev: Event) -> None:
         if ev.stage:
             self._reached = ev.stage
-        if not self._tty:
+        if self._frame is not None:
+            # The event history streams as plain lines INSIDE the reserved region (scrollback stays
+            # useful) while the pinned header reflects the current state (STEER-FR-012/013).
             self._stream.write(format_event(ev, self._mode, self._st) + "\n")
-            self._stream.flush()
+            self._frame.note(
+                kind=ev.kind,
+                step=ev.step,
+                stage=ev.stage,
+                detail=ev.detail,
+                reached=self._reached,
+                spec_id=self._subject,
+            )
+            if ev.kind in _TERMINAL_KINDS:
+                # A terminal event finalizes the frame: the last state stays on screen and the
+                # region is released so the follow-up guidance prints in normal flow (STEER-FR-016).
+                self._frame.close()
+            else:
+                self._stream.flush()
             return
-        if ev.kind in _TERMINAL_KINDS:
-            if self._live:  # finalize the in-place line before the terminal detail
-                self._stream.write("\r\033[2K")
-                self._live = False
-            self._stream.write(format_event(ev, self._mode, self._st) + "\n")
-        else:
-            self._stream.write("\r\033[2K" + tracker_frame(self._reached, ev, self._st))
-            self._live = True
+        # The plain streamed event log — off a TTY, and the degraded TTY path (STEER-FR-015):
+        # no in-place redraws, no pinned region.
+        self._stream.write(format_event(ev, self._mode, self._st) + "\n")
         self._stream.flush()

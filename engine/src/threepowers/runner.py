@@ -565,3 +565,13 @@ class NativeRunner:
         if decision == "reject":
             return Outcome("aborted", events=[Event("aborted")])
         return self._walk()
+
+    def dispatch_once(self, step: str, stage: str) -> StageResult:
+        """Dispatch exactly ONE action stage outside the walk — the revise re-run (STEER-FR-006).
+
+        Re-uses the injected dispatcher unchanged, so the retry/timeout/artifact policy, the git
+        hooks, and the completion gate all apply to a revision exactly as to a first run; the walk
+        position is untouched, so the run stays paused at its gate."""
+        res = self._dispatch(step, stage)
+        self.stage_results.append(res)
+        return res

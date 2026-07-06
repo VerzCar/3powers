@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from threepowers import lifecycle, orchestrate
+from threepowers import lifecycle, orchestrate, style
 from threepowers.cli import main
 from threepowers.ledger import Ledger
 
@@ -78,15 +78,19 @@ def test_tracker_plain_fallback_off_tty():
     assert "\r" not in out and "\033" not in out  # plain, no in-place cursor control
 
 
-def test_tracker_in_place_on_tty():
-    """On a TTY the tracker redraws a single line in place (carriage return + clear)."""
+def test_tracker_on_unsupported_tty_degrades_to_plain_log():
+    """STEER-FR-015 (supersedes the CLIUX single in-place line): a TTY that cannot carry the pinned
+    region (here: a stream with no real terminal behind it) degrades to the existing plain streamed
+    event log — no ``\\r`` in-place redraws, no pinned-region control codes."""
     import io
 
     buf = io.StringIO()
-    tr = orchestrate.Tracker(buf, "auto", tty=True)
+    tr = orchestrate.Tracker(buf, "auto", tty=True, st=style.Styler())
     tr.on_event(orchestrate.Event("step", "plan", "Plan"))
     out = buf.getvalue()
-    assert "\r" in out and "Plan" in out
+    assert "plan" in out
+    assert "\r" not in out  # the in-place redraw is gone (STEER advances CLIUX-FR-008/009)
+    tr.close()  # closing with no frame is a safe no-op (STEER-NFR-004)
 
 
 # --------------------------------------------------------------------------- CLI end-to-end (--dry-run)

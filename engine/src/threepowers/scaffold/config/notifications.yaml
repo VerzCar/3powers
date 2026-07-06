@@ -1,0 +1,30 @@
+# 3Powers run notifications (STEER-FR-009/010/011).
+#
+# OPT-IN, best-effort channels fired when `3pwr run` pauses at a human gate, fails, or completes —
+# a convenience signal, NEVER a trust or enforcement channel (STEER-NFR-001): a channel error,
+# timeout, or absence never blocks, delays, fails, or alters the run, its verdict, its exit code,
+# or the ledger. Approval still happens only through the CLI + signed ledger; there is no inbound
+# control channel. A missing file disables notifications; a malformed file or unknown key warns
+# once and falls back. The `--notify "<cmd>"` command hook keeps working alongside these channels.
+#
+# SECRETS come from the ENVIRONMENT — never store a webhook URL or SMTP credential in this file
+# (STEER-NFR-002). Each channel routes the events it names via `events:` (default: all three of
+# gate, failure, completion).
+version: 1
+
+channels: []
+#  - type: slack                      # Slack incoming webhook
+#    webhook_env: THREEPOWERS_SLACK_WEBHOOK   # env var holding the webhook URL
+#    events: [gate, failure, completion]
+#    timeout_s: 5
+#  - type: teams                      # Microsoft Teams incoming webhook
+#    webhook_env: THREEPOWERS_TEAMS_WEBHOOK
+#  - type: email                      # SMTP (standard library; STARTTLS by default)
+#    host: smtp.example.com
+#    port: 587
+#    to: you@example.com              # or a list
+#    from: 3pwr@example.com
+#    user: you@example.com            # optional; the password is read from password_env
+#    password_env: THREEPOWERS_SMTP_PASSWORD
+#  - type: desktop                    # local desktop notification (macOS osascript)
+#    events: [gate]
