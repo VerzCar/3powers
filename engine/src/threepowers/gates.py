@@ -121,12 +121,22 @@ def _augment_gates(required: list[str], work_kind: list[str], settings: Settings
     return out
 
 
+def _no_spec_skip(gate: str) -> GateResult:
+    """A SKIP for a spec-bound gate when a brownfield report-only/diff-scope run has no spec yet
+    (3PWR-FR-051/052). Reported as skipped, never silently passed (3PWR-FR-032)."""
+    return GateResult(
+        gate=gate,
+        status=STATUS_SKIP,
+        findings=["no spec resolved — brownfield report-only/diff-scope (3PWR-FR-052)"],
+    )
+
+
 def run_gates(
     settings: Settings,
     target: Path,
     *,
     tier: str,
-    spec_path: Path,
+    spec_path: Path | None,
     adapter_name: str | None = None,
     base: str | None = None,
     allow_mutation: bool = False,
@@ -164,7 +174,9 @@ def run_gates(
     adapter_name = adapter_name or adapters.detect_adapter(settings, target)
     manifest = adapters.load_adapter(settings, adapter_name)
 
-    spec_id, _ = extract_spec(spec_path)
+    # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope runs before a repo has any
+    # 3Powers spec, so `spec_path` may be None — the two spec-bound gates then SKIP (below).
+    spec_id, _ = extract_spec(spec_path) if spec_path is not None else ("", set())
     verdict = Verdict(
         spec_id=spec_id,
         tier=tier,
@@ -250,11 +262,14 @@ def run_gates(
             # The spec is the law — after human approval its full-document hash is frozen in
             # the signed ledger; a silent mutation fails fast, before any test runs
             # (SLOCK-FR-003/004). Skips (never blocks) a not-yet-approved spec.
-            verdict.add(
-                speclock.integrity_gate(
-                    Ledger(settings.ledger_path).entries(), spec_id, settings.root, spec_path
+            if spec_path is None:
+                verdict.add(_no_spec_skip("spec_integrity"))
+            else:
+                verdict.add(
+                    speclock.integrity_gate(
+                        Ledger(settings.ledger_path).entries(), spec_id, settings.root, spec_path
+                    )
                 )
-            )
 
         elif gate == "diff_coverage":
             verdict.add(
@@ -279,19 +294,25 @@ def run_gates(
             verdict.add(gaming.detect_gaming(settings.root, target, base))
 
         elif gate == "spec_conformance":
-            roots = _test_roots(manifest, target)
-            gr = run_conformance(
-                spec_path,
-                roots,
-                required_layers=tcfg.get("required_layers"),
-                conformance_cfg=manifest.get("conformance"),
-            )
-            verdict.add(gr)
-            verdict.failures.extend(conformance_failures(gr))
+            if spec_path is None:
+                verdict.add(_no_spec_skip("spec_conformance"))
+            else:
+                roots = _test_roots(manifest, target)
+                gr = run_conformance(
+                    spec_path,
+                    roots,
+                    required_layers=tcfg.get("required_layers"),
+                    conformance_cfg=manifest.get("conformance"),
+                )
+                verdict.add(gr)
+                verdict.failures.extend(conformance_failures(gr))
 
         elif gate == "defect_regression":
             # Work-kind: defect — a fix must ship a failing regression test (3PWR-FR-008).
-            verdict.add(regression_gate(spec_path, _test_roots(manifest, target)))
+            if spec_path is None:
+                verdict.add(_no_spec_skip("defect_regression"))
+            else:
+                verdict.add(regression_gate(spec_path, _test_roots(manifest, target)))
 
         elif gate in design.DESIGN_GATES:
             # Work-kind: design — adapter-supplied design oracle, quarantined if unwired (3PWR-FR-009).

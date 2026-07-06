@@ -39,6 +39,11 @@ blocks** — so legacy debt doesn't wall off every merge on day one:
 ```bash
 3pwr gate run --path . --tier Standard --report-only
 ```
+
+No spec yet? That's fine — on the adoption on-ramp `--report-only` (and `--diff-scope`) need **no
+`--spec`**: the two spec-bound gates (`spec_integrity`, `spec_conformance`) simply skip until you've
+written and approved a spec. Every other gate still runs.
+
 ```
   ✓ secret_scan · betterleaks
   ✓ gate_gaming · 3pwr-gaming
@@ -62,13 +67,17 @@ current behavior with characterization tests that serve as its oracle. The modul
 never executed at generation time — so this is safe on untrusted legacy code:
 
 ```bash
-3pwr characterize --module src/legacy/money.py
+3pwr characterize --module src/legacy/money.py     # one file …
+3pwr characterize --module src/legacy               # … or a whole directory (walked; tests skipped)
 ```
 ```
 characterized money.py → spec MONEY (3 symbol(s), 3 requirement(s))
   spec:  specs/001-money-characterization/spec.md
   tests: src/legacy/characterization/test_money_characterization.py
 ```
+
+`--module` takes a single source file **or a directory** — a directory is walked for source files
+(vendored/hidden dirs and test files skipped), reconstructing one spec + oracle per file.
 
 It writes two artifacts. A **spec stub** with one reconstructed requirement per public symbol, a risk
 tier, and a non-goals section that's honest about what it is:
@@ -144,7 +153,7 @@ changing the module itself.
 |---|---|
 | Adopt the spine | `3pwr init` (guided: signer + config + adapter) |
 | See the debt, block nothing | `3pwr gate run … --report-only` |
-| Pin a legacy module | `3pwr characterize --module <path>` |
+| Pin a legacy module | `3pwr characterize --module <file-or-dir>` |
 | Enforce on the diff only | `3pwr gate run … --base <ref> --diff-scope` |
 | Harden the trust-critical files | `3pwr gate run … --tier High-risk --mutation --paths <files>` |
 

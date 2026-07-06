@@ -195,7 +195,7 @@ def test_brownfield_detection_and_guidance(tmp_path, capsys):
     (root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     assert _init(root, key=tmp_path / "k.key") == 0  # no --language: auto-detect
     out = capsys.readouterr().out
-    assert "Existing project detected" in out
+    assert "Adopt gradually" in out
     assert "report-only" in out and "characterize" in out
     # auto-detected the language from the stack marker
     assert (Settings(root=root).adapters_dir / "python" / "adapter.yaml").exists()
@@ -207,7 +207,7 @@ def test_greenfield_guidance_points_to_authoring(tmp_path, capsys):
     root.mkdir()
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
     out = capsys.readouterr().out
-    assert "author your first spec" in out
+    assert "Get started" in out
     assert "3pwr run" in out
 
 

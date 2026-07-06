@@ -48,8 +48,13 @@ _LAYER_HINTS = {
 _TEST_GLOBS = ("*.test.*", "*.spec.*", "test_*.py", "*_test.py")
 
 
-def extract_spec(spec_path: Path) -> tuple[str, set[str]]:
-    """Return ``(spec_id, {requirement_ids})`` declared in a spec file."""
+def extract_spec(spec_path: Path | None) -> tuple[str, set[str]]:
+    """Return ``(spec_id, {requirement_ids})`` declared in a spec file.
+
+    Tolerates ``None`` (a brownfield report-only run with no spec yet, 3PWR-FR-052): yields
+    ``("", set())`` so callers need no separate guard."""
+    if spec_path is None:
+        return "", set()
     text = spec_path.read_text(encoding="utf-8")
     m = _SPEC_ID_RE.search(text)
     declared_spec = m.group(1) if m else ""

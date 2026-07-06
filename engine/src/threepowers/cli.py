@@ -39,7 +39,9 @@ import difflib
 import hashlib
 import json
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -247,6 +249,42 @@ def _ask_choice(prompt: str, options: list[str], default: str, *, interactive: b
     if ans.isdigit() and 1 <= int(ans) <= len(options):
         return options[int(ans) - 1]
     return ans if ans in options else default
+
+
+def _ask_multi(
+    prompt: str, options: list[str], defaults: list[str], *, interactive: bool
+) -> list[str]:
+    """Numbered multi-select with defaults; returns the (in-option) defaults when non-interactive.
+
+    Accepts space/comma-separated indices or names; empty input keeps the defaults. Non-interactive
+    (``--yes``/``--json``/no TTY) prompts for nothing (ONBRD-FR-006), so an init stays byte-stable."""
+    in_opts = [d for d in defaults if d in options]
+    if not interactive or not options:
+        return in_opts
+    print(prompt)
+    for i, opt in enumerate(options, 1):
+        print(f"  {i}) {opt}{'  (default)' if opt in defaults else ''}")
+    di = ", ".join(str(options.index(d) + 1) for d in in_opts)
+    try:
+        ans = input(f"select (comma/space-separated) [{di or 'none'}]: ").strip()
+    except EOFError:
+        return in_opts
+    if not ans:
+        return in_opts
+    picks: list[str] = []
+    for tok in re.split(r"[,\s]+", ans):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if tok.isdigit() and 1 <= int(tok) <= len(options):
+            val: Optional[str] = options[int(tok) - 1]
+        elif tok in options:
+            val = tok
+        else:
+            val = None
+        if val and val not in picks:
+            picks.append(val)
+    return picks or in_opts
 
 
 def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
@@ -540,6 +578,32 @@ def _warn_diversity(s: Settings, st: style.Styler) -> list[str]:
     return hit
 
 
+def _agent_cli_present(s: Settings, name: str) -> bool:
+    """True iff the agent backend ``name``'s CLI is on PATH (a manifest's ``command``, else ``name``)."""
+    cmd = name
+    try:
+        cmd = agents.agent_command(agents.load_agent(s, name)) or name
+    except FileNotFoundError:
+        pass
+    return shutil.which(cmd) is not None
+
+
+def _default_role_model(
+    role: str, entries: list[dict[str, str]], default_entry: Optional[dict[str, str]], coder_fam: str
+) -> str:
+    """The documented default model for a role, family-aware for the judiciary.
+
+    Coder/planner take the integration's documented default; oracle/reviewer prefer the first entry
+    whose *family* differs from the coder's chosen family, so ``family`` diversity holds out of the
+    box even within a single BYOK integration (3PWR-FR-022)."""
+    fallback = (default_entry or {}).get("model", "") or (entries[0]["model"] if entries else "")
+    if role in ("oracle", "reviewer") and coder_fam:
+        for e in entries:
+            if e["family"] and e["family"] != coder_fam:
+                return e["model"]
+    return fallback
+
+
 def _roles_setup_flow(
     s: Settings,
     st: style.Styler,
@@ -548,50 +612,88 @@ def _roles_setup_flow(
     integration: Optional[str] = None,
     role_models: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
-    """The shared headless-CLI + role→model setup (AGENTX-FR-011/012/014/015).
+    """The shared headless-CLI + role→model + diversity setup (AGENTX-FR-011/012/014/015).
 
-    One pass: declare the headless integration you use (no provider is forced — AGENTX-FR-011),
-    then bind each configurable role — planner, coder, oracle, reviewer — to a model drawn from
-    the per-integration catalog or entered free-form (AGENTX-FR-016), writing a complete block
-    (``model_family``/``model``/``integration``/``label``, ``require_dispatch`` for the oracle)
-    so ``3pwr run`` needs no manual role editing (AGENTX-FR-012/013).
+    One pass: multi-select which agent-backend CLIs you use (no provider is forced — AGENTX-FR-011),
+    then bind each configurable role — planner, coder, oracle, reviewer — to an integration from that
+    selection and a model drawn from its catalog or entered free-form (AGENTX-FR-016), writing a
+    complete block (``model_family``/``model``/``integration``/``label``, ``require_dispatch`` for the
+    oracle) so ``3pwr run`` needs no manual role editing (AGENTX-FR-012/013). Finally choose how
+    diversity is judged — by ``family`` or ``model`` (3PWR-FR-022).
 
-    Non-interactive (AGENTX-NFR-004): prompts for nothing; explicit choices are applied, and a
-    role with no binding yet receives the catalog's documented default for the integration —
-    already-bound roles are preserved untouched (non-destructive, AGENTX-FR-014/NFR-003).
-    Deterministic and offline (AGENTX-NFR-001); diversity only ever warns (AGENTX-FR-018)."""
+    Integration and family are orthogonal: one BYOK integration (e.g. copilot) can bind coder and
+    oracle to different families, so diversity never forces a second CLI. When ``integration`` is
+    given it fixes the single backend (``3pwr config roles setup --integration``).
+
+    Non-interactive (AGENTX-NFR-004): prompts for nothing; explicit choices are applied, and a role
+    with no binding yet receives a documented default — already-bound roles are preserved untouched
+    (non-destructive, AGENTX-FR-014/NFR-003). Deterministic and offline (AGENTX-NFR-001); diversity
+    only ever warns (AGENTX-FR-018)."""
     cat = catalog.load_catalog(s)
     roles_cfg = s.load_roles()
     known = [str(i) for i in (roles_cfg.get("headless_integrations") or [])]
-    for name in catalog.integrations(cat):
+    for name in list(catalog.integrations(cat)) + scaffold.bundled_agents():
         if name not in known:
             known.append(name)
-    current = str(((roles_cfg.get("roles") or {}).get("coder") or {}).get("integration") or "")
-    default_intg = integration or current.strip() or (known[0] if known else "claude")
-    chosen = integration or _ask_choice(
-        "Which headless coding-agent CLI do you use (have installed)?",
-        known,
-        default_intg,
-        interactive=interactive,
-    )
-    entries = catalog.models_for(cat, chosen)
-    default_entry = catalog.default_for(cat, chosen)
+
+    # 1) Which agent CLIs do you use? Multi-select, default = the ones installed on PATH (else the
+    #    configured set, else claude). A forced --integration pins the single backend.
+    if integration:
+        selected = [integration]
+    else:
+        configured = [str(i) for i in (roles_cfg.get("headless_integrations") or [])]
+        installed = [n for n in known if _agent_cli_present(s, n)]
+        default_sel = installed or configured or (["claude"] if "claude" in known else known[:1])
+        selected = (
+            _ask_multi(
+                "Which coding-agent CLIs will you use? (space/comma-separated)",
+                known,
+                default_sel,
+                interactive=interactive,
+            )
+            or default_sel
+        )
+    if selected:
+        scaffold.set_headless_integrations(s, selected)
+
     custom_opt = "custom (type a model id)"
     written: dict[str, Any] = {}
+    chosen_family: dict[str, str] = {}
     for role in _SETUP_ROLES:
         explicit = str((role_models or {}).get(role) or "").strip()
-        cur_model = str(s.role(role).get("model") or "").strip()
+        cur = s.role(role)
+        cur_model = str(cur.get("model") or "").strip()
+        cur_intg = str(cur.get("integration") or "").strip()
+
+        # 2a) Integration for this role, from the selected set.
+        if len(selected) == 1:
+            role_intg = selected[0]
+        elif interactive and not explicit:
+            # Default the judiciary to a CLI other than the coder's when more than one is selected.
+            coder_intg = written.get("coder", {}).get("integration") or selected[0]
+            others = [i for i in selected if i != coder_intg]
+            pref = cur_intg if cur_intg in selected else (
+                (others[0] if others else coder_intg) if role in ("oracle", "reviewer") else coder_intg
+            )
+            role_intg = _ask_choice(
+                f"Agent CLI for the {role} role", selected, pref, interactive=interactive
+            )
+        else:
+            role_intg = cur_intg if cur_intg in selected else (selected[0] if selected else cur_intg)
+
+        entries = catalog.models_for(cat, role_intg)
+        default_entry = catalog.default_for(cat, role_intg)
+        coder_fam = chosen_family.get("coder", "")
+
+        # 2b) Model for this role.
         if explicit:
             model = explicit
         elif interactive:
             options = [e["model"] for e in entries] + [custom_opt]
-            default_opt = (
-                cur_model
-                if cur_model in options
-                else (default_entry["model"] if default_entry else custom_opt)
-            )
+            preset = _default_role_model(role, entries, default_entry, coder_fam)
+            default_opt = cur_model if cur_model in options else (preset or custom_opt)
             pick = _ask_choice(
-                f"Model for the {role} role ({chosen})",
+                f"Model for the {role} role ({role_intg})",
                 options,
                 default_opt,
                 interactive=interactive,
@@ -599,39 +701,58 @@ def _roles_setup_flow(
             model = (
                 _ask(
                     "  model id (free-form / BYOK)",
-                    cur_model or (default_entry or {}).get("model", ""),
+                    cur_model or preset,
                     interactive=interactive,
                 )
                 if pick == custom_opt
                 else pick
             )
         elif cur_model:
-            # Non-interactive, no explicit choice: an existing binding is the documented
-            # default — preserved untouched (AGENTX-FR-014 / NFR-003/004).
             written[role] = {"status": "kept", "model": cur_model}
+            chosen_family[role] = (
+                str(cur.get("model_family") or "") or oracle.family_of(cur_model)
+            )
             continue
         else:
-            model = (default_entry or {}).get("model", "")
+            model = _default_role_model(role, entries, default_entry, coder_fam)
+
         if not model:
             written[role] = {"status": "kept", "model": cur_model or None}
             continue
-        entry = catalog.entry_for(cat, chosen, model)
+        entry = catalog.entry_for(cat, role_intg, model)
         family = entry["family"] if entry else catalog.derive_family(model)
         label = entry["label"] if entry else model
         if interactive and entry is None:
+            family = _ask("  model family", family, interactive=interactive) or family
             label = _ask("  friendly label", label, interactive=interactive)
         scaffold.set_role_model(
-            s, role, model=model, integration=chosen, label=label, model_family=family
+            s, role, model=model, integration=role_intg, label=label, model_family=family
         )
+        chosen_family[role] = family
         written[role] = {
             "status": "written",
             "model": model,
             "model_family": family,
-            "integration": chosen,
+            "integration": role_intg,
             "label": label,
         }
+
+    # 3) How is diversity judged — family or model? (3PWR-FR-022)
+    level = _ask_choice(
+        "Judge model diversity by…",
+        ["family", "model"],
+        s.diversity_level() or "family",
+        interactive=interactive,
+    )
+    scaffold.set_diversity_level(s, level)
     warned = _warn_diversity(s, st)
-    return {"integration": chosen, "roles": written, "diversity_warned": warned}
+    return {
+        "integration": (written.get("coder", {}).get("integration") or (selected[0] if selected else "")),
+        "integrations": selected,
+        "roles": written,
+        "diversity_level": level,
+        "diversity_warned": warned,
+    }
 
 
 def cmd_config_roles_setup(args: argparse.Namespace) -> int:
@@ -737,6 +858,62 @@ def cmd_commit_stage(args: argparse.Namespace) -> int:
         ),
     )
     return EXIT_OK
+
+
+def _notifications_setup_flow(s: Settings, st: style.Styler, *, interactive: bool) -> dict[str, Any]:
+    """Pick one run-notification channel (or none) and write its config (STEER-FR-010).
+
+    Secrets are never stored (STEER-NFR-002): slack/teams record only the env-var *name* holding the
+    webhook URL, email records ``password_env``. Non-interactive prompts for nothing — the seeded
+    empty ``channels: []`` (notifications off) stands. Returns what to tell the user to export."""
+    if not interactive:
+        return {"channel": "none"}
+    choice = _ask_choice(
+        "Send run notifications to… (gate pauses, failures, completion)",
+        ["none", "desktop", "slack", "teams", "email"],
+        "none",
+        interactive=interactive,
+    )
+    events = list(notify.DEFAULT_EVENTS)
+    if choice == "none":
+        return {"channel": "none"}
+    if choice in ("slack", "teams"):
+        env_default = f"THREEPOWERS_{choice.upper()}_WEBHOOK"
+        env = (
+            _ask(f"  env var holding the {choice} webhook URL", env_default, interactive=interactive)
+            or env_default
+        )
+        scaffold.set_notification_channel(
+            s, {"type": choice, "events": events, "webhook_env": env}
+        )
+        return {"channel": choice, "webhook_env": env}
+    if choice == "email":
+        host = _ask("  SMTP host", "", interactive=interactive)
+        port_raw = _ask("  SMTP port", "587", interactive=interactive)
+        to = _ask("  recipient address (to)", "", interactive=interactive)
+        frm = _ask("  sender address (from, optional)", "", interactive=interactive)
+        user = _ask("  SMTP username (optional)", "", interactive=interactive)
+        pw_env = (
+            _ask("  env var holding the SMTP password", "THREEPOWERS_SMTP_PASSWORD", interactive=interactive)
+            or "THREEPOWERS_SMTP_PASSWORD"
+        )
+        channel: dict[str, Any] = {
+            "type": "email",
+            "events": events,
+            "host": host,
+            "port": int(port_raw) if port_raw.isdigit() else 587,
+            "to": to,
+            "password_env": pw_env,
+        }
+        if frm:
+            channel["from"] = frm
+        if user:
+            channel["user"] = user
+        scaffold.set_notification_channel(s, channel)
+        return {"channel": "email", "password_env": pw_env}
+    # desktop
+    scaffold.set_notification_channel(s, {"type": "desktop", "events": events})
+    return {"channel": "desktop", "macos_only": sys.platform != "darwin"}
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -853,15 +1030,12 @@ def cmd_init(args: argparse.Namespace) -> int:
     oracle_label = getattr(args, "oracle_label", None)
     customized = bool(oracle_model or getattr(args, "tier", None))
     roles_report: Optional[dict[str, Any]] = None
-    if (
-        interactive
-        and not oracle_model
-        and not _ask_yesno(
-            "Use the recommended 3Powers defaults (risk tier + role→model bindings)?",
-            True,
-            interactive=interactive,
-        )
-    ):
+    notify_report: dict[str, Any] = {"channel": "none"}
+    # The guided judiciary setup always runs interactively, each prompt carrying an accept-by-Enter
+    # default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →
+    # diversity mode → notifications. Non-interactive prompts for nothing — the seeded roles.yaml +
+    # empty notifications are the documented defaults and stay run-ready (AGENTX-NFR-004).
+    if interactive and not oracle_model:
         customized = True
         tiers = list((s.load_risk_tiers().get("tiers") or {}).keys()) or [
             "Cosmetic",
@@ -869,12 +1043,10 @@ def cmd_init(args: argparse.Namespace) -> int:
             "High-risk",
         ]
         tier = _ask_choice("Default risk tier for new specs?", tiers, tier, interactive=interactive)
-        # Declare the installed headless CLI, then walk planner/coder/oracle/reviewer against the
-        # per-integration model catalog — a complete, run-ready roles.yaml in one pass
-        # (AGENTX-FR-011/012/013; the same flow as `3pwr config roles setup`, AGENTX-FR-014).
-        roles_report = _roles_setup_flow(
-            s, st, interactive=interactive, integration=getattr(args, "integration", None)
-        )
+        forced = getattr(args, "integration", None)
+        forced = forced if forced not in (None, "auto") else None
+        roles_report = _roles_setup_flow(s, st, interactive=interactive, integration=forced)
+        notify_report = _notifications_setup_flow(s, st, interactive=interactive)
     if oracle_model:
         coder_fam = s.coder_family()
         if coder_fam and oracle.family_of(oracle_model) == coder_fam:
@@ -961,6 +1133,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "agents": agents_seeded,
         "stage_templates": templates_seeded,
         "roles_setup": roles_report,
+        "notifications": notify_report,
         "model_diversity": model_div_ok,
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
@@ -1004,6 +1177,12 @@ def cmd_init(args: argparse.Namespace) -> int:
             f"  stage agent templates seeded (.3powers/templates/agents/): {len(tpl_seeded)} "
             "editable per-stage instruction file(s)"
         )
+    notif_channel = str(notify_report.get("channel") or "none")
+    if notif_channel != "none":
+        lines.append(
+            f"  notifications: {notif_channel} channel configured "
+            "(.3powers/config/notifications.yaml)"
+        )
 
     # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
     # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
@@ -1035,24 +1214,47 @@ def cmd_init(args: argparse.Namespace) -> int:
             "(re-check any time: 3pwr ready)"
         )
 
-    # Explained next steps (INITX-FR-012).
-    lines.append("")
-    if brownfield:
-        lines.append(st.head("Existing project detected — adopt gradually, in this order:"))
-        lines.append("  1. " + st.bold("3pwr gate run --path . --tier Standard --report-only"))
-        lines.append("       see your current gate debt without blocking anything")
-        lines.append("  2. " + st.bold("3pwr characterize --module <path>"))
-        lines.append("       pin the behaviour of a legacy module (reconstruct spec + oracle)")
-        lines.append("  3. " + st.bold("3pwr gate run --path . --base main --diff-scope"))
-        lines.append("       enforce the gates only on the code you change from now on")
-    else:
-        lines.append(st.head("Next — author your first spec and drive the lifecycle:"))
-        lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
-        lines.append("       one command drives spec → plan → oracle → build → verify → ship,")
-        lines.append("       stopping only at the two human gates (spec approval, sign-off)")
-        lines.append(
-            "  (or step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)"
+    # Before-you-run env exports for a configured notification channel (secrets live in env, never
+    # in the config — STEER-NFR-002). Shown as a call-to-action alongside the signer export.
+    notif_hint: list[str] = []
+    if notif_channel in ("slack", "teams"):
+        env = notify_report.get("webhook_env") or f"THREEPOWERS_{notif_channel.upper()}_WEBHOOK"
+        notif_hint.append(
+            f'  export {env}="<your {notif_channel} webhook URL>"   # before `3pwr run`'
         )
+    elif notif_channel == "email":
+        notif_hint.append(
+            f'  export {notify_report.get("password_env", "THREEPOWERS_SMTP_PASSWORD")}='
+            '"<smtp password>"   # before `3pwr run`'
+        )
+    elif notif_channel == "desktop" and notify_report.get("macos_only"):
+        notif_hint.append(
+            "  note: desktop notifications are macOS-only — they degrade to a warning elsewhere"
+        )
+
+    # Getting started — the primary call-to-action, shown ALWAYS (greenfield + brownfield):
+    # describe what you want and 3pwr drives the lifecycle (INITX-FR-012).
+    lines.append("")
+    lines.append(st.head("Get started — describe what you want and 3pwr drives the lifecycle:"))
+    lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
+    lines.append("       spec → plan → oracle → build → verify → ship,")
+    lines.append("       stopping only at the two human gates (spec approval, sign-off)")
+    lines.append("  " + st.bold(f"3pwr run --file <intent.md> --mode {mode}") + "   # …or a written brief")
+    lines.append(
+        "  (step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)"
+    )
+    lines.extend(notif_hint)
+
+    # Existing code? The now-working brownfield on-ramp, demoted below the primary CTA (3PWR-FR-051/052).
+    if brownfield:
+        lines.append("")
+        lines.append(st.head("Existing code? Adopt gradually first:"))
+        lines.append("  " + st.bold("3pwr gate run --path . --tier Standard --report-only"))
+        lines.append("       see your current gate debt without blocking anything (no spec needed)")
+        lines.append("  " + st.bold("3pwr characterize --module <file-or-dir>"))
+        lines.append("       pin the behaviour of a legacy module (reconstruct spec + oracle)")
+        lines.append("  " + st.bold("3pwr gate run --path . --base main --diff-scope"))
+        lines.append("       enforce the gates only on the code you change from now on")
     print("\n".join(lines))
     return EXIT_OK
 
@@ -1060,7 +1262,15 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_gate_run(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else s.root
-    spec_path = _resolve_spec(s, args.spec)
+    # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo that
+    # has no 3Powers spec yet, so a missing spec is not an error there — the two spec-bound gates SKIP.
+    try:
+        spec_path: Path | None = _resolve_spec(s, args.spec)
+    except FileNotFoundError:
+        if args.report_only or args.diff_scope:
+            spec_path = None
+        else:
+            raise
 
     verdict = run_gates(
         s,
@@ -4510,22 +4720,44 @@ def cmd_characterize(args: argparse.Namespace) -> int:
         root = base or Path.cwd()
     module_path = Path(args.module).resolve()
     specs_dir = Path(args.specs).resolve() if args.specs else root / "specs"
-    tests_dir = Path(args.tests).resolve() if args.tests else module_path.parent
+    # A directory walk defaults each file's tests alongside it; an explicit --tests pins them all.
+    tests_dir = Path(args.tests).resolve() if args.tests else None
     try:
-        res = characterize.characterize_module(
+        results = characterize.characterize_path(
             root, module_path, specs_dir=specs_dir, tests_dir=tests_dir
         )
     except (FileNotFoundError, SyntaxError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
     cst = _styler(args)
+    rows = []
+    for res in results:
+        try:
+            rel = str(res.spec_path.parent.relative_to(root)) if root else res.spec_id
+        except ValueError:
+            rel = res.spec_id
+        rows.append(
+            cst.status_row(
+                "pass",
+                f"characterized → spec {res.spec_id} ({rel})",
+                f"{len(res.symbols)} symbol(s), {len(res.requirement_ids)} requirement(s)",
+            )
+        )
+    if len(results) > 1:
+        rows.insert(0, cst.status_row("info", f"characterized {len(results)} source file(s)"))
     _print(
         {
-            "spec_id": res.spec_id,
-            "spec_path": str(res.spec_path),
-            "test_path": str(res.test_path),
-            "symbols": res.symbols,
-            "requirement_ids": res.requirement_ids,
+            "count": len(results),
+            "results": [
+                {
+                    "spec_id": r.spec_id,
+                    "spec_path": str(r.spec_path),
+                    "test_path": str(r.test_path),
+                    "symbols": r.symbols,
+                    "requirement_ids": r.requirement_ids,
+                }
+                for r in results
+            ],
         },
         args.json,
         _compose(
@@ -4533,14 +4765,7 @@ def cmd_characterize(args: argparse.Namespace) -> int:
             cst,
             title="characterize",
             subject=module_path.name,
-            rows=[
-                cst.status_row(
-                    "pass",
-                    f"characterized {module_path.name} → spec {res.spec_id}",
-                    f"{len(res.symbols)} symbol(s), {len(res.requirement_ids)} requirement(s)",
-                ),
-                cst.kv([("spec", str(res.spec_path)), ("tests", str(res.test_path))]),
-            ],
+            rows=rows,
         ),
     )
     return EXIT_OK
@@ -5099,7 +5324,11 @@ def build_parser() -> argparse.ArgumentParser:
     chp = common(
         sub.add_parser("characterize", help="reconstruct a spec + pin a legacy module's behavior")
     )
-    chp.add_argument("--module", required=True, help="path to the legacy module to characterize")
+    chp.add_argument(
+        "--module",
+        required=True,
+        help="a legacy source file (e.g. src/foo.py) or a directory to walk and characterize",
+    )
     chp.add_argument("--specs", help="specs/ directory (default: <root>/specs)")
     chp.add_argument("--tests", help="tests output dir (default: alongside the module)")
     chp.set_defaults(func=cmd_characterize)

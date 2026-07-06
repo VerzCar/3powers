@@ -285,7 +285,9 @@ def test_next_steps_are_explained_not_bare(tmp_path, capsys):
     (brown / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     assert _init(brown, key=tmp_path / "kb.key") == 0
     out = capsys.readouterr().out
-    assert "Existing project detected" in out
+    # The primary CTA shows for brownfield too, with the adopt-gradually on-ramp below it.
+    assert "Get started" in out and "3pwr run" in out
+    assert "Adopt gradually" in out
     assert "report-only" in out and "characterize" in out
     assert "see your current gate debt" in out  # explanation, not a bare command
 
@@ -293,8 +295,8 @@ def test_next_steps_are_explained_not_bare(tmp_path, capsys):
     green.mkdir()
     assert _init(green, "--language", "python", key=tmp_path / "kg.key") == 0
     out = capsys.readouterr().out
-    assert "author your first spec" in out and "3pwr run" in out
-    assert "one command drives" in out
+    assert "Get started" in out and "3pwr run" in out
+    assert "drives the lifecycle" in out
 
 
 # --------------------------------------------------------------------------- INITX-FR-001, NFR-001/002/003
