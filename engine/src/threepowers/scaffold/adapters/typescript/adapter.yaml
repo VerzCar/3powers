@@ -9,24 +9,47 @@ detect: ["package.json", "tsconfig.json"]
 test_roots: ["tests", "src"]
 property_test_lib: fast-check
 
+# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# is absent the gate can't run, and the engine turns the raw `npx --no-install` error into an
+# actionable hint — "<tool> is not installed — run: <install>". `install` is the fix command; `probe`
+# is an optional version check. Editable data, like the rest of the adapter (3PWR-NFR-007).
+toolchain:
+  biome:
+    install: "npm i -D @biomejs/biome"
+    probe: "npx --no-install @biomejs/biome --version"
+  tsc:
+    install: "npm i -D typescript"
+    probe: "npx --no-install tsc --version"
+  vitest:
+    install: "npm i -D vitest @vitest/coverage-v8"
+    probe: "npx --no-install vitest --version"
+  stryker:
+    install: "npm i -D @stryker-mutator/core @stryker-mutator/vitest-runner"
+    probe: "npx --no-install stryker --version"
+
 gates:
   format:
     check_cmd: "npx --no-install @biomejs/biome ci ."
     parser: biome
+    requires: biome
   lint:
     cmd: "npx --no-install @biomejs/biome ci ."
     parser: biome
+    requires: biome
   types:
     cmd: "npx --no-install tsc --noEmit"
     parser: tsc
+    requires: tsc
   tests:
     cmd: "npx --no-install vitest run --coverage"
     parser: vitest
+    requires: vitest
     coverage_format: lcov
     coverage_path: "coverage/lcov.info"
   mutation:
     cmd: "npx --no-install stryker run"
     parser: stryker
+    requires: stryker
     report_path: "reports/mutation/mutation.json"   # Stryker JSON report for scoring
     tier_min: "High-risk"
 

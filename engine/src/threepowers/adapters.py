@@ -103,3 +103,25 @@ def command_of(spec: dict[str, Any]) -> Optional[str]:
 def wants_shell(spec: dict[str, Any]) -> bool:
     """Whether this gate's command must run through the shell (opt-in ``shell: true``)."""
     return bool(spec.get("shell"))
+
+
+def toolchain(manifest: dict[str, Any]) -> dict[str, Any]:
+    """The adapter's declared toolchain map (tool → {install, probe}), or ``{}`` (3PWR-FR-034)."""
+    tc = manifest.get("toolchain")
+    return tc if isinstance(tc, dict) else {}
+
+
+def gate_requires(spec: Optional[dict[str, Any]]) -> Optional[str]:
+    """The toolchain entry a gate needs (its ``requires:``), or ``None``."""
+    if not spec:
+        return None
+    req = spec.get("requires")
+    return (str(req).strip() or None) if req else None
+
+
+def install_hint(manifest: dict[str, Any], tool: str) -> Optional[str]:
+    """The declared install command for ``tool`` in this adapter, or ``None``."""
+    entry = toolchain(manifest).get(tool)
+    if isinstance(entry, dict):
+        return str(entry.get("install") or "").strip() or None
+    return None

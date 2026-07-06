@@ -63,15 +63,70 @@ def _git_commit(repo_root: Path) -> str:
         return ""
 
 
-def _result_from_cmd(gate: str, spec: dict[str, Any], res: CmdResult) -> GateResult:
+# Output signatures of "the tool isn't installed" — distinct from a genuine gate failure. Covers
+# `npx --no-install`, uv/npm shims, POSIX/Windows shells, and our own run_cmd FileNotFoundError.
+_MISSING_TOOL_SIGNS = (
+    "canceled due to missing packages",  # npx --no-install
+    "could not determine executable",  # npx
+    "command not found",
+    "not recognized as an internal or external command",  # windows
+    "no such file or directory",
+    "tool not found",  # adapters.run_cmd FileNotFoundError → returncode 127
+    ": not found",  # sh: <tool>: not found
+)
+
+
+def _looks_missing_tool(res: CmdResult) -> bool:
+    """Heuristic: did this command fail because its executable is absent (not a real gate failure)?"""
+    if res.returncode == 127:
+        return True
+    blob = (res.stdout + "\n" + res.stderr).lower()
+    return any(sig in blob for sig in _MISSING_TOOL_SIGNS)
+
+
+def _missing_tool_finding(
+    manifest: dict[str, Any] | None, spec: dict[str, Any], res: CmdResult
+) -> tuple[str, str, str] | None:
+    """``(tool, actionable finding, install-cmd)`` when a gate failed because its tool is missing.
+
+    Turns raw toolchain noise into a fix the user can act on (3PWR-FR-034); only fires for a gate that
+    declares ``requires:`` AND whose failure output signals an absent tool, so a genuine gate failure
+    is never mislabeled. ``install-cmd`` is ``""`` when the adapter declares none."""
+    if manifest is None:
+        return None
+    tool = adapters.gate_requires(spec)
+    if not tool or not _looks_missing_tool(res):
+        return None
+    install = adapters.install_hint(manifest, tool) or ""
+    msg = (
+        f"{tool} is not installed — run: {install}"
+        if install
+        else f"{tool} is not installed or not on PATH — install it and re-run"
+    )
+    return tool, msg, install
+
+
+def _result_from_cmd(
+    gate: str, spec: dict[str, Any], res: CmdResult, manifest: dict[str, Any] | None = None
+) -> GateResult:
     status = STATUS_PASS if res.ok else STATUS_FAIL
+    details: dict[str, Any] = {"returncode": res.returncode}
+    findings = [] if res.ok else res.tail()
+    if not res.ok:
+        hit = _missing_tool_finding(manifest, spec, res)
+        if hit:
+            tool, msg, install = hit
+            details["missing_tool"] = tool
+            if install:
+                details["install_hint"] = install
+            findings = [msg, *findings]  # lead with the actionable fix
     return GateResult(
         gate=gate,
         status=status,
         tool=str(spec.get("parser") or spec.get("cmd", "")).split()[0] if spec else "",
         duration_ms=res.duration_ms,
-        details={"returncode": res.returncode},
-        findings=[] if res.ok else res.tail(),
+        details=details,
+        findings=findings,
     )
 
 
@@ -253,7 +308,7 @@ def run_gates(
                 )
                 continue
             res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
-            gr = _result_from_cmd(gate, spec, res)
+            gr = _result_from_cmd(gate, spec, res, manifest)
             if gate == "tests" and spec.get("coverage_path"):
                 coverage_path = target / spec["coverage_path"]
             verdict.add(gr)
@@ -324,7 +379,7 @@ def run_gates(
         cmd = adapters.command_of(spec) if spec else None
         if spec and cmd:
             res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
-            verdict.add(_result_from_cmd("tests", spec, res))
+            verdict.add(_result_from_cmd("tests", spec, res, manifest))
 
     # Actionable failures for any failed gate (3PWR-FR-034).
     for g in verdict.gates:

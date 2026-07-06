@@ -1306,6 +1306,22 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     human = _format_verdict(verdict, appended, gst)
     if args.report_only and verdict.result != STATUS_PASS:
         human += "\n  " + gst.mark("info") + " report-only: verdict emitted but not enforced"
+    # Consolidated install call-to-action: if gates couldn't run because their tools are absent, say
+    # exactly what to install so the next `gate run` / `3pwr run` succeeds (3PWR-FR-034). Human-output
+    # only — the per-gate `missing_tool`/`install_hint` already ride the JSON verdict.
+    missing: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for g in verdict.gates:
+        tool = (g.details or {}).get("missing_tool")
+        if tool and tool not in seen:
+            seen.add(tool)
+            missing.append((tool, (g.details or {}).get("install_hint", "")))
+    if missing:
+        human += "\n\n" + gst.warn(
+            "⚠ missing toolchain — some gates could not run. Install, then re-run:"
+        )
+        for tool, inst in missing:
+            human += "\n    " + (f"{tool}  →  {inst}" if inst else f"{tool}  (install it and re-run)")
     _print(
         {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")},
         args.json,

@@ -60,6 +60,11 @@ Now you have an honest baseline of where the codebase stands — coverage, scann
 requirements — without forcing anyone to fix it all at once. A report-only verdict is **advisory**: it's
 recorded in the ledger but `advance` ignores it, so it can't be used to ship.
 
+If a gate couldn't run because its tool isn't installed (e.g. a fresh TypeScript project without
+Biome/tsc/Vitest), 3pwr says so and prints the fix — `biome is not installed — run: npm i -D
+@biomejs/biome` — plus a consolidated "install these, then re-run" list, so the next run actually
+executes the gates. (The install commands are declared per adapter; see `.3powers/adapters/CONTRACT.md`.)
+
 ## 3. Pin a legacy module before you touch it (`characterize`)
 
 Before you change an un-specified module, **reconstruct the spec it implicitly satisfies** and lock its
