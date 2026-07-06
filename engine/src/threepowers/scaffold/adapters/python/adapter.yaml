@@ -8,25 +8,47 @@ detect: ["pyproject.toml"]
 test_roots: ["tests", "src"]
 property_test_lib: hypothesis
 
+# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# is missing from the target's uv env the gate can't run, and the engine surfaces an actionable hint —
+# "<tool> is not installed — run: <install>". Editable data (3PWR-NFR-007).
+toolchain:
+  ruff:
+    install: "uv add --dev ruff"
+    probe: "uv run ruff --version"
+  mypy:
+    install: "uv add --dev mypy"
+    probe: "uv run mypy --version"
+  pytest:
+    install: "uv add --dev pytest pytest-cov"
+    probe: "uv run pytest --version"
+  mutmut:
+    install: "uv add --dev mutmut"
+    probe: "uv run mutmut version"
+
 gates:
   format:
     check_cmd: "uv run ruff format --check ."
     parser: ruff
+    requires: ruff
   lint:
     cmd: "uv run ruff check ."
     parser: ruff
+    requires: ruff
   types:
     cmd: "uv run mypy src"
     parser: mypy
+    requires: mypy
   tests:
     cmd: "uv run pytest --cov=src --cov-report=lcov:coverage/lcov.info -q"
     parser: pytest
+    requires: pytest
     coverage_format: lcov
     coverage_path: "coverage/lcov.info"
   mutation:
     cmd: "uv run mutmut run"
     score_cmd: "uv run mutmut results --all true"   # --all lists killed too (for scoring)
     parser: mutmut
+    requires: mutmut
     tier_min: "High-risk"
 
 # Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound

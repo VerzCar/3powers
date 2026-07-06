@@ -16,13 +16,17 @@ language: <string>                 # adapter id, e.g. "typescript"
 detect: ["<file>", ...]            # files whose presence selects this adapter
 test_roots: ["<dir>", ...]         # where spec-conformance scans for requirement IDs
 property_test_lib: <string>        # property-based testing library
+
+toolchain:                         # optional: the tools this adapter's gates drive (3PWR-FR-034/048)
+  <tool>: { install: "<fix cmd>", probe: "<version cmd>" }   # e.g. biome: { install: "npm i -D @biomejs/biome" }
+
 gates:
-  format:   { check_cmd: "<cmd>", parser: <name> }
-  lint:     { cmd: "<cmd>",       parser: <name> }
-  types:    { cmd: "<cmd>",       parser: <name> }
-  tests:    { cmd: "<cmd>",       parser: <name>,
+  format:   { check_cmd: "<cmd>", parser: <name>, requires: <tool> }
+  lint:     { cmd: "<cmd>",       parser: <name>, requires: <tool> }
+  types:    { cmd: "<cmd>",       parser: <name>, requires: <tool> }
+  tests:    { cmd: "<cmd>",       parser: <name>, requires: <tool>,
               coverage_format: lcov, coverage_path: "<relative path>" }
-  mutation: { cmd: "<cmd>",       parser: <name>, tier_min: "High-risk" }
+  mutation: { cmd: "<cmd>",       parser: <name>, requires: <tool>, tier_min: "High-risk" }
 
   # Optional design oracles — run only when the kind of change is inferred as `design`.
   visual_regression:  { cmd: "<cmd>", parser: <name> }
@@ -46,6 +50,16 @@ When the kind of change is inferred as `defect`, the engine adds the core `defec
 defect fix must ship a **failing regression test** — one marked `*regression*`/`*reproduce*` (by file name
 or body) that references the defect's requirement id. This is a deterministic trace, so it needs no
 adapter tool.
+
+### Toolchain install hints (optional)
+
+Declare a `toolchain:` map (tool → `install`/`probe`) and give each gate a `requires: <tool>`. When a
+gate fails because that tool is absent (the command output signals a missing executable — e.g. `npx
+--no-install` reporting a missing package, or `command not found`), the engine replaces the raw noise
+with an actionable finding — `<tool> is not installed — run: <install>` — and `gate run` prints a
+consolidated "install these, then re-run" call-to-action. A genuine gate failure is never relabeled: the
+hint only fires for a gate that declares `requires:` **and** whose failure looks like an absent tool.
+Purely advisory — it changes the *finding text*, never the pass/fail verdict.
 
 ### Gate responsibilities
 

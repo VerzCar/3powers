@@ -10,28 +10,47 @@ detect: ["go.mod"]
 test_roots: ["."]
 property_test_lib: rapid
 
+# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# is absent the gate can't run, and the engine surfaces an actionable hint. `go` covers
+# format/lint/types; the tests gate also needs `gcov2lcov` (to emit LCOV), mutation `go-mutesting`.
+toolchain:
+  go:
+    install: "install the Go toolchain — https://go.dev/dl/"
+    probe: "go version"
+  gcov2lcov:
+    install: "go install github.com/jandelgado/gcov2lcov@latest"
+    probe: "gcov2lcov -version"
+  go-mutesting:
+    install: "go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest"
+    probe: "go-mutesting --help"
+
 gates:
   format:
     # gofmt -l lists unformatted files but exits 0; the shell guard makes "any unformatted" a failure.
     check_cmd: 'test -z "$(gofmt -l .)"'
     shell: true
     parser: gofmt
+    requires: go
   lint:
     cmd: "go vet ./..."
     parser: govet
+    requires: go
   types:
     cmd: "go build ./..."
     parser: gobuild
+    requires: go
   tests:
     # Emit LCOV so the core's diff-coverage (3PWR-FR-029) works unchanged across languages.
     cmd: "go test -covermode=atomic -coverprofile=cover.out ./... && gcov2lcov -infile cover.out -outfile coverage/lcov.info"
     shell: true
     parser: gotest
+    requires: gcov2lcov
     coverage_format: lcov
     coverage_path: "coverage/lcov.info"
   mutation:
     cmd: "go-mutesting ./..."
     parser: go-mutesting
+    requires: go-mutesting
     tier_min: "High-risk"
 
 # Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound

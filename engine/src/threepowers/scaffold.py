@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -212,6 +212,15 @@ _ROLES_HEADER = (
     "# same-family setup proceeds under a signed, reversible deviation \u2014\n"
     '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`\n'
     "# (3PWR-FR-057).\n"
+    "#\n"
+    "# `diversity_level` (default `family`) is how \"diverse enough\" is judged (3PWR-FR-022):\n"
+    "#   family \u2014 the oracle and coder must be different model *families*.\n"
+    "#   model  \u2014 a different *model* in one family qualifies (e.g. opus vs sonnet).\n"
+    "# One BYOK integration (e.g. copilot) can serve several families: pick a coder model in one\n"
+    "# family and an oracle model in another and `family` diversity holds with a single CLI.\n"
+    "#\n"
+    "# `headless_integrations` lists the agent-backend CLIs a LIVE `3pwr run` may dispatch headlessly\n"
+    "# (EXEC-FR-015/NFR-003) \u2014 set by `3pwr init`'s multi-select to the CLIs you have installed.\n"
 )
 
 
@@ -235,8 +244,7 @@ def set_role_model(
     default ``false``. The rewritten file keeps an explanatory header (AGENTX-FR-017)."""
     from .catalog import derive_family
 
-    path = settings.roles_path
-    data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+    data = _load_roles_doc(settings)
     roles = data.setdefault("roles", {})
     block = dict(roles.get(role) or {})
     block["model"] = model
@@ -255,9 +263,89 @@ def set_role_model(
     elif require_dispatch is not None:
         block["require_dispatch"] = bool(require_dispatch)
     roles[role] = block
+    _save_roles_doc(settings, data)
+
+
+def _load_roles_doc(settings: Settings) -> dict[str, Any]:
+    """The current roles.yaml document, or ``{}`` when absent/empty."""
+    path = settings.roles_path
+    return (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+
+
+def _save_roles_doc(settings: Settings, data: dict[str, Any]) -> None:
+    """Write roles.yaml with the explanatory header, preserving field order (AGENTX-FR-017)."""
+    path = settings.roles_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         _ROLES_HEADER + yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+
+
+def set_headless_integrations(settings: Settings, names: list[str]) -> None:
+    """Record which agent-backend CLIs a live ``3pwr run`` may dispatch (EXEC-FR-015/NFR-003).
+
+    Written to ``roles.yaml`` ``headless_integrations`` (deduped, first-seen order), preserving every
+    other field. An empty selection is a no-op — it never wipes the seeded default (AGENTX-NFR-003)."""
+    cleaned: list[str] = []
+    for n in names:
+        v = str(n).strip()
+        if v and v not in cleaned:
+            cleaned.append(v)
+    if not cleaned:
+        return
+    data = _load_roles_doc(settings)
+    data["headless_integrations"] = cleaned
+    _save_roles_doc(settings, data)
+
+
+def set_diversity_level(settings: Settings, level: str) -> None:
+    """Record how model diversity is judged — ``family`` or ``model`` (3PWR-FR-022).
+
+    An unrecognized value is ignored (the file keeps its current, valid level)."""
+    lvl = str(level or "").strip().lower()
+    if lvl not in ("family", "model"):
+        return
+    data = _load_roles_doc(settings)
+    data["diversity_level"] = lvl
+    _save_roles_doc(settings, data)
+
+
+# Notifications config keeps its own short header: yaml.safe_dump drops the scaffold template's
+# comments on the first rewrite, and the secret-safety rule (STEER-NFR-002) is worth keeping WHERE
+# THE CONFIG LIVES.
+_NOTIFY_HEADER = (
+    "# 3Powers run notifications (STEER-FR-010). `3pwr run` fires on gate pauses, failures, and\n"
+    "# completion. Channels: slack | teams | email | desktop.\n"
+    "# SECRETS ARE NEVER STORED HERE (STEER-NFR-002): a slack/teams block names an env var\n"
+    "# (`webhook_env`) holding the webhook URL; email reads its password from `password_env`.\n"
+    "# Export those before `3pwr run`. An empty `channels:` list means notifications are off.\n"
+)
+
+
+def set_notification_channel(settings: Settings, channel: dict[str, Any]) -> None:
+    """Record one run-notification channel in ``notifications.yaml`` (STEER-FR-010).
+
+    Replaces any existing block of the same ``type`` (idempotent re-init), else appends — so a
+    second `3pwr init` reconfiguring the same channel never duplicates it. Never writes a secret
+    value: slack/teams carry ``webhook_env`` and email ``password_env`` (STEER-NFR-002)."""
+    ctype = str(channel.get("type") or "").strip()
+    if not ctype:
+        return
+    path = settings.notifications_config_path
+    data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("version", 1)
+    chans = data.get("channels")
+    if not isinstance(chans, list):
+        chans = []
+    chans = [c for c in chans if not (isinstance(c, dict) and str(c.get("type")) == ctype)]
+    chans.append(channel)
+    data["channels"] = chans
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _NOTIFY_HEADER + yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
 

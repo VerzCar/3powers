@@ -172,10 +172,15 @@ def characterize_module(
     specs_dir: Path,
     tests_dir: Path,
 ) -> CharacterizeResult:
-    """Reconstruct a spec stub + characterization tests for ``module_path`` (3PWR-FR-053)."""
+    """Reconstruct a spec stub + characterization tests for one file ``module_path`` (3PWR-FR-053).
+
+    For a directory, use :func:`characterize_path`, which walks it and calls this per source file."""
     module_path = module_path.resolve()
     if not module_path.is_file():
-        raise FileNotFoundError(f"module not found: {module_path}")
+        raise FileNotFoundError(
+            f"module not found: {module_path} — expected a source file (e.g. "
+            "`--module src/foo.py`) or a directory to walk"
+        )
     try:
         module_rel = str(module_path.relative_to(repo_root.resolve()))
     except ValueError:
@@ -222,3 +227,65 @@ def characterize_module(
         symbols=symbols,
         requirement_ids=req_ids,
     )
+
+
+# Source extensions the directory walk characterizes; the AST reconstruction is Python-only, other
+# languages get the spec stub + a scaffold note (see characterize_module).
+_SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".rb"}
+# Dirs never worth characterizing — vendored deps, build output, tool caches, the trust spine itself.
+_SKIP_DIRS = {
+    ".3powers", "node_modules", "__pycache__", "venv", ".venv", "dist", "build", "vendor",
+    "target", "site-packages", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+}
+
+
+def _is_test_file(path: Path) -> bool:
+    """A test file, not production code to characterize (pinning a test would be circular)."""
+    name = path.name
+    return (
+        name.startswith("test_")
+        or name.endswith(f"_test{path.suffix}")
+        or ".test." in name
+        or ".spec." in name
+    )
+
+
+def iter_source_files(directory: Path) -> list[Path]:
+    """Production source files under ``directory``, skipping vendored/hidden dirs and tests."""
+    out: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(directory):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIRS]
+        for fn in filenames:
+            p = Path(dirpath) / fn
+            if p.suffix in _SOURCE_EXTS and not _is_test_file(p):
+                out.append(p)
+    return sorted(out)
+
+
+def characterize_path(
+    repo_root: Path,
+    target: Path,
+    *,
+    specs_dir: Path,
+    tests_dir: Path | None = None,
+) -> list[CharacterizeResult]:
+    """Characterize a single file OR every source file under a directory (3PWR-FR-053).
+
+    A file yields one result; a directory is walked (:func:`iter_source_files`) and each source file
+    characterized, with its tests defaulting alongside it when ``tests_dir`` is not pinned."""
+    target = target.resolve()
+    if target.is_dir():
+        files = iter_source_files(target)
+        if not files:
+            raise FileNotFoundError(f"no source files to characterize under: {target}")
+        return [
+            characterize_module(
+                repo_root, f, specs_dir=specs_dir, tests_dir=tests_dir or f.parent
+            )
+            for f in files
+        ]
+    return [
+        characterize_module(
+            repo_root, target, specs_dir=specs_dir, tests_dir=tests_dir or target.parent
+        )
+    ]
