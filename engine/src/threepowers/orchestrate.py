@@ -380,16 +380,16 @@ def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None)
 
 
 class Tracker:
-    """A dependency-free progress view for ``3pwr run``. On a capable TTY it pins a **persistent
-    stage frame** at the top of the terminal — the eight stages with done/current/upcoming marks, the
-    active step, and a running indicator — while the event log and the dispatched agent's stdout
-    stream in a reserved scroll region below it (STEER-FR-012, advancing CLIUX-FR-008/009's single
-    in-place line). Off a TTY (pipe / ``--json``), under ``NO_COLOR``, or on a terminal that cannot
-    support the pinned region, it degrades to the plain streamed ``format_event`` log with no
-    ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015, CLIUX-FR-011). No
-    ``rich``/``curses`` dependency (INITX-NFR-004, CLIUX-FR-003, STEER-FR-014). Color is tied to the
-    TTY: the off-TTY log is always plain, even under ``THREEPOWERS_FORCE_COLOR``, so a
-    captured/piped run never carries escapes (CLIUX-FR-011)."""
+    """A dependency-free progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
+    live bar** at the bottom of the terminal — the eight stages with done/current/upcoming marks, the
+    active step, and a heartbeat spinner with the elapsed time — while the event log and the
+    dispatched agent's stdout print ABOVE it into ordinary, fully scrollable history (STEER-FR-012/013,
+    advancing CLIUX-FR-008/009's single in-place line). Off a TTY (pipe / ``--json``), under
+    ``NO_COLOR``, or on a terminal that cannot support the bar, it degrades to the plain streamed
+    ``format_event`` log with no ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015,
+    CLIUX-FR-011). No ``rich``/``curses`` dependency (INITX-NFR-004, CLIUX-FR-003, STEER-FR-014).
+    Color is tied to the TTY: the off-TTY log is always plain, even under
+    ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
 
     def __init__(
         self,
@@ -410,7 +410,7 @@ class Tracker:
         # run never carries escapes (CLIUX-FR-011).
         self._st = (st if st is not None else style.styler(stream)) if self._tty else style.Styler()
         self._reached = "Discovery"
-        # The pinned frame (STEER-FR-012) — only when the terminal can carry it (STEER-FR-015);
+        # The live bar (STEER-FR-012) — only when the terminal can carry it (STEER-FR-015);
         # ``frame_view`` lets tests inject one deterministically.
         self._frame = (
             frame_view
@@ -419,19 +419,46 @@ class Tracker:
         )
 
     def close(self) -> None:
-        """Tear the pinned frame down — scroll region reset, cursor restored (STEER-FR-016).
+        """Tear the live bar down — last state left on screen, cursor restored (STEER-FR-016).
 
         Idempotent, so the exception path (``finally``) and the terminal-event path converge."""
         if self._frame is not None:
             self._frame.close()
 
+    def begin(self) -> None:
+        """Open the live bar eagerly — the stage strip and heartbeat are on screen BEFORE the first
+        dispatch produces an event, so the run never looks frozen (STEER-FR-012/013). A no-op off a
+        TTY or on a degraded terminal (the plain log needs no opening)."""
+        if self._frame is not None:
+            self._frame.open()
+
+    @property
+    def live(self) -> bool:
+        """Whether the live bar carries this run — the cue to route agent output through it."""
+        return self._frame is not None
+
+    def emit(self, line: str) -> None:
+        """Print one content line into the terminal's ordinary flow — above the live bar when it is
+        open (scrollback keeps the whole conversation, STEER-FR-012), plain otherwise."""
+        if self._frame is not None:
+            self._frame.emit(line)
+        else:
+            self._stream.write(line.rstrip("\n") + "\n")
+            self._stream.flush()
+
+    def echo_sink(self) -> "_EchoSink":
+        """A ``write``/``flush`` sink the runner's pump threads feed the dispatched agent's streamed
+        stdout/stderr into — routed line-by-line through :meth:`emit` so the conversation prints
+        above the live bar in real time instead of clobbering it (STEER-FR-012/013)."""
+        return _EchoSink(self)
+
     def on_event(self, ev: Event) -> None:
         if ev.stage:
             self._reached = ev.stage
         if self._frame is not None:
-            # The event history streams as plain lines INSIDE the reserved region (scrollback stays
-            # useful) while the pinned header reflects the current state (STEER-FR-012/013).
-            self._stream.write(format_event(ev, self._mode, self._st) + "\n")
+            # The event history prints ABOVE the live bar, into ordinary scrollback, while the bar
+            # reflects the current state (STEER-FR-012/013).
+            self._frame.emit(format_event(ev, self._mode, self._st))
             self._frame.note(
                 kind=ev.kind,
                 step=ev.step,
@@ -441,13 +468,35 @@ class Tracker:
                 spec_id=self._subject,
             )
             if ev.kind in _TERMINAL_KINDS:
-                # A terminal event finalizes the frame: the last state stays on screen and the
-                # region is released so the follow-up guidance prints in normal flow (STEER-FR-016).
+                # A terminal event finalizes the bar: its last state stays on screen as ordinary
+                # lines so the follow-up guidance prints in normal flow (STEER-FR-016).
                 self._frame.close()
-            else:
-                self._stream.flush()
             return
         # The plain streamed event log — off a TTY, and the degraded TTY path (STEER-FR-015):
         # no in-place redraws, no pinned region.
         self._stream.write(format_event(ev, self._mode, self._st) + "\n")
         self._stream.flush()
+
+
+class _EchoSink:
+    """A line-buffered ``write``/``flush`` adapter routing a dispatched agent's streamed output
+    through the tracker (STEER-FR-012) — above the live bar on a capable TTY, plain otherwise.
+
+    Fed concurrently by the runner's stdout/stderr pump threads; the frame's lock serializes the
+    actual terminal writes. Lines are emitted as they complete; ``flush`` releases a trailing
+    unterminated line so no output is ever held back."""
+
+    def __init__(self, tracker: Tracker) -> None:
+        self._tracker = tracker
+        self._buf = ""
+
+    def write(self, s: str) -> None:
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            self._tracker.emit(line)
+
+    def flush(self) -> None:
+        if self._buf:
+            line, self._buf = self._buf, ""
+            self._tracker.emit(line)

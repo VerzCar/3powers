@@ -130,6 +130,8 @@ def dispatch_agent(
     timeout: int = 1800,
     stream: bool = False,
     tee: Optional[TextSink] = None,
+    echo_out: Optional[TextSink] = None,
+    echo_err: Optional[TextSink] = None,
 ) -> tuple[int, str, str]:
     """Run an agent invocation as an external process (no shell) and return ``(rc, stdout, stderr)``.
 
@@ -139,9 +141,10 @@ def dispatch_agent(
 
     ``timeout`` bounds the attempt (RUNLIVE-FR-004): an over-long agent is terminated and reported as a
     dispatch failure (rc 124), never a hang. ``tee`` receives every stdout/stderr line as it arrives —
-    the persisted transcript sink (AUTOX-FR-008). With ``stream`` set the lines are ALSO echoed to the
-    terminal live (RUNLIVE-FR-006); output is captured in both cases, so a streamed run no longer loses
-    its output.
+    the persisted transcript sink (AUTOX-FR-008). With ``stream`` set the lines are ALSO echoed live
+    (RUNLIVE-FR-006) — to ``echo_out``/``echo_err`` when given (the run's live bar routes the
+    conversation above itself through these, STEER-FR-012), else straight to the process's own
+    stdout/stderr; output is captured in both cases, so a streamed run never loses its output.
     """
     if tee is None and not stream:
         # The plain captured path — unchanged behavior for programmatic callers with no sink.
@@ -184,7 +187,7 @@ def dispatch_agent(
         note(msg)
         return 127, "", msg
 
-    def pump(src: Optional[IO[str]], buf: list[str], echo: Optional[IO[str]]) -> None:
+    def pump(src: Optional[IO[str]], buf: list[str], echo: Optional[TextSink]) -> None:
         if src is None:
             return
         for line in src:
@@ -198,13 +201,15 @@ def dispatch_agent(
 
     out_buf: list[str] = []
     err_buf: list[str] = []
+    out_echo: Optional[TextSink] = (
+        (echo_out if echo_out is not None else sys.stdout) if stream else None
+    )
+    err_echo: Optional[TextSink] = (
+        (echo_err if echo_err is not None else sys.stderr) if stream else None
+    )
     pumps = [
-        threading.Thread(
-            target=pump, args=(child.stdout, out_buf, sys.stdout if stream else None), daemon=True
-        ),
-        threading.Thread(
-            target=pump, args=(child.stderr, err_buf, sys.stderr if stream else None), daemon=True
-        ),
+        threading.Thread(target=pump, args=(child.stdout, out_buf, out_echo), daemon=True),
+        threading.Thread(target=pump, args=(child.stderr, err_buf, err_echo), daemon=True),
     ]
     for th in pumps:
         th.start()
@@ -255,6 +260,8 @@ class CliAgentRunner:
         stream: bool = False,
         dispatcher: Optional[Callable[..., tuple[int, str, str]]] = None,
         transcripts: Optional["TranscriptSink"] = None,
+        echo_out: Optional[TextSink] = None,
+        echo_err: Optional[TextSink] = None,
     ) -> None:
         self.settings = settings
         self.manifest = manifest
@@ -264,6 +271,10 @@ class CliAgentRunner:
         self.spec_text = spec_text
         self.timeout = timeout
         self.stream = stream
+        # Where a streamed attempt's live echo goes (STEER-FR-012): the run's live bar routes the
+        # agent conversation above itself through these; None keeps the process's own stdout/stderr.
+        self.echo_out = echo_out
+        self.echo_err = echo_err
         # The per-run transcript sink (AUTOX-FR-008): every attempt's output is persisted,
         # credential-redacted (AUTOX-NFR-002). None = no persistence (programmatic callers).
         self.transcripts = transcripts
@@ -305,6 +316,13 @@ class CliAgentRunner:
         writer = None
         if self.transcripts is not None:
             path, writer = self.transcripts.open(step)
+        # Echo sinks ride as extra kwargs only when set, so monkeypatched fake dispatchers with the
+        # historical signature keep working unchanged.
+        extra: dict = {}
+        if self.echo_out is not None:
+            extra["echo_out"] = self.echo_out
+        if self.echo_err is not None:
+            extra["echo_err"] = self.echo_err
         try:
             rc, out, err = self._dispatcher(
                 argv,
@@ -313,6 +331,7 @@ class CliAgentRunner:
                 timeout=self.timeout,
                 stream=self.stream,
                 tee=writer,
+                **extra,
             )
         finally:
             if writer is not None:
