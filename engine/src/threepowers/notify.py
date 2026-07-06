@@ -174,7 +174,11 @@ def _display_desktop(title: str, body: str, timeout: float) -> None:
     """A local desktop notification — macOS ``osascript`` first (the documented target platform)."""
     if sys.platform != "darwin":
         raise OSError("desktop notifications are supported on macOS only")
-    script = f"display notification {json.dumps(body)} with title {json.dumps(title)}"
+    # ensure_ascii must stay OFF: AppleScript cannot parse JSON's \uXXXX escapes, and the gate
+    # message carries typographic characters (· — ⏸) — escaped, osascript fails on every gate.
+    body_lit = json.dumps(body, ensure_ascii=False)
+    title_lit = json.dumps(title, ensure_ascii=False)
+    script = f"display notification {body_lit} with title {title_lit}"
     subprocess.run(
         ["osascript", "-e", script], check=True, capture_output=True, timeout=timeout, text=True
     )

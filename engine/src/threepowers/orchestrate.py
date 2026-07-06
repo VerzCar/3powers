@@ -203,9 +203,13 @@ def drive(
     stops. In ``commit`` mode every gate stops. Returns when the run pauses at a stop, completes, fails,
     or aborts. ``resuming`` means we are continuing past a gate the human just approved."""
     outcome = runner.resume("approve") if resuming else runner.run()
+    # A live-delivering runner (NativeRunner with on_progress) has already surfaced each event the
+    # moment it happened (STEER-FR-013) — replaying the batched history here would report it twice.
+    live = bool(getattr(runner, "delivers_live_events", False))
     while True:
-        for ev in outcome.events:
-            on_event(ev)
+        if not live:
+            for ev in outcome.events:
+                on_event(ev)
         if outcome.status == "gate":
             if is_mandatory(outcome.gate) or mode == "commit":
                 on_event(Event("gate-stop", outcome.gate, outcome.stage))

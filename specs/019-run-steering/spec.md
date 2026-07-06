@@ -277,7 +277,8 @@ reconstruction are unaffected whether or not a channel is configured.
   and a path/link to the artifact under review.
   - *Acceptance*: the on-screen pause names all three actions with runnable commands and the artifact path;
     the approve and reject paths preserve their current behavior (resume records a sign-off and continues;
-    reject stops).
+    reject stops); an interactive pause lets the operator choose among the same three actions directly,
+    taking the revision feedback and the rejection reason as free text.
 - **STEER-FR-006**: When the operator revises at a paused gate with a feedback message, the system shall
   re-dispatch the paused stage to the executive with the original intent, the current stage artifact, and the
   feedback; produce a revised artifact; and return the run to the *same* gate for review.

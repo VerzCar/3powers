@@ -22,7 +22,7 @@ import pytest
 import yaml
 
 from threepowers import frame, notify, orchestrate, runner, runpreflight, steering, style
-from threepowers.cli import EXIT_PAUSED, EXIT_SETUP, EXIT_USAGE, main
+from threepowers.cli import EXIT_FAIL, EXIT_PAUSED, EXIT_SETUP, EXIT_USAGE, main
 from threepowers.ledger import Ledger
 from threepowers.verdict import STATUS_PASS, Verdict
 
@@ -323,6 +323,30 @@ def test_approve_after_revise_still_records_the_human_signoff(run_repo, monkeypa
     assert signoffs and signoffs[-1]["payload"]["approver"] == "human"
 
 
+def test_interactive_gate_offers_approve_revise_reject_with_text(run_repo, monkeypatch, capsys):
+    """STEER-FR-005/006: the interactive pause offers the SAME three actions the printed guidance
+    names — approve / revise / reject — taking the revision feedback and the rejection reason as
+    free text: revise re-runs the stage and returns to the same gate for a fresh decision, and the
+    reject reason is recorded in the signed ledger."""
+    answers = iter(["r", "tighten the acceptance criteria", "x", "not what I asked for"])
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers, ""))
+    monkeypatch.setattr(
+        sys, "stdin", _FakeTty()
+    )  # interactive: the gate prompts instead of exiting
+    rc = main(["--root", str(run_repo), "run", "steer the run", "--spec-id", "RUN"])
+    assert rc == EXIT_FAIL  # revised once, then rejected with a reason
+    out = capsys.readouterr().out
+    assert (
+        "revised 'specify'" in out
+    )  # the inline revise re-ran the stage and re-presented the gate
+    assert "rejected" in out and "not what I asked for" in out
+    payloads = [e["payload"] for e in _entries(run_repo) if e.get("type") == "run"]
+    revises = [p for p in payloads if p.get("kind") == "revise"]
+    assert revises and revises[-1]["feedback"] == "tighten the acceptance criteria"
+    completes = [p for p in payloads if p.get("kind") == "complete"]
+    assert completes and completes[-1].get("reason") == "not what I asked for"
+
+
 # =========================================================================== C. notifications
 def _channels_yaml(root: Path, channels: list[dict]) -> None:
     (root / ".3powers" / "config" / "notifications.yaml").write_text(
@@ -516,10 +540,48 @@ def test_email_and_desktop_channels_deliver_through_their_seams(monkeypatch):
     assert pops == ["s"]
 
 
+def test_desktop_notification_script_keeps_typographic_characters(monkeypatch):
+    """STEER-FR-009 (delivery): the osascript string literal must carry the gate message's
+    typographic characters (· — ⏸) raw — AppleScript cannot parse JSON's \\uXXXX escapes, so an
+    ensure_ascii-escaped message failed delivery with CalledProcessError at every gate."""
+    calls: list = []
+    monkeypatch.setattr(notify.sys, "platform", "darwin")
+    monkeypatch.setattr(notify.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    notify._display_desktop("3pwr · RUN", "gate 'review-spec' — ⏸ approve `3pwr run --resume`", 5.0)
+    script = calls[0][-1]
+    assert "\\u" not in script  # no JSON unicode escapes — AppleScript would refuse the literal
+    assert "·" in script and "—" in script and "⏸" in script
+
+
 # =========================================================================== D. the persistent live bar
 class _FakeTty(io.StringIO):
     def isatty(self):  # a capable terminal for the live-bar tests
         return True
+
+
+def test_run_events_stream_live_before_each_dispatch_without_duplication():
+    """STEER-FR-013: a live run surfaces each stage's step event the MOMENT its dispatch starts —
+    the bar names the running stage during a minutes-long dispatch instead of one whole segment
+    later — and `drive` skips the batched history replay, so no event is ever reported twice."""
+    order: list = []
+    events: list = []
+
+    def collect(ev):
+        events.append((ev.kind, ev.step))
+        order.append(("event", ev.kind, ev.step))
+
+    def disp(step, stage):
+        order.append(("dispatch", step))
+        return runner.StageResult(step=step, stage=stage, ok=True, outcome="ok")
+
+    r = runner.NativeRunner(dispatch=disp, run_verdict=lambda stage: "pass", on_progress=collect)
+    assert r.delivers_live_events  # drive() must not replay the history on top
+    res = orchestrate.drive(r, "auto", collect)
+    assert res.status == "paused_at_gate" and res.gate == "review-spec"
+    assert order.index(("event", "step", "specify")) < order.index(("dispatch", "specify"))
+    assert order.index(("event", "step", "clarify")) < order.index(("dispatch", "clarify"))
+    assert events.count(("step", "specify")) == 1  # live-delivered once, never replayed
+    assert ("gate-stop", "review-spec") in events
 
 
 def _tty_frame(subject="RUN", size=(100, 24), enabled=True):
@@ -714,7 +776,9 @@ def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
     lf.close()  # idempotent — the exception path may close again (STEER-NFR-004)
     out = buf.getvalue()
     assert "\033[?25l" in out and "\033[?25h" in out  # cursor hidden while owned, restored after
-    assert re.search(r"\033\[\d+;\d+r", out) is None and "\033[r" not in out  # never a scroll region
+    assert (
+        re.search(r"\033\[\d+;\d+r", out) is None and "\033[r" not in out
+    )  # never a scroll region
     assert out.count("\033[?25h") == 1  # close is idempotent
     assert "\033[?1049" not in out  # never the alternate screen buffer (non-goal)
     # an interrupted run converges through the same idempotent close (the CLI's finally)
