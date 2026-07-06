@@ -71,6 +71,7 @@ from . import (
     oracle,
     orchestrate,
     phases,
+    progress,
     prompts,
     provenance,
     runner as runnermod,
@@ -86,7 +87,7 @@ from . import (
 )
 from .adapters import detect_adapter, run_cmd
 from .config import Settings, model_diversity_ok
-from .gates import run_gates
+from .gates import PrerequisiteError, run_gates
 from .ledger import Ledger, rotation_payload
 from .runner import CliAgentRunner, NativeRunner, TextSink
 from .verdict import GATE_ORDER, STATUS_PASS
@@ -1279,29 +1280,53 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_gate_run(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else s.root
-    # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo that
-    # has no 3Powers spec yet, so a missing spec is not an error there — the two spec-bound gates SKIP.
-    try:
-        spec_path: Path | None = _resolve_spec(s, args.spec)
-    except FileNotFoundError:
-        if args.report_only or args.diff_scope:
-            spec_path = None
-        else:
-            raise
+    # --id <NNN> is the run-number shorthand for --spec (GDIAG-FR-002): resolve the one matching
+    # feature folder and its spec; zero or multiple matches are clear, actionable errors.
+    if getattr(args, "id", None):
+        try:
+            feature = workspace.resolve_feature_dir(s.root, args.id)
+        except (FileNotFoundError, LookupError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+        resolved = workspace.spec_path(feature)
+        if resolved is None:
+            print(
+                f"error: specs/{feature.name} contains no spec.md — pass --spec <path/to/spec.md>",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        spec_path: Path | None = resolved
+    else:
+        # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo
+        # that has no 3Powers spec yet, so a missing spec is not an error there — the two spec-bound
+        # gates SKIP.
+        try:
+            spec_path = _resolve_spec(s, args.spec)
+        except FileNotFoundError:
+            if args.report_only or args.diff_scope:
+                spec_path = None
+            else:
+                raise
 
-    verdict = run_gates(
-        s,
-        target,
-        tier=args.tier,
-        spec_path=spec_path,
-        adapter_name=args.adapter,
-        base=args.base,
-        allow_mutation=args.mutation,
-        paths=args.paths,
-        report_only=args.report_only,
-        diff_scope=args.diff_scope,
-        work_kind=args.work_kind,
-    )
+    try:
+        verdict = run_gates(
+            s,
+            target,
+            tier=args.tier,
+            spec_path=spec_path,
+            adapter_name=args.adapter,
+            base=args.base,
+            allow_mutation=args.mutation,
+            paths=args.paths,
+            report_only=args.report_only,
+            diff_scope=args.diff_scope,
+            work_kind=args.work_kind,
+        )
+    except PrerequisiteError as exc:
+        # A required tool of a non-optional gate is absent (GDIAG-FR-004): no gate ran; the per-tool
+        # install hints come from the adapter's toolchain data. A setup problem, never a gate verdict.
+        print(str(exc), file=sys.stderr)
+        return EXIT_SETUP
     s.verdicts_dir.mkdir(parents=True, exist_ok=True)
     verdict.write(s.verdicts_dir / "latest.json")
 
@@ -2929,14 +2954,17 @@ def _notify(cmd: Optional[str], message: str) -> None:
         run_cmd(f"{cmd} {shlex.quote(message)}", cwd=Path.cwd())
 
 
-def _notify_event(s: Settings, args: argparse.Namespace, event: str, message: str) -> None:
+def _notify_event(
+    s: Settings, args: argparse.Namespace, event: str, message: str, spec_id: str
+) -> None:
     """Fire ``event`` at the ``--notify`` hook AND every configured channel (STEER-FR-009/011).
 
     Best-effort and fully isolated from the trust path (STEER-NFR-001): the channels are loaded at
     most once per invocation (a malformed file warns once — STEER-FR-010), delivery never raises,
     and every problem is at most a one-line stderr warning that never carries a secret value
     (STEER-NFR-002). With no ``notifications.yaml`` and no ``--notify``, nothing happens and no
-    network call is made."""
+    network call is made. The subject carries the run's RESOLVED identity — the caller's ``spec_id``
+    local, so a workspace-derived NNN reaches the notification too (RUNID-FR-003)."""
     _notify(
         args.notify, message
     )  # the existing command hook keeps working alongside (STEER-FR-011)
@@ -2946,7 +2974,7 @@ def _notify_event(s: Settings, args: argparse.Namespace, event: str, message: st
         for w in warns:
             print(f"warning: {w}", file=sys.stderr)
         args._notify_channels = channels
-    for w in notify.dispatch(channels, event, f"3pwr run {args.spec_id or 'RUN'}", message):
+    for w in notify.dispatch(channels, event, f"3pwr run {spec_id or 'RUN'}", message):
         print(f"warning: {w}", file=sys.stderr)
 
 
@@ -3090,17 +3118,21 @@ def _native_verdict(
     ledger: Optional[Ledger] = None,
     sk=None,
     feature_dir: Optional[Path] = None,
+    out: Optional[dict[str, Any]] = None,
 ) -> str:
     """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
 
     Returns ``pass`` / ``fail``; returns ``error`` when the gates cannot even run (no spec resolvable, no
-    adapter detected, bad tier) so the caller reports a setup/dispatch problem, never a false gate-red
-    (EXEC-FR-016). The engine computes the verdict itself — no subprocess dispatch, no model (3PWR-NFR-001).
+    adapter detected, bad tier, or a missing gate prerequisite — GDIAG-FR-004) so the caller reports a
+    setup/dispatch problem, never a false gate-red (EXEC-FR-016). The engine computes the verdict itself
+    — no subprocess dispatch, no model (3PWR-NFR-001).
 
     When a ledger + signer are supplied, the verdict is recorded exactly as a standalone
     ``3pwr gate run`` records it — written to ``verdicts/latest.json`` and appended as a signed
     ``verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).
-    The verdict bytes themselves are unchanged (AUTOX-NFR-003)."""
+    The verdict bytes themselves are unchanged (AUTOX-NFR-003). When ``out`` is given, the computed
+    verdict dict is stashed under ``out['verdict']`` so the caller can render a red verdict's failed
+    gates inline (GDIAG-FR-001)."""
     spec_path = _resolve_run_spec(s, args, feature_dir)
     if spec_path is None:
         return "error"
@@ -3114,8 +3146,14 @@ def _native_verdict(
             adapter_name=adapter_name,
             work_kind=kinds,
         )
+    except PrerequisiteError as exc:
+        # No gate ran — say exactly what to install (GDIAG-FR-004), then report the setup failure.
+        print(str(exc), file=sys.stderr)
+        return "error"
     except (KeyError, LookupError, FileNotFoundError, ValueError, OSError):
         return "error"
+    if out is not None:
+        out["verdict"] = verdict.to_dict()
     if ledger is not None and sk is not None:
         s.verdicts_dir.mkdir(parents=True, exist_ok=True)
         verdict.write(s.verdicts_dir / "latest.json")
@@ -3260,6 +3298,29 @@ def _report_phase_estimates(
             print(f"  ⚠ {warn}", file=sys.stderr)
 
 
+def _warn_if_unanswered(s: Settings, ph: phases.Phase, transcript_rel: str, spec_id: str) -> None:
+    """Advisory stall check after one phase session ends (PHASEPR-FR-005).
+
+    Scans the last 500 bytes of the session's persisted transcript for unanswered-question
+    patterns and, on a match, prints a warning naming the phase plus the run's ``--status`` hint.
+    Strictly advisory (PHASEPR-NFR-002): it never raises, never retries, and never changes a stage
+    outcome, ledger entry, or exit code — a missing/unreadable transcript reads as empty and stays
+    silent."""
+    if not transcript_rel:
+        return
+    tail = transcripts.tail_text(s.root / transcript_rel, limit=500)
+    if not transcripts.unanswered_question(tail):
+        return
+    print(
+        f"  ⚠ phase {ph.index} ended with a possible unanswered question — review the transcript",
+        file=sys.stderr,
+    )
+    print(
+        f"    (run: 3pwr run --status --spec-id {spec_id} to see the full transcript path)",
+        file=sys.stderr,
+    )
+
+
 def _dispatch_phased(
     s: Settings,
     step: str,
@@ -3297,7 +3358,13 @@ def _dispatch_phased(
     attempt_counts: list[int] = []  # list.append is atomic — safe across the batch threads
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
-        ctx = phases.handoff_context(ph, total, constitution_text=constitution)
+        ctx = phases.handoff_context(
+            ph,
+            total,
+            constitution_text=constitution,
+            spec_id=spec_id,
+            completed_summary=phases.completed_phases_summary(phase_list, ph.index),
+        )
         if context:
             ctx = f"{context}\n\n{ctx}"
         file_scope = "\n".join(ph.file_scope)
@@ -3308,6 +3375,7 @@ def _dispatch_phased(
             retries=retries,
         )
         attempt_counts.append(attempts)
+        _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
     prun = phases.run_phases(batches, run_one)
@@ -3367,6 +3435,17 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
     )
 
 
+def _progress_safe(update: Callable[[], Any]) -> None:
+    """Run one progress-file update, degrading any error to a stderr warning (PROGFILE-NFR-001).
+
+    The progress file is an operator convenience view of the signed ledger — an IO problem writing
+    it must never fail a run or a stage, so every trigger call goes through this guard."""
+    try:
+        update()
+    except Exception as exc:  # any progress-write problem degrades to a warning, never a failure
+        print(f"warning: progress.md not updated — {exc}", file=sys.stderr)
+
+
 def _native_runner(
     s: Settings,
     args: argparse.Namespace,
@@ -3383,6 +3462,8 @@ def _native_runner(
     revise: str = "",
     echo: Optional[TextSink] = None,
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
+    verdict_box: Optional[dict[str, Any]] = None,
+    progress_reporter: Optional[progress.Reporter] = None,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
@@ -3557,6 +3638,10 @@ def _native_runner(
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
+            if progress_reporter is not None:
+                # The stage-complete trigger (PROGFILE-FR-007), BEFORE the post-stage commit below,
+                # so the committed progress.md already shows this stage ✓ done (PROGFILE-FR-008).
+                _progress_safe(lambda: progress_reporter.stage_completed(step, stage))
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's
             # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
@@ -3566,6 +3651,25 @@ def _native_runner(
             # commit; paths a human already committed by hand are a no-op keeping the human's own
             # author. After it, no run-produced change is left uncommitted (GITX-FR-008).
             produced = produced_box.get("paths", [])
+            if produced and s.ledger_path.is_file():
+                # The engine's ledger rides every producing stage commit (RUNID-FR-005): the
+                # signed entries that recorded this stage land atomically with its artifact, so
+                # the trust state at each stage boundary is recoverable from git history alone.
+                # A stage that produced nothing still forces no commit.
+                ledger_rel = str(s.ledger_path.relative_to(s.root))
+                if ledger_rel not in produced:
+                    produced = [*produced, ledger_rel]
+            if produced and feature_dir is not None:
+                # The run's progress file rides the same stage commit (PROGFILE-FR-008): committed
+                # alongside the stage artifact and the ledger whenever it exists — never forcing a
+                # commit for a stage that produced nothing, never duplicating a listed path.
+                prog = feature_dir / progress.FILENAME
+                try:
+                    prog_rel = str(prog.relative_to(s.root))
+                except ValueError:
+                    prog_rel = ""
+                if prog_rel and prog.is_file() and prog_rel not in produced:
+                    produced = [*produced, prog_rel]
             desc = gitflow.agent_commit_description(s.root, result.transcript)
             commit = gitflow.commit_stage(
                 s.root,
@@ -3626,9 +3730,18 @@ def _native_runner(
 
     def run_verdict(stage: str) -> str:
         # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it
-        # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine.
+        # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine. The
+        # verdict dict lands in ``verdict_box`` so a red one renders its failed gates inline
+        # (GDIAG-FR-001).
         return _native_verdict(
-            s, args, tier, wk.kinds, ledger=ledger, sk=sk, feature_dir=feature_dir
+            s,
+            args,
+            tier,
+            wk.kinds,
+            ledger=ledger,
+            sk=sk,
+            feature_dir=feature_dir,
+            out=verdict_box,
         )
 
     return NativeRunner(
@@ -3653,6 +3766,8 @@ def _run_make_runner(
     revise: str = "",
     echo: Optional[TextSink] = None,
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
+    verdict_box: Optional[dict[str, Any]] = None,
+    progress_reporter: Optional[progress.Reporter] = None,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3674,6 +3789,8 @@ def _run_make_runner(
         revise=revise,
         echo=echo,
         on_progress=on_progress,
+        verdict_box=verdict_box,
+        progress_reporter=progress_reporter,
     )
 
 
@@ -3760,6 +3877,7 @@ def _run_revise(
             args,
             notify.EVENT_FAILURE,
             notify.failure_message(spec_id, "revise failed", gate_stage),
+            spec_id,
         )
         human = (
             f"{orchestrate.render_tracker(gate_stage, rst)}\n"
@@ -3792,6 +3910,7 @@ def _run_revise(
             artifact,
             steering.gate_actions(spec_id),
         ),
+        spec_id,
     )
     action_rows = "\n".join(_gate_pause_rows(rst, spec_id, artifact))
     human = (
@@ -4040,8 +4159,36 @@ def cmd_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
     run_branch = ""
+    # The Verify stage's full verdict dict lands here (filled by _native_verdict), so a gate-red
+    # event can render each failed gate inline with the run's resolved identity (GDIAG-FR-001/006).
+    verdict_box: dict[str, Any] = {}
+    # The run's progress-file reporter (PROGFILE-FR-001) — bound once the live run's feature folder
+    # is resolved below; absent (a dry-run / simulated / folder-less run), no file is written.
+    progress_box: dict[str, progress.Reporter] = {}
 
     def on_event(ev: orchestrate.Event) -> None:
+        if ev.kind == "failed" and (ev.step == "gate_red" or ev.detail == "fail"):
+            # Enrich the gate-red event with the failed verdict + the resolved spec id at the one
+            # choke point every runner path flows through (GDIAG-FR-001/006).
+            if verdict_box.get("verdict"):
+                ev.data.setdefault("verdict", verdict_box["verdict"])
+            ev.data.setdefault("spec_id", spec_id)
+        rep = progress_box.get("reporter")
+        if rep is not None:
+            # The progress file's lifecycle triggers (PROGFILE-FR-007), at the same choke point:
+            # stage start, gate verdict pass/fail, human-gate pause, run failure, completion. The
+            # stage-complete trigger fires inside the runner's dispatch, before the stage commit.
+            if ev.kind == "step":
+                _progress_safe(lambda: rep.stage_started(ev.step, ev.stage))
+            elif ev.kind == "verdict":
+                failed_names = progress.failed_gate_names(verdict_box.get("verdict") or {})
+                _progress_safe(lambda: rep.verdict(ev.detail, failed_names))
+            elif ev.kind == "gate-stop":
+                _progress_safe(lambda: rep.paused(ev.step, ev.stage))
+            elif ev.kind == "failed":
+                _progress_safe(lambda: rep.failed(ev.step, ev.stage, ev.detail))
+            elif ev.kind == "done":
+                _progress_safe(lambda: rep.completed())
         if not args.json:
             tracker.on_event(ev)
 
@@ -4086,6 +4233,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             # Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its
             # dispatch starts, not one whole segment later; on_event self-guards under --json.
             on_progress=on_event,
+            verdict_box=verdict_box,
+            progress_reporter=progress_box.get("reporter"),
         )
 
     def _stages() -> list[dict]:
@@ -4140,6 +4289,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         if feature_dir is None:
             legacy_spec = _resolve_run_spec(s, args)
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
+        if git_on and feature_dir is not None:
+            # Rebind the run's progress file to the recorded workspace (PROGFILE-FR-001): the
+            # resumed segment's triggers keep updating specs/<NNN>-<slug>/progress.md.
+            progress_box["reporter"] = progress.Reporter(
+                feature_dir,
+                spec_id=spec_id,
+                tier=args.tier
+                or workkind.classify(args.intent or "").suggested_tier
+                or s.default_tier(),
+            )
         if git_on:
             # The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from
             # the signed ledger alone (a pre-GITX run derives the same deterministic name from its
@@ -4229,6 +4388,23 @@ def cmd_run(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 return EXIT_SETUP
+        if not args.spec_id and feature_dir is not None:
+            # The workspace's NNN is the run's real identity (RUNID-FR-001): derived once here,
+            # immediately after the feature folder is bound, so every downstream consumer —
+            # ledger writes, gate messages, resume hints, notifications, oracle dispatch, and
+            # the branch name below — reads the derived value, never the pre-derivation default
+            # (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).
+            spec_id = feature_dir.name.split("-")[0]
+            tracker.retitle(spec_id)
+        if git_on and feature_dir is not None:
+            # The run's human-readable progress file (PROGFILE-FR-001): bound to the allocated
+            # workspace and the resolved identity, written at every lifecycle trigger below. A
+            # dry-run / simulated run allocates no folder and writes no file.
+            progress_box["reporter"] = progress.Reporter(
+                feature_dir,
+                spec_id=spec_id,
+                tier=args.tier or wk.suggested_tier or s.default_tier(),
+            )
         if git_on:
             # Create + switch to the run's dedicated branch off the configured base BEFORE any
             # stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity
@@ -4303,6 +4479,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     gate_artifact,
                     steering.gate_actions(spec_id),
                 ),
+                spec_id,
             )
             if not interactive:
                 fr = f" ({result.gate_fr})" if result.gate_fr else ""
@@ -4420,12 +4597,16 @@ def cmd_run(args: argparse.Namespace) -> int:
             record("gates_red")
             reached = result.stage or "Verify"
             _notify_event(
-                s, args, notify.EVENT_FAILURE, notify.failure_message(spec_id, "gates red", reached)
+                s,
+                args,
+                notify.EVENT_FAILURE,
+                notify.failure_message(spec_id, "gates red", reached),
+                spec_id,
             )
             human = (
                 f"{orchestrate.render_tracker(reached, rst)}\n"
                 f"  {rst.err('✗')} gates red — the deterministic gate suite failed. Inspect with "
-                "`3pwr gate run --spec <spec> --tier <tier>`, fix the failing gate(s), then "
+                f"`3pwr gate run --id {spec_id}`, fix the failing gate(s), then "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
             _print(
@@ -4444,6 +4625,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args,
                 notify.EVENT_FAILURE,
                 notify.failure_message(spec_id, "verdict error", reached),
+                spec_id,
             )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
@@ -4473,6 +4655,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args,
                 notify.EVENT_FAILURE,
                 notify.failure_message(spec_id, "artifact missing", reached),
+                spec_id,
             )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
@@ -4505,6 +4688,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args,
                 notify.EVENT_FAILURE,
                 notify.failure_message(spec_id, "git discipline failed", reached),
+                spec_id,
             )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
@@ -4536,6 +4720,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 args,
                 notify.EVENT_FAILURE,
                 notify.failure_message(spec_id, "stage completion failed", reached),
+                spec_id,
             )
             human = (
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
@@ -4563,6 +4748,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             args,
             notify.EVENT_FAILURE,
             notify.failure_message(spec_id, "dispatch failed", reached),
+            spec_id,
         )
         detail = f" — {result.detail}" if result.detail else ""
         human = (
@@ -4587,7 +4773,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_SETUP
     if result.status == "aborted":
-        _notify_event(s, args, notify.EVENT_FAILURE, f"3pwr run {spec_id}: aborted")
+        _notify_event(s, args, notify.EVENT_FAILURE, f"3pwr run {spec_id}: aborted", spec_id)
         _print(
             {"status": "aborted", "spec_id": spec_id, "stages": _stages()},
             args.json,
@@ -4596,7 +4782,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_FAIL
 
     ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
-    _notify_event(s, args, notify.EVENT_COMPLETION, notify.completion_message(spec_id))
+    _notify_event(s, args, notify.EVENT_COMPLETION, notify.completion_message(spec_id), spec_id)
     human = (
         f"{orchestrate.render_tracker('Observe', rst)}\n"
         f"  {rst.ok('✓ lifecycle complete')} — advanced to Ship; observe feeds new intent"
@@ -5189,7 +5375,13 @@ def build_parser() -> argparse.ArgumentParser:
     gr.add_argument("--path", help="target project path (default: repo root)")
     gr.add_argument("--tier", default="Standard", help="risk tier (default: Standard)")
     gr.add_argument("--adapter", help="language adapter (default: auto-detect)")
-    gr.add_argument("--spec", help="path to the governing spec.md")
+    spec_src = gr.add_mutually_exclusive_group()
+    spec_src.add_argument("--spec", help="path to the governing spec.md")
+    spec_src.add_argument(
+        "--id",
+        metavar="NNN",
+        help="feature folder number — resolves the spec of specs/<NNN>-*/ (exactly one must match)",
+    )
     gr.add_argument("--base", help="git ref for diff-coverage base")
     gr.add_argument("--mutation", action="store_true", help="run the mutation gate")
     gr.add_argument(

@@ -36,6 +36,24 @@ format, lint, types, tests, coverage, and conformance:
 6. **Gate-gaming residue** — anything shaped to satisfy a gate rather than the spec (suppressed
    warnings, weakened assertions, test-only code paths).
 
+## Finding quality
+
+Every finding carries evidence: the artifact and location (`path:line`), the requirement id it
+answers to, and what was observed — never a hunch. A suspicion you cannot anchor to a location
+and a requirement is a note, not a finding. Severity is graded by consequence:
+
+- **CRITICAL** — a constitution/rules violation, or the change does something the spec forbids.
+- **HIGH** — a requirement not (or only apparently) satisfied; hollow coverage of a requirement.
+- **MEDIUM** — scope creep, contradiction between artifacts, or ambiguity that will misdirect a
+  later stage.
+- **LOW** — residue worth recording that blocks nothing.
+
+## Output destination
+
+If the engine has given a destination in this prompt's run-context blocks, write the findings
+report there; if none has been given, default to `specs-source/<feature>/review.md`. Recording
+the summary via `3pwr residual` (below) is required either way.
+
 ## Output — the findings report
 
 Report findings in this fixed structure, so the review reads identically regardless of the model.
@@ -56,8 +74,7 @@ Never edit an artifact — suggested fixes are proposals for a human.
 rather than a quiet code fix>
 ```
 
-Severity is one of CRITICAL / HIGH / MEDIUM / LOW. Cap the report at the findings that matter; no
-restating of what passed. Record it with
+Cap the report at the findings that matter; no restating of what passed. Record it with
 `3pwr residual --reviewer <id> --note <summary> --spec-id <ID>`; a human, not you, signs off.
 
 ## Completion report

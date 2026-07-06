@@ -75,8 +75,9 @@ and an existing constitution. For the autonomous lifecycle you also need the con
 missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
 `init` also seeds one **editable agent template per dispatched stage** into
-`.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks, oracle,
-implement, review, characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
+`.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
+template is named for its agent, `implementation-plan.agent.md` —, oracle, implement, review,
+characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
 stage's instruction body when present; an absent, empty, or unreadable template falls back to the
 engine's built-in instruction (AGENTX-FR-005). Seeding is non-clobbering — a hand-edited template is
 never overwritten. Declining the recommended defaults interactively also walks the **headless-CLI +
@@ -119,6 +120,9 @@ signed ledger entry.
 - `--tier TIER` — `Cosmetic` | `Standard` | `High-risk` (default: `Standard`).
 - `--adapter ADAPTER` — language adapter (default: auto-detect).
 - `--spec SPEC` — path to the governing `spec.md`.
+- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs/<NNN>-*/`
+  (the number `3pwr run` allocated and prints in its hints). Exactly one folder must match — zero
+  or multiple matches are a clear error — and `--id` cannot be combined with `--spec`.
 - `--base BASE` — git ref for the `diff_coverage` / diff-scope base.
 - `--mutation` — run the (expensive) mutation gate; opt-in.
 - `--paths [PATHS ...]` — scope `diff_coverage` + mutation to these files (risk-tier scoping per capability).
@@ -131,8 +135,25 @@ signed ledger entry.
 ```bash
 3pwr gate run --path examples/validation-utils \
               --spec specs/001-validation-utils/spec.md --tier Standard
+3pwr gate run --id 001 --tier Standard      # same spec, resolved by run number
 ```
-Exit `0` if the verdict is green, `1` if red (unless `--report-only`).
+Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
+missing (see below).
+
+**Missing prerequisites stop the run up front.** Before any gate command executes, the engine
+probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
+section). When a required tool of a non-optional gate is missing, no gate runs: the command exits
+with the setup code (`4`) and prints one install hint per missing tool, taken from the adapter's
+declared `install` command:
+
+```
+⚠ prerequisites missing — install before re-running:
+  biome   npm i -D @biomejs/biome
+```
+
+Quarantine-safe gates are unaffected: the opt-in mutation gate and the design oracles keep their
+existing skip/quarantine behavior when their tool is absent, and `--report-only` (the brownfield
+on-ramp) never hard-stops — its gates surface per-gate missing-tool findings as before.
 
 **Work-kind-shaped gates.** When a change is classified (by `classify`, `run`, or an explicit
 `--work-kind`), the inferred kind adds gates to the tier's set:
@@ -324,7 +345,12 @@ alone. Every producing stage leaves its markdown FLAT in that folder — `spec.m
 plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
-artifact is broken — never skipping it on the ledger record alone.
+artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
+human-readable **`progress.md`** in the same folder — the stage table with status glyphs and
+completion times, per-phase detail during a phased build, the current state, the last verdict,
+copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
+every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
+with each producing stage, so the run's state is readable at a glance even mid-run.
 **The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
@@ -356,7 +382,17 @@ alters the run, and with none configured no network call is made. On a capable T
 active step, a heartbeat spinner with elapsed time, and the running / paused-at-gate / failed state
 — while agent stdout prints above it into ordinary, fully scrollable history; off a TTY, under
 `--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain streamed log, and the
-terminal is always restored on exit or Ctrl-C.
+terminal is always restored on exit or Ctrl-C. When the verify stage goes red, the run prints a
+structured failure summary — one row per failed gate (`name · tool`) with its first actionable error
+line, followed by ready-to-run commands:
+
+```
+✗  gates failed (2 of 11):
+     format · biome     ↳ 2 files would be reformatted
+     tests  · vitest    ↳ 1 test failed
+     Resume:  3pwr run --resume --spec-id 042
+     Inspect: 3pwr gate run --id 042
+```
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default

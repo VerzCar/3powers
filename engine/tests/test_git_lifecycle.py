@@ -236,8 +236,9 @@ def test_resume_reuses_the_existing_branch_never_a_new_one(run_repo, monkeypatch
     re-enters it — the run-branch count is unchanged and no new run number is allocated."""
     _mock_gates_green(monkeypatch)
     assert _run(run_repo) == EXIT_PAUSED
-    # the human wanders off to another branch between segments
-    subprocess.run(["git", "checkout", "-q", "main"], cwd=str(run_repo), check=True)
+    # the human wanders off to another branch between segments — branched off the run tip, since
+    # the tracked ledger carries post-commit appends the run still needs (RUNID-FR-005)
+    subprocess.run(["git", "checkout", "-q", "-b", "detour"], cwd=str(run_repo), check=True)
     branches_before = {
         b.lstrip("* ") for b in _git(run_repo, "branch", "--list", "3pwr/*").splitlines()
     }
@@ -332,7 +333,13 @@ def test_stage_commit_stages_only_produced_paths_with_agent_message(run_repo, ca
     specify = next(s for s in subjects if s.startswith("3pwr(RUN): specify"))
     assert "authored the specify work for the run" in specify  # the agent-written description
     files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
-    assert files == ["specs/001-add-x/spec.md"]  # only the produced path, never add -A
+    # only the produced path plus the engine's ledger (RUNID-FR-005) and the run's progress file
+    # (PROGFILE-FR-008) — never add -A
+    assert sorted(files) == [
+        ".3powers/ledger.jsonl",
+        "specs/001-add-x/progress.md",
+        "specs/001-add-x/spec.md",
+    ]
 
 
 def test_missing_agent_message_falls_back_deterministically(run_repo, monkeypatch, capsys):
@@ -496,8 +503,9 @@ def test_advance_refuses_off_branch_or_uncommitted_stage(run_repo, monkeypatch, 
     assert (
         main(["--root", str(run_repo), "signoff", "--approver", "human", "--spec-id", "RUN"]) == 0
     )
-    # off the run branch → refused, naming the branch and the deviation
-    subprocess.run(["git", "checkout", "-q", "main"], cwd=str(run_repo), check=True)
+    # off the run branch → refused, naming the branch and the deviation (the detour branches off
+    # the run tip — the tracked ledger carries post-signoff appends, RUNID-FR-005)
+    subprocess.run(["git", "checkout", "-q", "-b", "detour"], cwd=str(run_repo), check=True)
     capsys.readouterr()
     rc = main(["--root", str(run_repo), "advance", "--stage", "ship", "--spec-id", "RUN"])
     out = capsys.readouterr().out

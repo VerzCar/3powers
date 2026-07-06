@@ -42,7 +42,8 @@ def test_high_risk_missing_layers_fails(tmp_path):
 
 
 def test_all_layers_present_passes(tmp_path):
-    """3PWR-FR-064: with unit + integration + e2e tests for the change, the layer check passes."""
+    """3PWR-FR-064 / 3PWR-FR-065: conformance accounts for all three test layers, tracing the
+    requirement to the layers that reference it (covered_layers) — the layer check passes."""
     _mk_test(tmp_path / "tests" / "unit")
     _mk_test(tmp_path / "tests" / "integration")
     _mk_test(tmp_path / "tests" / "e2e")

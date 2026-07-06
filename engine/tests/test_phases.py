@@ -574,6 +574,65 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     assert vres.ok, getattr(vres, "problems", vres)
 
 
+def test_phase_stall_warning_is_advisory_and_never_alters_control_flow(
+    phased_project, monkeypatch, capsys
+):
+    """PHASEPR-FR-005 / PHASEPR-NFR-002: a phase session whose transcript tail ends on a clarifying
+    question emits the advisory warning with the run's real spec id — and the run proceeds exactly
+    as without it: same pauses, same exit codes, same phase results in the ledger."""
+    import threepowers.cli as climod
+    from threepowers.verdict import STATUS_PASS, Verdict
+
+    root, prompts_seen = phased_project
+    monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
+    monkeypatch.setattr(
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
+    )
+    orig = runner.dispatch_agent  # the fixture's fake
+
+    def stalled(argv, **kw):
+        rc = orig(argv, **kw)
+        prompt = argv[-1] if argv else ""
+        tee = kw.get("tee")
+        if tee is not None and "PHASE 2/3" in prompt:
+            tee.write("I implemented the handler.\nCould you clarify the button label?")
+        return rc
+
+    monkeypatch.setattr(runner, "dispatch_agent", stalled)
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "c",
+        ]
+    )
+    assert rc == 3  # identical to the no-warning run: paused at sign-off, never failed
+    err = capsys.readouterr().err
+    assert "phase 2 ended with a possible unanswered question — review the transcript" in err
+    assert "3pwr run --status --spec-id RUN" in err  # the hint carries the real spec id
+
+    # control flow unchanged: all three phases recorded ok in the signed ledger (PHASEPR-NFR-002)
+    s = Settings(root=root)
+    entries = Ledger(s.ledger_path).entries()
+    recorded = next(
+        e["payload"]["results"]
+        for e in entries
+        if e.get("type") == "run" and e.get("payload", {}).get("kind") == "phases"
+    )
+    assert [r["phase"] for r in recorded] == [1, 2, 3] and all(r["ok"] for r in recorded)
+
+
 def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project, monkeypatch):
     """PHASE-FR-010: a tasks artifact declaring no phases runs implement as ONE fresh session."""
     import threepowers.cli as climod

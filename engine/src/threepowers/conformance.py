@@ -307,7 +307,12 @@ def run_conformance(
         tool="3pwr-conformance",
         details={
             "spec_id": spec_id,
-            "requirement_ids": sorted(declared),
+            # The requirement ids the scanned tests actually REFERENCE (bound/traced), not the
+            # spec's declared set — this is what Verdict.requirement_ids() aggregates into the
+            # ledger's requirement_ids field, so a verdict entry names the requirements its tests
+            # exercised (RUNID-FR-004). Empty exactly when nothing is referenced.
+            "requirement_ids": sorted(refs),
+            "declared_requirements": sorted(declared),
             "untested_requirements": untested,
             "untraced_requirements": untraced,
             "weak_tests": [[rid, f] for rid, f in weak],

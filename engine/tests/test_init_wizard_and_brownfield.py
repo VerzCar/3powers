@@ -56,7 +56,10 @@ def test_set_headless_integrations_dedupes_and_preserves_other_fields(tmp_path):
     assert "roles" in data
     # An empty selection never wipes the recorded set.
     scaffold.set_headless_integrations(s, [])
-    assert yaml.safe_load(s.roles_path.read_text())["headless_integrations"] == ["claude", "copilot"]
+    assert yaml.safe_load(s.roles_path.read_text())["headless_integrations"] == [
+        "claude",
+        "copilot",
+    ]
 
 
 def test_set_diversity_level_validates(tmp_path):
@@ -171,8 +174,18 @@ def test_cmd_gate_run_report_only_needs_no_spec(tmp_path, capsys):
     s, proj = _spec_gate_project(tmp_path)
     rc = cli.main(
         [
-            "--root", str(tmp_path), "gate", "run", "--path", str(proj),
-            "--tier", "T", "--adapter", "a", "--report-only", "--no-ledger",
+            "--root",
+            str(tmp_path),
+            "gate",
+            "run",
+            "--path",
+            str(proj),
+            "--tier",
+            "T",
+            "--adapter",
+            "a",
+            "--report-only",
+            "--no-ledger",
         ]
     )
     assert rc == 0, capsys.readouterr().out

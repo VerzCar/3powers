@@ -14,7 +14,7 @@ Orchestration never enters the deterministic verdict (3PWR-NFR-001).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from . import frame, style
 from .lifecycle import STAGES, canonical_stage
@@ -51,6 +51,10 @@ class Event:
     step: str = ""
     stage: str = ""
     detail: str = ""
+    # Optional structured payload an emitter attaches for a richer rendering — a gate-red event
+    # carries the failed verdict dict + the run's resolved spec id (GDIAG-FR-001/006). Rendering
+    # degrades to the plain one-liner when absent, so every existing emitter stays valid.
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -327,6 +331,49 @@ def render_tracker(reached_stage: str, st: style.Styler | None = None) -> str:
     return "  ".join(cells)
 
 
+def _first_actionable(gate: dict[str, Any]) -> str:
+    """The first non-empty findings line of a failed gate — the line the user acts on (GDIAG-FR-001).
+
+    Missing-tool findings already lead with the install fix; adapter failures lead with the tool's
+    first diagnostic. Empty when the gate carried no findings."""
+    for finding in gate.get("findings") or []:
+        line = str(finding).strip().splitlines()[0].strip() if str(finding).strip() else ""
+        if line:
+            return line
+    return ""
+
+
+def _gate_red_summary(ev: Event, st: style.Styler, g: dict[str, str]) -> str:
+    """The structured gates-failed summary for a gate-red event (GDIAG-FR-001/006).
+
+    Renders one row per failed gate — ``name · tool`` plus its first actionable error line — from
+    the verdict dict the emitter attached under ``ev.data['verdict']``, then the filled-in
+    ``Resume:``/``Inspect:`` command hints carrying the run's resolved spec id. Returns ``""`` when
+    the event carries no verdict (the plain one-liner then applies), so a simulated or legacy
+    emitter renders exactly as before."""
+    verdict = ev.data.get("verdict") or {}
+    gates = verdict.get("gates") or []
+    failed = [x for x in gates if x.get("status") == "fail"]
+    if not failed:
+        return ""
+    spec_id = str(ev.data.get("spec_id") or verdict.get("spec_id") or "").strip()
+    header = st.err(f"gates failed ({len(failed)} of {len(gates)}):")
+    lines = [f"  {st.err(g['fail'])}  {header}"]
+    width = max(len(str(x.get("gate", ""))) for x in failed)
+    for x in failed:
+        name = str(x.get("gate", "?"))
+        tool = str(x.get("tool") or "").strip() or "?"
+        row = f"     {name:<{width}} · {tool}"
+        first = _first_actionable(x)
+        if first:
+            row += f"   ↳ {first}"
+        lines.append(row)
+    if spec_id:
+        lines.append(f"     Resume:  3pwr run --resume --spec-id {spec_id}")
+        lines.append(f"     Inspect: 3pwr gate run --id {spec_id}")
+    return "\n".join(lines)
+
+
 def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
     """Human-readable one-liner for a streamed event (CLIUX-FR-009).
 
@@ -350,6 +397,9 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
         # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/artifact
         # failure is reported distinctly and names the stage reached (RUNX-FR-010/011, RUNLIVE-FR-002).
         if ev.step == "gate_red" or ev.detail == "fail":
+            summary = _gate_red_summary(ev, st, g)
+            if summary:
+                return summary
             return (
                 f"  {st.err(g['fail'])} {st.err('gates red')} — the deterministic gate suite failed"
             )
@@ -428,6 +478,16 @@ class Tracker:
         Idempotent, so the exception path (``finally``) and the terminal-event path converge."""
         if self._frame is not None:
             self._frame.close()
+
+    def retitle(self, subject: str) -> None:
+        """Adopt the run's resolved identity after construction (RUNID-FR-003).
+
+        The tracker is built before the run workspace is allocated, so a workspace-derived spec id
+        (the folder's NNN, RUNID-FR-001) arrives late; the live bar's title and its pause/resume
+        hints must carry that derived value, never the pre-derivation default."""
+        self._subject = subject
+        if self._frame is not None:
+            self._frame.retitle(subject)
 
     def begin(self) -> None:
         """Open the live bar eagerly — the stage strip and heartbeat are on screen BEFORE the first

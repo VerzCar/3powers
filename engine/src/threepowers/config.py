@@ -107,8 +107,9 @@ class Settings:
     def stage_templates_dir(self) -> Path:
         """The per-stage agent templates — one editable markdown per dispatched stage (AGENTX-FR-001).
 
-        A repo-local ``<step>.agent.md`` here supplies that stage's instruction body; an absent,
-        empty, or unreadable file falls back to the engine's built-in instruction (AGENTX-FR-005)."""
+        A repo-local ``<step>.agent.md`` here (``implementation-plan.agent.md`` for the tasks step)
+        supplies that stage's instruction body; an absent, empty, or unreadable file falls back to
+        the engine's built-in instruction (AGENTX-FR-005)."""
         return self.dir / "templates" / "agents"
 
     @property

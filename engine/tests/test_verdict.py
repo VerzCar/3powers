@@ -10,6 +10,7 @@ from threepowers.verdict import STATUS_FAIL, STATUS_PASS, GateResult, Verdict, f
 
 
 def test_finalize_orders_cheapest_first_and_aggregates_result():
+    """3PWR-FR-026: finalize reorders gates cheapest-first; any failing gate fails the run."""
     v = Verdict(spec_id="X", tier="Standard", adapter="py")
     v.add(GateResult(gate="spec_conformance", status=STATUS_PASS))
     v.add(GateResult(gate="format", status=STATUS_PASS))
@@ -25,6 +26,8 @@ def test_failure_record_is_actionable():
 
 
 def test_write_and_requirement_ids(tmp_path):
+    """3PWR-FR-033: the written verdict carries the one normalized, language-agnostic shape
+    (spec id, schema version, report-only flag) plus the traced requirement ids."""
     v = Verdict(spec_id="X", tier="Standard", adapter="py")
     v.add(
         GateResult(

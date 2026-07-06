@@ -213,7 +213,7 @@ _ROLES_HEADER = (
     '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`\n'
     "# (3PWR-FR-057).\n"
     "#\n"
-    "# `diversity_level` (default `family`) is how \"diverse enough\" is judged (3PWR-FR-022):\n"
+    '# `diversity_level` (default `family`) is how "diverse enough" is judged (3PWR-FR-022):\n'
     "#   family \u2014 the oracle and coder must be different model *families*.\n"
     "#   model  \u2014 a different *model* in one family qualifies (e.g. opus vs sonnet).\n"
     "# One BYOK integration (e.g. copilot) can serve several families: pick a coder model in one\n"
