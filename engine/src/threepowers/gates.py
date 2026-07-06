@@ -186,6 +186,54 @@ def _no_spec_skip(gate: str) -> GateResult:
     )
 
 
+class PrerequisiteError(RuntimeError):
+    """A required tool of a non-optional gate is absent — raised BEFORE any gate runs (GDIAG-FR-004).
+
+    Carries ``missing`` as ``(tool, install_hint)`` pairs; ``str(exc)`` is the ready-to-print
+    prerequisites block with one install hint per missing tool, taken from the adapter manifest's
+    declarative ``toolchain:`` section — the core never invents a hint (GDIAG-NFR-002). The caller
+    exits on the setup path (never a gate verdict)."""
+
+    def __init__(self, missing: list[tuple[str, str]]) -> None:
+        self.missing = missing
+        width = max((len(t) for t, _ in missing), default=0)
+        lines = ["⚠ prerequisites missing — install before re-running:"]
+        for tool, hint in missing:
+            lines.append(
+                f"  {tool:<{width}}  {hint or '(no install hint declared — install it and re-run)'}"
+            )
+        super().__init__("\n".join(lines))
+
+
+def missing_prerequisites(
+    manifest: dict[str, Any], required: list[str], target: Path
+) -> list[tuple[str, str]]:
+    """The ``(tool, install_hint)`` pairs missing for the run's NON-OPTIONAL gates (GDIAG-FR-004/005).
+
+    Probes each distinct tool a required adapter gate declares via ``requires:``, using the
+    manifest's declarative ``toolchain:`` probe (adapters.probe_tool). Quarantine-safe gates keep
+    their existing behavior and are never probed here: ``mutation`` (opt-in, skips when unwired)
+    and the design oracles (quarantined when their tool is absent — 3PWR-NFR-015). ``tests`` is
+    probed whenever ``diff_coverage`` is required, since diff-coverage forces the test run.
+    Deterministic given the manifest + the local toolchain; hints come only from manifest data."""
+    probe_gates = [g for g in required if g in _ADAPTER_GATES and g != "mutation"]
+    if "diff_coverage" in required and "tests" not in probe_gates:
+        probe_gates.append("tests")
+    missing: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for gate in probe_gates:
+        spec = adapters.gate_spec(manifest, gate)
+        if not spec or not adapters.command_of(spec):
+            continue  # the gate skips anyway — nothing to require
+        tool = adapters.gate_requires(spec)
+        if not tool or tool in seen:
+            continue
+        seen.add(tool)
+        if not adapters.probe_tool(manifest, tool, cwd=target):
+            missing.append((tool, adapters.install_hint(manifest, tool) or ""))
+    return missing
+
+
 def run_gates(
     settings: Settings,
     target: Path,
@@ -228,6 +276,16 @@ def run_gates(
 
     adapter_name = adapter_name or adapters.detect_adapter(settings, target)
     manifest = adapters.load_adapter(settings, adapter_name)
+
+    # Prerequisites pre-check (GDIAG-FR-004/005): every required tool of a non-optional gate is
+    # probed BEFORE any gate command runs — a missing one stops the run on the setup path with
+    # per-tool install hints, never a misleading gate-red. Quarantine-safe gates (mutation, the
+    # design oracles) keep their skip/quarantine behavior; a report-only run is the brownfield
+    # on-ramp and never hard-stops — its gates surface missing tools per-gate as before.
+    if not report_only:
+        absent = missing_prerequisites(manifest, required, target)
+        if absent:
+            raise PrerequisiteError(absent)
 
     # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope runs before a repo has any
     # 3Powers spec, so `spec_path` may be None — the two spec-bound gates then SKIP (below).

@@ -390,6 +390,16 @@ class LiveFrame:
             self._spin += 1
             self._repaint()
 
+    def retitle(self, subject: str) -> None:
+        """Adopt a late-resolved run identity as the bar's title subject (RUNID-FR-003).
+
+        The run workspace's NNN is derived after the frame is constructed; the bar's title must
+        show the derived id, not the pre-derivation default. Repaints when the bar is open."""
+        with self._lock:
+            self._subject = subject
+            if self._open:
+                self._repaint()
+
     # ------------------------------------------------------------------ rendering
     def _bar(self) -> str:
         """The bar's ``BAR_HEIGHT`` rows as one write — no trailing newline, cursor rests on its

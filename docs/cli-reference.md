@@ -120,6 +120,9 @@ signed ledger entry.
 - `--tier TIER` — `Cosmetic` | `Standard` | `High-risk` (default: `Standard`).
 - `--adapter ADAPTER` — language adapter (default: auto-detect).
 - `--spec SPEC` — path to the governing `spec.md`.
+- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs/<NNN>-*/`
+  (the number `3pwr run` allocated and prints in its hints). Exactly one folder must match — zero
+  or multiple matches are a clear error — and `--id` cannot be combined with `--spec`.
 - `--base BASE` — git ref for the `diff_coverage` / diff-scope base.
 - `--mutation` — run the (expensive) mutation gate; opt-in.
 - `--paths [PATHS ...]` — scope `diff_coverage` + mutation to these files (risk-tier scoping per capability).
@@ -132,8 +135,25 @@ signed ledger entry.
 ```bash
 3pwr gate run --path examples/validation-utils \
               --spec specs/001-validation-utils/spec.md --tier Standard
+3pwr gate run --id 001 --tier Standard      # same spec, resolved by run number
 ```
-Exit `0` if the verdict is green, `1` if red (unless `--report-only`).
+Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
+missing (see below).
+
+**Missing prerequisites stop the run up front.** Before any gate command executes, the engine
+probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
+section). When a required tool of a non-optional gate is missing, no gate runs: the command exits
+with the setup code (`4`) and prints one install hint per missing tool, taken from the adapter's
+declared `install` command:
+
+```
+⚠ prerequisites missing — install before re-running:
+  biome   npm i -D @biomejs/biome
+```
+
+Quarantine-safe gates are unaffected: the opt-in mutation gate and the design oracles keep their
+existing skip/quarantine behavior when their tool is absent, and `--report-only` (the brownfield
+on-ramp) never hard-stops — its gates surface per-gate missing-tool findings as before.
 
 **Work-kind-shaped gates.** When a change is classified (by `classify`, `run`, or an explicit
 `--work-kind`), the inferred kind adds gates to the tier's set:

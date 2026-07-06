@@ -110,6 +110,33 @@ def find_specs(root: Path) -> list[Path]:
     return sorted(set(seen.values()))
 
 
+def resolve_feature_dir(root: Path, nnn: str) -> Path:
+    """Resolve a feature workspace folder from its number: ``specs/<nnn>-*/`` (GDIAG-FR-002).
+
+    ``nnn`` is the folder-name prefix before the first ``-`` (usually the zero-padded run number the
+    engine allocated, e.g. ``030``). Exactly one directory must match; the two failure modes carry
+    user-facing messages naming the fix:
+
+    Raises:
+        FileNotFoundError: no ``specs/<nnn>-*/`` directory exists under ``root``.
+        LookupError: more than one directory matches — the prefix is ambiguous.
+    """
+    specs_root = root / "specs"
+    matches = sorted(p for p in specs_root.glob(f"{nnn}-*") if p.is_dir())
+    if not matches:
+        raise FileNotFoundError(
+            f"no feature folder matches specs/{nnn}-*/ — check the number, or pass "
+            "--spec <path/to/spec.md>"
+        )
+    if len(matches) > 1:
+        names = ", ".join(f"specs/{p.name}" for p in matches)
+        raise LookupError(
+            f"'{nnn}' is ambiguous — {len(matches)} feature folders match ({names}); pass "
+            "--spec <path/to/spec.md>"
+        )
+    return matches[0]
+
+
 # --------------------------------------------------------------------------- run-folder allocation (SRCX-FR-008/009)
 def slugify(text: str, max_len: int = SLUG_MAX_LEN) -> str:
     """Derive the run folder's slug from the intent — deterministic, pure, idempotent (SRCX-FR-009).

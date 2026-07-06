@@ -125,3 +125,19 @@ def install_hint(manifest: dict[str, Any], tool: str) -> Optional[str]:
     if isinstance(entry, dict):
         return str(entry.get("install") or "").strip() or None
     return None
+
+
+def probe_tool(manifest: dict[str, Any], tool: str, cwd: Path, timeout: int = 120) -> bool:
+    """Whether ``tool`` answers the probe its toolchain entry declares (GDIAG-FR-004).
+
+    Runs the adapter's declarative ``probe:`` command (e.g. a ``--version`` check) in ``cwd`` —
+    the target project, so project-local shims (``npx``, ``uv run``) resolve as the gates would.
+    A tool with no ``probe:`` declared (or no toolchain entry at all) is assumed present: the
+    in-gate missing-tool detection still catches it, so nothing is ever silently passed."""
+    entry = toolchain(manifest).get(tool)
+    if not isinstance(entry, dict):
+        return True
+    probe = str(entry.get("probe") or "").strip()
+    if not probe:
+        return True
+    return run_cmd(probe, cwd=cwd, timeout=timeout).ok
