@@ -12,7 +12,7 @@
      first-class channels (Slack/Teams/email/desktop) and no clear "here are your three choices" guidance,
      and there is no way to send a revision back other than editing files by hand; (3) the live view is a
      single line that agent stdout scrolls off-screen, so you lose track of which stage you are in and
-     whether it is moving. STEER advances CLIUX-FR-008/009 from one in-place line to a *persistent pinned
+     whether it is moving. STEER advances CLIUX-FR-008/009 from one in-place line to a *persistent live
      frame* while staying inside CLIUX's no-dependency / no-alternate-screen boundary (so no CLIUX or epic
      amendment is required). Cross-refs: 3PWR-FR-006/037 (the two human gates), 3PWR §6 (the lifecycle),
      CLIUX-FR-008/009, CLIUX-NFR-002/003, AUTOX-FR-007, RUNLIVE-FR-006, INITX-FR-014,
@@ -21,7 +21,7 @@
 **Risk Tier**: Standard
 <!-- Cosmetic | Standard | High-risk — declared BEFORE planning (3PWR-FR-003). Drives every gate threshold.
      Rationale: this is orchestration plumbing (intent resolution, a revise re-dispatch of an already-defined
-     stage), a human-output presentation layer (the pinned frame), and ONE deliberately opt-in, best-effort
+     stage), a human-output presentation layer (the live bar), and ONE deliberately opt-in, best-effort
      outbound notification path. It touches none of the trust-spine modules (canonical/keys/ledger/verify)
      and weakens no gate (3PWR-FR-032). High-risk was considered — because notifications introduce network
      egress and revise re-dispatches an agent — and rejected: notifications are disabled by default and are
@@ -82,7 +82,7 @@ Read this before planning; none of it is a requirement.
   path so the offline guarantees for the run itself are unchanged.
 - **Guardrail:** the two mandatory human gates keep the same meaning and the same *what* they require; STEER
   changes only how a run is fed (file intent), how a pause reaches the user (notifications), what the user can
-  do at a pause (approve / reject / revise), and how the run's progress is shown (the pinned frame). No gate,
+  do at a pause (approve / reject / revise), and how the run's progress is shown (the live bar). No gate,
   threshold, verdict byte, ledger chain/signing format, exit-code contract, or `--json` schema changes.
 
 ---
@@ -92,9 +92,9 @@ Read this before planning; none of it is a requirement.
 <!-- Explicitly state what is OUT of scope. A spec without non-goals cannot proceed to planning. -->
 
 - Does **not** build a full-screen / alternate-screen TUI or a `curses`-style application — no mouse input,
-  no multi-pane cursor-addressed layout. The frame is a pinned header region plus a reserved scroll region
-  for stdout, rendered with ANSI sequences only; the CLI stays a streaming, scrollback-friendly tool
-  (preserves the CLIUX non-goal and CLIUX-NFR-003).
+  no multi-pane cursor-addressed layout. The frame is a bottom-anchored status bar over the terminal's
+  ordinary output flow, rendered with ANSI sequences only; the CLI stays a streaming, scrollback-friendly
+  tool (preserves the CLIUX non-goal and CLIUX-NFR-003).
 - Does **not** add any third-party rendering or notification-transport dependency (`rich`, `curses`,
   `blessed`, a Slack SDK, an SMTP library beyond the standard library, …); the frame uses ANSI only, and
   channels use the standard library / already-present `cryptography`+`PyYAML` plus a user-supplied command
@@ -180,13 +180,13 @@ answers "which stage am I in, what's finished, is it moving?" even as pages of a
 **Acceptance Scenarios**:
 
 1. **Given** an auto run on a TTY, **When** the agent for the current stage emits many lines of output,
-   **Then** the stage frame stays pinned and visible (it does not scroll off-screen), while the agent output
-   streams in the region below it.
-2. **Given** the run advances from one stage to the next, **When** the frame updates, **Then** completed
-   stages show the done mark, the current stage shows a running indicator and names the active step, and the
-   remaining stages show the upcoming mark — a running state visibly distinct from a paused gate and from a
-   failure.
-3. **Given** the run pauses at a human gate or fails, **When** the frame renders, **Then** it shows the
+   **Then** the live bar stays visible at the bottom (it is not scrolled away), while the agent output
+   prints above it into the terminal's ordinary, fully scrollable history.
+2. **Given** the run advances from one stage to the next, **When** the bar updates, **Then** completed
+   stages show the done mark, the current stage shows a running indicator with a heartbeat spinner and
+   elapsed time and names the active step, and the remaining stages show the upcoming mark — a running
+   state visibly distinct from a paused gate and from a failure.
+3. **Given** the run pauses at a human gate or fails, **When** the bar renders, **Then** it shows the
    paused-at-gate or failed-at-stage state prominently (consistent with the AUTOX failure taxonomy), not as
    still running, and — for a gate — the resume/reject/revise guidance is visible.
 
@@ -200,7 +200,7 @@ reconstruction are unaffected whether or not a channel is configured.
 **Acceptance Scenarios**:
 
 1. **Given** any run with `--json` or output redirected to a pipe/file, **When** it runs, **Then** the output
-   contains no `\r` in-place redraws and no `\033[` escape sequences, the frame is not emitted, and the
+   contains no `\r` in-place redraws and no `\033[` escape sequences, the live bar is not emitted, and the
    `--json` per-stage results and exit code are byte-/behavior-identical to before this change.
 2. **Given** no `notifications.yaml` and no `--notify`, **When** a run executes end to end, **Then** no network
    call is made at any point, and `3pwr verify` and an offline reconstruction succeed identically to today.
@@ -222,14 +222,16 @@ reconstruction are unaffected whether or not a channel is configured.
   current state.
 - Revise is used repeatedly at the same gate → each revision re-runs the stage and is recorded; the same gate
   is re-presented after each, until the operator approves or rejects.
-- The terminal is not a TTY, is a dumb terminal, is `NO_COLOR`, has unknown/zero width, or cannot support a
-  scroll region → the frame degrades to the existing plain streamed event log with no `\r`/control-code spam.
-- The terminal is resized during a run → the frame re-lays out without corrupting the pinned region or the
+- The terminal is not a TTY, is a dumb terminal, is `NO_COLOR`, has unknown/zero width, or is below the
+  minimum size → the live bar degrades to the existing plain streamed event log with no `\r`/control-code spam.
+- The terminal is resized during a run → the live bar re-lays out without corrupting itself or the
   streamed output.
-- The run is interrupted (Ctrl-C), fails, or exits while the frame is active → the terminal is restored to a
-  clean state (scroll region reset, cursor visible); the terminal is never left corrupted.
-- The dispatched agent's own stdout contains ANSI or cursor-movement sequences → it streams inside the reserved
-  region and must not corrupt or dislodge the pinned frame.
+- The run is interrupted (Ctrl-C), fails, or exits while the bar is active → the terminal is restored to a
+  clean state (cursor visible, the bar's last state left as ordinary lines); the terminal is never left
+  corrupted.
+- The dispatched agent's own stdout contains ANSI or cursor-movement sequences → it prints above the bar
+  with its cursor-moving/screen-clearing controls stripped (color preserved) and must not corrupt or dislodge
+  the bar.
 
 ## Requirements *(mandatory)*
 
@@ -275,7 +277,8 @@ reconstruction are unaffected whether or not a channel is configured.
   and a path/link to the artifact under review.
   - *Acceptance*: the on-screen pause names all three actions with runnable commands and the artifact path;
     the approve and reject paths preserve their current behavior (resume records a sign-off and continues;
-    reject stops).
+    reject stops); an interactive pause lets the operator choose among the same three actions directly,
+    taking the revision feedback and the rejection reason as free text.
 - **STEER-FR-006**: When the operator revises at a paused gate with a feedback message, the system shall
   re-dispatch the paused stage to the executive with the original intent, the current stage artifact, and the
   feedback; produce a revised artifact; and return the run to the *same* gate for review.
@@ -314,37 +317,45 @@ reconstruction are unaffected whether or not a channel is configured.
     no routing specified the default set applies; a run using both `--notify` and a configured channel fires
     both.
 
-#### Persistent live run frame
+#### Persistent live run bar
 
-- **STEER-FR-012**: During `3pwr run` on a TTY, the system shall display a persistent, pinned frame covering
-  the eight lifecycle stages (Discovery … Observe) — marking each completed / current / upcoming, naming the
-  active step, and showing a running indicator — that remains visible while the dispatched agent's stdout
-  streams in a reserved region below it.
-  - *Acceptance*: while a stage's agent emits many lines, the frame stays on screen (does not scroll away) and
-    the agent output appears below it.
+- **STEER-FR-012**: During `3pwr run` on a TTY, the system shall display a persistent live status bar,
+  anchored at the bottom of the terminal, covering the eight lifecycle stages (Discovery … Observe) —
+  marking each completed / current / upcoming, naming the active step, and showing a running indicator —
+  that remains visible while the event log and the dispatched agent's stdout print ABOVE it into the
+  terminal's ordinary, fully scrollable output flow.
+  - *Acceptance*: while a stage's agent emits many lines, the bar stays visible at the bottom (it is not
+    scrolled away) and the agent output appears above it and remains in the terminal's scrollback; no
+    terminal scroll region is set (which would discard scrolled-out history).
   - *Property*: the per-stage marks are a deterministic function of the reached stage — stages before it are
     completed, the reached one is current, the rest upcoming.
-- **STEER-FR-013**: The frame shall update in real time on each stage transition, step change, gate pause, and
+- **STEER-FR-013**: The bar shall update in real time on each stage transition, step change, gate pause, and
   failure, rendering the running, paused-at-gate, and failed-at-stage states as visibly distinct (consistent
-  with the AUTOX failure taxonomy), and shall show the resume/reject/revise guidance while paused at a gate.
-  - *Acceptance*: advancing a stage, pausing at a gate, and failing each change the frame to the corresponding
-    distinct state; the gate state shows the actionable guidance.
-- **STEER-FR-014**: The frame shall introduce no third-party dependency and make no network call, building only
-  on ANSI control sequences the terminal already understands (a reserved scroll region plus a pinned header);
-  it shall not use the alternate screen buffer.
+  with the AUTOX failure taxonomy); while a stage runs it shall show a heartbeat (an animated spinner plus the
+  stage's elapsed time) so a long-running dispatch is never mistaken for a hang; and it shall show the
+  resume/reject/revise guidance while paused at a gate.
+  - *Acceptance*: advancing a stage, pausing at a gate, and failing each change the bar to the corresponding
+    distinct state; a running stage advances its spinner and elapsed time over time; the gate state shows the
+    actionable guidance and carries no spinner.
+- **STEER-FR-014**: The bar shall introduce no third-party dependency and make no network call, building only
+  on ANSI control sequences the terminal already understands (cursor movement, line erase, SGR color); it
+  shall not use the alternate screen buffer or a terminal scroll region.
   - *Acceptance*: the engine's declared runtime dependencies are unchanged (`cryptography`, `PyYAML`);
-    rendering the frame opens no socket and pulls in no additional distribution.
+    rendering the bar opens no socket and pulls in no additional distribution.
 - **STEER-FR-015**: Off a TTY, under `--json`, under `NO_COLOR`, or on a terminal that cannot support the
-  pinned region, the frame shall degrade to the existing plain streamed event log with no `\r` in-place redraws
+  live bar, the bar shall degrade to the existing plain streamed event log with no `\r` in-place redraws
   and no ANSI/control codes, and the `--json` per-stage results and exit code shall remain byte-/behavior-
   identical (preserve RUNLIVE-FR-006, INITX-FR-014).
   - *Acceptance*: a piped or `--json` run's output contains no `\r`/`\033`; its per-stage results match the
-    pre-change baseline; the frame is never written to a non-TTY stream.
-- **STEER-FR-016**: The frame shall adapt to terminal resize without corrupting the pinned region or the
-  streamed output, and shall restore the terminal to a clean state (scroll region reset, cursor visible) on
-  normal exit, interruption (e.g. Ctrl-C), or failure.
+    pre-change baseline; the bar is never written to a non-TTY stream.
+- **STEER-FR-016**: The bar shall adapt to terminal resize without corrupting itself or the streamed output,
+  and shall restore the terminal to a clean state (cursor visible, the bar's last state left as ordinary
+  lines) on normal exit, interruption (e.g. Ctrl-C), or failure; a dispatched agent's own cursor-moving or
+  screen-clearing control sequences shall be stripped from the echoed output (color preserved) so they can
+  never dislodge the bar or corrupt the terminal.
   - *Acceptance*: resizing mid-run does not corrupt output; after the run — including an interrupted or failed
-    run — the terminal scroll region and cursor are restored and subsequent commands render normally.
+    run — the cursor is restored and subsequent commands render normally; an agent line carrying a
+    screen-clear escape prints above the bar with that escape removed.
 
 ### Non-Functional Requirements
 
@@ -359,14 +370,15 @@ reconstruction are unaffected whether or not a channel is configured.
   3PWR-NFR-005).
   - *Acceptance*: `notifications.yaml` references environment variables for secrets; a committed config
     contains no plaintext secret; no secret value appears in ledger entries, transcripts, or warnings.
-- **STEER-NFR-003**: The live frame shall be a human-output-only layer and, together with intent resolution and
+- **STEER-NFR-003**: The live bar shall be a human-output-only layer and, together with intent resolution and
   revise-prompt assembly, shall be deterministic — it shall never alter machine-readable output, exit codes,
   verdict bytes, or the ledger, and identical inputs shall yield identical rendered/resolved bytes (preserve
-  CLIUX-NFR-002/003, INITX-FR-014, ref 3PWR-NFR-001).
+  CLIUX-NFR-002/003, INITX-FR-014, ref 3PWR-NFR-001). The heartbeat animation is a presentation-only
+  decoration and carries no state.
   - *Acceptance*: existing `--json`, exit-code, and verdict-bytes tests stay green; a test proves no `--json`
     payload changes with color/frame forced on; rendering and intent/feedback resolution are reproducible.
-- **STEER-NFR-004**: The system shall never leave the terminal in a corrupted state: the frame shall not depend
-  on the alternate screen buffer, shall always reset any scroll region and restore the cursor on teardown, and
+- **STEER-NFR-004**: The system shall never leave the terminal in a corrupted state: the bar shall not depend
+  on the alternate screen buffer or a terminal scroll region, shall always restore the cursor on teardown, and
   shall degrade rather than raise on an unsupported or width-unknown terminal.
   - *Acceptance*: after normal, interrupted, and failed runs, the terminal is usable and uncorrupted; a
     width-unknown/dumb terminal produces the plain streamed log without an exception.
@@ -388,9 +400,10 @@ reconstruction are unaffected whether or not a channel is configured.
 - **STEER-SC-003**: At a gate the operator can approve, reject, or revise-with-message; revise re-runs the
   paused stage with the feedback, updates the artifact, returns to the same gate, and is recorded in the
   ledger, with `3pwr verify` still succeeding.
-- **STEER-SC-004**: On a TTY, `3pwr run` shows a persistent pinned frame (eight stages with done / current /
-  upcoming marks, active step, and running indicator) that stays visible while agent stdout streams below it,
-  so a glance answers "which stage, what's done, is it moving?".
+- **STEER-SC-004**: On a TTY, `3pwr run` shows a persistent bottom-anchored live bar (eight stages with done /
+  current / upcoming marks, active step, and a running heartbeat spinner with elapsed time) that stays visible
+  while agent stdout prints above it into scrollback, so a glance answers "which stage, what's done, is it
+  moving?".
 - **STEER-SC-005**: No third-party dependency is added and no new mandatory network path is introduced;
   notifications are the only opt-in egress and are fully isolated; off-TTY / `--json` / `NO_COLOR` output stays
   escape-free and byte-/behavior-identical; `3pwr verify` and offline reconstruction are unaffected; and the

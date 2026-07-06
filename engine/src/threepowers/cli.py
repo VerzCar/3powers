@@ -46,7 +46,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -88,7 +88,7 @@ from .adapters import detect_adapter, run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import run_gates
 from .ledger import Ledger, rotation_payload
-from .runner import CliAgentRunner, NativeRunner
+from .runner import CliAgentRunner, NativeRunner, TextSink
 from .verdict import GATE_ORDER, STATUS_PASS
 from .verify import verify_ledger
 
@@ -589,7 +589,10 @@ def _agent_cli_present(s: Settings, name: str) -> bool:
 
 
 def _default_role_model(
-    role: str, entries: list[dict[str, str]], default_entry: Optional[dict[str, str]], coder_fam: str
+    role: str,
+    entries: list[dict[str, str]],
+    default_entry: Optional[dict[str, str]],
+    coder_fam: str,
 ) -> str:
     """The documented default model for a role, family-aware for the judiciary.
 
@@ -672,14 +675,22 @@ def _roles_setup_flow(
             # Default the judiciary to a CLI other than the coder's when more than one is selected.
             coder_intg = written.get("coder", {}).get("integration") or selected[0]
             others = [i for i in selected if i != coder_intg]
-            pref = cur_intg if cur_intg in selected else (
-                (others[0] if others else coder_intg) if role in ("oracle", "reviewer") else coder_intg
+            pref = (
+                cur_intg
+                if cur_intg in selected
+                else (
+                    (others[0] if others else coder_intg)
+                    if role in ("oracle", "reviewer")
+                    else coder_intg
+                )
             )
             role_intg = _ask_choice(
                 f"Agent CLI for the {role} role", selected, pref, interactive=interactive
             )
         else:
-            role_intg = cur_intg if cur_intg in selected else (selected[0] if selected else cur_intg)
+            role_intg = (
+                cur_intg if cur_intg in selected else (selected[0] if selected else cur_intg)
+            )
 
         entries = catalog.models_for(cat, role_intg)
         default_entry = catalog.default_for(cat, role_intg)
@@ -709,9 +720,7 @@ def _roles_setup_flow(
             )
         elif cur_model:
             written[role] = {"status": "kept", "model": cur_model}
-            chosen_family[role] = (
-                str(cur.get("model_family") or "") or oracle.family_of(cur_model)
-            )
+            chosen_family[role] = str(cur.get("model_family") or "") or oracle.family_of(cur_model)
             continue
         else:
             model = _default_role_model(role, entries, default_entry, coder_fam)
@@ -747,7 +756,9 @@ def _roles_setup_flow(
     scaffold.set_diversity_level(s, level)
     warned = _warn_diversity(s, st)
     return {
-        "integration": (written.get("coder", {}).get("integration") or (selected[0] if selected else "")),
+        "integration": (
+            written.get("coder", {}).get("integration") or (selected[0] if selected else "")
+        ),
         "integrations": selected,
         "roles": written,
         "diversity_level": level,
@@ -860,7 +871,9 @@ def cmd_commit_stage(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def _notifications_setup_flow(s: Settings, st: style.Styler, *, interactive: bool) -> dict[str, Any]:
+def _notifications_setup_flow(
+    s: Settings, st: style.Styler, *, interactive: bool
+) -> dict[str, Any]:
     """Pick one run-notification channel (or none) and write its config (STEER-FR-010).
 
     Secrets are never stored (STEER-NFR-002): slack/teams record only the env-var *name* holding the
@@ -880,12 +893,12 @@ def _notifications_setup_flow(s: Settings, st: style.Styler, *, interactive: boo
     if choice in ("slack", "teams"):
         env_default = f"THREEPOWERS_{choice.upper()}_WEBHOOK"
         env = (
-            _ask(f"  env var holding the {choice} webhook URL", env_default, interactive=interactive)
+            _ask(
+                f"  env var holding the {choice} webhook URL", env_default, interactive=interactive
+            )
             or env_default
         )
-        scaffold.set_notification_channel(
-            s, {"type": choice, "events": events, "webhook_env": env}
-        )
+        scaffold.set_notification_channel(s, {"type": choice, "events": events, "webhook_env": env})
         return {"channel": choice, "webhook_env": env}
     if choice == "email":
         host = _ask("  SMTP host", "", interactive=interactive)
@@ -894,7 +907,11 @@ def _notifications_setup_flow(s: Settings, st: style.Styler, *, interactive: boo
         frm = _ask("  sender address (from, optional)", "", interactive=interactive)
         user = _ask("  SMTP username (optional)", "", interactive=interactive)
         pw_env = (
-            _ask("  env var holding the SMTP password", "THREEPOWERS_SMTP_PASSWORD", interactive=interactive)
+            _ask(
+                "  env var holding the SMTP password",
+                "THREEPOWERS_SMTP_PASSWORD",
+                interactive=interactive,
+            )
             or "THREEPOWERS_SMTP_PASSWORD"
         )
         channel: dict[str, Any] = {
@@ -1224,7 +1241,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
     elif notif_channel == "email":
         notif_hint.append(
-            f'  export {notify_report.get("password_env", "THREEPOWERS_SMTP_PASSWORD")}='
+            f"  export {notify_report.get('password_env', 'THREEPOWERS_SMTP_PASSWORD')}="
             '"<smtp password>"   # before `3pwr run`'
         )
     elif notif_channel == "desktop" and notify_report.get("macos_only"):
@@ -1239,10 +1256,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
     lines.append("       spec → plan → oracle → build → verify → ship,")
     lines.append("       stopping only at the two human gates (spec approval, sign-off)")
-    lines.append("  " + st.bold(f"3pwr run --file <intent.md> --mode {mode}") + "   # …or a written brief")
     lines.append(
-        "  (step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)"
+        "  " + st.bold(f"3pwr run --file <intent.md> --mode {mode}") + "   # …or a written brief"
     )
+    lines.append("  (step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)")
     lines.extend(notif_hint)
 
     # Existing code? The now-working brownfield on-ramp, demoted below the primary CTA (3PWR-FR-051/052).
@@ -1321,7 +1338,9 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             "⚠ missing toolchain — some gates could not run. Install, then re-run:"
         )
         for tool, inst in missing:
-            human += "\n    " + (f"{tool}  →  {inst}" if inst else f"{tool}  (install it and re-run)")
+            human += "\n    " + (
+                f"{tool}  →  {inst}" if inst else f"{tool}  (install it and re-run)"
+            )
     _print(
         {"verdict": verdict.to_dict(), "ledger_seq": (appended or {}).get("seq")},
         args.json,
@@ -3136,12 +3155,14 @@ def _make_agent_runner(
     timeout: int,
     stream: bool,
     transcripts_sink: Optional[transcripts.TranscriptSink] = None,
+    echo: Optional[TextSink] = None,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI (:class:`CliAgentRunner`) or,
     when the manifest declares ``mode: async-hosted``, the async hosted backend (:class:`HostedAgentRunner`,
     RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the
     verdict is judged identically (RUNLIVE-NFR-003). The transcript sink persists each local attempt's
-    output (AUTOX-FR-008); a hosted backend's output lives with its hosting service."""
+    output (AUTOX-FR-008); a hosted backend's output lives with its hosting service. ``echo`` routes the
+    streamed agent conversation above the run's live bar instead of raw stdout (STEER-FR-012)."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -3155,6 +3176,8 @@ def _make_agent_runner(
         timeout=timeout,
         stream=stream,
         transcripts=transcripts_sink,
+        echo_out=echo,
+        echo_err=echo,
     )
 
 
@@ -3358,6 +3381,8 @@ def _native_runner(
     git_prefs: Optional[gitflow.GitPrefs] = None,
     commit_relaxed: bool = False,
     revise: str = "",
+    echo: Optional[TextSink] = None,
+    on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
     its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
@@ -3386,6 +3411,7 @@ def _native_runner(
         timeout=timeout,
         stream=stream,
         transcripts_sink=sink,
+        echo=echo,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -3399,6 +3425,7 @@ def _native_runner(
         timeout=timeout,
         stream=stream,
         transcripts_sink=sink,
+        echo=echo,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
@@ -3604,7 +3631,9 @@ def _native_runner(
             s, args, tier, wk.kinds, ledger=ledger, sk=sk, feature_dir=feature_dir
         )
 
-    return NativeRunner(dispatch=dispatch, run_verdict=run_verdict, start_index=start_index)
+    return NativeRunner(
+        dispatch=dispatch, run_verdict=run_verdict, start_index=start_index, on_progress=on_progress
+    )
 
 
 def _run_make_runner(
@@ -3622,6 +3651,8 @@ def _run_make_runner(
     git_prefs: Optional[gitflow.GitPrefs] = None,
     commit_relaxed: bool = False,
     revise: str = "",
+    echo: Optional[TextSink] = None,
+    on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
 ):
     kind = _resolve_runner_kind(args)
     if kind == "sim":
@@ -3641,6 +3672,8 @@ def _run_make_runner(
         git_prefs=git_prefs,
         commit_relaxed=commit_relaxed,
         revise=revise,
+        echo=echo,
+        on_progress=on_progress,
     )
 
 
@@ -3780,6 +3813,47 @@ def _run_revise(
         human,
     )
     return EXIT_PAUSED
+
+
+def _gate_decision(gate: str, fr: str) -> str:
+    """The three-action interactive choice at a paused human gate (STEER-FR-005): approve / revise /
+    reject — the same vocabulary the non-interactive pause prints as commands.
+
+    Empty input and EOF mean reject — the conservative default: nothing advances without an explicit
+    approval (3PWR-FR-006). An unrecognized answer re-prompts."""
+    aliases = {
+        "a": "approve",
+        "approve": "approve",
+        "y": "approve",
+        "yes": "approve",
+        "r": "revise",
+        "revise": "revise",
+        "x": "reject",
+        "reject": "reject",
+        "n": "reject",
+        "no": "reject",
+    }
+    while True:
+        try:
+            raw = (
+                input(f"  gate '{gate}'{fr} — [a]pprove / [r]evise / reject [x]? ").strip().lower()
+            )
+        except EOFError:
+            return "reject"
+        if not raw:
+            return "reject"
+        decision = aliases.get(raw)
+        if decision:
+            return decision
+        print("  answer a (approve), r (revise), or x (reject)")
+
+
+def _prompt_line(prompt: str) -> str:
+    """One line of interactive input; EOF reads as empty (never raises at a gate pause)."""
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return ""
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -4006,6 +4080,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             run_branch=run_branch,
             git_prefs=git_prefs,
             commit_relaxed=commit_relaxed,
+            # The streamed agent conversation prints ABOVE the live bar, into ordinary scrollback
+            # (STEER-FR-012); with no bar (off-TTY/degraded) the echo stays the process's stdout.
+            echo=(tracker.echo_sink() if (stream and tracker.live) else None),
+            # Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its
+            # dispatch starts, not one whole segment later; on_event self-guards under --json.
+            on_progress=on_event,
         )
 
     def _stages() -> list[dict]:
@@ -4198,6 +4278,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     first_resuming = False  # start_index already positions native/sim runners; resume==run for both
 
     try:
+        if not args.json:
+            # The live bar is on screen BEFORE the first dispatch produces any output, so the run
+            # shows its heartbeat from the first moment (STEER-FR-012/013). No-op off-TTY/degraded.
+            tracker.begin()
         result = orchestrate.drive(runner, mode, on_event, resuming=first_resuming)
         while result.status == "paused_at_gate":
             ledger.append(
@@ -4247,29 +4331,66 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(
                     line
                 )  # the three actions, on-screen at the interactive pause too (STEER-FR-005)
-            ans = input(f"  approve gate '{result.gate}'{fr}? [y/N] ").strip().lower()
-            if ans not in ("y", "yes"):
-                ledger.append(
-                    "run", {"kind": "complete", "stage": result.stage}, sk, spec_id=spec_id
+            while True:
+                decision = _gate_decision(result.gate, fr)
+                if decision != "revise":
+                    break
+                # Revise-with-message, inline (STEER-FR-005/006): take the feedback here, re-run the
+                # paused stage with it, and come back to the SAME gate for a fresh decision.
+                feedback = _prompt_line("  feedback for the revision (required): ")
+                if not feedback:
+                    print("  revise needs feedback — nothing was changed")
+                    continue
+                rc_rev = _run_revise(
+                    s,
+                    args,
+                    ledger,
+                    sk,
+                    spec_id,
+                    result.gate,
+                    feedback,
+                    feature_dir=feature_dir,
+                    run_branch=run_branch,
+                    git_prefs=git_prefs,
+                    commit_relaxed=commit_relaxed,
+                    rst=rst,
                 )
+                if rc_rev != EXIT_PAUSED:
+                    return rc_rev  # the revise failed with its own actionable report
+            if decision == "reject":
+                reason = _prompt_line("  reason (optional): ")
+                payload: dict[str, Any] = {"kind": "complete", "stage": result.stage}
+                if reason:
+                    payload["reason"] = reason
+                ledger.append("run", payload, sk, spec_id=spec_id)
+                why = f" — {reason}" if reason else ""
                 _print(
-                    {"status": "rejected", "gate": result.gate, "spec_id": spec_id},
+                    {
+                        "status": "rejected",
+                        "gate": result.gate,
+                        "spec_id": spec_id,
+                        **({"reason": reason} if reason else {}),
+                    },
                     args.json,
-                    f"  ⊘ gate '{result.gate}' rejected — run stopped",
+                    f"  ⊘ gate '{result.gate}' rejected — run stopped{why}",
                 )
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
             _record_dispatch(
                 orchestrate.resume_start_index(ledger.entries(), spec_id, result.gate)
             )  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)
+            if not args.json:
+                # The gate pause finalized the bar; the approved run's next segment gets it back on
+                # screen immediately (STEER-FR-012/013).
+                tracker.begin()
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
         print(str(exc), file=sys.stderr)
         return EXIT_SETUP
     finally:
-        # The pinned frame never outlives the run — scroll region reset, cursor restored, on normal
-        # exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004). Idempotent: a frame
-        # already finalized by a terminal event is a no-op here.
+        # The live bar never outlives the run — its last state left as ordinary lines, cursor
+        # restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).
+        # Idempotent: a bar already finalized by a terminal event is a no-op here.
         tracker.close()
 
     if result.status == "failed":

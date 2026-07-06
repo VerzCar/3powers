@@ -352,10 +352,11 @@ and returns to the *same* gate; empty feedback or a revise outside a gate is ref
 desktop; secrets referenced from the environment, e.g. `THREEPOWERS_SLACK_WEBHOOK`) fire on gate
 pause, failure, and completion — best-effort and fully isolated: a broken channel never blocks or
 alters the run, and with none configured no network call is made. On a capable TTY the run shows a
-**persistent pinned frame** — the eight stages with done/current/upcoming marks, the active step,
-and the running / paused-at-gate / failed state — while agent stdout streams in a reserved region
-below it; off a TTY, under `--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain
-streamed log, and the terminal is always restored on exit or Ctrl-C.
+**persistent bottom-anchored live bar** — the eight stages with done/current/upcoming marks, the
+active step, a heartbeat spinner with elapsed time, and the running / paused-at-gate / failed state
+— while agent stdout prints above it into ordinary, fully scrollable history; off a TTY, under
+`--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain streamed log, and the
+terminal is always restored on exit or Ctrl-C.
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default

@@ -1,26 +1,28 @@
 """Steering an autonomous run (STEER, spec 019) — file-based intent, human-gate notifications with
-approve / reject / revise guidance, and the persistent live run frame.
+approve / reject / revise guidance, and the persistent live run bar.
 
 Exercised with fake agents, fake channels, and no network: intent resolution from a file + inline
 instruction (STEER-FR-001..004), the three gate actions with revise-with-message re-dispatch
 (STEER-FR-005..008), the opt-in best-effort notification channels (STEER-FR-009..011,
-STEER-NFR-001/002), the pinned live frame over a reserved scroll region with its degradations and
-teardown (STEER-FR-012..016, STEER-NFR-003/004), and the unchanged trust/dependency stance
-(STEER-NFR-005).
+STEER-NFR-001/002), the bottom-anchored live bar over ordinary scrollback — heartbeat, print-above
+emission, sanitized agent echo — with its degradations and teardown (STEER-FR-012..016,
+STEER-NFR-003/004), and the unchanged trust/dependency stance (STEER-NFR-005).
 """
 
 from __future__ import annotations
 
 import io
 import json
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
 
 from threepowers import frame, notify, orchestrate, runner, runpreflight, steering, style
-from threepowers.cli import EXIT_PAUSED, EXIT_SETUP, EXIT_USAGE, main
+from threepowers.cli import EXIT_FAIL, EXIT_PAUSED, EXIT_SETUP, EXIT_USAGE, main
 from threepowers.ledger import Ledger
 from threepowers.verdict import STATUS_PASS, Verdict
 
@@ -321,6 +323,30 @@ def test_approve_after_revise_still_records_the_human_signoff(run_repo, monkeypa
     assert signoffs and signoffs[-1]["payload"]["approver"] == "human"
 
 
+def test_interactive_gate_offers_approve_revise_reject_with_text(run_repo, monkeypatch, capsys):
+    """STEER-FR-005/006: the interactive pause offers the SAME three actions the printed guidance
+    names — approve / revise / reject — taking the revision feedback and the rejection reason as
+    free text: revise re-runs the stage and returns to the same gate for a fresh decision, and the
+    reject reason is recorded in the signed ledger."""
+    answers = iter(["r", "tighten the acceptance criteria", "x", "not what I asked for"])
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers, ""))
+    monkeypatch.setattr(
+        sys, "stdin", _FakeTty()
+    )  # interactive: the gate prompts instead of exiting
+    rc = main(["--root", str(run_repo), "run", "steer the run", "--spec-id", "RUN"])
+    assert rc == EXIT_FAIL  # revised once, then rejected with a reason
+    out = capsys.readouterr().out
+    assert (
+        "revised 'specify'" in out
+    )  # the inline revise re-ran the stage and re-presented the gate
+    assert "rejected" in out and "not what I asked for" in out
+    payloads = [e["payload"] for e in _entries(run_repo) if e.get("type") == "run"]
+    revises = [p for p in payloads if p.get("kind") == "revise"]
+    assert revises and revises[-1]["feedback"] == "tighten the acceptance criteria"
+    completes = [p for p in payloads if p.get("kind") == "complete"]
+    assert completes and completes[-1].get("reason") == "not what I asked for"
+
+
 # =========================================================================== C. notifications
 def _channels_yaml(root: Path, channels: list[dict]) -> None:
     (root / ".3powers" / "config" / "notifications.yaml").write_text(
@@ -514,10 +540,48 @@ def test_email_and_desktop_channels_deliver_through_their_seams(monkeypatch):
     assert pops == ["s"]
 
 
-# =========================================================================== D. the persistent live frame
+def test_desktop_notification_script_keeps_typographic_characters(monkeypatch):
+    """STEER-FR-009 (delivery): the osascript string literal must carry the gate message's
+    typographic characters (· — ⏸) raw — AppleScript cannot parse JSON's \\uXXXX escapes, so an
+    ensure_ascii-escaped message failed delivery with CalledProcessError at every gate."""
+    calls: list = []
+    monkeypatch.setattr(notify.sys, "platform", "darwin")
+    monkeypatch.setattr(notify.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    notify._display_desktop("3pwr · RUN", "gate 'review-spec' — ⏸ approve `3pwr run --resume`", 5.0)
+    script = calls[0][-1]
+    assert "\\u" not in script  # no JSON unicode escapes — AppleScript would refuse the literal
+    assert "·" in script and "—" in script and "⏸" in script
+
+
+# =========================================================================== D. the persistent live bar
 class _FakeTty(io.StringIO):
-    def isatty(self):  # a capable terminal for the frame tests
+    def isatty(self):  # a capable terminal for the live-bar tests
         return True
+
+
+def test_run_events_stream_live_before_each_dispatch_without_duplication():
+    """STEER-FR-013: a live run surfaces each stage's step event the MOMENT its dispatch starts —
+    the bar names the running stage during a minutes-long dispatch instead of one whole segment
+    later — and `drive` skips the batched history replay, so no event is ever reported twice."""
+    order: list = []
+    events: list = []
+
+    def collect(ev):
+        events.append((ev.kind, ev.step))
+        order.append(("event", ev.kind, ev.step))
+
+    def disp(step, stage):
+        order.append(("dispatch", step))
+        return runner.StageResult(step=step, stage=stage, ok=True, outcome="ok")
+
+    r = runner.NativeRunner(dispatch=disp, run_verdict=lambda stage: "pass", on_progress=collect)
+    assert r.delivers_live_events  # drive() must not replay the history on top
+    res = orchestrate.drive(r, "auto", collect)
+    assert res.status == "paused_at_gate" and res.gate == "review-spec"
+    assert order.index(("event", "step", "specify")) < order.index(("dispatch", "specify"))
+    assert order.index(("event", "step", "clarify")) < order.index(("dispatch", "clarify"))
+    assert events.count(("step", "specify")) == 1  # live-delivered once, never replayed
+    assert ("gate-stop", "review-spec") in events
 
 
 def _tty_frame(subject="RUN", size=(100, 24), enabled=True):
@@ -526,20 +590,88 @@ def _tty_frame(subject="RUN", size=(100, 24), enabled=True):
     return buf, lf
 
 
-def test_frame_stays_pinned_while_output_streams(run_repo, monkeypatch):
-    """STEER-FR-012: the frame reserves a scroll region so the header rows stay pinned while stdout
-    streams below — the header is drawn by absolute cursor addressing, never scrolled."""
+def test_bar_streams_output_into_scrollback_and_stays_visible(run_repo, monkeypatch):
+    """STEER-FR-012: the live bar anchors at the BOTTOM of the terminal with NO scroll region —
+    content emitted through it prints ABOVE the bar into the terminal's ordinary flow, so the whole
+    conversation lands in scrollback (DECSTBM discards scrolled-out lines — the loss this replaces),
+    and the bar is repainted after every line."""
     buf, lf = _tty_frame()
     lf.note(kind="step", step="specify", stage="Spec", detail="", reached="Spec", spec_id="RUN")
     out = buf.getvalue()
-    assert f"\033[{frame.HEADER_HEIGHT + 1};24r" in out  # the reserved region below the header
-    assert "\033[1;1H" in out and "\0337" in out and "\0338" in out  # pinned redraw, cursor saved
-    for _ in range(200):  # agent output streams as ordinary writes — the region confines it
-        buf.write("agent output line\n")
+    assert re.search(r"\033\[\d+;\d+r", out) is None  # no DECSTBM scroll region — ever
+    assert "\0337" not in out and "\0338" not in out  # no absolute cursor save/address/restore
+    assert "running specify" in style.strip_ansi(out)  # the bar itself is on screen
+    for i in range(200):  # the agent conversation streams through the bar's print-above primitive
+        lf.emit(f"agent output line {i}")
+    tail = buf.getvalue()
+    assert "agent output line 0" in tail and "agent output line 199" in tail  # nothing is lost
+    assert tail.count(frame._ERASE_BAR) >= 200  # erase bar · print line · repaint, per line
     lf.note(kind="step", step="plan", stage="Plan", detail="", reached="Plan", spec_id="RUN")
-    tail = buf.getvalue()[len(out) :]
-    assert "\033[1;1H" in tail  # the header is re-addressed at the top, not appended at the bottom
     lf.close()
+    assert "\033[?25h" in buf.getvalue()  # cursor restored on teardown
+
+
+def test_bar_heartbeat_spinner_and_elapsed_are_deterministic():
+    """STEER-FR-013: while a stage runs the bar carries a heartbeat — a spinner frame that is a pure
+    function of its tick index plus an elapsed time from an injectable clock — driven by a ticker in
+    production (`build`) and directly in tests; a paused gate carries none."""
+    now = {"t": 100.0}
+    buf = _FakeTty()
+    lf = frame.LiveFrame(
+        buf, st=style.Styler(), subject="RUN", size=(100, 24), clock=lambda: now["t"]
+    )
+    lf.note(kind="step", step="implement", stage="Build", detail="", reached="Build", spec_id="RUN")
+    assert frame.spinner_glyph(0) in buf.getvalue()  # the first heartbeat frame paints immediately
+    now["t"] = 161.0
+    lf.heartbeat()
+    out = buf.getvalue()
+    assert frame.spinner_glyph(1) in out and "1m 01s" in out  # spinner advanced, elapsed shown
+    assert frame.spinner_glyph(3) == frame.spinner_glyph(13)  # pure and cyclic
+    assert frame.format_elapsed(59) == "59s" and frame.format_elapsed(61) == "1m 01s"
+    lf.note(
+        kind="gate-stop", step="review-spec", stage="Spec", detail="", reached="Spec", spec_id="RUN"
+    )
+    paused_paint = buf.getvalue().rsplit(frame._ERASE_BAR, 1)[-1]
+    assert "HUMAN GATE" in paused_paint and frame.spinner_glyph(0) not in paused_paint
+    lf.heartbeat()  # a paused bar does not tick
+    assert buf.getvalue().rsplit(frame._ERASE_BAR, 1)[-1] == paused_paint
+    lf.close()
+    live = frame.build(_FakeTty(), st=style.Styler(), env={"TERM": "xterm"}, size=(100, 24))
+    assert live is not None and live._heartbeat > 0  # the production path gets the ticker
+
+
+def test_bar_sanitizes_agent_control_sequences_but_keeps_color():
+    """STEER-FR-012/016: a streamed agent line cannot move the cursor, clear the screen, retitle the
+    terminal, or drag the cursor home — only SGR color survives sanitization (pure, STEER-NFR-003)."""
+    dirty = "\033[31mred\033[0m \033[2J\033[3;1H\033]0;title\a\rplain\0337"
+    assert frame.sanitize_line(dirty) == "\033[31mred\033[0m plain"
+    assert frame.sanitize_line(dirty) == frame.sanitize_line(dirty)
+    buf, lf = _tty_frame()
+    lf.open()
+    lf.emit("\033[2Jwipe attempt")
+    assert "\033[2J" not in buf.getvalue() and "wipe attempt" in buf.getvalue()
+    lf.close()
+
+
+def test_agent_stdout_routes_above_the_bar_through_the_echo_sink(tmp_path):
+    """STEER-FR-012/013: the runner's pump threads feed the dispatched agent's live stdout AND
+    stderr through the tracker's echo sink — each line prints above the bar in real time, into
+    ordinary scrollback, instead of clobbering the bar via raw stdout writes."""
+    buf = _FakeTty()
+    lf = frame.LiveFrame(buf, st=style.Styler(), subject="RUN", size=(100, 24))
+    tr = orchestrate.Tracker(buf, "auto", tty=True, st=style.Styler(), subject="RUN", frame_view=lf)
+    tr.begin()  # the bar is on screen BEFORE the dispatch produces any output
+    assert tr.live and "3Powers · run" in style.strip_ansi(buf.getvalue())
+    sink = tr.echo_sink()
+    code = "import sys; print('convo line'); print('err line', file=sys.stderr)"
+    rc, out, err = runner.dispatch_agent(
+        [sys.executable, "-c", code], cwd=tmp_path, stream=True, echo_out=sink, echo_err=sink
+    )
+    assert rc == 0 and "convo line" in out and "err line" in err  # output still fully captured
+    text = buf.getvalue()
+    assert "convo line" in text and "err line" in text  # …and echoed live through the bar
+    tr.close()
+    assert "\033[?25h" in buf.getvalue()
 
 
 def test_frame_marks_are_a_deterministic_function_of_the_reached_stage():
@@ -634,9 +766,9 @@ def test_frame_degrades_off_tty_json_no_color_and_small_terminals(run_repo, monk
 
 
 def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
-    """STEER-FR-016 + STEER-NFR-004: a resize re-lays the frame out without corruption; teardown —
-    normal or after an interrupt — resets the scroll region and restores the cursor, idempotently,
-    and never uses the alternate screen buffer."""
+    """STEER-FR-016 + STEER-NFR-004: a resize re-lays the bar out without corruption; teardown —
+    normal or after an interrupt — restores the cursor and leaves the bar's last state as ordinary
+    lines, idempotently, and never uses the alternate screen buffer or a scroll region."""
     buf, lf = _tty_frame(size=(100, 24))
     lf.note(kind="step", step="plan", stage="Plan", detail="", reached="Plan", spec_id="RUN")
     lf.resize()
@@ -644,7 +776,9 @@ def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
     lf.close()  # idempotent — the exception path may close again (STEER-NFR-004)
     out = buf.getvalue()
     assert "\033[?25l" in out and "\033[?25h" in out  # cursor hidden while owned, restored after
-    assert "\033[r" in out  # the scroll region is reset
+    assert (
+        re.search(r"\033\[\d+;\d+r", out) is None and "\033[r" not in out
+    )  # never a scroll region
     assert out.count("\033[?25h") == 1  # close is idempotent
     assert "\033[?1049" not in out  # never the alternate screen buffer (non-goal)
     # an interrupted run converges through the same idempotent close (the CLI's finally)
@@ -654,21 +788,22 @@ def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
         raise KeyboardInterrupt
     except KeyboardInterrupt:
         lf2.close()
-    assert "\033[?25h" in buf2.getvalue() and "\033[r" in buf2.getvalue()
+    assert "\033[?25h" in buf2.getvalue()
 
 
 def test_tracker_routes_events_through_an_injected_frame_and_closes_on_terminal_event():
-    """STEER-FR-012/013: the run tracker streams the event log INTO the region and folds each event
-    into the pinned frame; a terminal event (gate pause) finalizes the frame — region released."""
+    """STEER-FR-012/013: the run tracker prints the event log ABOVE the bar (ordinary scrollback)
+    and folds each event into it; a terminal event (gate pause) finalizes the bar — cursor restored,
+    its last state left on screen."""
     buf = _FakeTty()
     lf = frame.LiveFrame(buf, st=style.Styler(), subject="RUN", size=(100, 24))
     tr = orchestrate.Tracker(buf, "auto", tty=True, st=style.Styler(), subject="RUN", frame_view=lf)
     tr.on_event(orchestrate.Event("step", "specify", "Spec"))
-    assert "▶ running specify" in buf.getvalue()  # the pinned status line
+    assert "running specify" in style.strip_ansi(buf.getvalue())  # the bar's status line
     tr.on_event(orchestrate.Event("gate-stop", "review-spec", "Spec"))
     out = buf.getvalue()
     assert "HUMAN GATE 'review-spec'" in out  # the paused state rendered
-    assert "\033[r" in out and "\033[?25h" in out  # the frame released the terminal at the pause
+    assert "\033[?25h" in out  # the bar released the terminal at the pause
     tr.close()  # idempotent after the terminal event
 
 
