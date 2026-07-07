@@ -68,8 +68,10 @@ two human gates (spec approval, sign-off). For a hands-on drive, run the stages 
 CLI and the judiciary `/3pwr.*` prompts: `/3pwr.oracle` authors the Phase-A oracle under a different model
 family, then `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`. For an **existing/legacy**
 repo, start with `/3pwr.characterize` (reconstruct a spec + pin current behavior) before changing a module.
-The runnable sample is [`examples/validation-utils/`](../examples/validation-utils/)
-(spec id `VUTIL`). Full command list + pinned tool versions are in [`AGENTS.md`](../AGENTS.md).
+The runnable sample surface is the per-adapter end-to-end kit in [`e2e/`](../e2e/) — one small
+project per language (TypeScript, Python, Go), each driven through the whole lifecycle in a throwaway
+sandbox by `./e2e/run.sh <lang>` (`--check` for the deterministic, no-agent path). Full command list +
+pinned tool versions are in [`AGENTS.md`](../AGENTS.md).
 
 ## 3. Repo map
 
@@ -84,7 +86,7 @@ engine/                     # the `3pwr` engine (Python, uv tool) — cli, gates
                             #   memory/constitution.md, templates/, semgrep-rules.yml, ledger.jsonl, keys/ledger.pub
 .github/                    # /3pwr.* judiciary command prompts for a hands-on manual drive (no Spec Kit)
 specs/                      # authoritative specs (the epic + per-feature); 002 = the engine's own
-examples/validation-utils/  # runnable TypeScript sample
+e2e/                        # per-adapter notebook kit — real-world CLI testing in throwaway sandboxes
 docs/references/            # trust-spine tooling reference + the historical Spec Kit reference (removed by SLIM)
 plan/                       # the continuous plan series 001..029 (029 = STEER: steering an autonomous run)
 ```

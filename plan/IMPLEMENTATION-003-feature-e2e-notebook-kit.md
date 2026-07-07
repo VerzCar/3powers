@@ -2,15 +2,15 @@
 goal: Build a per-adapter Jupyter-notebook e2e testing kit under e2e/ and retire examples/ (plan 032)
 version: 1.0
 date_created: 2026-07-06
-last_updated: 2026-07-06
+last_updated: 2026-07-07
 owner: 3Powers maintainers
-status: 'Planned'
+status: 'Completed'
 tags: [feature, e2e, testing, notebooks, adapters, docs]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This implementation plan executes [plan/032-e2e-adapter-notebook-projects.md](032-e2e-adapter-notebook-projects.md).
 It delivers, as one delivery unit on branch `claude/3powers-e2e-testing-plan-lo46g1`, a
@@ -194,9 +194,9 @@ e2e/python-inventory` lists source + lockfile only.
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-012 | [B] Scaffold `e2e/go-ratelimit/project/`: a rate-limiter service — an idiomatic package layout with token-bucket and sliding-window strategies behind one interface, a limiter registry, a small logging abstraction, typed error handling. No I/O (GUD-001). |           |      |
-| TASK-013 | [B] Wire the toolchain exactly to `scaffold/adapters/go/adapter.yaml`: `go.mod` + committed `go.sum`; ensure `gofmt -l .` is empty, `go vet ./...` and `go build ./...` clean; `go test -covermode=atomic -coverprofile=cover.out ./...` piped through `gcov2lcov` to `coverage/lcov.info`. Add table-driven unit tests + integration tests using `func TestX` + `t.Errorf`/`t.Fatalf` (matching the adapter's conformance patterns). `README.md`, `.gitignore` (ignoring `coverage/`, `cover.out`), `.editorconfig`. |           |      |
-| TASK-014 | [B] Verify from a fresh sandbox: `go mod download`; `gofmt`/`go vet`/`go build` clean; `go test` + `gcov2lcov` produce `coverage/lcov.info`; `3pwr gate run` Standard tier green (mutation stays opt-in per the adapter's `tier_min: High-risk`). Confirm outer repo tracks source + `go.mod`/`go.sum` only (CON-005/CON-007). Commit the Go project. |           |      |
+| TASK-012 | [B] Scaffold `e2e/go-ratelimit/project/`: a rate-limiter service — an idiomatic package layout with token-bucket and sliding-window strategies behind one interface, a limiter registry, a small logging abstraction, typed error handling. No I/O (GUD-001). | ✅ | 2026-07-07 |
+| TASK-013 | [B] Wire the toolchain exactly to `scaffold/adapters/go/adapter.yaml`: `go.mod` + committed `go.sum`; ensure `gofmt -l .` is empty, `go vet ./...` and `go build ./...` clean; `go test -covermode=atomic -coverprofile=cover.out ./...` piped through `gcov2lcov` to `coverage/lcov.info`. Add table-driven unit tests + integration tests using `func TestX` + `t.Errorf`/`t.Fatalf` (matching the adapter's conformance patterns). `README.md`, `.gitignore` (ignoring `coverage/`, `cover.out`), `.editorconfig`. | ✅ | 2026-07-07 |
+| TASK-014 | [B] Verify from a fresh sandbox: `go mod download`; `gofmt`/`go vet`/`go build` clean; `go test` + `gcov2lcov` produce `coverage/lcov.info`; `3pwr gate run` Standard tier green (mutation stays opt-in per the adapter's `tier_min: High-risk`). Confirm outer repo tracks source + `go.mod`/`go.sum` only (CON-005/CON-007). Commit the Go project. | ✅ | 2026-07-07 |
 
 Validation: fresh-sandbox `3pwr gate run` green for `go-ratelimit`; `git ls-files e2e/go-ratelimit`
 lists source + `go.mod`/`go.sum` only.
@@ -210,14 +210,20 @@ lists source + `go.mod`/`go.sum` only.
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-015 | [C] Author `e2e/typescript-orders/run.ipynb` implementing the identical 10-cell skeleton (PAT-001): (1) papermill Parameters cell — `INTENT` default "add a percentage-based bulk discount rule to order pricing", `INTEGRATION` from config, `MODE=auto`, `TIER=Standard`, `APPROVER=e2e-harness`, `KEEP_SANDBOX=false`, `DRY_RUN=false`; (2) toolchain preflight via the adapter's `probe` commands + `3pwr` + (unless DRY_RUN) the agent CLI, failing fast with the exact install hint; (3) sandbox provisioning via `bootstrap.py`; (4) trust setup (keygen/init/config overlay already done by bootstrap — assert it); (5) **baseline `3pwr gate run` must be green before the lifecycle run**; (6) `3pwr run "$INTENT" --mode auto --no-input` (`--dry-run` when DRY_RUN), assert the documented spec-gate pause (exit 3); (7) render the generated spec, then `3pwr run --resume --approver "$APPROVER"`; (8) same resume at sign-off; (9) post-run invariant assertions (`3pwr verify` exit 0; `3pwr status` shows the completed run; `specs/<NNN>-<slug>/` has stage artifacts; one behavioral smoke — the bulk-discount rule is present); (10) teardown (remove sandbox unless KEEP_SANDBOX; print path first). Commit with **cleared outputs** (CON-008). |           |      |
-| TASK-016 | [C] Author `e2e/python-inventory/run.ipynb` and `e2e/go-ratelimit/run.ipynb` as byte-identical copies of the skeleton, differing only in the Parameters cell (language, canned INTENT — "add a low-stock reorder suggestion to the inventory service" / "add a fixed-window rate-limiting strategy") and the single behavioral smoke assertion in cell 9. Committed with cleared outputs. |           |      |
-| TASK-017 | [C] Run `./e2e/run.sh typescript --check`, `./e2e/run.sh python --check`, `./e2e/run.sh go --check` — each provisions its sandbox, passes baseline gates, and runs `3pwr run --dry-run` with no agent dispatch. All three exit 0. Fix any harness/notebook wiring issues. |           |      |
-| TASK-018 | [C] Run one full agent-driven lifecycle run per language (`./e2e/run.sh typescript`, then python, then go) with a working `copilot` CLI; confirm the post-run invariant assertions pass and the run completes green. Record each run's outcome in the delivery commit message (invariants only — never assert exact agent-authored content, plan 032 risk 2). Commit Track C. |           |      |
+| TASK-015 | [C] Author `e2e/typescript-orders/run.ipynb` implementing the identical 10-cell skeleton (PAT-001): (1) papermill Parameters cell — `INTENT` default "add a percentage-based bulk discount rule to order pricing", `INTEGRATION` from config, `MODE=auto`, `TIER=Standard`, `APPROVER=e2e-harness`, `KEEP_SANDBOX=false`, `DRY_RUN=false`; (2) toolchain preflight via the adapter's `probe` commands + `3pwr` + (unless DRY_RUN) the agent CLI, failing fast with the exact install hint; (3) sandbox provisioning via `bootstrap.py`; (4) trust setup (keygen/init/config overlay already done by bootstrap — assert it); (5) **baseline `3pwr gate run` must be green before the lifecycle run**; (6) `3pwr run "$INTENT" --mode auto --no-input` (`--dry-run` when DRY_RUN), assert the documented spec-gate pause (exit 3); (7) render the generated spec, then `3pwr run --resume --approver "$APPROVER"`; (8) same resume at sign-off; (9) post-run invariant assertions (`3pwr verify` exit 0; `3pwr status` shows the completed run; `specs/<NNN>-<slug>/` has stage artifacts; one behavioral smoke — the bulk-discount rule is present); (10) teardown (remove sandbox unless KEEP_SANDBOX; print path first). Commit with **cleared outputs** (CON-008). | ✅ | 2026-07-07 |
+| TASK-016 | [C] Author `e2e/python-inventory/run.ipynb` and `e2e/go-ratelimit/run.ipynb` as byte-identical copies of the skeleton, differing only in the Parameters cell (language, canned INTENT — "add a low-stock reorder suggestion to the inventory service" / "add a fixed-window rate-limiting strategy") and the single behavioral smoke assertion in cell 9. Committed with cleared outputs. | ✅ | 2026-07-07 |
+| TASK-017 | [C] Run `./e2e/run.sh typescript --check`, `./e2e/run.sh python --check`, `./e2e/run.sh go --check` — each provisions its sandbox, passes baseline gates, and runs `3pwr run --dry-run` with no agent dispatch. All three exit 0. Fix any harness/notebook wiring issues. | ✅ | 2026-07-07 |
+| TASK-018 | [C] Run one full agent-driven lifecycle run per language (`./e2e/run.sh typescript`, then python, then go) with a working `copilot` CLI; confirm the post-run invariant assertions pass and the run completes green. Record each run's outcome in the delivery commit message (invariants only — never assert exact agent-authored content, plan 032 risk 2). Commit Track C. | ⏳ | needs live `copilot` creds |
 
 Validation: `./e2e/run.sh <lang> --check` exits 0 for all three; one full run per language completes
 with `3pwr verify` green and post-run invariants satisfied; committed notebooks have empty outputs
 (`git diff --stat` shows no output churn on re-open).
+
+> **Residual (TASK-018):** the deterministic `--check` path is verified for all three languages
+> (baseline gates green → both human gates exercised via `--resume` on the sim runner → `3pwr verify`
+> green → teardown). The live agent-driven run per language is credential-gated (a working `copilot`
+> CLI + credentials, DEP-004 / RISK-001) and was not executed in the delivery environment; run it where
+> that CLI is available to close TASK-018.
 
 ### Phase 6
 
@@ -227,7 +233,7 @@ with `3pwr verify` green and post-run invariants satisfied; committed notebooks 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-019 | [C] Write `e2e/README.md`: prerequisites (uv, node, go, `gcov2lcov`, a `copilot` agent CLI); the ephemeral-sandbox model (why runs are copied out of the repo); the one-command runs (`./e2e/run.sh <lang>` for a full run, `--check` for the deterministic no-agent path); how an agent should drive a notebook (run cells top-to-bottom, read the rendered spec at the pause, then resume); and the invariants — committed notebooks are the fixed configuration (edit the procedure in the notebook, nowhere else) and are committed with cleared outputs. Open-source ready, no internal IDs. |           |      |
+| TASK-019 | [C] Write `e2e/README.md`: prerequisites (uv, node, go, `gcov2lcov`, a `copilot` agent CLI); the ephemeral-sandbox model (why runs are copied out of the repo); the one-command runs (`./e2e/run.sh <lang>` for a full run, `--check` for the deterministic no-agent path); how an agent should drive a notebook (run cells top-to-bottom, read the rendered spec at the pause, then resume); and the invariants — committed notebooks are the fixed configuration (edit the procedure in the notebook, nowhere else) and are committed with cleared outputs. Open-source ready, no internal IDs. | ✅ | 2026-07-07 |
 
 Validation: `e2e/README.md` renders; `grep -nE '\b[A-Z][A-Z0-9]{2,}-(FR|NFR)-[0-9]{2,3}\b' e2e/README.md`
 finds nothing; links to the per-project notebooks resolve.
@@ -241,11 +247,11 @@ finds nothing; links to the per-project notebooks resolve.
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-020 | [D] Update `AGENTS.md`: repository-layout block (drop `examples/validation-utils/`, add `e2e/` with a one-line description); key-technologies line (replace the TypeScript-sample mention with the e2e kit); setup commands (replace the `cd examples/validation-utils && npm install` line with the e2e prerequisites + `./e2e/run.sh <lang> --check`); testing instructions (replace the validation-utils commands with the e2e run commands and add the rule: **real-world testing of the `3pwr` CLI happens in the `e2e/` notebook projects — drive them via `./e2e/run.sh`; the former `examples/` folder is deleted**). |           |      |
-| TASK-021 | [D] Update `CLAUDE.md`: replace the `examples/validation-utils/package-lock.json` lockfile reference with the e2e lockfiles; add the same real-world-testing instruction to "Working in this repo". |           |      |
-| TASK-022 | [D] Update `README.md` (quickstart gate-run demo re-targeted at an e2e project path or the engine itself), `docs/getting-started.md` ("try it on the sample" section rewritten around `e2e/` + `run.sh`, linking `e2e/README.md`), `docs/cli-reference.md` (the four example blocks using `examples/validation-utils`/`specs/001-validation-utils` paths → neutral e2e-based or placeholder paths; behavior text unchanged), and `docs/STATUS.md` (sample references updated; the e2e kit recorded as the runnable sample surface — STATUS stays the single status source). |           |      |
-| TASK-023 | [D] Update the two `dependencies.yaml` comment copies in lockstep (same commit): `.3powers/config/dependencies.yaml` and `engine/src/threepowers/scaffold/config/dependencies.yaml` — the comments citing "supported ranges vs. the `examples/validation-utils/package-lock.json` lockfile" now cite `e2e/typescript-orders/project/package-lock.json`. |           |      |
-| TASK-024 | [D] Delete the `examples/` folder (`git rm -r examples/`). Run the closing checks: `grep -rn "examples/validation-utils" .` excluding `specs/`, `plan/`, `.git`, `.3powers/ledger.jsonl`, `.3powers/verdicts/` returns nothing; `test ! -d examples`; `(cd engine && uv run pytest && uv run ruff check . && uv run mypy src)` green (re-point any test fixture referencing the examples path in this same commit, CON-004). `specs/001-validation-utils/` left untouched (CON-003). Set this plan's front-matter `status` to `Completed` and mark task tables done. Commit Track D. |           |      |
+| TASK-020 | [D] Update `AGENTS.md`: repository-layout block (drop `examples/validation-utils/`, add `e2e/` with a one-line description); key-technologies line (replace the TypeScript-sample mention with the e2e kit); setup commands (replace the `cd examples/validation-utils && npm install` line with the e2e prerequisites + `./e2e/run.sh <lang> --check`); testing instructions (replace the validation-utils commands with the e2e run commands and add the rule: **real-world testing of the `3pwr` CLI happens in the `e2e/` notebook projects — drive them via `./e2e/run.sh`; the former `examples/` folder is deleted**). | ✅ | 2026-07-07 |
+| TASK-021 | [D] Update `CLAUDE.md`: replace the `examples/validation-utils/package-lock.json` lockfile reference with the e2e lockfiles; add the same real-world-testing instruction to "Working in this repo". | ✅ | 2026-07-07 |
+| TASK-022 | [D] Update `README.md` (quickstart gate-run demo re-targeted at an e2e project path or the engine itself), `docs/getting-started.md` ("try it on the sample" section rewritten around `e2e/` + `run.sh`, linking `e2e/README.md`), `docs/cli-reference.md` (the four example blocks using `examples/validation-utils`/`specs/001-validation-utils` paths → neutral e2e-based or placeholder paths; behavior text unchanged), and `docs/STATUS.md` (sample references updated; the e2e kit recorded as the runnable sample surface — STATUS stays the single status source). | ✅ | 2026-07-07 |
+| TASK-023 | [D] Update the two `dependencies.yaml` comment copies in lockstep (same commit): `.3powers/config/dependencies.yaml` and `engine/src/threepowers/scaffold/config/dependencies.yaml` — the comments citing "supported ranges vs. the `examples/validation-utils/package-lock.json` lockfile" now cite `e2e/typescript-orders/project/package-lock.json`. | ✅ | 2026-07-07 |
+| TASK-024 | [D] Delete the `examples/` folder (`git rm -r examples/`). Run the closing checks: `grep -rn "examples/validation-utils" .` excluding `specs/`, `plan/`, `.git`, `.3powers/ledger.jsonl`, `.3powers/verdicts/` returns nothing; `test ! -d examples`; `(cd engine && uv run pytest && uv run ruff check . && uv run mypy src)` green (re-point any test fixture referencing the examples path in this same commit, CON-004). `specs/001-validation-utils/` left untouched (CON-003). Set this plan's front-matter `status` to `Completed` and mark task tables done. Commit Track D. | ✅ | 2026-07-07 |
 
 Validation: `test ! -d examples && echo gone`; the repo-wide grep is empty; engine suite green;
 `specs/001-validation-utils/` unchanged.
