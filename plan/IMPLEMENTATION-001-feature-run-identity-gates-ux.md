@@ -10,7 +10,7 @@ tags: [feature, architecture, cli, ux, gates]
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This implementation plan executes [plan/030-run-identity-gates-ux.md](030-run-identity-gates-ux.md). It delivers seven
 independently testable tracks in two delivery units on branch `feat/030-run-identity-gates-ux`:
