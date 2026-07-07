@@ -1,0 +1,43 @@
+# The single shared headless-integration config for the end-to-end kit.
+#
+# Every sandbox is seeded with THIS file after `3pwr init`; no sample project
+# carries its own copy. It binds the coder and the judiciary (oracle) roles to a
+# headless agent backend and a model. Both roles run on one backend — `copilot` —
+# yet resolve to two different model *families*, so the recommended coder-vs-oracle
+# diversity holds without needing a second CLI installed. Switch the whole kit to
+# another backend by editing the two `integration` values here.
+#
+# `diversity_level: family` means the oracle and coder must be different model
+# families. `oracle.require_dispatch` is left at its default (false): a High-risk
+# advance would then only need the manual oracle record, not an isolated headless
+# dispatch attestation.
+version: 1
+diversity_enforced: true
+diversity_level: family
+
+# Agent backends a live `3pwr run` can dispatch headlessly. Edit to match the CLIs
+# you have installed; the `--check` / dry-run path needs none of them.
+headless_integrations: [copilot, claude, codex, opencode, aider]
+
+roles:
+  planner:
+    integration: copilot
+    model: gpt-5.5
+    model_family: openai
+    label: GPT 5.5
+  coder:
+    integration: copilot
+    model: gpt-5.5
+    model_family: openai
+    label: GPT 5.5
+  oracle:
+    integration: copilot
+    model: claude-opus-4.8
+    model_family: anthropic
+    label: Claude Opus 4.8
+    require_dispatch: false
+  reviewer:
+    integration: copilot
+    model: claude-opus-4.8
+    model_family: anthropic
+    label: Claude Opus 4.8
