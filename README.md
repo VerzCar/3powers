@@ -89,16 +89,14 @@ cd /path/to/your/project && 3pwr init
 
 Every stage is also a command you can run by hand. Author and plan the work with the `3pwr` CLI, then — switching the chat model for the judiciary — drive the independent answer key and gates with the `/3pwr.*` prompts: `/3pwr.oracle` (the independent answer key) → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`. On an *existing* codebase, start with `/3pwr.characterize`.
 
-You can also drive the gates directly. Here it runs on the bundled TypeScript sample, after `3pwr init` has created your signer:
+You can also drive the gates directly. Real-world CLI testing lives in the **`e2e/` kit** — a small sample project per language adapter, each with a fixed notebook that provisions a throwaway sandbox and drives the whole lifecycle. The one-command entry point:
 
 ```bash
-(cd examples/validation-utils && npm install)
-3pwr gate run --path examples/validation-utils \
-              --spec specs/001-validation-utils/spec.md --tier Standard
-3pwr verify                                                    # recompute the signed ledger, offline
-3pwr signoff --approver "$(git config user.name)" --stage review --spec-id VUTIL
-3pwr advance --stage ship          # refuses without a green verdict AND a human sign-off
+./e2e/run.sh typescript            # full lifecycle run (dispatches the configured headless agent)
+./e2e/run.sh typescript --check    # deterministic, no-agent path: baseline gates + a sim-runner run
 ```
+
+Inside the sandbox it drives the same commands you can run by hand — `3pwr gate run` (Standard tier), then `3pwr verify` (recompute the signed ledger, offline), `3pwr signoff`, and `3pwr advance` (which refuses without a green verdict **and** a human sign-off).
 
 Every run emits one normalized verdict a human can read without opening a single agent transcript:
 

@@ -11,7 +11,7 @@
 # version that works with 3Powers; when an upstream release drifts, this flags it for adaptation.
 #
 # Exact transitive pins still live in the lockfiles (engine/uv.lock,
-# examples/validation-utils/package-lock.json); this file governs the *supported ranges*.
+# e2e/typescript-orders/project/package-lock.json); this file governs the *supported ranges*.
 version: 1
 
 components:
@@ -73,7 +73,7 @@ components:
     supported: ">=8"
     on_drift: warn
 
-  # TypeScript reference adapter toolchain is pinned by examples/validation-utils/package-lock.json
+  # TypeScript reference adapter toolchain is pinned by e2e/typescript-orders/project/package-lock.json
   # (Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6). `node` above covers its runtime; per-tool
   # probes are project-local (run via `npx` inside the sample) and omitted here to avoid false misses.
 

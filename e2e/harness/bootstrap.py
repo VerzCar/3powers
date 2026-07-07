@@ -151,6 +151,13 @@ def provision(
     # 1. Copy the template (source + lockfiles only).
     shutil.copytree(template, sandbox_dir, ignore=_COPY_IGNORE)
 
+    # The adapter tests gate writes coverage to `coverage/lcov.info`. Node/pytest
+    # coverage reporters create that directory themselves, but Go's gcov2lcov does
+    # not — it fails if the parent is missing. The directory is gitignored in every
+    # template, so pre-creating it here is invisible to git and safe for all
+    # languages.
+    (sandbox_dir / "coverage").mkdir(exist_ok=True)
+
     git_env = _git_env()
 
     # 2. git init + initial commit.

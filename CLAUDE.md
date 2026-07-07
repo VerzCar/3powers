@@ -27,8 +27,8 @@ read STATUS.
 
 ## Build / test / gate commands
 
-Authoritative pinned versions live in the lockfiles (`engine/uv.lock`,
-`examples/validation-utils/package-lock.json`).
+Authoritative pinned versions live in the lockfiles (`engine/uv.lock`, the e2e harness
+`e2e/harness/uv.lock`, and the per-adapter sample lockfiles under `e2e/<name>/project/`).
 
 ```bash
 uv tool install ./engine            # install the `3pwr` command (reinstall with --force after engine changes)
@@ -97,6 +97,10 @@ Build → Verify → Review → Ship → Observe. Three pillars carry the trust 
 - **Engine changes must keep the engine green under its own gates** (ruff/mypy/pytest; `diff_coverage` and
   conformance via `3pwr gate run --path engine`). Trust-spine modules (`canonical`, `keys`, `ledger`,
   `verify`) are High-risk — hold their coverage ≥95%.
+- **Real-world testing of the `3pwr` CLI happens in the `e2e/` notebook projects** — one small sample per
+  language adapter, each driven through the whole lifecycle in a throwaway sandbox via `./e2e/run.sh <lang>`
+  (`--check` for the deterministic, no-agent path). See [`e2e/README.md`](e2e/README.md). There is no
+  top-level `examples/` folder.
 - **Everything public-facing must be open-source ready** (see [`AGENTS.md`](AGENTS.md)): no internal
   plan/spec/requirement references in `docs/` or CLI help, and every behavior change lands with a
   matching docs update in the same unit of work.

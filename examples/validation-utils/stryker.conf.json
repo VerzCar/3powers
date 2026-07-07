@@ -1,8 +1,0 @@
-{
-  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-core.json",
-  "testRunner": "vitest",
-  "reporters": ["clear-text", "progress"],
-  "coverageAnalysis": "perTest",
-  "mutate": ["src/validate.ts"],
-  "comment": "Wired for the High-risk tier; non-blocking in plan 001 (3PWR §17)."
-}
