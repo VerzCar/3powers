@@ -381,7 +381,7 @@ def test_require_dispatch_is_explained_where_the_config_lives(tmp_path):
     scaffold.set_role_model(s, "oracle", model="anthropic/claude-opus-4-8", integration="claude")
     rewritten = s.roles_path.read_text(encoding="utf-8")
     assert "require_dispatch" in rewritten
-    assert "default false" in rewritten and "3PWR-FR-021" in rewritten
+    assert "default false" in rewritten
     assert "oracle dispatch" in rewritten  # what it enforces
     docs = (REPO / "docs" / "cli-reference.md").read_text(encoding="utf-8")
     assert "require_dispatch" in docs

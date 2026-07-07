@@ -108,7 +108,7 @@ class FrameState:
     reached: str = "Discovery"  # the lifecycle stage the run has reached
     status: str = "running"  # running | paused | failed | done | aborted
     activity: str = ""  # the active step / gate / failure class
-    guidance: str = ""  # the gate action guidance, shown while paused (STEER-FR-013)
+    guidance: str = ""  # the gate action guidance, shown while paused
 
 
 def stage_marks(reached: str) -> list[tuple[str, str]]:

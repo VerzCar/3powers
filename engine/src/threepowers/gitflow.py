@@ -31,9 +31,9 @@ from .runner import _changed_files, _git
 
 # The named guards a signed deviation may relax (GITX-FR-014): each relaxable guard maps to exactly
 # one deviation gate — a relaxation is always a signed, revocable ledger entry, never a flag.
-GATE_CLEAN_START = "git_clean_start"  # the clean-start guard (GITX-FR-007)
-GATE_STAGE_COMMIT = "git_stage_commit"  # the mandatory per-stage commit (GITX-FR-010)
-GATE_RUN_BRANCH = "git_run_branch"  # the branch-isolation guard at stage boundaries (GITX-FR-016)
+GATE_CLEAN_START = "git_clean_start"  # the clean-start guard
+GATE_STAGE_COMMIT = "git_stage_commit"  # the mandatory per-stage commit
+GATE_RUN_BRANCH = "git_run_branch"  # the branch-isolation guard at stage boundaries
 GIT_GUARDS: tuple[str, ...] = (GATE_CLEAN_START, GATE_STAGE_COMMIT, GATE_RUN_BRANCH)
 
 # Failure classes for the run's git hooks — additive values on the existing run/failure record

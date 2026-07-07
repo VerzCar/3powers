@@ -166,32 +166,32 @@ class CommandSigner:
         # argv-style, never a shell (a signer needing pipes/expansion wraps them in a script).
         argv = shlex.split(self.cmd)
         if not argv:
-            raise ExternalSignerError("external signer command is empty (HARDN-FR-006)")
+            raise ExternalSignerError("external signer command is empty")
         try:
             res = subprocess.run(argv, input=data, capture_output=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ExternalSignerError(
                 f"external signer could not run ({self.cmd!r}): {exc} — refusing to fall "
-                "back to a software key (HARDN-FR-006)"
+                "back to a software key"
             ) from exc
         if res.returncode != 0:
             err = res.stderr.decode(errors="replace").strip()
             raise ExternalSignerError(
                 f"external signer exited {res.returncode}: {err or 'no diagnostics'} — "
-                "refusing to fall back to a software key (HARDN-FR-006)"
+                "refusing to fall back to a software key"
             )
         try:
             sig = base64.b64decode(res.stdout.strip(), validate=True)
         except (ValueError, TypeError) as exc:
             raise ExternalSignerError(
                 "external signer output is not base64 — expected the Ed25519 signature "
-                "of stdin on stdout (HARDN-FR-006)"
+                "of stdin on stdout"
             ) from exc
         if len(sig) != 64 or not self.public.verify(sig, data):
             raise ExternalSignerError(
                 "external signer produced a signature that does not verify against the "
                 f"committed public key {self.public.key_id} — misconfigured signer or "
-                "wrong key (HARDN-FR-006)"
+                "wrong key"
             )
         return sig
 
@@ -205,7 +205,7 @@ def _command_signer(cmd: str, pub_path: Path, env_name: str) -> CommandSigner:
     if not pub_path.exists():
         raise ExternalSignerError(
             f"${env_name} is set but no committed public key exists at {pub_path} — "
-            "install the external signer's public key there first (HARDN-FR-006)"
+            "install the external signer's public key there first"
         )
     return CommandSigner(cmd=cmd, public=load_public(pub_path))
 
@@ -275,7 +275,7 @@ def custody_findings(repo_root: Path) -> list[str]:
             findings.append(
                 f"key_custody: private key at {label} resolves INSIDE the working tree — "
                 "an executive agent with repo access can read it; move it outside the "
-                "repository (3PWR-NFR-005)"
+                "repository"
             )
         if path.exists() and _mode_too_open(path):
             findings.append(
@@ -310,7 +310,7 @@ def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
         return sk
     raise FileNotFoundError(
         "No signing key found. Run `3pwr keygen` or set $THREEPOWERS_SIGNING_KEY_FILE. "
-        "The private key must live OUTSIDE the repository (3PWR-NFR-005)."
+        "The private key must live OUTSIDE the repository."
     )
 
 

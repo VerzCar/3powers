@@ -37,8 +37,8 @@ ENTRY_TYPES = (
     "observe",
     "agent_action",
     "run",
-    "key_rotation",  # signer succession, authored by the OUTGOING key (HARDN-FR-004)
-    "anchor",  # local receipt of an external ledger-head anchor (HARDN-FR-005)
+    "key_rotation",  # signer succession, authored by the OUTGOING key
+    "anchor",  # local receipt of an external ledger-head anchor
 )
 
 

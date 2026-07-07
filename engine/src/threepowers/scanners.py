@@ -122,7 +122,7 @@ def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
                 findings=core,
             )
         q = _quarantine("secret_scan", "betterleaks/gitleaks")
-        q.findings.append("core ed25519-priv private-key check ran clean (HARDN-FR-003)")
+        q.findings.append("core ed25519-priv private-key check ran clean")
         return q
     with tempfile.TemporaryDirectory() as td:
         report = Path(td) / "secrets.json"

@@ -39,7 +39,7 @@ class SpecState:
     last_verdict_seq: int = -1
     aborted: bool = False
     last_seq: int = -1
-    pending_gate: str = ""  # a `3pwr run` orchestration paused at this human gate (3PWR-FR-011/019)
+    pending_gate: str = ""  # a `3pwr run` orchestration paused at this human gate
     # The most recent UNRESOLVED run failure (AUTOX-FR-006/007): set by a `run`/`failure` ledger
     # record, cleared by any later progress (a stage completing, a gate, a verdict, a sign-off…).
     # The latest failure wins; earlier ones remain in the append-only ledger as history.

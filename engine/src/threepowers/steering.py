@@ -27,7 +27,7 @@ from . import workspace
 # The step a revise re-dispatches per human gate (STEER-FR-006): the action step that OWNS the artifact
 # the gate reviews — deterministic, derived from the lifecycle's own step→stage assignment.
 REVISE_TARGETS: dict[str, tuple[str, str]] = {
-    "review-spec": ("specify", "Spec"),  # the spec artifact under human review (3PWR-FR-006)
+    "review-spec": ("specify", "Spec"),  # the spec artifact under human review
     "review-plan": ("plan", "Plan"),
     "review-verify": ("implement", "Build"),
     "signoff": (

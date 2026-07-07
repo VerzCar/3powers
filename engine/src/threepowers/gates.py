@@ -305,7 +305,7 @@ def _no_spec_skip(gate: str) -> GateResult:
     return GateResult(
         gate=gate,
         status=STATUS_SKIP,
-        findings=["no spec resolved — brownfield report-only/diff-scope (3PWR-FR-052)"],
+        findings=["no spec resolved — brownfield report-only/diff-scope"],
     )
 
 

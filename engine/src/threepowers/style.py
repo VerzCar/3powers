@@ -63,7 +63,7 @@ _STATUS_GLYPH_ASCII: dict[str, str] = {
     "info": "i",
 }
 
-_ANSI_RE = re.compile(r"\033\[[0-9;]*m")  # a strip matcher only, never construction (TRIX-FR-008)
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")  # a strip matcher only, never construction
 
 
 def strip_ansi(text: str) -> str:

@@ -34,7 +34,7 @@ def signal_payload(kind: str, note: str, nfr: str, routed_to: str) -> dict:
 
 
 _FB_HEADER = (
-    "# Feedback intents — production lessons routed back to the legislature (3PWR-FR-054)\n\n"
+    "# Feedback intents — production lessons routed back to the legislature\n\n"
     "> Each entry is a **new requirement candidate**. Take it into a new `3pwr run` spec — do NOT patch "
     "in place. The loop returns to the spec, not to ad-hoc fixes.\n\n"
 )

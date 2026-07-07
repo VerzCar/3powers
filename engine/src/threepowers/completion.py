@@ -157,8 +157,7 @@ def render_oracle_record(spec_id: str, linked: Sequence[str]) -> str:
         f"# Oracle record — {spec_id}",
         "",
         "Phase-A oracle tests authored from the spec's acceptance criteria. The tests live at their",
-        "real repository paths (linked below) — this record neither relocates nor duplicates them",
-        "(SRCX-FR-005).",
+        "real repository paths (linked below) — this record neither relocates nor duplicates them.",
         "",
         "## Authored oracle tests",
         "",
@@ -183,7 +182,7 @@ def render_implement_record(
         f"# Implement record — {spec_id}",
         "",
         "The implementation changes live at their real repository paths (linked below) — this record",
-        "neither relocates nor duplicates them (SRCX-FR-005).",
+        "neither relocates nor duplicates them.",
         "",
     ]
     if phases:

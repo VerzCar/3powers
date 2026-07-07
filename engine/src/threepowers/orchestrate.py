@@ -77,9 +77,7 @@ class Outcome:
     outcome: str = (
         ""  # a finer failure class: gate_red | verdict_error | dispatch_failed | artifact_missing
     )
-    detail: str = (
-        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
-    )
+    detail: str = ""  # a human-readable failure detail (e.g. the missing-artifact message)
     events: list[Event] = field(default_factory=list)
 
 
@@ -98,9 +96,7 @@ class RunResult:
     outcome: str = (
         ""  # a finer failure class (RUNLIVE): dispatch_failed | artifact_missing | verdict_error
     )
-    detail: str = (
-        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
-    )
+    detail: str = ""  # a human-readable failure detail (e.g. the missing-artifact message)
 
     @property
     def is_gate_red(self) -> bool:

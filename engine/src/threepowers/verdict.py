@@ -25,7 +25,7 @@ GATE_ORDER = [
     "format",
     "lint",
     "types",
-    "spec_integrity",  # the approved spec is unchanged — fails fast, before any test (SLOCK-FR-004)
+    "spec_integrity",  # the approved spec is unchanged — fails fast, before any test
     "tests",
     "diff_coverage",
     "mutation",
@@ -34,11 +34,11 @@ GATE_ORDER = [
     "secret_scan",
     "gate_gaming",
     "spec_conformance",
-    "defect_regression",  # work-kind: defect (3PWR-FR-008)
-    "contract_check",  # work-kind: design — structural/API contract (3PWR-FR-009)
-    "component_contract",  # work-kind: design — component contract (3PWR-FR-009)
-    "a11y_scan",  # work-kind: design — accessibility (3PWR-FR-009)
-    "visual_regression",  # work-kind: design — visual regression (3PWR-FR-009)
+    "defect_regression",  # work-kind: defect
+    "contract_check",  # work-kind: design — structural/API contract
+    "component_contract",  # work-kind: design — component contract
+    "a11y_scan",  # work-kind: design — accessibility
+    "visual_regression",  # work-kind: design — visual regression
 ]
 
 STATUS_PASS = "pass"

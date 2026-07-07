@@ -182,7 +182,7 @@ def write_onboarding(
         "# 3Powers onboarding preferences.\n"
         "# Advisory only: `auto_mode` selects the default `3pwr run` mode when --mode is omitted,\n"
         "# `tier` is the tier a new spec starts at, and `auto_commit` toggles per-stage auto-commit.\n"
-        "# None suppresses a mandatory human gate or weakens a threshold (ONBRD-NFR-004 / INITX-NFR-002).\n"
+        "# None suppresses a mandatory human gate or weakens a threshold.\n"
         "version: 1\n"
         "defaults:\n"
         f"  auto_mode: {str(bool(auto_mode)).lower()}\n"
@@ -201,26 +201,25 @@ _ROLES_HEADER = (
     "# Each role block: model_family, model, integration (an agent backend under\n"
     "# .3powers/agents/), label (a human-friendly name).\n"
     "#\n"
-    "# oracle.require_dispatch (default false) is the High-risk read-path-isolation policy\n"
-    "# (3PWR-FR-021, epic A3): when true, a High-risk `advance` refuses unless an ISOLATED\n"
+    "# oracle.require_dispatch (default false) is the High-risk read-path-isolation policy:\n"
+    "# when true, a High-risk `advance` refuses unless an ISOLATED\n"
     "# HEADLESS-DISPATCH attestation (`3pwr oracle dispatch`) proves the oracle was authored with\n"
     "# the implementation/plan/tasks/contracts physically absent from its worktree. Leave it false\n"
     "# while authoring the oracle in-IDE; enable it once the project adopts headless oracle\n"
     "# authoring at High-risk.\n"
     "#\n"
-    "# Model diversity (oracle/reviewer vs coder) is RECOMMENDED, never forced (3PWR-FR-022): a\n"
+    "# Model diversity (oracle/reviewer vs coder) is RECOMMENDED, never forced: a\n"
     "# same-family setup proceeds under a signed, reversible deviation \u2014\n"
-    '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`\n'
-    "# (3PWR-FR-057).\n"
+    '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`.\n'
     "#\n"
-    '# `diversity_level` (default `family`) is how "diverse enough" is judged (3PWR-FR-022):\n'
+    '# `diversity_level` (default `family`) is how "diverse enough" is judged:\n'
     "#   family \u2014 the oracle and coder must be different model *families*.\n"
     "#   model  \u2014 a different *model* in one family qualifies (e.g. opus vs sonnet).\n"
     "# One BYOK integration (e.g. copilot) can serve several families: pick a coder model in one\n"
     "# family and an oracle model in another and `family` diversity holds with a single CLI.\n"
     "#\n"
-    "# `headless_integrations` lists the agent-backend CLIs a LIVE `3pwr run` may dispatch headlessly\n"
-    "# (EXEC-FR-015/NFR-003) \u2014 set by `3pwr init`'s multi-select to the CLIs you have installed.\n"
+    "# `headless_integrations` lists the agent-backend CLIs a LIVE `3pwr run` may dispatch\n"
+    "# headlessly \u2014 set by `3pwr init`'s multi-select to the CLIs you have installed.\n"
 )
 
 
@@ -315,9 +314,9 @@ def set_diversity_level(settings: Settings, level: str) -> None:
 # comments on the first rewrite, and the secret-safety rule (STEER-NFR-002) is worth keeping WHERE
 # THE CONFIG LIVES.
 _NOTIFY_HEADER = (
-    "# 3Powers run notifications (STEER-FR-010). `3pwr run` fires on gate pauses, failures, and\n"
+    "# 3Powers run notifications. `3pwr run` fires on gate pauses, failures, and\n"
     "# completion. Channels: slack | teams | email | desktop.\n"
-    "# SECRETS ARE NEVER STORED HERE (STEER-NFR-002): a slack/teams block names an env var\n"
+    "# SECRETS ARE NEVER STORED HERE: a slack/teams block names an env var\n"
     "# (`webhook_env`) holding the webhook URL; email reads its password from `password_env`.\n"
     "# Export those before `3pwr run`. An empty `channels:` list means notifications are off.\n"
 )

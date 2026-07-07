@@ -182,13 +182,11 @@ def git_prereq(root: Path, command_present: Callable[[str], bool] | None = None)
     if command_present is None:
         command_present = _git_on_path
     if not command_present("git"):
-        return Prereq(name, False, "install git — a run requires version control (GITX-FR-002)")
+        return Prereq(name, False, "install git — a run requires version control")
     for candidate in [root.resolve(), *root.resolve().parents]:
         if (candidate / ".git").exists():
             return Prereq(name, True, label="git present; repository detected")
-    return Prereq(
-        name, False, "run `git init` — the target is not inside a git repository (GITX-FR-002)"
-    )
+    return Prereq(name, False, "run `git init` — the target is not inside a git repository")
 
 
 def signer_prereq(root: Path) -> Prereq:

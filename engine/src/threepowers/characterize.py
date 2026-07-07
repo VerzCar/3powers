@@ -77,17 +77,16 @@ def _render_spec(spec_id: str, module_rel: str, symbols: list[str]) -> tuple[str
         "**Risk Tier**: Standard",
         "<!-- Reconstructed for a legacy module; raise the tier before hardening it. -->",
         "",
-        "**Status**: Reconstructed (3PWR-FR-053)",
+        "**Status**: Reconstructed",
         "",
         f"**Input**: Existing behavior of `{module_rel}`, reconstructed by `3pwr characterize`.",
         "",
         "---",
         "",
-        "## Non-Goals *(mandatory — 3PWR-FR-004)*",
+        "## Non-Goals *(mandatory)*",
         "",
         "- This spec does **not** define *desired* behavior; it freezes the module's "
-        "**observed** behavior as an oracle so the code can be safely changed later "
-        "(3PWR-FR-051).",
+        "**observed** behavior as an oracle so the code can be safely changed later.",
         "- Each requirement is a characterization placeholder — replace it with real intent "
         "when this module re-enters the legislature (Stage 1–2).",
         "",
@@ -216,7 +215,7 @@ def characterize_module(
             f"# Characterization scaffold for {module_rel}\n\n"
             f"Spec `{spec_id}` reconstructed. Add characterization tests in the target "
             f"language that reference {', '.join(req_ids) or 'the reconstructed requirement IDs'} "
-            f"and pin current behavior (3PWR-FR-053).\n",
+            f"and pin current behavior.\n",
             encoding="utf-8",
         )
 
