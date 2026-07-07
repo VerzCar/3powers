@@ -86,6 +86,9 @@ fi
 
 # Locate the kit relative to this script so it runs from any working directory.
 E2E_DIR=$(cd "$(dirname "$0")" && pwd)
+# Export the kit root so the notebook can import the shared harness (bootstrap.py)
+# regardless of the kernel's working directory.
+export E2E_ROOT="$E2E_DIR"
 
 case "$LANG_ARG" in
   typescript) PROJECT_DIR="$E2E_DIR/typescript-orders" ;;
