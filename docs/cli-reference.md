@@ -135,9 +135,9 @@ signed ledger entry.
   re-check (opt-in only — never the default; see below).
 - `--no-ledger` — run without appending a ledger entry.
 ```bash
-3pwr gate run --path examples/validation-utils \
-              --spec specs/001-validation-utils/spec.md --tier Standard
-3pwr gate run --id 001 --tier Standard      # same spec, resolved by run number
+3pwr gate run --path e2e/typescript-orders/project \
+              --spec specs/<NNN>-<slug>/spec.md --tier Standard
+3pwr gate run --id <NNN> --tier Standard      # same spec, resolved by run number
 ```
 Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
 missing (see below).
@@ -322,7 +322,7 @@ Extracts the acceptance criteria (requirement IDs + text — no impl/plan/tasks/
 `oracle` seal entry.
 - `--spec SPEC` · `--spec-id SPEC_ID`.
 ```bash
-3pwr oracle seal --spec specs/001-validation-utils/spec.md --spec-id VUTIL
+3pwr oracle seal --spec specs/<NNN>-<slug>/spec.md --spec-id VUTIL
 ```
 
 ### `oracle record` — record oracle authoring
@@ -334,7 +334,7 @@ coder).
   `--base BASE` (git ref for the touched-implementation advisory scan).
 ```bash
 3pwr oracle record --spec-id VUTIL --model anthropic/claude-opus \
-                   --tests examples/validation-utils/tests/unit/validators.test.ts
+                   --tests e2e/typescript-orders/project/tests/unit/lineItem.test.ts
 ```
 
 ### `oracle verify` — verify independence from the ledger
@@ -373,7 +373,7 @@ thereafter. A fresh Spec-stage sign-off supersedes the previous hash.
   `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs/**/spec.md`).
 ```bash
 3pwr signoff --approver "$(git config user.name)" --stage spec --spec-id VUTIL \
-             --spec specs/001-validation-utils/spec.md   # seals the approved spec's hash
+             --spec specs/<NNN>-<slug>/spec.md   # seals the approved spec's hash
 3pwr signoff --approver "$(git config user.name)" --stage review --spec-id VUTIL
 ```
 

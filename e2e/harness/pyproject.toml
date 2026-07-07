@@ -1,0 +1,17 @@
+[project]
+name = "e2e-harness"
+version = "0.1.0"
+description = "Notebook-driven end-to-end testing harness for the 3pwr CLI."
+requires-python = ">=3.11"
+dependencies = [
+    "papermill>=2.6.0",
+    "jupyter>=1.1.1",
+    "nbclient>=0.10.0",
+]
+
+# The harness venv stays papermill-only. bootstrap.py imports nothing from it
+# beyond the Python standard library, so provisioning a sandbox never depends on
+# this environment being active. The project is not itself a build target — it
+# exists only to pin the notebook toolchain.
+[tool.uv]
+package = false

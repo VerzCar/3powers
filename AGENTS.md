@@ -8,7 +8,7 @@ Guidance for AI coding agents working in this repository. This file complements 
 
 **Implementation status lives in exactly one place: [docs/STATUS.md](docs/STATUS.md)** — the current milestone, the validation date, and the open residuals. Do not infer scope or progress from this file; read STATUS.
 
-Key technologies: Python ≥ 3.10 in `engine/` (a uv-managed, src-layout package shipping the `3pwr` CLI; runtime deps only `cryptography`, `PyYAML`, and `rich`), a runnable TypeScript sample in `examples/validation-utils/`, and declarative language adapters (TypeScript, Python, Go).
+Key technologies: Python ≥ 3.10 in `engine/` (a uv-managed, src-layout package shipping the `3pwr` CLI; runtime deps only `cryptography` and `PyYAML`), declarative language adapters (TypeScript, Python, Go), and a per-adapter end-to-end notebook kit in `e2e/` for real-world CLI testing.
 
 Repository layout:
 
@@ -17,7 +17,7 @@ engine/                     # the 3pwr engine — Python, shipped as a uv tool (
 docs/                       # public documentation — kept current with every change
 plan/                       # plans and implementation plans (see the mandatory workflow below)
 specs/                      # spec artifacts produced by 3pwr runs
-examples/validation-utils/  # runnable TypeScript sample project
+e2e/                        # per-adapter notebook kit — real-world CLI testing in throwaway sandboxes
 .3powers/                   # this repo's own trust spine (config, templates, ledger)
 .github/agents/             # the agent roles used by the mandatory workflow
 ```
@@ -36,7 +36,7 @@ examples/validation-utils/  # runnable TypeScript sample project
 
 - Install the engine as a CLI: `uv tool install ./engine` (provides `3pwr`; after engine changes reinstall with `uv tool install --force ./engine` — the installed tool can go stale against the source)
 - Engine dev environment: `cd engine && uv sync --extra dev`
-- Sample project: `cd examples/validation-utils && npm install`
+- End-to-end kit prerequisites: `uv`, plus the toolchains for the languages you drive — Node.js + npm (TypeScript), Go + `gcov2lcov` (Go); a smoke of the whole kit is `./e2e/run.sh <typescript|python|go> --check` (deterministic, no agent). See [e2e/README.md](e2e/README.md).
 - One-time signer setup for gate/ledger commands: `3pwr keygen`, then `export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"` (the private key lives **outside** the repo)
 
 ## Development workflow
@@ -52,7 +52,7 @@ examples/validation-utils/  # runnable TypeScript sample project
 - All engine tests: `cd engine && uv run pytest`
 - A single test file: `uv run pytest tests/test_<module>.py`
 - Lint: `uv run ruff check .` · Types: `uv run mypy src`
-- Sample project (in `examples/validation-utils/`): `npm run check` (lint + format), `npm run typecheck`, `npm test`; a single test: `npx vitest run tests/unit/validate.test.ts`
+- **Real-world testing of the `3pwr` CLI happens in the `e2e/` notebook projects** — drive them with `./e2e/run.sh <lang>` (a full lifecycle run needs a headless agent CLI) or `./e2e/run.sh <lang> --check` (deterministic, no agent). Each run works in a throwaway sandbox and never writes into this repo; the sample templates carry committed source + lockfiles only. There is no longer a top-level `examples/` folder.
 - Tests mirror the source layout (`engine/tests/test_<module>.py`). New or changed code ships with tests in the same change; a bug fix ships with a regression test that fails without the fix.
 - Trust-spine modules (`canonical`, `keys`, `ledger`, `verify`, `speclock`, `anchor`) are High-risk: keep their coverage ≥ 95%. Mutation testing is scoped to them via `[tool.mutmut]` in `engine/pyproject.toml` — do not widen or narrow that scope.
 

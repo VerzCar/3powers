@@ -180,53 +180,44 @@ base64 seed, handy for CI), then the default path above. Export the variable or 
 > signer, the baseline config, and your language adapter in one step. See the
 > [CLI reference](cli-reference.md#init--guided-onboarding-new-or-existing-project).
 
-## 3. Run the gate suite on the sample
+## 3. Run the gate suite on a sample
 
-The repo ships a small TypeScript sample, [`examples/validation-utils/`](../examples/validation-utils/)
-(Spec ID `VUTIL`). Install its dev tools once, then run every gate against it at the **Standard** tier:
+Real-world testing of the CLI lives in the **[`e2e/`](../e2e/) kit** — one small sample project per
+language adapter (TypeScript, Python, Go), each wired to its adapter's full gate set. The one-command
+runner provisions a throwaway sandbox, proves the baseline gates are green, and drives the whole
+lifecycle; `--check` takes the deterministic path that needs no agent:
 
 ```bash
-(cd examples/validation-utils && npm install)
-3pwr gate run --path examples/validation-utils \
-              --spec specs/001-validation-utils/spec.md --tier Standard
+./e2e/run.sh python --check
 ```
+
+Before any lifecycle work the kit runs the gate suite at the **Standard** tier and reads back one
+normalized verdict — the whole point is that a human sees the result without opening a single agent
+transcript:
+
 ```
-verdict FAIL  spec=VUTIL tier=Standard adapter=typescript
-  ✓ format · biome
-  ✓ lint · biome
-  ✓ types · tsc
-  ✓ tests · vitest
-  ✓ diff_coverage · 3pwr-covdiff  (100.0% ≥ 80.0%)
-  ✗ dependency_scan · osv-scanner
-      - GHSA-4x5r-pxfx-6jf8 in @babel/core
-      - GHSA-2g4f-4pwh-qvx6 in ajv
-      - GHSA-67mh-4wv8-2f99 in esbuild
-      - GHSA-52f5-9888-hmc6 in tmp
-      - GHSA-ph9p-34f9-6g65 in tmp
-  ✓ secret_scan · gitleaks
+verdict PASS  tier=Standard adapter=python
+  ✓ format · ruff        ✓ lint · ruff        ✓ types · mypy
+  ✓ tests · pytest       ✓ diff_coverage · 3pwr-covdiff  (98.08% ≥ 80.0%)
   ✓ gate_gaming · 3pwr-gaming
-  ✓ spec_conformance · 3pwr-conformance  (5 requirements traced)
-  failures:
-    • vulnerable_dependency: GHSA-4x5r-pxfx-6jf8 in @babel/core; GHSA-2g4f-4pwh-qvx6 in ajv; ...
-  ↳ ledger entry #0 signed by ed25519:4fd71c543b0f499c
+  ↳ ledger entry #0 signed by ed25519:…
 ```
 
-**Read the verdict** (this is the whole point — a human identifies the problem
-without opening any agent transcript):
+**Read the verdict** (this is the whole point — a human sees the result without opening any agent
+transcript):
 
-- Gates ran **cheapest-first**: the format/lint/type floor, then tests + `diff_coverage`,
-  then the scanners and conformance.
-- The code itself is clean — **diff_coverage is 100%** on changed lines, and all five
-  `VUTIL` requirements trace to a test (**spec_conformance**).
-- But `dependency_scan` is **red**: `osv-scanner` found real, current advisories in the sample's
-  transitive dev dependencies. The failure is **actionable** — it names the class
-  (`vulnerable_dependency`) and the exact advisory + package. That's the gate suite doing its job, not a
-  bug in the sample.
+- Gates ran **cheapest-first**: the format/lint/type floor, then tests + `diff_coverage`, then the
+  anti-gaming and conformance checks.
+- Every gate is **green** and `diff_coverage` clears its threshold, so the run is safe to advance. A
+  failure would be **actionable** — it names the class and the exact offending item — not a wall of logs.
 - The run appended **one signed entry** to the ledger (`#0`). One run → one normalized verdict,
   written to `.3powers/verdicts/latest.json` and recorded in the ledger.
 
+See [`e2e/README.md`](../e2e/README.md) for the full kit: prerequisites, the sandbox model, and how an
+agent drives a notebook through both human gates.
+
 > Pass `--json` for the machine-readable verdict (the same artifact agents consume).
-> Pass `--no-ledger` to run the gates without recording an entry.
+> A full run (drop `--check`) dispatches the configured headless agent and needs its CLI.
 
 ## 4. Inspect the trust spine
 
