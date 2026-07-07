@@ -28,6 +28,8 @@ gates:
   format:
     # gofmt -l lists unformatted files but exits 0; the shell guard makes "any unformatted" a failure.
     check_cmd: 'test -z "$(gofmt -l .)"'
+    # fix_cmd runs only under `3pwr gate run --auto-fix` (format/lint only, never by default).
+    fix_cmd: "gofmt -w ."
     shell: true
     parser: gofmt
     requires: go

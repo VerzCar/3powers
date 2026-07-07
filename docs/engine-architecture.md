@@ -47,7 +47,12 @@ tier).
    the inferred kind(s) *union* extra gates onto the tier's list — a `defect` adds `defect_regression`, a
    `design` change adds the design oracles. Inference only ever adds; it never removes a tier gate.
 3. **Resolve the adapter.** Auto-detect (or `--adapter`) the language manifest from
-   [`.3powers/adapters/<lang>/adapter.yaml`](../.3powers/adapters/).
+   [`.3powers/adapters/<lang>/adapter.yaml`](../.3powers/adapters/). The manifest's gate commands are
+   then assembled into the **effective configuration**: the committed per-project overrides in
+   [`.3powers/config/gates.yaml`](../.3powers/config/gates.yaml) win over project-native tooling
+   auto-detected at startup (biome/prettier, eslint, tsc/pyright, vitest/jest/playwright, go
+   test/gofmt), which wins over the manifest defaults — tools move, gates never do. Inspect it with
+   `3pwr gate config show` (see the [CLI reference](cli-reference.md)).
 4. **Run each required gate in canonical, cheapest-first order** (`verdict.GATE_ORDER`):
    ```
    format → lint → types → tests → diff_coverage → mutation → sast → dependency_scan → secret_scan →

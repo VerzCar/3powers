@@ -28,10 +28,13 @@ toolchain:
 gates:
   format:
     check_cmd: "uv run ruff format --check ."
+    # fix_cmd runs only under `3pwr gate run --auto-fix` (format/lint only, never by default).
+    fix_cmd: "uv run ruff format ."
     parser: ruff
     requires: ruff
   lint:
     cmd: "uv run ruff check ."
+    fix_cmd: "uv run ruff check --fix ."
     parser: ruff
     requires: ruff
   types:
