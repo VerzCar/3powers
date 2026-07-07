@@ -1,6 +1,6 @@
 # Plan 031 — internal-ID inventory (disposable)
 
-Total hits: **1731** across 111 files.
+Total hits: **1704** across 111 files.
 
 ## Summary by kind
 
@@ -9,31 +9,30 @@ Total hits: **1731** across 111 files.
 | docstring | 892 |
 | comment | 379 |
 | scaffold-asset | 260 |
-| echoed-message | 67 |
 | doc-prose | 64 |
 | format-example | 62 |
-| help-string | 7 |
+| echoed-message | 47 |
 
 ## Summary by namespace
 
 | namespace | count |
 |---|---|
-| 3PWR | 474 |
-| STEER | 142 |
-| GITX | 106 |
-| RUNLIVE | 89 |
+| 3PWR | 467 |
+| STEER | 139 |
+| GITX | 103 |
+| RUNLIVE | 87 |
 | (bare/sibling) | 86 |
-| HARDN | 84 |
-| SRCX | 83 |
-| EXEC | 82 |
+| SRCX | 82 |
+| HARDN | 81 |
+| EXEC | 81 |
 | PHASE | 79 |
-| AGENTX | 68 |
-| AUTOX | 65 |
-| CLIUX | 51 |
-| ONBRD | 44 |
+| AGENTX | 67 |
+| AUTOX | 64 |
+| CLIUX | 50 |
+| ONBRD | 43 |
 | GATECFG | 41 |
 | PROGFILE | 40 |
-| INITX | 38 |
+| INITX | 35 |
 | SLOCK | 28 |
 | GATEPIPE | 26 |
 | TRIX | 19 |
@@ -49,7 +48,7 @@ Total hits: **1731** across 111 files.
 | DOCX | 2 |
 | SLIM | 1 |
 
-Engine-source total (sanity check vs raw grep census): **1518**
+Engine-source total (sanity check vs raw grep census): **1491**
 
 ## .3powers/adapters/CONTRACT.md (5)
 
@@ -587,7 +586,7 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 219 | echoed-message | 3PWR-FR-053 | `f"and pin current behavior (3PWR-FR-053).\n",` |
 | 284 | docstring | 3PWR-FR-053 | `"""Characterize a single file OR every source file under a directory (3PWR-FR-053).` |
 
-## engine/src/threepowers/cli.py (401)
+## engine/src/threepowers/cli.py (374)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
@@ -613,11 +612,7 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 304 | docstring | 3PWR-NFR-011 | `"""Human-readable verdict: failing gate, class, and offending item — no transcript needed (3PWR-NFR-011).` |
 | 306 | docstring | INITX-FR-013 | ```st`` colorizes the status markers consistently with the rest of the CLI (INITX-FR-013); a disabled` |
 | 309 | docstring | GATEPIPE-FR-003 | `own panel after the pipeline view instead (GATEPIPE-FR-003)."""` |
-| 348 | echoed-message | HARDN-FR-002 | `"  an executive agent with repo access could read it (HARDN-FR-002 / 3PWR-NFR-005).\n"` |
-| 348 | echoed-message | 3PWR-NFR-005 | `"  an executive agent with repo access could read it (HARDN-FR-002 / 3PWR-NFR-005).\n"` |
 | 377 | docstring | HARDN-FR-004 | `"""Rotate the ledger signer (HARDN-FR-004): the OUTGOING key signs its successor.` |
-| 404 | echoed-message | HARDN-FR-002 | `"  pass --out with a path outside the repo (HARDN-FR-002 / 3PWR-NFR-005)",` |
-| 404 | echoed-message | 3PWR-NFR-005 | `"  pass --out with a path outside the repo (HARDN-FR-002 / 3PWR-NFR-005)",` |
 | 454 | docstring | ONBRD-FR-009 | `"""Create the ``.3powers/`` skeleton idempotently (ONBRD-FR-009). Returns created\|kept."""` |
 | 476 | docstring | INITX-FR-009 | `"""Build the first-run readiness checklist (INITX-FR-009/010/011; AUTOX-FR-001/002).` |
 | 476 | docstring | AUTOX-FR-001 | `"""Build the first-run readiness checklist (INITX-FR-009/010/011; AUTOX-FR-001/002).` |
@@ -625,7 +620,6 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 480 | docstring | INITX-FR-011 | `INITX-FR-010); a 3Powers-generated AGENTS.md starter is an unfinished TODO (INITX-FR-011). No item` |
 | 481 | docstring | INITX-FR-009 | `is omitted (INITX-FR-009). ``auto_prqs`` — the SAME check set the live run preflight enforces` |
 | 483 | docstring | AUTOX-FR-002 | `never drift (AUTOX-FR-002)."""` |
-| 522 | echoed-message | 3PWR-FR-022 | `else "oracle shares the coder's family (or is unset) — recommended to differ (3PWR-FR-022)",` |
 | 526 | comment | AUTOX-FR-001 | `# here means `3pwr run --mode auto` will not refuse to start (AUTOX-FR-001/002).` |
 | 535 | docstring | INITX-FR-013 | `"""Render checklist items as colorized ``<mark> <label>: <detail>`` lines (INITX-FR-013)."""` |
 | 539 | comment | AGENTX-FR-012 | `# The configurable roles the setup walks, in the order they are asked (AGENTX-FR-012).` |
@@ -633,7 +627,6 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 546 | docstring | 3PWR-FR-022 | `Diversity is recommended, never forced (3PWR-FR-022/057): the warning names the signed` |
 | 548 | docstring | INITX-FR-014 | `stdout stays byte-identical (INITX-FR-014). Returns the roles warned about."""` |
 | 556 | comment | AGENTX-FR-012 | `# whose family the id does not encode (AGENTX-FR-012/015).` |
-| 565 | echoed-message | 3PWR-FR-022 | `"diversity is recommended (3PWR-FR-022)."` |
 | 600 | docstring | 3PWR-FR-022 | `box even within a single BYOK integration (3PWR-FR-022)."""` |
 | 617 | docstring | AGENTX-FR-011 | `"""The shared headless-CLI + role→model + diversity setup (AGENTX-FR-011/012/014/015).` |
 | 619 | docstring | AGENTX-FR-011 | `One pass: multi-select which agent-backend CLIs you use (no provider is forced — AGENTX-FR-011),` |
@@ -651,7 +644,6 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 774 | docstring | AGENTX-NFR-004 | `defaults (AGENTX-NFR-004). Dispatch configuration only — no gate, verdict, ledger, or human` |
 | 775 | docstring | AGENTX-NFR-002 | `gate is touched (AGENTX-NFR-002), and model diversity only ever warns (AGENTX-FR-018)."""` |
 | 775 | docstring | AGENTX-FR-018 | `gate is touched (AGENTX-NFR-002), and model diversity only ever warns (AGENTX-FR-018)."""` |
-| 802 | echoed-message | 3PWR-FR-021 | `"oracle.require_dispatch: the High-risk read-path-isolation policy (3PWR-FR-021/A3) — "` |
 | 821 | docstring | INITX-FR-006 | `"""Auto-commit after a successful lifecycle stage (INITX-FR-006).` |
 | 876 | docstring | STEER-FR-010 | `"""Pick one run-notification channel (or none) and write its config (STEER-FR-010).` |
 | 878 | docstring | STEER-NFR-002 | `Secrets are never stored (STEER-NFR-002): slack/teams record only the env-var *name* holding the` |
@@ -668,330 +660,310 @@ Engine-source total (sanity check vs raw grep census): **1518**
 | 983 | comment | ONBRD-FR-003 | `# 4) Language selection from the supported (adapter-backed) set (ONBRD-FR-003).` |
 | 988 | comment | ONBRD-FR-004 | `# 5) Signing key — a private location OUTSIDE the repo (ONBRD-FR-004/007, NFR-001).` |
 | 988 | format-example | NFR-001 | `# 5) Signing key — a private location OUTSIDE the repo (ONBRD-FR-004/007, NFR-001).` |
-| 1020 | echoed-message | ONBRD-NFR-001 | `f"(ONBRD-NFR-001 / 3PWR-NFR-005): {key_path}",` |
-| 1020 | echoed-message | 3PWR-NFR-005 | `f"(ONBRD-NFR-001 / 3PWR-NFR-005): {key_path}",` |
-| 1026 | comment | ONBRD-FR-005 | `# 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).` |
-| 1026 | format-example | NFR-004 | `# 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).` |
-| 1033 | comment | ONBRD-FR-008 | `# 7) Seed baseline config + the selected adapter, never clobbering (ONBRD-FR-008).` |
-| 1041 | comment | INITX-FR-001 | `#    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,` |
-| 1041 | comment | AGENTX-FR-011 | `#    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,` |
-| 1042 | comment | AGENTX-NFR-004 | `#    so a non-interactive init prompts for nothing and stays run-ready (AGENTX-NFR-004).` |
-| 1051 | comment | INITX-FR-001 | `# default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →` |
-| 1051 | comment | AGENTX-FR-011 | `# default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →` |
-| 1053 | comment | AGENTX-NFR-004 | `# empty notifications are the documented defaults and stay run-ready (AGENTX-NFR-004).` |
-| 1069 | comment | 3PWR-FR-022 | `# Diversity is recommended, not forced (3PWR-FR-022/057). Warn to STDERR so a --json` |
-| 1070 | comment | INITX-FR-014 | `# run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).` |
-| 1070 | comment | INITX-FR-002 | `# run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).` |
-| 1074 | echoed-message | 3PWR-FR-022 | `"recommended (3PWR-FR-022)."` |
-| 1094 | comment | ONBRD-FR-016 | `# 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).` |
-| 1099 | comment | EXEC-FR-004 | `#     (EXEC-FR-004; SLIM removed the substrate) — and each dispatched stage's editable` |
-| 1100 | comment | AGENTX-FR-001 | `#     instructions live in .3powers/templates/agents/ (AGENTX-FR-001/009).` |
-| 1107 | comment | INITX-FR-002 | `# different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family` |
-| 1107 | comment | 3PWR-FR-022 | `# different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family` |
-| 1108 | comment | AGENTX-FR-012 | `# wins over prefix-derivation — catalog bindings may use bare ids (AGENTX-FR-012/015).` |
-| 1117 | comment | AUTOX-FR-001 | `# Auto full-mode readiness — the SAME check set the live run preflight enforces (AUTOX-FR-001/002):` |
-| 1157 | comment | AUTOX-FR-002 | `# (AUTOX-FR-002/005) — derived from the same checks the run preflight enforces.` |
-| 1168 | comment | INITX-FR-013 | `# ---- human, colorized summary (INITX-FR-013) ----` |
-| 1203 | comment | INITX-FR-009 | `# Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding` |
-| 1204 | comment | ONBRD-FR-015 | `# contract documents (ONBRD-FR-015) so existing guidance stays discoverable.` |
-| 1214 | comment | AUTOX-FR-005 | `# The remaining auto full-mode steps, as exact fixes in dependency order (AUTOX-FR-005):` |
-| 1234 | comment | STEER-NFR-002 | `# in the config — STEER-NFR-002). Shown as a call-to-action alongside the signer export.` |
-| 1252 | comment | INITX-FR-012 | `# describe what you want and 3pwr drives the lifecycle (INITX-FR-012).` |
-| 1264 | comment | 3PWR-FR-051 | `# Existing code? The now-working brownfield on-ramp, demoted below the primary CTA (3PWR-FR-051/052).` |
-| 1279 | docstring | GATECFG-FR-005 | `"""The one auto-detection startup line (GATECFG-FR-005), e.g.` |
-| 1290 | docstring | GATECFG-FR-003 | `"""Assemble the effective gate configuration (GATECFG-FR-003), or ``None`` when it cannot be.` |
-| 1305 | comment | GDIAG-FR-002 | `# --id <NNN> is the run-number shorthand for --spec (GDIAG-FR-002): resolve the one matching` |
-| 1322 | comment | 3PWR-FR-051 | `# Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo` |
-| 1333 | comment | GATEPIPE-FR-001 | `# The live per-gate pipeline (GATEPIPE-FR-001/002): rows update in place on a capable TTY and` |
-| 1338 | comment | GATECFG-FR-003 | `# The effective gate configuration (GATECFG-FR-003): the adapter manifest, the project's` |
-| 1340 | comment | GATECFG-FR-004 | `# auto-detected once at startup (GATECFG-FR-004). One line names what was detected, never` |
-| 1341 | comment | GATECFG-FR-005 | `# under --json (GATECFG-FR-005). An unassemblable config degrades to None: run_gates loads` |
-| 1368 | comment | GDIAG-FR-004 | `# A required tool of a non-optional gate is absent (GDIAG-FR-004): no gate ran; the per-tool` |
-| 1393 | comment | GATECFG-FR-008 | `# The auto-fixed announcement (GATECFG-FR-008): one line per gate a fix turned green — human` |
-| 1400 | comment | GATEPIPE-FR-003 | `# One panel per failed gate, printed after the live pipeline exits (GATEPIPE-FR-003) — the` |
-| 1409 | comment | 3PWR-FR-034 | `# exactly what to install so the next `gate run` / `3pwr run` succeeds (3PWR-FR-034). Human-output` |
-| 1438 | comment | 3PWR-FR-052 | `# (optionally diff-scoped via --base/--paths) once the diff is clean (3PWR-FR-052).` |
-| 1445 | docstring | GATECFG-FR-010 | `"""Render the effective per-gate configuration — without executing any gate (GATECFG-FR-010).` |
-| 1449 | docstring | GATECFG-FR-003 | `committed ``gates.yaml`` override, or startup auto-detection (GATECFG-FR-003/004)."""` |
-| 1522 | comment | HARDN-FR-002 | `# Custody preflight (HARDN-FR-002): a private key inside the working tree or readable` |
-| 1532 | comment | HARDN-FR-005 | `# Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest` |
-| 1533 | comment | HARDN-NFR-001 | `# local anchor tag. Plain `verify` never reads an anchor (HARDN-NFR-001).` |
-| 1567 | docstring | HARDN-FR-005 | `"""Record the ledger head with an external witness (HARDN-FR-005) — opt-in.` |
-| 1571 | docstring | HARDN-NFR-001 | `(the sole network-capable operation, HARDN-NFR-001).` |
-| 1641 | comment | SLOCK-FR-001 | `# signed entry so any later silent mutation is caught (SLOCK-FR-001). A fresh` |
-| 1642 | comment | SLOCK-FR-006 | `# Spec-stage sign-off supersedes the previous hash (SLOCK-FR-006).` |
-| 1667 | docstring | SLOCK-FR-007 | `"""Read-only spec-integrity report (SLOCK-FR-007) — never writes to the ledger.` |
-| 1761 | docstring | 3PWR-FR-041 | `"""Local, CI-independent enforcement (3PWR-FR-041/042)."""` |
-| 1775 | comment | 3PWR-FR-057 | `#    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)` |
-| 1775 | comment | 3PWR-FR-052 | `#    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)` |
-| 1805 | comment | 3PWR-FR-056 | `# 2b. An emergency cleanup overdue past one working day blocks the advance (3PWR-FR-056).` |
-| 1813 | comment | 3PWR-FR-037 | `# 3. A human sign-off must exist at or after the latest verdict (3PWR-FR-037).` |
-| 1820 | comment | 3PWR-FR-020 | `# 4. Oracle independence (3PWR-FR-020/021/022/062). The judiciary must have authored the oracle` |
-| 1824 | format-example | FR-021 | `#    At High-risk, physical read-path isolation (FR-021, A3) is also proven when a dispatch` |
-| 1855 | comment | SLOCK-FR-005 | `# 5. Spec integrity (SLOCK-FR-005): once a human has approved the spec, its recorded` |
-| 1857 | comment | 3PWR-FR-057 | `#    `spec_integrity` deviation (3PWR-FR-057) turns the refusal into a warned,` |
-| 1859 | comment | SLOCK-FR-003 | `#    never blocked (SLOCK-FR-003).` |
-| 1879 | comment | GITX-FR-016 | `# 6. Git run discipline (GITX-FR-016): when the spec's run records a dedicated branch, a` |
-| 1882 | comment | GITX-FR-014 | `#    deviations (GITX-FR-014); a pre-GITX ledger records no branch and is untouched.` |
-| 1967 | docstring | 3PWR-FR-057 | `"""Record (or revoke) a signed, reversible gate deviation (3PWR-FR-057)."""` |
-| 2048 | docstring | 3PWR-FR-056 | `"""Open the constrained emergency fast path (3PWR-FR-056)."""` |
-| 2129 | docstring | 3PWR-FR-022 | `"""Check model diversity between two roles (3PWR-FR-022), at the configured granularity.` |
-| 2132 | docstring | 3PWR-FR-057 | `deviation (3PWR-FR-057), which turns the VIOLATION into a warned RELAXED (exit 0)."""` |
-| 2174 | docstring | 3PWR-FR-020 | `"""Seal a spec-only oracle bundle the judiciary authors from (3PWR-FR-020)."""` |
-| 2230 | docstring | 3PWR-FR-022 | `"""Record oracle authoring; refuse the coder's model family (3PWR-FR-022/062)."""` |
-| 2250 | comment | 3PWR-FR-022 | `# Diversity is recommended, not forced (3PWR-FR-022): a same-family/model setup proceeds only under` |
-| 2251 | comment | 3PWR-FR-057 | `# a signed model_diversity deviation (3PWR-FR-057) — warned and recorded, never a silent drop.` |
-| 2305 | comment | 3PWR-FR-021 | `# Advisory (non-blocking) peek/touch signals for human review (3PWR-FR-021).` |
-| 2364 | docstring | 3PWR-FR-020 | `"""Verify oracle independence structurally, from the ledger (3PWR-FR-020/021/022/062)."""` |
-| 2431 | docstring | 3PWR-FR-021 | `which the implementation is physically absent (3PWR-FR-021/012/013; A3).` |
-| 2434 | docstring | 3PWR-NFR-001 | `gate verdict (3PWR-NFR-001). The blocking isolation check binds at ``advance`` (High-risk)."""` |
-| 2445 | comment | 3PWR-FR-022 | `# Resolve the oracle model/family. Diversity is recommended, not forced (3PWR-FR-022): a` |
-| 2446 | format-example | FR-057 | `# same-family/model dispatch proceeds only under a signed model_diversity deviation (FR-057).` |
-| 2519 | comment | EXEC-FR-009 | `# worktree — no external workflow substrate (EXEC-FR-009; supersedes the Spec Kit dispatch).` |
-| 2520 | comment | EXEC-NFR-001 | `# The engine issues no model call itself; the agent process does (EXEC-NFR-001).` |
-| 2580 | comment | 3PWR-FR-021 | `# Advisory (non-blocking) peek/touch signals, unchanged from plan 008 (3PWR-FR-021).` |
-| 2690 | docstring | 3PWR-FR-054 | `"""Record a production signal and route it to the legislature as new intent (3PWR-FR-054)."""` |
-| 2748 | docstring | 3PWR-FR-054 | `"""Report NFR-instrumentation coverage — which NFRs have a live check (3PWR-FR-054)."""` |
-| 2786 | docstring | 3PWR-FR-055 | `"""Append a tamper-evident, attributable runtime agent action (3PWR-FR-055)."""` |
-| 2825 | docstring | 3PWR-FR-055 | `"""Verify the runtime agent-action log's chain + signatures (3PWR-FR-055/040)."""` |
-| 2843 | docstring | 3PWR-FR-011 | `"""Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""` |
-| 2856 | comment | AUTOX-FR-007 | `# The most recent unresolved run failure, if any (AUTOX-FR-007).` |
-| 2882 | comment | AUTOX-FR-007 | `# Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).` |
-| 2902 | comment | 3PWR-FR-056 | `# Surface active deviations + overdue emergency cleanups (3PWR-FR-056/057).` |
-| 2915 | comment | GITX-FR-009 | `# Surface each run's git lifecycle state (GITX-FR-009): its dedicated branch and the committed` |
-| 2928 | comment | 3PWR-FR-020 | `# Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).` |
-| 2947 | docstring | GITX-FR-016 | `"""Establish the run's dedicated branch for a MANUAL drive (GITX-FR-016).` |
-| 2950 | docstring | GITX-FR-002 | `repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named` |
-| 2950 | docstring | GITX-FR-007 | `repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named` |
-| 2951 | docstring | GITX-FR-003 | `from the run's SRCX identity (GITX-FR-003/004) — bound to the run in the signed ledger so a` |
-| 2952 | docstring | GITX-FR-005 | `later resume or `advance` recovers it offline (GITX-FR-005). Idempotent: an already-established` |
-| 2981 | comment | GITX-FR-007 | `# The clean-start guard (GITX-FR-007) — the run's own recorded paths and its feature folder are` |
-| 2982 | comment | GITX-FR-014 | `# tolerated; only unrelated changes refuse, relaxable via the signed deviation (GITX-FR-014).` |
-| 3006 | comment | GITX-FR-005 | `# the orchestrated path records (GITX-FR-005, GITX-NFR-002).` |
-| 3006 | comment | GITX-NFR-002 | `# the orchestrated path records (GITX-FR-005, GITX-NFR-002).` |
-| 3035 | docstring | 3PWR-FR-058 | `"""Infer work kind(s) + a suggested risk tier from free-form intent (3PWR-FR-058).` |
-| 3037 | docstring | 3PWR-NFR-001 | `Deterministic (keyword heuristics, no model call — never perturbs the verdict, 3PWR-NFR-001). The` |
-| 3038 | docstring | 3PWR-FR-006 | `inference shapes the tier + oracle strategy; it never bypasses the human sign-off (3PWR-FR-006)."""` |
-| 3063 | docstring | STEER-FR-009 | `"""Fire ``event`` at the ``--notify`` hook AND every configured channel (STEER-FR-009/011).` |
-| 3065 | docstring | STEER-NFR-001 | `Best-effort and fully isolated from the trust path (STEER-NFR-001): the channels are loaded at` |
-| 3066 | docstring | STEER-FR-010 | `most once per invocation (a malformed file warns once — STEER-FR-010), delivery never raises,` |
-| 3068 | docstring | STEER-NFR-002 | `(STEER-NFR-002). With no ``notifications.yaml`` and no ``--notify``, nothing happens and no` |
-| 3070 | docstring | RUNID-FR-003 | `local, so a workspace-derived NNN reaches the notification too (RUNID-FR-003)."""` |
-| 3073 | comment | STEER-FR-011 | `)  # the existing command hook keeps working alongside (STEER-FR-011)` |
-| 3085 | docstring | SRCX-FR-011 | `"""The run's bound feature folder, read back from the signed ``run``/``start`` entry (SRCX-FR-011).` |
-| 3107 | docstring | STEER-FR-006 | `A revise re-dispatches the paused stage WITH the original intent (STEER-FR-006) — recovered from` |
-| 3108 | docstring | STEER-FR-004 | `the ledger alone (STEER-FR-004's reproducibility), never re-asked."""` |
-| 3121 | docstring | STEER-FR-005 | `review (STEER-FR-005) — one source for the pause screen and the interactive prompt."""` |
-| 3141 | docstring | 3PWR-FR-006 | `"""Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).` |
-| 3141 | format-example | FR-037 | `"""Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).` |
-| 3144 | docstring | SLOCK-FR-001 | `signed entry (SLOCK-FR-001) — same capture as a manual `3pwr signoff --stage spec`.` |
-| 3169 | docstring | AUTOX-FR-006 | `"""Append the signed run-failure record before exiting (AUTOX-FR-006).` |
-| 3172 | docstring | AUTOX-NFR-003 | `the existing append API — additive content only, so ``3pwr verify`` stays green (AUTOX-NFR-003).` |
-| 3173 | docstring | AUTOX-FR-008 | `The transcript field carries the persisted path, never the output itself (AUTOX-FR-008)."""` |
-| 3188 | docstring | EXEC-FR-013 | `(EXEC-FR-013)."""` |
-| 3195 | docstring | EXEC-FR-009 | `"""The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""` |
-| 3205 | docstring | SRCX-FR-011 | `(SRCX-FR-011 — no modification-time scan), else the newest feature spec under specs/ (legacy)."""` |
-| 3226 | docstring | EXEC-FR-006 | `"""Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).` |
-| 3229 | docstring | GDIAG-FR-004 | `adapter detected, bad tier, or a missing gate prerequisite — GDIAG-FR-004) so the caller reports a` |
-| 3230 | docstring | EXEC-FR-016 | `setup/dispatch problem, never a false gate-red (EXEC-FR-016). The engine computes the verdict itself` |
-| 3231 | docstring | 3PWR-NFR-001 | `— no subprocess dispatch, no model (3PWR-NFR-001).` |
-| 3235 | docstring | AUTOX-FR-011 | ```verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).` |
-| 3236 | docstring | AUTOX-NFR-003 | `The verdict bytes themselves are unchanged (AUTOX-NFR-003). When ``out`` is given, the computed` |
-| 3238 | docstring | GDIAG-FR-001 | `gates inline (GDIAG-FR-001)."""` |
-| 3244 | comment | GATECFG-FR-003 | `# The same effective configuration as a standalone gate run (GATECFG-FR-003/004): the` |
-| 3246 | comment | GATECFG-FR-005 | `# human output only (GATECFG-FR-005). Degrades to None — run_gates loads the adapter.` |
-| 3261 | comment | GDIAG-FR-004 | `# No gate ran — say exactly what to install (GDIAG-FR-004), then report the setup failure.` |
-| 3282 | docstring | RUNLIVE-FR-004 | `"""The per-stage dispatch timeout (RUNLIVE-FR-004): --timeout wins, else the configured default."""` |
-| 3288 | docstring | RUNLIVE-FR-005 | `"""The dispatch retry budget (RUNLIVE-FR-005): --retries wins, else the configured default."""` |
-| 3294 | docstring | RUNLIVE-FR-006 | `"""Stream agent output live only on a real TTY and not under --json (RUNLIVE-FR-006)."""` |
-| 3311 | docstring | RUNLIVE-FR-008 | `RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the` |
-| 3312 | docstring | RUNLIVE-NFR-003 | `verdict is judged identically (RUNLIVE-NFR-003). The transcript sink persists each local attempt's` |
-| 3313 | docstring | AUTOX-FR-008 | `output (AUTOX-FR-008); a hosted backend's output lives with its hosting service. ``echo`` routes the` |
-| 3314 | docstring | STEER-FR-012 | `streamed agent conversation above the run's live bar instead of raw stdout (STEER-FR-012)."""` |
-| 3334 | docstring | PHASE-FR-005 | `"""The approved-spec text a stage's prompt reloads (PHASE-FR-005).` |
-| 3339 | docstring | PHASE-NFR-001 | `tree (PHASE-NFR-001)."""` |
-| 3351 | docstring | PHASE-FR-005 | `"""A reference to (digest of) an accepted stage artifact for the NEXT stage's prompt (PHASE-FR-005)."""` |
-| 3364 | docstring | PHASE-FR-010 | `"""The ordered phases declared by the feature's tasks artifact, or ``[]`` (PHASE-FR-010).` |
-| 3383 | docstring | PHASE-FR-008 | `"""Per-phase context estimates + the advisory oversize warnings after the tasks stage (PHASE-FR-008/009).` |
-| 3388 | docstring | PHASE-NFR-002 | `(PHASE-NFR-002)."""` |
-| 3413 | docstring | PHASEPR-FR-005 | `"""Advisory stall check after one phase session ends (PHASEPR-FR-005).` |
-| 3417 | docstring | PHASEPR-NFR-002 | `Strictly advisory (PHASEPR-NFR-002): it never raises, never retries, and never changes a stage` |
-| 3451 | docstring | PHASE-FR-010 | `"""Run the implement stage phase by phase (PHASE-FR-010/011/012).` |
-| 3455 | docstring | 3PWR-FR-061 | `state carried between phases (3PWR-FR-061). Phases marked parallel with disjoint declared scopes` |
-| 3458 | docstring | PHASE-NFR-003 | `touches the trust spine concurrently (PHASE-NFR-003). Any phase failure fails the stage naming the` |
-| 3459 | docstring | PHASE-FR-012 | `phase(s); later phases are recorded as explicitly skipped, never as passed (PHASE-FR-012)."""` |
-| 3500 | comment | AUTOX-FR-008 | `# phased failure still points at the persisted output (AUTOX-FR-008).` |
-| 3531 | docstring | SRCX-FR-001 | `"""The deterministic prompt line naming the run's feature folder (SRCX-FR-001/008).` |
-| 3535 | docstring | SRCX-FR-013 | `the completion gate asserts (SRCX-FR-013's property)."""` |
-| 3550 | docstring | PROGFILE-NFR-001 | `"""Run one progress-file update, degrading any error to a stderr warning (PROGFILE-NFR-001).` |
-| 3579 | docstring | EXEC-FR-001 | `"""Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify` |
-| 3580 | docstring | RUNLIVE-FR-001 | `its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),` |
-| 3580 | docstring | RUNLIVE-FR-004 | `its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),` |
-| 3582 | docstring | GITX-FR-001 | `3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out` |
-| 3582 | docstring | RUNLIVE-FR-010 | `3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out` |
-| 3584 | docstring | SRCX-FR-004 | `producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""` |
-| 3584 | docstring | EXEC-FR-006 | `producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""` |
-| 3596 | comment | AUTOX-FR-008 | `# under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).` |
-| 3596 | comment | AUTOX-NFR-002 | `# under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).` |
-| 3624 | comment | PHASE-FR-005 | `# knows the committed context boundary it continues from (PHASE-FR-005).` |
-| 3628 | comment | GITX-FR-001 | `# The mandatory PRE-STAGE git hook (GITX-FR-001): every stage of a live run happens on the` |
-| 3630 | comment | GITX-NFR-003 | `# before dispatching; a switch git refuses is a named failure, never forced (GITX-NFR-003).` |
-| 3642 | comment | 3PWR-FR-022 | `# (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a` |
-| 3643 | comment | 3PWR-FR-021 | `# High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.` |
-| 3654 | comment | RUNLIVE-FR-003 | `# A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.` |
-| 3657 | comment | SRCX-FR-017 | `# A completion-gate re-run (SRCX-FR-017) may regenerate a committed artifact` |
-| 3661 | comment | 3PWR-FR-032 | `# so nothing is weakened for a first run (3PWR-FR-032).` |
-| 3670 | comment | SRCX-FR-001 | `# feature folder (the agent-authored markdown stages — SRCX-FR-001), and the prior stage's` |
-| 3671 | comment | PHASE-FR-005 | `# accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).` |
-| 3680 | comment | STEER-FR-006 | `# (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).` |
-| 3680 | comment | STEER-NFR-003 | `# (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).` |
-| 3687 | comment | PHASE-FR-010 | `# scopes are disjoint (PHASE-FR-010/011); a phaseless artifact stays a single dispatch.` |
-| 3716 | comment | SRCX-FR-004 | `# their real outputs at their real repo paths (SRCX-FR-004/005). For a phased` |
-| 3718 | comment | SRCX-FR-006 | `# in deterministic order (SRCX-FR-006, SRCX-NFR-006).` |
-| 3718 | comment | SRCX-NFR-006 | `# in deterministic order (SRCX-FR-006, SRCX-NFR-006).` |
-| 3721 | comment | SRCX-FR-005 | `# the record links the full produced change set (SRCX-FR-005's property)` |
-| 3743 | comment | PHASE-FR-008 | `# over-budget phase (PHASE-FR-008/009).` |
-| 3745 | comment | AUTOX-FR-010 | `# Record the completion itself — lightweight, additive (AUTOX-FR-010, extends` |
-| 3746 | comment | RUNLIVE-FR-010 | `# RUNLIVE-FR-010): resume progress lives in the signed ledger, not only in checkpoint` |
-| 3753 | comment | PROGFILE-FR-007 | `# The stage-complete trigger (PROGFILE-FR-007), BEFORE the post-stage commit below,` |
-| 3754 | comment | PROGFILE-FR-008 | `# so the committed progress.md already shows this stage ✓ done (PROGFILE-FR-008).` |
-| 3757 | comment | GITX-FR-001 | `# The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's` |
-| 3757 | comment | RUNLIVE-FR-010 | `# The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's` |
-| 3760 | comment | GITX-FR-011 | `# and spec id (deterministic fallback — GITX-FR-011) and the 3pwr author applied` |
-| 3761 | comment | GITX-FR-012 | `# per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty` |
-| 3761 | comment | GITX-NFR-004 | `# per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty` |
-| 3763 | comment | GITX-FR-008 | `# author. After it, no run-produced change is left uncommitted (GITX-FR-008).` |
-| 3766 | comment | RUNID-FR-005 | `# The engine's ledger rides every producing stage commit (RUNID-FR-005): the` |
-| 3774 | comment | PROGFILE-FR-008 | `# The run's progress file rides the same stage commit (PROGFILE-FR-008): committed` |
-| 3793 | comment | GITX-FR-008 | `# Clean-stop would be violated (GITX-FR-008) — a named, recorded failure on the` |
-| 3816 | comment | PHASE-FR-003 | `# artifact trail is reconstructable from the ledger alone (PHASE-FR-003).` |
-| 3820 | comment | SRCX-FR-012 | `# The deterministic completion gate (SRCX-FR-012): the stage's declared markdown must` |
-| 3823 | comment | SRCX-FR-014 | `# re-run (SRCX-FR-014/015). Pure given (disk state, ledger entries, step); one ledger` |
-| 3824 | comment | SRCX-NFR-001 | `# read serves the check (SRCX-NFR-001/004).` |
-| 3844 | comment | AUTOX-FR-011 | `# (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine. The` |
-| 3846 | comment | GDIAG-FR-001 | `# (GDIAG-FR-001).` |
-| 3857 | comment | GATECFG-FR-008 | `# An --auto-fix run's fixed paths join the run's produced set (GATECFG-FR-008): they land` |
-| 3859 | comment | GITX-FR-008 | `# uncommitted (GITX-FR-008). The signed ledger rides along, as on every stage commit.` |
-| 3945 | docstring | STEER-FR-006 | `"""Revise-with-message at a paused human gate (STEER-FR-006..008).` |
-| 3967 | comment | STEER-FR-006 | `args.intent = _run_intent_from_ledger(ledger.entries(), spec_id)  # STEER-FR-006` |
-| 3987 | comment | STEER-FR-008 | `# The revision is auditable from the ledger alone (STEER-FR-008): feedback + outcome ride the` |
-| 4003 | comment | STEER-FR-006 | `# The run returns to the SAME gate (STEER-FR-006): re-record the pause so the ledger-derived` |
-| 4071 | docstring | STEER-FR-005 | `"""The three-action interactive choice at a paused human gate (STEER-FR-005): approve / revise /` |
-| 4075 | docstring | 3PWR-FR-006 | `approval (3PWR-FR-006). An unrecognized answer re-prompts."""` |
-| 4112 | docstring | 3PWR-FR-011 | `"""Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human` |
-| 4113 | format-example | FR-006 | `gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the` |
-| 4113 | format-example | FR-037 | `gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the` |
-| 4114 | docstring | EXEC-FR-001 | `**native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the` |
-| 4115 | docstring | EXEC-FR-006 | `gate suite in-process at Verify (EXEC-FR-006); ``--runner sim`` uses the offline simulator (also` |
-| 4116 | docstring | EXEC-NFR-001 | `forced by ``--dry-run``). The engine makes no model call itself (EXEC-NFR-001) and never enters the` |
-| 4117 | docstring | 3PWR-NFR-001 | `deterministic verdict (3PWR-NFR-001)."""` |
-| 4120 | comment | ONBRD-FR-005 | `mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)` |
-| 4124 | echoed-message | CLIUX-FR-005 | `)  # human-output styler (color per --json/--yes/NO_COLOR/ui.yaml) — CLIUX-FR-005` |
-| 4151 | comment | AUTOX-FR-007 | `# A recorded, unresolved run failure — distinct from paused and in-progress (AUTOX-FR-007).` |
-| 4161 | comment | GITX-FR-009 | `# The run's git lifecycle state (GITX-FR-009): its dedicated branch and the per-stage` |
-| 4163 | comment | GITX-NFR-001 | `# no model and no network (GITX-NFR-001).` |
-| 4194 | comment | STEER-FR-001 | `# File-based intent (STEER-FR-001..003): resolve --file (+ the optional inline instruction)` |
-| 4196 | comment | STEER-FR-004 | `# is written; every downstream consumer sees ONLY the resolved intent (STEER-FR-004).` |
-| 4211 | comment | EXEC-NFR-003 | `# Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).` |
-| 4217 | comment | EXEC-FR-015 | `# Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):` |
-| 4219 | comment | AUTOX-FR-002 | `# shared check set init's readiness and `3pwr ready` report (AUTOX-FR-002), so they cannot` |
-| 4221 | comment | EXEC-FR-016 | `# (EXEC-FR-016).` |
-| 4233 | comment | RUNX-FR-010 | `# alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).` |
-| 4233 | format-example | NFR-004 | `# alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).` |
-| 4234 | comment | AUTOX-FR-009 | `# Exits with the setup/dispatch code, distinct from usage and gates-red (AUTOX-FR-009).` |
-| 4266 | comment | RUNLIVE-FR-006 | `stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)` |
-| 4270 | comment | GITX-FR-014 | `# signed deviation as the only relaxation (GITX-FR-014). --dry-run / the simulator dispatch` |
-| 4285 | comment | GITX-FR-014 | `# The plain opt-out is SUPERSEDED (GITX-FR-014): the stage commit is mandatory; the only` |
-| 4289 | echoed-message | GITX-FR-014 | `"warning: --no-auto-commit / defaults.auto_commit is superseded (GITX-FR-014) — "` |
-| 4296 | comment | GDIAG-FR-001 | `# event can render each failed gate inline with the run's resolved identity (GDIAG-FR-001/006).` |
-| 4298 | comment | PROGFILE-FR-001 | `# The run's progress-file reporter (PROGFILE-FR-001) — bound once the live run's feature folder` |
-| 4305 | comment | GDIAG-FR-001 | `# choke point every runner path flows through (GDIAG-FR-001/006).` |
-| 4311 | comment | PROGFILE-FR-007 | `# The progress file's lifecycle triggers (PROGFILE-FR-007), at the same choke point:` |
-| 4330 | docstring | RUNX-FR-007 | `(RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run` |
-| 4330 | format-example | NFR-002 | `(RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run` |
-| 4331 | docstring | RUNX-FR-012 | `(it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012). Keyed on the actual` |
-| 4333 | docstring | RUNLIVE-FR-010 | `dispatch (RUNLIVE-FR-010)."""` |
-| 4364 | comment | STEER-FR-012 | `# (STEER-FR-012); with no bar (off-TTY/degraded) the echo stays the process's stdout.` |
-| 4366 | comment | STEER-FR-013 | `# Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its` |
-| 4374 | docstring | RUNLIVE-FR-006 | `"""The per-stage machine-readable results of the dispatched stages, for --json (RUNLIVE-FR-006)."""` |
-| 4377 | comment | SRCX-FR-008 | `# The run's bound feature folder (SRCX-FR-008/010/011) — resolved per branch below.` |
-| 4388 | comment | STEER-FR-006 | `# The third gate action (STEER-FR-006/007): a revise outside a paused gate, or with` |
-| 4406 | comment | AUTOX-FR-010 | `# No recorded progress at all — say so honestly and name the fresh start (AUTOX-FR-010).` |
-| 4414 | format-example | FR-006 | `# A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).` |
-| 4417 | comment | SRCX-FR-010 | `# one (SRCX-FR-010/011); a pre-SRCX run falls back to the resolvable spec's folder.` |
-| 4420 | comment | SRCX-NFR-004 | `)  # one read serves resume + the completion checks (SRCX-NFR-004)` |
-| 4426 | comment | PROGFILE-FR-001 | `# Rebind the run's progress file to the recorded workspace (PROGFILE-FR-001): the` |
-| 4436 | comment | GITX-FR-004 | `# The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from` |
-| 4467 | comment | STEER-FR-006 | `# feedback, then return to the SAME gate (STEER-FR-006..008).` |
-| 4483 | format-example | FR-010 | `# failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)` |
-| 4484 | comment | SRCX-FR-017 | `# — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose` |
-| 4493 | comment | RUNX-FR-004 | `_record_dispatch(start_index)  # provenance for the resumed segment only (RUNX-FR-004/007)` |
-| 4497 | format-example | FR-058 | `)  # FR-058: shape the tier + oracle, not the sign-off` |
-| 4499 | comment | GITX-FR-007 | `# The pre-stage git hook's clean-start guard (GITX-FR-007), BEFORE any side effect: a` |
-| 4502 | comment | GITX-NFR-003 | `# (GITX-NFR-003).` |
-| 4507 | comment | SRCX-FR-008 | `# Bind the run's feature folder (SRCX-FR-008/011): an explicit --spec names it; otherwise a` |
-| 4520 | echoed-message | SRCX-FR-008 | `f"allocated (another run?); no folder is ever overwritten (SRCX-FR-008)",` |
-| 4525 | comment | RUNID-FR-001 | `# The workspace's NNN is the run's real identity (RUNID-FR-001): derived once here,` |
-| 4529 | comment | RUNID-FR-003 | `# (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).` |
-| 4529 | comment | RUNID-FR-002 | `# (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).` |
-| 4533 | comment | PROGFILE-FR-001 | `# The run's human-readable progress file (PROGFILE-FR-001): bound to the allocated` |
-| 4543 | comment | GITX-FR-003 | `# stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity` |
-| 4561 | comment | GITX-FR-005 | `# The additive branch binding on the existing run/start payload (GITX-FR-005): a later` |
-| 4563 | comment | GITX-NFR-002 | `# guessing; no new entry type and no signing change (GITX-NFR-002).` |
-| 4566 | comment | SRCX-FR-011 | `# The additive folder binding on the existing run/start payload (SRCX-FR-011): a later` |
-| 4567 | comment | SRCX-NFR-002 | `# resume reads it back from the signed ledger alone — no mtime scan (SRCX-NFR-002).` |
-| 4584 | format-example | FR-006 | `print("  " + rst.dim("you still approve the spec — FR-006"))` |
-| 4592 | comment | STEER-FR-012 | `# shows its heartbeat from the first moment (STEER-FR-012/013). No-op off-TTY/degraded.` |
-| 4623 | echoed-message | STEER-FR-005 | `f" — review, then choose (STEER-FR-005):\n{action_rows}"` |
-| 4637 | comment | AUTOX-FR-009 | `# Paused-at-gate is distinguishable from completed by exit code alone (AUTOX-FR-009).` |
-| 4643 | comment | STEER-FR-005 | `)  # the three actions, on-screen at the interactive pause too (STEER-FR-005)` |
-| 4648 | comment | STEER-FR-005 | `# Revise-with-message, inline (STEER-FR-005/006): take the feedback here, re-run the` |
-| 4691 | comment | RUNX-FR-004 | `)  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)` |
-| 4691 | comment | RUNLIVE-FR-010 | `)  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)` |
-| 4694 | comment | STEER-FR-012 | `# screen immediately (STEER-FR-012/013).` |
-| 4702 | comment | STEER-FR-016 | `# restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).` |
-| 4702 | comment | STEER-NFR-004 | `# restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).` |
-| 4708 | comment | AUTOX-FR-006 | `# (AUTOX-FR-006), so `--status`/`3pwr status` can say "failed at <stage> (<class>)"` |
-| 4709 | comment | AUTOX-FR-007 | `# afterwards (AUTOX-FR-007). Attempts come from the failing stage's dispatch result.` |
-| 4728 | comment | RUNX-FR-011 | `# A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,` |
-| 4754 | comment | EXEC-FR-016 | `# setup problem, never a false gate-red (EXEC-FR-016).` |
-| 4782 | comment | RUNLIVE-FR-002 | `# A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a` |
-| 4784 | comment | RUNLIVE-FR-010 | `# resume pick up here without re-running completed stages (RUNLIVE-FR-010).` |
-| 4814 | comment | GITX-FR-001 | `# The mandatory git hook could not hold its guarantee (GITX-FR-001/008/010): the stage` |
-| 4816 | comment | GITX-NFR-003 | `# GITX-NFR-003). Named, recorded, and exiting on the setup/dispatch path — never a` |
-| 4846 | comment | SRCX-FR-012 | `# The deterministic stage-completion gate blocked the run (SRCX-FR-012/014/015): the` |
-| 4848 | comment | SRCX-FR-016 | `# named class is recorded (SRCX-FR-016) and surfaced by both status commands; the stage` |
-| 4876 | comment | RUNX-FR-010 | `# A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say` |
-| 4928 | docstring | 3PWR-FR-070 | `"""Reverse to a prior recorded state via a signed reversal entry (3PWR-FR-070)."""` |
-| 4972 | docstring | 3PWR-FR-019 | `"""Record an abort for a spec's run (3PWR-FR-019)."""` |
-| 4998 | docstring | 3PWR-FR-015 | `"""Two-way requirement<->task coverage before code (3PWR-FR-015)."""` |
-| 5026 | docstring | 3PWR-FR-016 | `"""Task requirement-ID + file-scope discipline (3PWR-FR-016/017)."""` |
-| 5044 | docstring | 3PWR-FR-066 | `"""Sign build provenance + SBOM for an artifact (3PWR-FR-066/068)."""` |
-| 5090 | docstring | 3PWR-FR-067 | `"""Verify an artifact's provenance; refuse if missing or invalid (3PWR-FR-067)."""` |
-| 5138 | docstring | 3PWR-FR-036 | `"""Record a signed residual review (3PWR-FR-036/037)."""` |
-| 5167 | docstring | 3PWR-FR-053 | `"""Reconstruct a spec + characterization tests for a legacy module (3PWR-FR-053)."""` |
-| 5231 | docstring | 3PWR-FR-050 | `"""Run the prompt/constitution eval set; block on regression (3PWR-FR-050)."""` |
-| 5257 | docstring | 3PWR-FR-048 | `"""Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).` |
-| 5257 | format-example | NFR-014 | `"""Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).` |
-| 5260 | docstring | 3PWR-NFR-001 | `keeping them out of the verdict preserves determinism (3PWR-NFR-001)."""` |
-| 5315 | docstring | AUTOX-FR-003 | `"""Standalone, re-runnable auto-run readiness (AUTOX-FR-003): the full ``3pwr run --mode auto``` |
-| 5316 | docstring | AUTOX-FR-002 | `preflight — the SAME shared check set init and the run itself use (AUTOX-FR-002) — plus a` |
-| 5317 | docstring | 3PWR-FR-048 | `dependency summary (3PWR-FR-048), with one overall ready/not-ready verdict and a per-item fix.` |
-| 5319 | docstring | AUTOX-NFR-001 | `Read-only and fully offline (AUTOX-NFR-001): it probes config, PATH, and the key custody chain,` |
-| 5334 | comment | 3PWR-FR-048 | `# Dependency summary (3PWR-FR-048) — informational; never flips the readiness verdict (never a gate).` |
-| 5469 | help-string | INITX-FR-001 | `help="default risk tier a new spec starts at (advisory; never weakens a gate — INITX-FR-001)",` |
-| 5474 | help-string | INITX-FR-002 | `help="judiciary oracle model as <family>/<model>, pinned into /3pwr.oracle (INITX-FR-002/004)",` |
-| 5491 | help-string | INITX-FR-006 | `help="auto-commit after a successful lifecycle stage (INITX-FR-006)",` |
-| 5573 | help-string | HARDN-FR-005 | `help="also cross-check the chain against the latest local anchor tag (HARDN-FR-005)",` |
-| 5636 | echoed-message | GITX-FR-016 | `"(clean-start guarded — GITX-FR-016)",` |
-| 5662 | echoed-message | STEER-FR-001 | `"appended to it as an instruction (STEER-FR-001/002)",` |
-| 5681 | help-string | EXEC-FR-001 | `help="executive runner: native (default; drive headless agents directly, EXEC-FR-001) or "` |
-| 5710 | help-string | RUNLIVE-FR-004 | `help="per-stage dispatch timeout in seconds (RUNLIVE-FR-004; default: configured, 1800)",` |
-| 5717 | echoed-message | RUNLIVE-FR-005 | `"(RUNLIVE-FR-005; default: configured, 1)",` |
-| 5723 | help-string | GITX-FR-014 | `help="SUPERSEDED (GITX-FR-014): the per-stage commit is mandatory; this flag only warns. "` |
-| 5739 | echoed-message | STEER-FR-006 | `"and return to the same gate (STEER-FR-006)",` |
-| 5843 | echoed-message | AUTOX-FR-003 | `"summary; read-only, offline, never a gate (AUTOX-FR-003)",` |
-| 5977 | echoed-message | AGENTX-FR-014 | `"(AGENTX-FR-014)",` |
+| 1025 | comment | ONBRD-FR-005 | `# 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).` |
+| 1025 | format-example | NFR-004 | `# 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).` |
+| 1032 | comment | ONBRD-FR-008 | `# 7) Seed baseline config + the selected adapter, never clobbering (ONBRD-FR-008).` |
+| 1040 | comment | INITX-FR-001 | `#    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,` |
+| 1040 | comment | AGENTX-FR-011 | `#    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,` |
+| 1041 | comment | AGENTX-NFR-004 | `#    so a non-interactive init prompts for nothing and stays run-ready (AGENTX-NFR-004).` |
+| 1050 | comment | INITX-FR-001 | `# default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →` |
+| 1050 | comment | AGENTX-FR-011 | `# default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →` |
+| 1052 | comment | AGENTX-NFR-004 | `# empty notifications are the documented defaults and stay run-ready (AGENTX-NFR-004).` |
+| 1068 | comment | 3PWR-FR-022 | `# Diversity is recommended, not forced (3PWR-FR-022/057). Warn to STDERR so a --json` |
+| 1069 | comment | INITX-FR-014 | `# run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).` |
+| 1069 | comment | INITX-FR-002 | `# run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).` |
+| 1093 | comment | ONBRD-FR-016 | `# 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).` |
+| 1098 | comment | EXEC-FR-004 | `#     (EXEC-FR-004; SLIM removed the substrate) — and each dispatched stage's editable` |
+| 1099 | comment | AGENTX-FR-001 | `#     instructions live in .3powers/templates/agents/ (AGENTX-FR-001/009).` |
+| 1106 | comment | INITX-FR-002 | `# different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family` |
+| 1106 | comment | 3PWR-FR-022 | `# different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family` |
+| 1107 | comment | AGENTX-FR-012 | `# wins over prefix-derivation — catalog bindings may use bare ids (AGENTX-FR-012/015).` |
+| 1116 | comment | AUTOX-FR-001 | `# Auto full-mode readiness — the SAME check set the live run preflight enforces (AUTOX-FR-001/002):` |
+| 1156 | comment | AUTOX-FR-002 | `# (AUTOX-FR-002/005) — derived from the same checks the run preflight enforces.` |
+| 1167 | comment | INITX-FR-013 | `# ---- human, colorized summary (INITX-FR-013) ----` |
+| 1202 | comment | INITX-FR-009 | `# Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding` |
+| 1203 | comment | ONBRD-FR-015 | `# contract documents (ONBRD-FR-015) so existing guidance stays discoverable.` |
+| 1213 | comment | AUTOX-FR-005 | `# The remaining auto full-mode steps, as exact fixes in dependency order (AUTOX-FR-005):` |
+| 1233 | comment | STEER-NFR-002 | `# in the config — STEER-NFR-002). Shown as a call-to-action alongside the signer export.` |
+| 1251 | comment | INITX-FR-012 | `# describe what you want and 3pwr drives the lifecycle (INITX-FR-012).` |
+| 1263 | comment | 3PWR-FR-051 | `# Existing code? The now-working brownfield on-ramp, demoted below the primary CTA (3PWR-FR-051/052).` |
+| 1278 | docstring | GATECFG-FR-005 | `"""The one auto-detection startup line (GATECFG-FR-005), e.g.` |
+| 1289 | docstring | GATECFG-FR-003 | `"""Assemble the effective gate configuration (GATECFG-FR-003), or ``None`` when it cannot be.` |
+| 1304 | comment | GDIAG-FR-002 | `# --id <NNN> is the run-number shorthand for --spec (GDIAG-FR-002): resolve the one matching` |
+| 1321 | comment | 3PWR-FR-051 | `# Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo` |
+| 1332 | comment | GATEPIPE-FR-001 | `# The live per-gate pipeline (GATEPIPE-FR-001/002): rows update in place on a capable TTY and` |
+| 1337 | comment | GATECFG-FR-003 | `# The effective gate configuration (GATECFG-FR-003): the adapter manifest, the project's` |
+| 1339 | comment | GATECFG-FR-004 | `# auto-detected once at startup (GATECFG-FR-004). One line names what was detected, never` |
+| 1340 | comment | GATECFG-FR-005 | `# under --json (GATECFG-FR-005). An unassemblable config degrades to None: run_gates loads` |
+| 1367 | comment | GDIAG-FR-004 | `# A required tool of a non-optional gate is absent (GDIAG-FR-004): no gate ran; the per-tool` |
+| 1392 | comment | GATECFG-FR-008 | `# The auto-fixed announcement (GATECFG-FR-008): one line per gate a fix turned green — human` |
+| 1399 | comment | GATEPIPE-FR-003 | `# One panel per failed gate, printed after the live pipeline exits (GATEPIPE-FR-003) — the` |
+| 1408 | comment | 3PWR-FR-034 | `# exactly what to install so the next `gate run` / `3pwr run` succeeds (3PWR-FR-034). Human-output` |
+| 1437 | comment | 3PWR-FR-052 | `# (optionally diff-scoped via --base/--paths) once the diff is clean (3PWR-FR-052).` |
+| 1444 | docstring | GATECFG-FR-010 | `"""Render the effective per-gate configuration — without executing any gate (GATECFG-FR-010).` |
+| 1448 | docstring | GATECFG-FR-003 | `committed ``gates.yaml`` override, or startup auto-detection (GATECFG-FR-003/004)."""` |
+| 1521 | comment | HARDN-FR-002 | `# Custody preflight (HARDN-FR-002): a private key inside the working tree or readable` |
+| 1531 | comment | HARDN-FR-005 | `# Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest` |
+| 1532 | comment | HARDN-NFR-001 | `# local anchor tag. Plain `verify` never reads an anchor (HARDN-NFR-001).` |
+| 1566 | docstring | HARDN-FR-005 | `"""Record the ledger head with an external witness (HARDN-FR-005) — opt-in.` |
+| 1570 | docstring | HARDN-NFR-001 | `(the sole network-capable operation, HARDN-NFR-001).` |
+| 1640 | comment | SLOCK-FR-001 | `# signed entry so any later silent mutation is caught (SLOCK-FR-001). A fresh` |
+| 1641 | comment | SLOCK-FR-006 | `# Spec-stage sign-off supersedes the previous hash (SLOCK-FR-006).` |
+| 1666 | docstring | SLOCK-FR-007 | `"""Read-only spec-integrity report (SLOCK-FR-007) — never writes to the ledger.` |
+| 1760 | docstring | 3PWR-FR-041 | `"""Local, CI-independent enforcement (3PWR-FR-041/042)."""` |
+| 1774 | comment | 3PWR-FR-057 | `#    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)` |
+| 1774 | comment | 3PWR-FR-052 | `#    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)` |
+| 1804 | comment | 3PWR-FR-056 | `# 2b. An emergency cleanup overdue past one working day blocks the advance (3PWR-FR-056).` |
+| 1812 | comment | 3PWR-FR-037 | `# 3. A human sign-off must exist at or after the latest verdict (3PWR-FR-037).` |
+| 1819 | comment | 3PWR-FR-020 | `# 4. Oracle independence (3PWR-FR-020/021/022/062). The judiciary must have authored the oracle` |
+| 1823 | format-example | FR-021 | `#    At High-risk, physical read-path isolation (FR-021, A3) is also proven when a dispatch` |
+| 1854 | comment | SLOCK-FR-005 | `# 5. Spec integrity (SLOCK-FR-005): once a human has approved the spec, its recorded` |
+| 1856 | comment | 3PWR-FR-057 | `#    `spec_integrity` deviation (3PWR-FR-057) turns the refusal into a warned,` |
+| 1858 | comment | SLOCK-FR-003 | `#    never blocked (SLOCK-FR-003).` |
+| 1878 | comment | GITX-FR-016 | `# 6. Git run discipline (GITX-FR-016): when the spec's run records a dedicated branch, a` |
+| 1881 | comment | GITX-FR-014 | `#    deviations (GITX-FR-014); a pre-GITX ledger records no branch and is untouched.` |
+| 1966 | docstring | 3PWR-FR-057 | `"""Record (or revoke) a signed, reversible gate deviation (3PWR-FR-057)."""` |
+| 2047 | docstring | 3PWR-FR-056 | `"""Open the constrained emergency fast path (3PWR-FR-056)."""` |
+| 2128 | docstring | 3PWR-FR-022 | `"""Check model diversity between two roles (3PWR-FR-022), at the configured granularity.` |
+| 2131 | docstring | 3PWR-FR-057 | `deviation (3PWR-FR-057), which turns the VIOLATION into a warned RELAXED (exit 0)."""` |
+| 2173 | docstring | 3PWR-FR-020 | `"""Seal a spec-only oracle bundle the judiciary authors from (3PWR-FR-020)."""` |
+| 2229 | docstring | 3PWR-FR-022 | `"""Record oracle authoring; refuse the coder's model family (3PWR-FR-022/062)."""` |
+| 2249 | comment | 3PWR-FR-022 | `# Diversity is recommended, not forced (3PWR-FR-022): a same-family/model setup proceeds only under` |
+| 2250 | comment | 3PWR-FR-057 | `# a signed model_diversity deviation (3PWR-FR-057) — warned and recorded, never a silent drop.` |
+| 2304 | comment | 3PWR-FR-021 | `# Advisory (non-blocking) peek/touch signals for human review (3PWR-FR-021).` |
+| 2363 | docstring | 3PWR-FR-020 | `"""Verify oracle independence structurally, from the ledger (3PWR-FR-020/021/022/062)."""` |
+| 2430 | docstring | 3PWR-FR-021 | `which the implementation is physically absent (3PWR-FR-021/012/013; A3).` |
+| 2433 | docstring | 3PWR-NFR-001 | `gate verdict (3PWR-NFR-001). The blocking isolation check binds at ``advance`` (High-risk)."""` |
+| 2444 | comment | 3PWR-FR-022 | `# Resolve the oracle model/family. Diversity is recommended, not forced (3PWR-FR-022): a` |
+| 2445 | format-example | FR-057 | `# same-family/model dispatch proceeds only under a signed model_diversity deviation (FR-057).` |
+| 2518 | comment | EXEC-FR-009 | `# worktree — no external workflow substrate (EXEC-FR-009; supersedes the Spec Kit dispatch).` |
+| 2519 | comment | EXEC-NFR-001 | `# The engine issues no model call itself; the agent process does (EXEC-NFR-001).` |
+| 2579 | comment | 3PWR-FR-021 | `# Advisory (non-blocking) peek/touch signals, unchanged from plan 008 (3PWR-FR-021).` |
+| 2689 | docstring | 3PWR-FR-054 | `"""Record a production signal and route it to the legislature as new intent (3PWR-FR-054)."""` |
+| 2747 | docstring | 3PWR-FR-054 | `"""Report NFR-instrumentation coverage — which NFRs have a live check (3PWR-FR-054)."""` |
+| 2785 | docstring | 3PWR-FR-055 | `"""Append a tamper-evident, attributable runtime agent action (3PWR-FR-055)."""` |
+| 2824 | docstring | 3PWR-FR-055 | `"""Verify the runtime agent-action log's chain + signatures (3PWR-FR-055/040)."""` |
+| 2842 | docstring | 3PWR-FR-011 | `"""Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""` |
+| 2855 | comment | AUTOX-FR-007 | `# The most recent unresolved run failure, if any (AUTOX-FR-007).` |
+| 2881 | comment | AUTOX-FR-007 | `# Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).` |
+| 2901 | comment | 3PWR-FR-056 | `# Surface active deviations + overdue emergency cleanups (3PWR-FR-056/057).` |
+| 2914 | comment | GITX-FR-009 | `# Surface each run's git lifecycle state (GITX-FR-009): its dedicated branch and the committed` |
+| 2927 | comment | 3PWR-FR-020 | `# Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).` |
+| 2946 | docstring | GITX-FR-016 | `"""Establish the run's dedicated branch for a MANUAL drive (GITX-FR-016).` |
+| 2949 | docstring | GITX-FR-002 | `repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named` |
+| 2949 | docstring | GITX-FR-007 | `repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named` |
+| 2950 | docstring | GITX-FR-003 | `from the run's SRCX identity (GITX-FR-003/004) — bound to the run in the signed ledger so a` |
+| 2951 | docstring | GITX-FR-005 | `later resume or `advance` recovers it offline (GITX-FR-005). Idempotent: an already-established` |
+| 2980 | comment | GITX-FR-007 | `# The clean-start guard (GITX-FR-007) — the run's own recorded paths and its feature folder are` |
+| 2981 | comment | GITX-FR-014 | `# tolerated; only unrelated changes refuse, relaxable via the signed deviation (GITX-FR-014).` |
+| 3005 | comment | GITX-FR-005 | `# the orchestrated path records (GITX-FR-005, GITX-NFR-002).` |
+| 3005 | comment | GITX-NFR-002 | `# the orchestrated path records (GITX-FR-005, GITX-NFR-002).` |
+| 3034 | docstring | 3PWR-FR-058 | `"""Infer work kind(s) + a suggested risk tier from free-form intent (3PWR-FR-058).` |
+| 3036 | docstring | 3PWR-NFR-001 | `Deterministic (keyword heuristics, no model call — never perturbs the verdict, 3PWR-NFR-001). The` |
+| 3037 | docstring | 3PWR-FR-006 | `inference shapes the tier + oracle strategy; it never bypasses the human sign-off (3PWR-FR-006)."""` |
+| 3062 | docstring | STEER-FR-009 | `"""Fire ``event`` at the ``--notify`` hook AND every configured channel (STEER-FR-009/011).` |
+| 3064 | docstring | STEER-NFR-001 | `Best-effort and fully isolated from the trust path (STEER-NFR-001): the channels are loaded at` |
+| 3065 | docstring | STEER-FR-010 | `most once per invocation (a malformed file warns once — STEER-FR-010), delivery never raises,` |
+| 3067 | docstring | STEER-NFR-002 | `(STEER-NFR-002). With no ``notifications.yaml`` and no ``--notify``, nothing happens and no` |
+| 3069 | docstring | RUNID-FR-003 | `local, so a workspace-derived NNN reaches the notification too (RUNID-FR-003)."""` |
+| 3072 | comment | STEER-FR-011 | `)  # the existing command hook keeps working alongside (STEER-FR-011)` |
+| 3084 | docstring | SRCX-FR-011 | `"""The run's bound feature folder, read back from the signed ``run``/``start`` entry (SRCX-FR-011).` |
+| 3106 | docstring | STEER-FR-006 | `A revise re-dispatches the paused stage WITH the original intent (STEER-FR-006) — recovered from` |
+| 3107 | docstring | STEER-FR-004 | `the ledger alone (STEER-FR-004's reproducibility), never re-asked."""` |
+| 3120 | docstring | STEER-FR-005 | `review (STEER-FR-005) — one source for the pause screen and the interactive prompt."""` |
+| 3140 | docstring | 3PWR-FR-006 | `"""Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).` |
+| 3140 | format-example | FR-037 | `"""Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).` |
+| 3143 | docstring | SLOCK-FR-001 | `signed entry (SLOCK-FR-001) — same capture as a manual `3pwr signoff --stage spec`.` |
+| 3168 | docstring | AUTOX-FR-006 | `"""Append the signed run-failure record before exiting (AUTOX-FR-006).` |
+| 3171 | docstring | AUTOX-NFR-003 | `the existing append API — additive content only, so ``3pwr verify`` stays green (AUTOX-NFR-003).` |
+| 3172 | docstring | AUTOX-FR-008 | `The transcript field carries the persisted path, never the output itself (AUTOX-FR-008)."""` |
+| 3187 | docstring | EXEC-FR-013 | `(EXEC-FR-013)."""` |
+| 3194 | docstring | EXEC-FR-009 | `"""The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""` |
+| 3204 | docstring | SRCX-FR-011 | `(SRCX-FR-011 — no modification-time scan), else the newest feature spec under specs/ (legacy)."""` |
+| 3225 | docstring | EXEC-FR-006 | `"""Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).` |
+| 3228 | docstring | GDIAG-FR-004 | `adapter detected, bad tier, or a missing gate prerequisite — GDIAG-FR-004) so the caller reports a` |
+| 3229 | docstring | EXEC-FR-016 | `setup/dispatch problem, never a false gate-red (EXEC-FR-016). The engine computes the verdict itself` |
+| 3230 | docstring | 3PWR-NFR-001 | `— no subprocess dispatch, no model (3PWR-NFR-001).` |
+| 3234 | docstring | AUTOX-FR-011 | ```verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).` |
+| 3235 | docstring | AUTOX-NFR-003 | `The verdict bytes themselves are unchanged (AUTOX-NFR-003). When ``out`` is given, the computed` |
+| 3237 | docstring | GDIAG-FR-001 | `gates inline (GDIAG-FR-001)."""` |
+| 3243 | comment | GATECFG-FR-003 | `# The same effective configuration as a standalone gate run (GATECFG-FR-003/004): the` |
+| 3245 | comment | GATECFG-FR-005 | `# human output only (GATECFG-FR-005). Degrades to None — run_gates loads the adapter.` |
+| 3260 | comment | GDIAG-FR-004 | `# No gate ran — say exactly what to install (GDIAG-FR-004), then report the setup failure.` |
+| 3281 | docstring | RUNLIVE-FR-004 | `"""The per-stage dispatch timeout (RUNLIVE-FR-004): --timeout wins, else the configured default."""` |
+| 3287 | docstring | RUNLIVE-FR-005 | `"""The dispatch retry budget (RUNLIVE-FR-005): --retries wins, else the configured default."""` |
+| 3293 | docstring | RUNLIVE-FR-006 | `"""Stream agent output live only on a real TTY and not under --json (RUNLIVE-FR-006)."""` |
+| 3310 | docstring | RUNLIVE-FR-008 | `RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the` |
+| 3311 | docstring | RUNLIVE-NFR-003 | `verdict is judged identically (RUNLIVE-NFR-003). The transcript sink persists each local attempt's` |
+| 3312 | docstring | AUTOX-FR-008 | `output (AUTOX-FR-008); a hosted backend's output lives with its hosting service. ``echo`` routes the` |
+| 3313 | docstring | STEER-FR-012 | `streamed agent conversation above the run's live bar instead of raw stdout (STEER-FR-012)."""` |
+| 3333 | docstring | PHASE-FR-005 | `"""The approved-spec text a stage's prompt reloads (PHASE-FR-005).` |
+| 3338 | docstring | PHASE-NFR-001 | `tree (PHASE-NFR-001)."""` |
+| 3350 | docstring | PHASE-FR-005 | `"""A reference to (digest of) an accepted stage artifact for the NEXT stage's prompt (PHASE-FR-005)."""` |
+| 3363 | docstring | PHASE-FR-010 | `"""The ordered phases declared by the feature's tasks artifact, or ``[]`` (PHASE-FR-010).` |
+| 3382 | docstring | PHASE-FR-008 | `"""Per-phase context estimates + the advisory oversize warnings after the tasks stage (PHASE-FR-008/009).` |
+| 3387 | docstring | PHASE-NFR-002 | `(PHASE-NFR-002)."""` |
+| 3412 | docstring | PHASEPR-FR-005 | `"""Advisory stall check after one phase session ends (PHASEPR-FR-005).` |
+| 3416 | docstring | PHASEPR-NFR-002 | `Strictly advisory (PHASEPR-NFR-002): it never raises, never retries, and never changes a stage` |
+| 3450 | docstring | PHASE-FR-010 | `"""Run the implement stage phase by phase (PHASE-FR-010/011/012).` |
+| 3454 | docstring | 3PWR-FR-061 | `state carried between phases (3PWR-FR-061). Phases marked parallel with disjoint declared scopes` |
+| 3457 | docstring | PHASE-NFR-003 | `touches the trust spine concurrently (PHASE-NFR-003). Any phase failure fails the stage naming the` |
+| 3458 | docstring | PHASE-FR-012 | `phase(s); later phases are recorded as explicitly skipped, never as passed (PHASE-FR-012)."""` |
+| 3499 | comment | AUTOX-FR-008 | `# phased failure still points at the persisted output (AUTOX-FR-008).` |
+| 3530 | docstring | SRCX-FR-001 | `"""The deterministic prompt line naming the run's feature folder (SRCX-FR-001/008).` |
+| 3534 | docstring | SRCX-FR-013 | `the completion gate asserts (SRCX-FR-013's property)."""` |
+| 3549 | docstring | PROGFILE-NFR-001 | `"""Run one progress-file update, degrading any error to a stderr warning (PROGFILE-NFR-001).` |
+| 3578 | docstring | EXEC-FR-001 | `"""Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify` |
+| 3579 | docstring | RUNLIVE-FR-001 | `its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),` |
+| 3579 | docstring | RUNLIVE-FR-004 | `its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),` |
+| 3581 | docstring | GITX-FR-001 | `3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out` |
+| 3581 | docstring | RUNLIVE-FR-010 | `3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out` |
+| 3583 | docstring | SRCX-FR-004 | `producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""` |
+| 3583 | docstring | EXEC-FR-006 | `producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""` |
+| 3595 | comment | AUTOX-FR-008 | `# under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).` |
+| 3595 | comment | AUTOX-NFR-002 | `# under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).` |
+| 3623 | comment | PHASE-FR-005 | `# knows the committed context boundary it continues from (PHASE-FR-005).` |
+| 3627 | comment | GITX-FR-001 | `# The mandatory PRE-STAGE git hook (GITX-FR-001): every stage of a live run happens on the` |
+| 3629 | comment | GITX-NFR-003 | `# before dispatching; a switch git refuses is a named failure, never forced (GITX-NFR-003).` |
+| 3641 | comment | 3PWR-FR-022 | `# (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a` |
+| 3642 | comment | 3PWR-FR-021 | `# High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.` |
+| 3653 | comment | RUNLIVE-FR-003 | `# A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.` |
+| 3656 | comment | SRCX-FR-017 | `# A completion-gate re-run (SRCX-FR-017) may regenerate a committed artifact` |
+| 3660 | comment | 3PWR-FR-032 | `# so nothing is weakened for a first run (3PWR-FR-032).` |
+| 3669 | comment | SRCX-FR-001 | `# feature folder (the agent-authored markdown stages — SRCX-FR-001), and the prior stage's` |
+| 3670 | comment | PHASE-FR-005 | `# accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).` |
+| 3679 | comment | STEER-FR-006 | `# (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).` |
+| 3679 | comment | STEER-NFR-003 | `# (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).` |
+| 3686 | comment | PHASE-FR-010 | `# scopes are disjoint (PHASE-FR-010/011); a phaseless artifact stays a single dispatch.` |
+| 3715 | comment | SRCX-FR-004 | `# their real outputs at their real repo paths (SRCX-FR-004/005). For a phased` |
+| 3717 | comment | SRCX-FR-006 | `# in deterministic order (SRCX-FR-006, SRCX-NFR-006).` |
+| 3717 | comment | SRCX-NFR-006 | `# in deterministic order (SRCX-FR-006, SRCX-NFR-006).` |
+| 3720 | comment | SRCX-FR-005 | `# the record links the full produced change set (SRCX-FR-005's property)` |
+| 3742 | comment | PHASE-FR-008 | `# over-budget phase (PHASE-FR-008/009).` |
+| 3744 | comment | AUTOX-FR-010 | `# Record the completion itself — lightweight, additive (AUTOX-FR-010, extends` |
+| 3745 | comment | RUNLIVE-FR-010 | `# RUNLIVE-FR-010): resume progress lives in the signed ledger, not only in checkpoint` |
+| 3752 | comment | PROGFILE-FR-007 | `# The stage-complete trigger (PROGFILE-FR-007), BEFORE the post-stage commit below,` |
+| 3753 | comment | PROGFILE-FR-008 | `# so the committed progress.md already shows this stage ✓ done (PROGFILE-FR-008).` |
+| 3756 | comment | GITX-FR-001 | `# The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's` |
+| 3756 | comment | RUNLIVE-FR-010 | `# The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's` |
+| 3759 | comment | GITX-FR-011 | `# and spec id (deterministic fallback — GITX-FR-011) and the 3pwr author applied` |
+| 3760 | comment | GITX-FR-012 | `# per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty` |
+| 3760 | comment | GITX-NFR-004 | `# per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty` |
+| 3762 | comment | GITX-FR-008 | `# author. After it, no run-produced change is left uncommitted (GITX-FR-008).` |
+| 3765 | comment | RUNID-FR-005 | `# The engine's ledger rides every producing stage commit (RUNID-FR-005): the` |
+| 3773 | comment | PROGFILE-FR-008 | `# The run's progress file rides the same stage commit (PROGFILE-FR-008): committed` |
+| 3792 | comment | GITX-FR-008 | `# Clean-stop would be violated (GITX-FR-008) — a named, recorded failure on the` |
+| 3815 | comment | PHASE-FR-003 | `# artifact trail is reconstructable from the ledger alone (PHASE-FR-003).` |
+| 3819 | comment | SRCX-FR-012 | `# The deterministic completion gate (SRCX-FR-012): the stage's declared markdown must` |
+| 3822 | comment | SRCX-FR-014 | `# re-run (SRCX-FR-014/015). Pure given (disk state, ledger entries, step); one ledger` |
+| 3823 | comment | SRCX-NFR-001 | `# read serves the check (SRCX-NFR-001/004).` |
+| 3843 | comment | AUTOX-FR-011 | `# (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine. The` |
+| 3845 | comment | GDIAG-FR-001 | `# (GDIAG-FR-001).` |
+| 3856 | comment | GATECFG-FR-008 | `# An --auto-fix run's fixed paths join the run's produced set (GATECFG-FR-008): they land` |
+| 3858 | comment | GITX-FR-008 | `# uncommitted (GITX-FR-008). The signed ledger rides along, as on every stage commit.` |
+| 3944 | docstring | STEER-FR-006 | `"""Revise-with-message at a paused human gate (STEER-FR-006..008).` |
+| 3966 | comment | STEER-FR-006 | `args.intent = _run_intent_from_ledger(ledger.entries(), spec_id)  # STEER-FR-006` |
+| 3986 | comment | STEER-FR-008 | `# The revision is auditable from the ledger alone (STEER-FR-008): feedback + outcome ride the` |
+| 4002 | comment | STEER-FR-006 | `# The run returns to the SAME gate (STEER-FR-006): re-record the pause so the ledger-derived` |
+| 4070 | docstring | STEER-FR-005 | `"""The three-action interactive choice at a paused human gate (STEER-FR-005): approve / revise /` |
+| 4074 | docstring | 3PWR-FR-006 | `approval (3PWR-FR-006). An unrecognized answer re-prompts."""` |
+| 4111 | docstring | 3PWR-FR-011 | `"""Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human` |
+| 4112 | format-example | FR-006 | `gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the` |
+| 4112 | format-example | FR-037 | `gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the` |
+| 4113 | docstring | EXEC-FR-001 | `**native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the` |
+| 4114 | docstring | EXEC-FR-006 | `gate suite in-process at Verify (EXEC-FR-006); ``--runner sim`` uses the offline simulator (also` |
+| 4115 | docstring | EXEC-NFR-001 | `forced by ``--dry-run``). The engine makes no model call itself (EXEC-NFR-001) and never enters the` |
+| 4116 | docstring | 3PWR-NFR-001 | `deterministic verdict (3PWR-NFR-001)."""` |
+| 4119 | comment | ONBRD-FR-005 | `mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)` |
+| 4148 | comment | AUTOX-FR-007 | `# A recorded, unresolved run failure — distinct from paused and in-progress (AUTOX-FR-007).` |
+| 4158 | comment | GITX-FR-009 | `# The run's git lifecycle state (GITX-FR-009): its dedicated branch and the per-stage` |
+| 4160 | comment | GITX-NFR-001 | `# no model and no network (GITX-NFR-001).` |
+| 4191 | comment | STEER-FR-001 | `# File-based intent (STEER-FR-001..003): resolve --file (+ the optional inline instruction)` |
+| 4193 | comment | STEER-FR-004 | `# is written; every downstream consumer sees ONLY the resolved intent (STEER-FR-004).` |
+| 4208 | comment | EXEC-NFR-003 | `# Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).` |
+| 4214 | comment | EXEC-FR-015 | `# Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):` |
+| 4216 | comment | AUTOX-FR-002 | `# shared check set init's readiness and `3pwr ready` report (AUTOX-FR-002), so they cannot` |
+| 4218 | comment | EXEC-FR-016 | `# (EXEC-FR-016).` |
+| 4230 | comment | RUNX-FR-010 | `# alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).` |
+| 4230 | format-example | NFR-004 | `# alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).` |
+| 4231 | comment | AUTOX-FR-009 | `# Exits with the setup/dispatch code, distinct from usage and gates-red (AUTOX-FR-009).` |
+| 4263 | comment | RUNLIVE-FR-006 | `stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)` |
+| 4267 | comment | GITX-FR-014 | `# signed deviation as the only relaxation (GITX-FR-014). --dry-run / the simulator dispatch` |
+| 4282 | comment | GITX-FR-014 | `# The plain opt-out is SUPERSEDED (GITX-FR-014): the stage commit is mandatory; the only` |
+| 4293 | comment | GDIAG-FR-001 | `# event can render each failed gate inline with the run's resolved identity (GDIAG-FR-001/006).` |
+| 4295 | comment | PROGFILE-FR-001 | `# The run's progress-file reporter (PROGFILE-FR-001) — bound once the live run's feature folder` |
+| 4302 | comment | GDIAG-FR-001 | `# choke point every runner path flows through (GDIAG-FR-001/006).` |
+| 4308 | comment | PROGFILE-FR-007 | `# The progress file's lifecycle triggers (PROGFILE-FR-007), at the same choke point:` |
+| 4327 | docstring | RUNX-FR-007 | `(RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run` |
+| 4327 | format-example | NFR-002 | `(RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run` |
+| 4328 | docstring | RUNX-FR-012 | `(it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012). Keyed on the actual` |
+| 4330 | docstring | RUNLIVE-FR-010 | `dispatch (RUNLIVE-FR-010)."""` |
+| 4361 | comment | STEER-FR-012 | `# (STEER-FR-012); with no bar (off-TTY/degraded) the echo stays the process's stdout.` |
+| 4363 | comment | STEER-FR-013 | `# Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its` |
+| 4371 | docstring | RUNLIVE-FR-006 | `"""The per-stage machine-readable results of the dispatched stages, for --json (RUNLIVE-FR-006)."""` |
+| 4374 | comment | SRCX-FR-008 | `# The run's bound feature folder (SRCX-FR-008/010/011) — resolved per branch below.` |
+| 4385 | comment | STEER-FR-006 | `# The third gate action (STEER-FR-006/007): a revise outside a paused gate, or with` |
+| 4403 | comment | AUTOX-FR-010 | `# No recorded progress at all — say so honestly and name the fresh start (AUTOX-FR-010).` |
+| 4411 | format-example | FR-006 | `# A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).` |
+| 4414 | comment | SRCX-FR-010 | `# one (SRCX-FR-010/011); a pre-SRCX run falls back to the resolvable spec's folder.` |
+| 4417 | comment | SRCX-NFR-004 | `)  # one read serves resume + the completion checks (SRCX-NFR-004)` |
+| 4423 | comment | PROGFILE-FR-001 | `# Rebind the run's progress file to the recorded workspace (PROGFILE-FR-001): the` |
+| 4433 | comment | GITX-FR-004 | `# The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from` |
+| 4464 | comment | STEER-FR-006 | `# feedback, then return to the SAME gate (STEER-FR-006..008).` |
+| 4480 | format-example | FR-010 | `# failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)` |
+| 4481 | comment | SRCX-FR-017 | `# — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose` |
+| 4490 | comment | RUNX-FR-004 | `_record_dispatch(start_index)  # provenance for the resumed segment only (RUNX-FR-004/007)` |
+| 4494 | format-example | FR-058 | `)  # FR-058: shape the tier + oracle, not the sign-off` |
+| 4496 | comment | GITX-FR-007 | `# The pre-stage git hook's clean-start guard (GITX-FR-007), BEFORE any side effect: a` |
+| 4499 | comment | GITX-NFR-003 | `# (GITX-NFR-003).` |
+| 4504 | comment | SRCX-FR-008 | `# Bind the run's feature folder (SRCX-FR-008/011): an explicit --spec names it; otherwise a` |
+| 4522 | comment | RUNID-FR-001 | `# The workspace's NNN is the run's real identity (RUNID-FR-001): derived once here,` |
+| 4526 | comment | RUNID-FR-003 | `# (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).` |
+| 4526 | comment | RUNID-FR-002 | `# (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).` |
+| 4530 | comment | PROGFILE-FR-001 | `# The run's human-readable progress file (PROGFILE-FR-001): bound to the allocated` |
+| 4540 | comment | GITX-FR-003 | `# stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity` |
+| 4558 | comment | GITX-FR-005 | `# The additive branch binding on the existing run/start payload (GITX-FR-005): a later` |
+| 4560 | comment | GITX-NFR-002 | `# guessing; no new entry type and no signing change (GITX-NFR-002).` |
+| 4563 | comment | SRCX-FR-011 | `# The additive folder binding on the existing run/start payload (SRCX-FR-011): a later` |
+| 4564 | comment | SRCX-NFR-002 | `# resume reads it back from the signed ledger alone — no mtime scan (SRCX-NFR-002).` |
+| 4581 | format-example | FR-006 | `print("  " + rst.dim("you still approve the spec — FR-006"))` |
+| 4589 | comment | STEER-FR-012 | `# shows its heartbeat from the first moment (STEER-FR-012/013). No-op off-TTY/degraded.` |
+| 4634 | comment | AUTOX-FR-009 | `# Paused-at-gate is distinguishable from completed by exit code alone (AUTOX-FR-009).` |
+| 4640 | comment | STEER-FR-005 | `)  # the three actions, on-screen at the interactive pause too (STEER-FR-005)` |
+| 4645 | comment | STEER-FR-005 | `# Revise-with-message, inline (STEER-FR-005/006): take the feedback here, re-run the` |
+| 4688 | comment | RUNX-FR-004 | `)  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)` |
+| 4688 | comment | RUNLIVE-FR-010 | `)  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)` |
+| 4691 | comment | STEER-FR-012 | `# screen immediately (STEER-FR-012/013).` |
+| 4699 | comment | STEER-FR-016 | `# restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).` |
+| 4699 | comment | STEER-NFR-004 | `# restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).` |
+| 4705 | comment | AUTOX-FR-006 | `# (AUTOX-FR-006), so `--status`/`3pwr status` can say "failed at <stage> (<class>)"` |
+| 4706 | comment | AUTOX-FR-007 | `# afterwards (AUTOX-FR-007). Attempts come from the failing stage's dispatch result.` |
+| 4725 | comment | RUNX-FR-011 | `# A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,` |
+| 4751 | comment | EXEC-FR-016 | `# setup problem, never a false gate-red (EXEC-FR-016).` |
+| 4779 | comment | RUNLIVE-FR-002 | `# A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a` |
+| 4781 | comment | RUNLIVE-FR-010 | `# resume pick up here without re-running completed stages (RUNLIVE-FR-010).` |
+| 4811 | comment | GITX-FR-001 | `# The mandatory git hook could not hold its guarantee (GITX-FR-001/008/010): the stage` |
+| 4813 | comment | GITX-NFR-003 | `# GITX-NFR-003). Named, recorded, and exiting on the setup/dispatch path — never a` |
+| 4843 | comment | SRCX-FR-012 | `# The deterministic stage-completion gate blocked the run (SRCX-FR-012/014/015): the` |
+| 4845 | comment | SRCX-FR-016 | `# named class is recorded (SRCX-FR-016) and surfaced by both status commands; the stage` |
+| 4873 | comment | RUNX-FR-010 | `# A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say` |
+| 4925 | docstring | 3PWR-FR-070 | `"""Reverse to a prior recorded state via a signed reversal entry (3PWR-FR-070)."""` |
+| 4969 | docstring | 3PWR-FR-019 | `"""Record an abort for a spec's run (3PWR-FR-019)."""` |
+| 4995 | docstring | 3PWR-FR-015 | `"""Two-way requirement<->task coverage before code (3PWR-FR-015)."""` |
+| 5023 | docstring | 3PWR-FR-016 | `"""Task requirement-ID + file-scope discipline (3PWR-FR-016/017)."""` |
+| 5041 | docstring | 3PWR-FR-066 | `"""Sign build provenance + SBOM for an artifact (3PWR-FR-066/068)."""` |
+| 5087 | docstring | 3PWR-FR-067 | `"""Verify an artifact's provenance; refuse if missing or invalid (3PWR-FR-067)."""` |
+| 5135 | docstring | 3PWR-FR-036 | `"""Record a signed residual review (3PWR-FR-036/037)."""` |
+| 5164 | docstring | 3PWR-FR-053 | `"""Reconstruct a spec + characterization tests for a legacy module (3PWR-FR-053)."""` |
+| 5228 | docstring | 3PWR-FR-050 | `"""Run the prompt/constitution eval set; block on regression (3PWR-FR-050)."""` |
+| 5254 | docstring | 3PWR-FR-048 | `"""Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).` |
+| 5254 | format-example | NFR-014 | `"""Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).` |
+| 5257 | docstring | 3PWR-NFR-001 | `keeping them out of the verdict preserves determinism (3PWR-NFR-001)."""` |
+| 5312 | docstring | AUTOX-FR-003 | `"""Standalone, re-runnable auto-run readiness (AUTOX-FR-003): the full ``3pwr run --mode auto``` |
+| 5313 | docstring | AUTOX-FR-002 | `preflight — the SAME shared check set init and the run itself use (AUTOX-FR-002) — plus a` |
+| 5314 | docstring | 3PWR-FR-048 | `dependency summary (3PWR-FR-048), with one overall ready/not-ready verdict and a per-item fix.` |
+| 5316 | docstring | AUTOX-NFR-001 | `Read-only and fully offline (AUTOX-NFR-001): it probes config, PATH, and the key custody chain,` |
+| 5331 | comment | 3PWR-FR-048 | `# Dependency summary (3PWR-FR-048) — informational; never flips the readiness verdict (never a gate).` |
 
 ## engine/src/threepowers/completion.py (34)
 

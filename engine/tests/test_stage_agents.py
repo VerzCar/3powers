@@ -411,7 +411,7 @@ def test_same_family_judiciary_warns_and_names_the_deviation_path(tmp_path, caps
     )
     assert rc == 0  # recommended, never forced
     err = capsys.readouterr().err
-    assert "anthropic" in err and "3PWR-FR-022" in err
+    assert "anthropic" in err and "model diversity is recommended" in err
     assert "3pwr deviation --gate model_diversity" in err
 
 

@@ -345,7 +345,7 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     if keys.inside_working_tree(s.root, out):
         print(
             f"refusing to create a private key INSIDE the repository working tree: {out}\n"
-            "  an executive agent with repo access could read it (HARDN-FR-002 / 3PWR-NFR-005).\n"
+            "  an executive agent with repo access could read it.\n"
             f"  pass --out with a path outside the repo, e.g. {keys.default_private_path(s.root)}",
             file=sys.stderr,
         )
@@ -401,7 +401,7 @@ def cmd_rotate_key(args: argparse.Namespace) -> int:
     if keys.inside_working_tree(s.root, out):
         print(
             f"refusing to create a private key INSIDE the repository working tree: {out}\n"
-            "  pass --out with a path outside the repo (HARDN-FR-002 / 3PWR-NFR-005)",
+            "  pass --out with a path outside the repo",
             file=sys.stderr,
         )
         return EXIT_USAGE
@@ -519,7 +519,7 @@ def _readiness_checklist(
             "pass" if model_div_ok else "warn",
             "oracle model differs from the coder's family"
             if model_div_ok
-            else "oracle shares the coder's family (or is unset) — recommended to differ (3PWR-FR-022)",
+            else "oracle shares the coder's family (or is unset) — recommended to differ",
         )
     )
     # The auto full-mode prerequisites — sourced from the run's own preflight checks, so a "ready"
@@ -562,7 +562,7 @@ def _warn_diversity(s: Settings, st: style.Styler) -> list[str]:
             print(
                 st.warn(
                     f"⚠ {role} resolves to the coder's model family ({coder_fam}) — model "
-                    "diversity is recommended (3PWR-FR-022)."
+                    "diversity is recommended."
                 ),
                 file=sys.stderr,
             )
@@ -799,7 +799,7 @@ def cmd_config_roles_setup(args: argparse.Namespace) -> int:
     rows.append(
         st.status_row(
             "info",
-            "oracle.require_dispatch: the High-risk read-path-isolation policy (3PWR-FR-021/A3) — "
+            "oracle.require_dispatch: the High-risk read-path-isolation policy — "
             "default false; see .3powers/config/roles.yaml",
         )
     )
@@ -1016,8 +1016,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             key_path = default_key
         if not scaffold.is_outside_repo(key_path, root):
             print(
-                "error: the signing key must live OUTSIDE the repository "
-                f"(ONBRD-NFR-001 / 3PWR-NFR-005): {key_path}",
+                f"error: the signing key must live OUTSIDE the repository: {key_path}",
                 file=sys.stderr,
             )
             return EXIT_USAGE
@@ -1071,7 +1070,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             print(
                 st.warn(
                     f"⚠ oracle model shares the coder's family ({coder_fam}) — model diversity is "
-                    "recommended (3PWR-FR-022)."
+                    "recommended."
                 ),
                 file=sys.stderr,
             )
@@ -4119,9 +4118,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     ledger = Ledger(s.ledger_path)
     mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
     spec_id = args.spec_id or "RUN"
-    rst = _styler(
-        args
-    )  # human-output styler (color per --json/--yes/NO_COLOR/ui.yaml) — CLIUX-FR-005
+    rst = _styler(args)  # human-output styler (color per --json/--yes/NO_COLOR/ui.yaml)
 
     if args.status:
         st = lifecycle.derive(ledger.entries()).get(spec_id)
@@ -4286,7 +4283,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         # relaxation is the signed `git_stage_commit` deviation — warned, never silent.
         if not commit_relaxed and not args.json:
             print(
-                "warning: --no-auto-commit / defaults.auto_commit is superseded (GITX-FR-014) — "
+                "warning: --no-auto-commit / defaults.auto_commit is superseded — "
                 "the per-stage commit is mandatory; relax it on the record with "
                 '`3pwr deviation --gate git_stage_commit --approver <you> --note "<why>"`',
                 file=sys.stderr,
@@ -4517,7 +4514,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 target = workspace.feature_folder_name(s.root / "specs", args.intent or "")
                 print(
                     f"cannot start `3pwr run` — the feature folder specs/{target} is already "
-                    f"allocated (another run?); no folder is ever overwritten (SRCX-FR-008)",
+                    "allocated (another run?); no folder is ever overwritten",
                     file=sys.stderr,
                 )
                 return EXIT_SETUP
@@ -4620,7 +4617,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 human = (
                     f"{orchestrate.render_tracker(result.stage, rst)}\n"
                     f"  {rst.warn('⏸ HUMAN GATE')} '{result.gate}'{fr}"
-                    f" — review, then choose (STEER-FR-005):\n{action_rows}"
+                    f" — review, then choose:\n{action_rows}"
                 )
                 _print(
                     {
@@ -5466,12 +5463,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ip.add_argument(
         "--tier",
-        help="default risk tier a new spec starts at (advisory; never weakens a gate — INITX-FR-001)",
+        help="default risk tier a new spec starts at (advisory; never weakens a gate)",
     )
     ip.add_argument(
         "--oracle-model",
         dest="oracle_model",
-        help="judiciary oracle model as <family>/<model>, pinned into /3pwr.oracle (INITX-FR-002/004)",
+        help="judiciary oracle model as <family>/<model>, pinned into /3pwr.oracle",
     )
     ip.add_argument(
         "--oracle-integration",
@@ -5488,7 +5485,7 @@ def build_parser() -> argparse.ArgumentParser:
     csp = common(
         sub.add_parser(
             "commit-stage",
-            help="auto-commit after a successful lifecycle stage (INITX-FR-006)",
+            help="auto-commit after a successful lifecycle stage",
         )
     )
     csp.add_argument("--stage", required=True, help="the lifecycle stage just completed")
@@ -5570,7 +5567,7 @@ def build_parser() -> argparse.ArgumentParser:
     vp.add_argument(
         "--anchored",
         action="store_true",
-        help="also cross-check the chain against the latest local anchor tag (HARDN-FR-005)",
+        help="also cross-check the chain against the latest local anchor tag",
     )
     vp.set_defaults(func=cmd_verify)
 
@@ -5627,13 +5624,13 @@ def build_parser() -> argparse.ArgumentParser:
     stp.add_argument("--spec-id", dest="spec_id")
     stp.set_defaults(func=cmd_status)
 
-    gitp = sub.add_parser("git", help="git run discipline: establish the run branch (GITX)")
+    gitp = sub.add_parser("git", help="git run discipline: establish the run branch")
     gitsub = gitp.add_subparsers(dest="git_cmd", required=True)
     gits = common(
         gitsub.add_parser(
             "start",
             help="establish + bind the run's dedicated branch for a manual drive "
-            "(clean-start guarded — GITX-FR-016)",
+            "(clean-start guarded)",
         )
     )
     gits.add_argument("--spec-id", dest="spec_id", required=True)
@@ -5659,7 +5656,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--file",
         default=None,
         help="read the run's intent from a text file (markdown preferred); inline intent text is "
-        "appended to it as an instruction (STEER-FR-001/002)",
+        "appended to it as an instruction",
     )
     rnp.add_argument(
         "--mode",
@@ -5678,7 +5675,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--runner",
         choices=["native", "sim"],
         default=None,
-        help="executive runner: native (default; drive headless agents directly, EXEC-FR-001) or "
+        help="executive runner: native (default; drive headless agents directly) or "
         "sim (offline). --dry-run forces sim.",
     )
     rnp.add_argument(
@@ -5707,20 +5704,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout",
         type=int,
         default=None,
-        help="per-stage dispatch timeout in seconds (RUNLIVE-FR-004; default: configured, 1800)",
+        help="per-stage dispatch timeout in seconds (default: the configured value, or 1800)",
     )
     rnp.add_argument(
         "--retries",
         type=int,
         default=None,
         help="retries for a failed dispatch before the stage is reported failed "
-        "(RUNLIVE-FR-005; default: configured, 1)",
+        "(default: the configured value, or 1)",
     )
     rnp.add_argument(
         "--no-auto-commit",
         dest="no_auto_commit",
         action="store_true",
-        help="SUPERSEDED (GITX-FR-014): the per-stage commit is mandatory; this flag only warns. "
+        help="SUPERSEDED: the per-stage commit is mandatory; this flag only warns. "
         "Relax on the record: `3pwr deviation --gate git_stage_commit`",
     )
     rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
@@ -5736,7 +5733,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--revise",
         default=None,
         help="with --resume, at a paused human gate: re-run the paused stage with this feedback "
-        "and return to the same gate (STEER-FR-006)",
+        "and return to the same gate",
     )
     rnp.add_argument(
         "--revise-file",
@@ -5840,7 +5837,7 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_parser(
             "ready",
             help="am I ready for `3pwr run --mode auto`? — the full run preflight + a dependency "
-            "summary; read-only, offline, never a gate (AUTOX-FR-003)",
+            "summary; read-only, offline, never a gate",
         )
     )
     rdy.add_argument(
@@ -5973,8 +5970,7 @@ def build_parser() -> argparse.ArgumentParser:
     crs = common(
         crsub.add_parser(
             "setup",
-            help="(re)run the headless-CLI + per-role model setup without reinitializing "
-            "(AGENTX-FR-014)",
+            help="(re)run the headless-CLI + per-role model setup without reinitializing",
         )
     )
     crs.add_argument(
