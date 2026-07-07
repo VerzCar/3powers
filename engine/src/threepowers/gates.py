@@ -9,9 +9,10 @@ result is one normalized verdict (3PWR-FR-033) whose every failure is actionable
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from . import adapters, covdiff, design, gaming, mutation, scanners, speclock
 from .adapters import CmdResult
@@ -47,6 +48,47 @@ _CORE_GATES = {
     "gate_gaming",
     "spec_conformance",
 }
+
+# Best-effort start-time tool labels for the core-computed gates (GATEPIPE-FR-001). The finish
+# event's GateResult.tool stays authoritative — e.g. secret_scan may resolve to gitleaks.
+_CORE_TOOL_LABELS = {
+    "spec_integrity": "3pwr",
+    "diff_coverage": "3pwr-covdiff",
+    "sast": "semgrep",
+    "dependency_scan": "osv-scanner",
+    "secret_scan": "betterleaks",
+    "gate_gaming": "3pwr",
+    "spec_conformance": "3pwr",
+    "defect_regression": "3pwr",
+    "mutation": "mutation",
+}
+
+
+class GateObserver(Protocol):
+    """The gate engine's start/finish event seam (GATEPIPE-FR-001).
+
+    ``run_gates`` calls ``gate_started`` when a required gate begins and ``gate_finished`` with the
+    gate's result when it completes — in execution order, every start before its own finish. A
+    renderer (the live pipeline view) consumes these; the observer never enters the verdict
+    computation (GATEPIPE-NFR-001, 3PWR-NFR-001)."""
+
+    def gate_started(self, gate: str, tool: str) -> None:
+        """A required gate is about to run; ``tool`` is the best-effort tool label."""
+
+    def gate_finished(self, result: GateResult) -> None:
+        """The gate completed with ``result`` (pass, fail, or skip)."""
+
+
+def _gate_tool_label(gate: str, manifest: dict[str, Any]) -> str:
+    """The best-effort tool label for a gate's start event (GATEPIPE-FR-001).
+
+    Adapter gates take the manifest's parser/command name; core gates use the static label table.
+    Purely presentational — the finish event's ``GateResult.tool`` stays authoritative."""
+    if gate in _ADAPTER_GATES:
+        spec = adapters.gate_spec(manifest, gate) or {}
+        tokens = str(spec.get("parser") or spec.get("cmd") or "").split()
+        return tokens[0] if tokens else ""
+    return _CORE_TOOL_LABELS.get(gate, "")
 
 
 def _git_commit(repo_root: Path) -> str:
@@ -113,6 +155,10 @@ def _result_from_cmd(
     details: dict[str, Any] = {"returncode": res.returncode}
     findings = [] if res.ok else res.tail()
     if not res.ok:
+        if spec and spec.get("fix_cmd"):
+            # Surface the configured manual fix in the failure panel (GATEPIPE-FR-003).
+            # Rendering only — the engine never runs it here.
+            details["fix_cmd"] = str(spec["fix_cmd"])
         hit = _missing_tool_finding(manifest, spec, res)
         if hit:
             tool, msg, install = hit
@@ -128,6 +174,83 @@ def _result_from_cmd(
         details=details,
         findings=findings,
     )
+
+
+# --------------------------------------------------------------------------- opt-in auto-fix (GATECFG)
+def _worktree_snapshot(cwd: Path) -> dict[str, str]:
+    """A ``{path: sha256}`` snapshot of the modified/untracked files under ``cwd`` (GATECFG-FR-008).
+
+    Diffing a pre-/post-fix snapshot yields exactly the paths a ``fix_cmd`` touched, so they can
+    join the run's produced set and ride the stage commit (ref GITX-FR-008). Degrades to ``{}``
+    outside a git repository — auto-fix still fixes and re-checks; only the produced-paths record
+    is empty. Design note: local by intention — the judiciary never imports the executive's
+    runner module for this."""
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return {}
+    if proc.returncode != 0:
+        return {}
+    state: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        rel = line[3:].strip().strip('"')
+        if " -> " in rel:  # a rename: XY old -> new
+            rel = rel.split(" -> ", 1)[1].strip().strip('"')
+        fp = cwd / rel
+        try:
+            state[rel] = hashlib.sha256(fp.read_bytes()).hexdigest() if fp.is_file() else ""
+        except OSError:
+            state[rel] = ""
+    return state
+
+
+def _paths_changed(pre: dict[str, str], post: dict[str, str]) -> list[str]:
+    """The paths whose content changed between two snapshots (sorted; either direction counts)."""
+    changed = {p for p, h in post.items() if pre.get(p) != h}
+    changed |= {p for p in pre if p not in post}
+    return sorted(changed)
+
+
+def _try_auto_fix(spec: dict[str, Any], cmd: str, target: Path) -> tuple[CmdResult, dict[str, Any]]:
+    """Run the gate's configured ``fix_cmd`` and re-check, opt-in only (GATECFG-FR-008).
+
+    Only a fixable gate (format/lint — GATECFG-FR-006) with a failing check and a configured fix
+    reaches this. Returns the re-check's :class:`CmdResult` plus the extra details for the gate's
+    result: on a passing re-check, ``auto_fixed`` (the tool that fixed) and ``fixed_paths`` (what
+    it touched, for the run's produced set); on a failing one, nothing extra — the failure reports
+    normally."""
+    fix_cmd = str(spec["fix_cmd"])
+    pre = _worktree_snapshot(target)
+    adapters.run_cmd(fix_cmd, cwd=target, shell=adapters.wants_shell(spec))
+    recheck = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
+    if not recheck.ok:
+        return recheck, {}
+    tool = str(spec.get("parser") or fix_cmd).split()[0]
+    return recheck, {
+        "auto_fixed": tool,
+        "fixed_paths": _paths_changed(pre, _worktree_snapshot(target)),
+    }
+
+
+def fixed_paths(verdict: dict[str, Any]) -> list[str]:
+    """Every path an ``--auto-fix`` run fixed, from a verdict dict (GATECFG-FR-008).
+
+    The paths ride each green auto-fixed gate's ``details.fixed_paths``; the caller appends them
+    to the run's produced set so the stage commit picks them up (ref GITX-FR-008)."""
+    out: list[str] = []
+    for g in verdict.get("gates") or []:
+        for p in (g.get("details") or {}).get("fixed_paths") or []:
+            if p not in out:
+                out.append(p)
+    return sorted(out)
 
 
 _MUTABLE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".go"}
@@ -247,7 +370,23 @@ def run_gates(
     report_only: bool = False,
     diff_scope: bool = False,
     work_kind: list[str] | None = None,
+    observer: GateObserver | None = None,
+    auto_fix: bool = False,
+    manifest: dict[str, Any] | None = None,
 ) -> Verdict:
+    """Run the tier's gate suite cheapest-first and return the one normalized verdict (3PWR-FR-026/033).
+
+    ``observer``, when given, receives a start event before each required gate runs and a finish
+    event with its :class:`GateResult` — the seam the live pipeline view renders from
+    (GATEPIPE-FR-001). It is presentation-only and never enters the verdict (GATEPIPE-NFR-001).
+    ``auto_fix`` (opt-in only — GATECFG-FR-007) lets a failing format/lint check run its
+    configured ``fix_cmd`` and re-check (GATECFG-FR-008); no other gate ever runs a fix
+    (GATECFG-FR-006). ``manifest``, when given, is the caller-assembled effective gate
+    configuration (``gates.yaml`` overrides + auto-detection — GATECFG-FR-003, via
+    :func:`adapters.effective_gates`); absent, the adapter manifest is loaded with the project's
+    ``gates.yaml`` merged (GATECFG-FR-001). Raises :class:`PrerequisiteError` before any gate runs
+    when a required tool of a non-optional gate is absent (GDIAG-FR-004); a ``report_only`` run
+    never hard-stops."""
     tiers = settings.load_risk_tiers()
     tcfg = tier_config(tiers, tier)
     required: list[str] = list(tcfg.get("gates", []))
@@ -275,7 +414,8 @@ def run_gates(
         }
 
     adapter_name = adapter_name or adapters.detect_adapter(settings, target)
-    manifest = adapters.load_adapter(settings, adapter_name)
+    if manifest is None:
+        manifest = adapters.load_adapter(settings, adapter_name)
 
     # Prerequisites pre-check (GDIAG-FR-004/005): every required tool of a non-optional gate is
     # probed BEFORE any gate command runs — a missing one stops the run on the setup path with
@@ -299,6 +439,12 @@ def run_gates(
         work_kind=kinds,
     )
 
+    def _add(gr: GateResult) -> None:
+        """Record ``gr`` on the verdict and fire the observer's finish event (GATEPIPE-FR-001)."""
+        verdict.add(gr)
+        if observer is not None:
+            observer.gate_finished(gr)
+
     # Run tests (with coverage) if either the tests or diff_coverage gate is required.
     coverage_path: Path | None = None
     need_tests = "tests" in required or "diff_coverage" in required
@@ -307,10 +453,15 @@ def run_gates(
         if gate not in required:
             continue
 
+        # The start event precedes the gate's own execution (GATEPIPE-FR-001) — the live pipeline
+        # shows the row as running before the (possibly long) command produces a result.
+        if observer is not None:
+            observer.gate_started(gate, _gate_tool_label(gate, manifest))
+
         if gate in _ADAPTER_GATES:
             spec = adapters.gate_spec(manifest, gate)
             if not spec:
-                verdict.add(
+                _add(
                     GateResult(
                         gate=gate,
                         status=STATUS_SKIP,
@@ -322,7 +473,7 @@ def run_gates(
                 if not allow_mutation and not diff_mutation:
                     # Expensive gate — opt in with --mutation; full sweep is scheduled
                     # (3PWR-NFR-002). Reported as skipped, never silently passed.
-                    verdict.add(
+                    _add(
                         GateResult(
                             gate="mutation",
                             status=STATUS_SKIP,
@@ -337,7 +488,7 @@ def run_gates(
                     # mutation_score stays the single source of the threshold (3PWR-FR-032).
                     mut_paths = _diff_mutation_paths(settings, base, target)
                     if not mut_paths:
-                        verdict.add(
+                        _add(
                             GateResult(
                                 gate="mutation",
                                 status=STATUS_SKIP,
@@ -346,7 +497,7 @@ def run_gates(
                             )
                         )
                         continue
-                verdict.add(
+                _add(
                     mutation.mutation_gate(
                         target,
                         spec,
@@ -357,7 +508,7 @@ def run_gates(
                 continue
             cmd = adapters.command_of(spec)
             if not cmd:
-                verdict.add(
+                _add(
                     GateResult(
                         gate=gate,
                         status=STATUS_SKIP,
@@ -366,31 +517,36 @@ def run_gates(
                 )
                 continue
             res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
+            fix_details: dict[str, Any] = {}
+            if not res.ok and auto_fix and gate in adapters.AUTOFIX_GATES and spec.get("fix_cmd"):
+                # Opt-in auto-fix (GATECFG-FR-008): fix, re-check; a green re-check passes the
+                # gate and records what the fix touched. Never fires for any other gate
+                # (GATECFG-FR-006) and never without --auto-fix (GATECFG-FR-007/009).
+                res, fix_details = _try_auto_fix(spec, cmd, target)
             gr = _result_from_cmd(gate, spec, res, manifest)
+            gr.details.update(fix_details)
             if gate == "tests" and spec.get("coverage_path"):
                 coverage_path = target / spec["coverage_path"]
-            verdict.add(gr)
+            _add(gr)
 
         elif gate == "spec_integrity":
             # The spec is the law — after human approval its full-document hash is frozen in
             # the signed ledger; a silent mutation fails fast, before any test runs
             # (SLOCK-FR-003/004). Skips (never blocks) a not-yet-approved spec.
             if spec_path is None:
-                verdict.add(_no_spec_skip("spec_integrity"))
+                _add(_no_spec_skip("spec_integrity"))
             else:
-                verdict.add(
+                _add(
                     speclock.integrity_gate(
                         Ledger(settings.ledger_path).entries(), spec_id, settings.root, spec_path
                     )
                 )
 
         elif gate == "diff_coverage":
-            verdict.add(
-                _diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base, paths)
-            )
+            _add(_diff_coverage_gate(settings, target, manifest, tcfg, coverage_path, base, paths))
 
         elif gate == "sast":
-            verdict.add(
+            _add(
                 scanners.sast_scan(
                     target, settings.dir / "config" / "semgrep-rules.yml", changed_scope
                 )
@@ -398,17 +554,17 @@ def run_gates(
 
         elif gate == "dependency_scan":
             # Dependency vulnerabilities are not file-local; never diff-scoped.
-            verdict.add(scanners.dependency_scan(target))
+            _add(scanners.dependency_scan(target))
 
         elif gate == "secret_scan":
-            verdict.add(scanners.secret_scan(target, changed_scope))
+            _add(scanners.secret_scan(target, changed_scope))
 
         elif gate == "gate_gaming":
-            verdict.add(gaming.detect_gaming(settings.root, target, base))
+            _add(gaming.detect_gaming(settings.root, target, base))
 
         elif gate == "spec_conformance":
             if spec_path is None:
-                verdict.add(_no_spec_skip("spec_conformance"))
+                _add(_no_spec_skip("spec_conformance"))
             else:
                 roots = _test_roots(manifest, target)
                 gr = run_conformance(
@@ -417,27 +573,29 @@ def run_gates(
                     required_layers=tcfg.get("required_layers"),
                     conformance_cfg=manifest.get("conformance"),
                 )
-                verdict.add(gr)
+                _add(gr)
                 verdict.failures.extend(conformance_failures(gr))
 
         elif gate == "defect_regression":
             # Work-kind: defect — a fix must ship a failing regression test (3PWR-FR-008).
             if spec_path is None:
-                verdict.add(_no_spec_skip("defect_regression"))
+                _add(_no_spec_skip("defect_regression"))
             else:
-                verdict.add(regression_gate(spec_path, _test_roots(manifest, target)))
+                _add(regression_gate(spec_path, _test_roots(manifest, target)))
 
         elif gate in design.DESIGN_GATES:
             # Work-kind: design — adapter-supplied design oracle, quarantined if unwired (3PWR-FR-009).
-            verdict.add(design.design_gate(gate, manifest, adapter_name, target))
+            _add(design.design_gate(gate, manifest, adapter_name, target))
 
     # Make sure tests actually ran when required even if listed only via diff_coverage.
     if need_tests and not any(g.gate == "tests" for g in verdict.gates):
         spec = adapters.gate_spec(manifest, "tests")
         cmd = adapters.command_of(spec) if spec else None
         if spec and cmd:
+            if observer is not None:
+                observer.gate_started("tests", _gate_tool_label("tests", manifest))
             res = adapters.run_cmd(cmd, cwd=target, shell=adapters.wants_shell(spec))
-            verdict.add(_result_from_cmd("tests", spec, res, manifest))
+            _add(_result_from_cmd("tests", spec, res, manifest))
 
     # Actionable failures for any failed gate (3PWR-FR-034).
     for g in verdict.gates:

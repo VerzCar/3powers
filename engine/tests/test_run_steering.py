@@ -591,10 +591,10 @@ def _tty_frame(subject="RUN", size=(100, 24), enabled=True):
 
 
 def test_bar_streams_output_into_scrollback_and_stays_visible(run_repo, monkeypatch):
-    """STEER-FR-012: the live bar anchors at the BOTTOM of the terminal with NO scroll region —
-    content emitted through it prints ABOVE the bar into the terminal's ordinary flow, so the whole
-    conversation lands in scrollback (DECSTBM discards scrolled-out lines — the loss this replaces),
-    and the bar is repainted after every line."""
+    """STEER-FR-012 / TRIX-FR-004: the live bar anchors at the BOTTOM of the terminal with NO scroll
+    region — content emitted through it prints ABOVE the bar into the terminal's ordinary flow, so
+    the whole conversation lands in scrollback (DECSTBM discards scrolled-out lines — the loss this
+    replaces), and the bar is repainted after every line."""
     buf, lf = _tty_frame()
     lf.note(kind="step", step="specify", stage="Spec", detail="", reached="Spec", spec_id="RUN")
     out = buf.getvalue()
@@ -605,7 +605,8 @@ def test_bar_streams_output_into_scrollback_and_stays_visible(run_repo, monkeypa
         lf.emit(f"agent output line {i}")
     tail = buf.getvalue()
     assert "agent output line 0" in tail and "agent output line 199" in tail  # nothing is lost
-    assert tail.count(frame._ERASE_BAR) >= 200  # erase bar · print line · repaint, per line
+    assert tail.index("agent output line 0") < tail.index("agent output line 199")  # in order
+    assert tail.count("3Powers · run") >= 200  # the bar is repainted below every emitted line
     lf.note(kind="step", step="plan", stage="Plan", detail="", reached="Plan", spec_id="RUN")
     lf.close()
     assert "\033[?25h" in buf.getvalue()  # cursor restored on teardown
@@ -631,10 +632,13 @@ def test_bar_heartbeat_spinner_and_elapsed_are_deterministic():
     lf.note(
         kind="gate-stop", step="review-spec", stage="Spec", detail="", reached="Spec", spec_id="RUN"
     )
-    paused_paint = buf.getvalue().rsplit(frame._ERASE_BAR, 1)[-1]
-    assert "HUMAN GATE" in paused_paint and frame.spinner_glyph(0) not in paused_paint
-    lf.heartbeat()  # a paused bar does not tick
-    assert buf.getvalue().rsplit(frame._ERASE_BAR, 1)[-1] == paused_paint
+    assert "HUMAN GATE" in buf.getvalue()  # the paused state painted
+    # the paused bar renders without a spinner (the pure renderer takes none when not running) …
+    paused_lines = "\n".join(frame.frame_lines(lf._state, 100, style.Styler(), "RUN"))
+    assert "HUMAN GATE" in paused_lines and frame.spinner_glyph(0) not in paused_lines
+    before = len(buf.getvalue())
+    lf.heartbeat()  # … and a paused bar does not tick — no repaint, no new bytes
+    assert len(buf.getvalue()) == before
     lf.close()
     live = frame.build(_FakeTty(), st=style.Styler(), env={"TERM": "xterm"}, size=(100, 24))
     assert live is not None and live._heartbeat > 0  # the production path gets the ticker
@@ -726,14 +730,17 @@ def test_frame_states_running_paused_failed_are_distinct_with_gate_guidance():
 
 
 def test_frame_adds_no_dependency_and_no_network(monkeypatch):
-    """STEER-FR-014 + STEER-NFR-005: the declared runtime dependencies stay exactly
-    {cryptography, PyYAML}, and rendering the frame opens no socket."""
+    """TRIX-FR-001 + STEER-NFR-005: the declared runtime dependencies are exactly {cryptography,
+    PyYAML, rich} — rich is the single rendering dependency the amended CLIUX-FR-003 permits
+    (superseding STEER-FR-014's zero-dependency constraint) — and rendering the frame opens no
+    socket."""
     import socket
     import tomllib
 
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     deps = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
-    assert sorted(d.split(">=")[0].lower() for d in deps) == ["cryptography", "pyyaml"]
+    names = sorted(re.split(r"[<>=]", d, maxsplit=1)[0].strip().lower() for d in deps)
+    assert names == ["cryptography", "pyyaml", "rich"]
 
     def _no_network(*_a, **_k):
         raise AssertionError("the frame opened a socket")

@@ -13,11 +13,20 @@ Orchestration never enters the deterministic verdict (3PWR-NFR-001).
 
 from __future__ import annotations
 
+import io
+import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Callable, Iterable, Mapping, Optional, Protocol, TextIO
+
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from . import frame, style
 from .lifecycle import STAGES, canonical_stage
+from .verdict import GateResult
 
 # The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
 MANDATORY_GATES: dict[str, str] = {
@@ -421,7 +430,7 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
     return f"  {st.dim('·')} {ev.kind}"
 
 
-# --------------------------------------------------------------------------- richer progress (dependency-free)
+# --------------------------------------------------------------------------- richer progress
 _TERMINAL_KINDS = ("gate-stop", "done", "failed", "aborted")
 
 
@@ -434,14 +443,15 @@ def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None)
 
 
 class Tracker:
-    """A dependency-free progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
+    """The progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
     live bar** at the bottom of the terminal — the eight stages with done/current/upcoming marks, the
     active step, and a heartbeat spinner with the elapsed time — while the event log and the
     dispatched agent's stdout print ABOVE it into ordinary, fully scrollable history (STEER-FR-012/013,
     advancing CLIUX-FR-008/009's single in-place line). Off a TTY (pipe / ``--json``), under
     ``NO_COLOR``, or on a terminal that cannot support the bar, it degrades to the plain streamed
     ``format_event`` log with no ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015,
-    CLIUX-FR-011). No ``rich``/``curses`` dependency (INITX-NFR-004, CLIUX-FR-003, STEER-FR-014).
+    CLIUX-FR-011). The bar is rendered by ``rich`` behind the frame API (TRIX-FR-003/004; the
+    machine contracts are unchanged).
     Color is tied to the TTY: the off-TTY log is always plain, even under
     ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
 
@@ -564,3 +574,255 @@ class _EchoSink:
         if self._buf:
             line, self._buf = self._buf, ""
             self._tracker.emit(line)
+
+
+# --------------------------------------------------------------------------- gate pipeline (GATEPIPE)
+# Tool-output noise the rendered gate view suppresses unless verbose (GATEPIPE-FR-004).
+# Node.js prints ExperimentalWarning banners on stderr for perfectly healthy runs.
+_NOISE_MARKERS = ("ExperimentalWarning",)
+
+# A failed gate's panel shows at most this many meaningful error lines (GATEPIPE-FR-003).
+PANEL_MAX_LINES = 30
+
+
+def meaningful_lines(lines: Iterable[str], verbose: bool = False) -> list[str]:
+    """Flatten gate findings into rendered lines, filtering noise unless ``verbose`` (GATEPIPE-FR-004).
+
+    Each finding may span multiple lines; blank lines and known tool noise (Node.js
+    ``ExperimentalWarning`` banners) are excluded by default and kept under verbose. Rendering
+    only — the machine-readable verdict is never filtered (GATEPIPE-NFR-001)."""
+    out: list[str] = []
+    for raw in lines:
+        for ln in str(raw).splitlines() or [""]:
+            if not verbose and (not ln.strip() or any(n in ln for n in _NOISE_MARKERS)):
+                continue
+            out.append(ln)
+    return out
+
+
+def _gate_elapsed(duration_ms: int) -> str:
+    """A compact elapsed-time label for a finished gate row/panel — ``0.4 s`` style."""
+    return f"{max(0, duration_ms) / 1000:.1f} s"
+
+
+@dataclass
+class _PipelineRow:
+    """One gate's pipeline row state — running until its finish event lands (GATEPIPE-FR-001)."""
+
+    gate: str
+    tool: str = ""
+    status: str = "running"  # running | pass | fail | skip
+    duration_ms: int = 0
+    errors: int = 0
+
+
+class GatePipeline:
+    """The per-gate pipeline view of a gate run (GATEPIPE-FR-001/002).
+
+    Consumes the gate engine's start/finish events (the ``gates.GateObserver`` seam) and renders
+    one compact status row per gate — status glyph, ``gate · tool``, elapsed + summary. On a
+    capable TTY with color the rows live inside a ``rich`` live region and update in place:
+    ``○ gate · tool (running…)`` → ``✓ gate · tool 0.4 s`` / ``✗ gate · tool 1.2 s  2 errors``.
+    Off a TTY or under ``NO_COLOR`` it degrades to sequential plain-text rows — one escape-free
+    line per *finished* gate, no in-place updates (GATEPIPE-FR-002). A ``--json`` run never
+    constructs one, so the machine payload stays byte-identical. Presentation only: it never
+    enters the verdict (GATEPIPE-NFR-001)."""
+
+    def __init__(
+        self,
+        stream: TextIO | None = None,
+        st: style.Styler | None = None,
+        *,
+        verbose: bool = False,
+        live: Optional[bool] = None,
+    ) -> None:
+        self._stream: TextIO = stream if stream is not None else sys.stdout
+        self._st = st if st is not None else style.Styler()
+        self._verbose = verbose
+        if live is None:
+            tty = bool(getattr(self._stream, "isatty", lambda: False)())
+            live = self._st.enabled and tty
+        self._live_mode = bool(live)
+        self._rows: list[_PipelineRow] = []
+        self._index: dict[str, int] = {}
+        self._console: Optional[Console] = None
+        self._live: Optional[Live] = None
+        self._opened = False
+
+    # ------------------------------------------------------------------ lifecycle
+    def open(self) -> None:
+        """Start the live region (TTY mode). Idempotent; a plain-mode open is a no-op."""
+        if self._opened:
+            return
+        self._opened = True
+        if not self._live_mode:
+            return
+        try:
+            self._console = Console(file=self._stream, force_terminal=True, highlight=False)
+            self._live = Live(
+                self._table(), console=self._console, auto_refresh=False, transient=False
+            )
+            self._live.start(refresh=True)
+        except (OSError, ValueError):
+            # A broken stream must never take the gate run down — degrade to plain rows.
+            self._live = None
+            self._console = None
+            self._live_mode = False
+
+    def close(self) -> None:
+        """Stop the live region, leaving the final rows on screen. Always safe to call twice."""
+        if not self._opened:
+            return
+        self._opened = False
+        try:
+            if self._live is not None:
+                self._live.stop()
+        except (OSError, ValueError):
+            pass
+        self._live = None
+        self._console = None
+
+    def __enter__(self) -> "GatePipeline":
+        self.open()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    # ------------------------------------------------------------------ gate events (GateObserver)
+    def gate_started(self, gate: str, tool: str) -> None:
+        """Show ``gate`` as running (live mode); plain mode waits for the finish (GATEPIPE-FR-002)."""
+        self._index[gate] = len(self._rows)
+        self._rows.append(_PipelineRow(gate=gate, tool=tool))
+        self._refresh()
+
+    def gate_finished(self, result: GateResult) -> None:
+        """Fold the gate's result into its row — update in place live, one plain line otherwise."""
+        i = self._index.get(result.gate)
+        if i is None:
+            i = len(self._rows)
+            self._index[result.gate] = i
+            self._rows.append(_PipelineRow(gate=result.gate))
+        row = self._rows[i]
+        if result.tool:
+            row.tool = result.tool
+        row.status = result.status
+        row.duration_ms = int(result.duration_ms or 0)
+        row.errors = len(meaningful_lines(result.findings)) if result.status == "fail" else 0
+        if self._live_mode:
+            self._refresh()
+            return
+        self._stream.write(self._row_text(row) + "\n")
+        self._stream.flush()
+
+    # ------------------------------------------------------------------ rendering
+    def _row_cells(self, row: _PipelineRow) -> tuple[str, str, str]:
+        """The row's (glyph, label, detail) cells — a pure function of the row and the styler."""
+        st = self._st
+        label = f"{row.gate} · {row.tool}" if row.tool else row.gate
+        if row.status == "running":
+            glyph = st.dim("o" if st.ascii_only else "○")
+            return glyph, label, st.dim("(running…)" if not st.ascii_only else "(running...)")
+        # A skipped spec_integrity (and every skip) carries the dim info glyph, never ✗
+        # (GATEPIPE-FR-005); pass/fail keep the shared status vocabulary (CLIUX-FR-005).
+        glyph = st.mark(row.status)
+        detail = _gate_elapsed(row.duration_ms)
+        if row.status == "fail" and row.errors:
+            detail += f"  {row.errors} error{'' if row.errors == 1 else 's'}"
+        elif row.status == "skip":
+            detail = st.dim("skipped")
+        return glyph, label, detail
+
+    def _row_text(self, row: _PipelineRow) -> str:
+        glyph, label, detail = self._row_cells(row)
+        return f"  {glyph} {label}  {detail}"
+
+    def _table(self) -> Table:
+        """The live region's renderable: one three-column grid row per gate (GATEPIPE-FR-001)."""
+        table = Table.grid(padding=(0, 1))
+        for row in self._rows:
+            glyph, label, detail = self._row_cells(row)
+            table.add_row(
+                Text.from_ansi("  " + glyph), Text.from_ansi(label), Text.from_ansi(detail)
+            )
+        return table
+
+    def _refresh(self) -> None:
+        if self._live is None:
+            return
+        try:
+            self._live.update(self._table(), refresh=True)
+        except (OSError, ValueError):
+            pass  # never let a repaint take the gate run down
+
+
+def _panel_body_lines(gate: Mapping[str, Any], verbose: bool = False) -> list[str]:
+    """A failed gate's panel body: meaningful error lines trimmed to :data:`PANEL_MAX_LINES`
+    with a truncation note, then the configured auto-fix hint when present (GATEPIPE-FR-003/004).
+
+    Scanner gates (dependency/secret scan) already carry one finding per line — ID plus
+    package/file (and a remediation hint when the gate details supply one) — so the generic
+    line path renders them one per line."""
+    lines = meaningful_lines(gate.get("findings") or [], verbose)
+    if not lines:
+        lines = ["non-zero exit — the tool reported no output"]
+    shown = lines[:PANEL_MAX_LINES]
+    hidden = len(lines) - len(shown)
+    if hidden > 0:
+        shown.append(f"… {hidden} more line{'' if hidden == 1 else 's'}")
+    fix = (gate.get("details") or {}).get("fix_cmd")
+    if fix:
+        shown.append(f"↳ auto-fix: {fix}")
+    return shown
+
+
+def _render_panel(
+    gate: Mapping[str, Any], st: style.Styler, *, verbose: bool, width: Optional[int]
+) -> str:
+    """One failed gate's panel — a rich panel with a dim ``gate · tool`` header on a color TTY,
+    plain indented text otherwise (GATEPIPE-FR-003)."""
+    name = str(gate.get("gate", "?"))
+    tool = str(gate.get("tool") or "").strip() or "?"
+    elapsed = _gate_elapsed(int(gate.get("duration_ms") or 0))
+    title = f"{name} · {tool}  {elapsed}"
+    body = _panel_body_lines(gate, verbose)
+    if st.enabled:
+        buf = io.StringIO()
+        console = Console(
+            file=buf,
+            force_terminal=True,
+            width=width if width is not None else style.term_width(),
+            highlight=False,
+        )
+        console.print(
+            Panel(
+                Text("\n".join(f"  {ln}" for ln in body)),
+                title=Text(title, style="dim"),
+                title_align="left",
+                border_style="dim",
+            )
+        )
+        return buf.getvalue().rstrip("\n")
+    ch = "-" if st.ascii_only else "─"
+    head = f"  {ch * 2} {title}"
+    return "\n".join([head, *(f"    {ln}" for ln in body)])
+
+
+def failure_panels(
+    verdict: Mapping[str, Any],
+    st: style.Styler | None = None,
+    *,
+    verbose: bool = False,
+    width: Optional[int] = None,
+) -> str:
+    """The post-run failure surface: one panel per FAILED gate of ``verdict`` (GATEPIPE-FR-003).
+
+    Rendered after the live pipeline exits; replaces the former bottom "failures:" block. Takes
+    the verdict *dict* (the ``Verdict.to_dict()`` shape the emitters already carry) so run-path
+    and gate-run callers share one renderer. Empty string when nothing failed. Degrades to plain
+    indented text with a disabled styler — never an ANSI byte off a color TTY."""
+    st = st or style.Styler()
+    failed = [g for g in (verdict.get("gates") or []) if g.get("status") == "fail"]
+    if not failed:
+        return ""
+    return "\n".join(_render_panel(g, st, verbose=verbose, width=width) for g in failed)

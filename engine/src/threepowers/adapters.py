@@ -38,11 +38,82 @@ class CmdResult:
         return lines[-n:]
 
 
-def load_adapter(settings: Settings, name: str) -> dict[str, Any]:
+# The only gates a fix command may run for (GATECFG-FR-006): a fix mutates source to satisfy a
+# style check — types/tests/mutation must never be "fixed" into passing. Enforced at configuration
+# assembly (a stray fix_cmd is discarded) AND at execution (gates.py refuses to run one).
+AUTOFIX_GATES = frozenset({"format", "lint"})
+
+# Where the per-project gate overrides live (GATECFG-FR-001) — committed team configuration,
+# versioned with the rest of .3powers/config/, seeded by `3pwr init` (GATECFG-FR-002).
+GATE_OVERRIDES_NAME = "gates.yaml"
+
+
+def _read_manifest(settings: Settings, name: str) -> dict[str, Any]:
+    """Parse the raw adapter manifest, without any override or detection applied."""
     path = settings.adapters_dir / name / "adapter.yaml"
     if not path.exists():
         raise FileNotFoundError(f"adapter manifest not found: {path}")
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def load_gate_overrides(settings: Settings) -> dict[str, dict[str, Any]]:
+    """The per-gate overrides from ``.3powers/config/gates.yaml`` (GATECFG-FR-001).
+
+    Returns ``{gate: {key: value}}``; ``{}`` when the file is absent, empty, or fully commented.
+    Non-mapping gate blocks are ignored — the file overrides gate KEYS, nothing else."""
+    path = settings.dir / "config" / GATE_OVERRIDES_NAME
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(gate): dict(block) for gate, block in data.items() if isinstance(block, dict) and block
+    }
+
+
+def merge_gate_overrides(
+    manifest: dict[str, Any], overrides: dict[str, dict[str, Any]]
+) -> list[str]:
+    """Deep-merge ``overrides`` into the manifest's ``gates:`` blocks; returns the overridden gates.
+
+    One ``dict.update()`` pass per gate block (GATECFG-FR-001): only keys present in the override
+    replace the adapter's; absent gates/keys keep the adapter values. A ``fix_cmd`` on a
+    non-fixable gate is discarded, never merged (GATECFG-FR-006). Overrides replace TOOLS, never
+    gates — the risk tier alone decides which gates run (GATECFG-NFR-001)."""
+    if not overrides:
+        return []
+    gates = manifest.setdefault("gates", {})
+    touched: list[str] = []
+    for gate, block in overrides.items():
+        patch = dict(block)
+        if gate not in AUTOFIX_GATES:
+            patch.pop("fix_cmd", None)
+        if not patch:
+            continue
+        merged = dict(gates.get(gate) or {})
+        merged.update(patch)
+        gates[gate] = merged
+        touched.append(gate)
+    return touched
+
+
+def _strip_invalid_fix_cmds(manifest: dict[str, Any]) -> None:
+    """Discard any ``fix_cmd`` declared on a non-fixable gate (GATECFG-FR-006).
+
+    The schema admits a fix command for the format/lint gates only — types, tests, and mutation
+    must never be "fixed" into passing, whichever file tried to configure one."""
+    for gate, spec in (manifest.get("gates") or {}).items():
+        if gate not in AUTOFIX_GATES and isinstance(spec, dict):
+            spec.pop("fix_cmd", None)
+
+
+def load_adapter(settings: Settings, name: str) -> dict[str, Any]:
+    """The adapter manifest with the project's ``gates.yaml`` overrides merged in (GATECFG-FR-001)."""
+    manifest = _read_manifest(settings, name)
+    merge_gate_overrides(manifest, load_gate_overrides(settings))
+    _strip_invalid_fix_cmds(manifest)
+    return manifest
 
 
 def detect_adapter(settings: Settings, target: Path) -> str:
@@ -141,3 +212,191 @@ def probe_tool(manifest: dict[str, Any], tool: str, cwd: Path, timeout: int = 12
     if not probe:
         return True
     return run_cmd(probe, cwd=cwd, timeout=timeout).ok
+
+
+# --------------------------------------------------------------------------- native-tooling detection
+@dataclass(frozen=True)
+class DetectRule:
+    """One declarative auto-detection probe (GATECFG-FR-004): data, never core logic (3PWR-NFR-007).
+
+    ``globs`` match files directly under the target; ``contains`` (optional) additionally requires
+    the matched file's text to contain the marker (e.g. ``[tool.pyright]`` in pyproject.toml).
+    ``spec`` is the gate block the detected tool would run with."""
+
+    gate: str
+    globs: tuple[str, ...]
+    tool: str
+    spec: dict[str, str]
+    contains: str = ""
+
+
+# Fixed first-match order per gate (GATECFG-FR-004). The rules are pure data: adding a detectable
+# tool is "add a rule", no gate-engine change. Every fix command sits on a fixable gate only
+# (GATECFG-FR-006 holds by construction).
+DETECT_RULES: tuple[DetectRule, ...] = (
+    DetectRule(
+        gate="format",
+        globs=("biome.json",),
+        tool="biome",
+        spec={
+            "check_cmd": "npx --no-install @biomejs/biome check .",
+            "fix_cmd": "npx --no-install @biomejs/biome check --write .",
+            "parser": "biome",
+        },
+    ),
+    DetectRule(
+        gate="format",
+        globs=(".prettierrc", ".prettierrc.*", "prettier.config.*"),
+        tool="prettier",
+        spec={
+            "check_cmd": "npx --no-install prettier --check .",
+            "fix_cmd": "npx --no-install prettier --write .",
+            "parser": "prettier",
+        },
+    ),
+    DetectRule(
+        gate="format",
+        globs=("go.mod",),
+        tool="gofmt",
+        spec={"check_cmd": "gofmt -l .", "parser": "gofmt"},
+    ),
+    DetectRule(
+        gate="lint",
+        globs=("biome.json",),
+        tool="biome",
+        spec={
+            "check_cmd": "npx --no-install @biomejs/biome check .",
+            "fix_cmd": "npx --no-install @biomejs/biome check --write .",
+            "parser": "biome",
+        },
+    ),
+    DetectRule(
+        gate="lint",
+        globs=(".eslintrc*", "eslint.config.*"),
+        tool="eslint",
+        spec={
+            "check_cmd": "npx --no-install eslint .",
+            "fix_cmd": "npx --no-install eslint --fix .",
+            "parser": "eslint",
+        },
+    ),
+    DetectRule(
+        gate="types",
+        globs=("tsconfig.json",),
+        tool="tsc",
+        spec={"cmd": "npx --no-install tsc --noEmit", "parser": "tsc"},
+    ),
+    DetectRule(
+        gate="types",
+        globs=("pyproject.toml",),
+        tool="pyright",
+        spec={"cmd": "pyright", "parser": "pyright"},
+        contains="[tool.pyright]",
+    ),
+    DetectRule(
+        gate="tests",
+        globs=("vitest.config.*",),
+        tool="vitest",
+        spec={
+            "cmd": "npx --no-install vitest run --coverage",
+            "parser": "vitest",
+            "coverage_format": "lcov",
+            "coverage_path": "coverage/lcov.info",
+        },
+    ),
+    DetectRule(
+        gate="tests",
+        globs=("jest.config.*",),
+        tool="jest",
+        spec={
+            "cmd": "npx --no-install jest --coverage --coverageReporters=lcov",
+            "parser": "jest",
+            "coverage_format": "lcov",
+            "coverage_path": "coverage/lcov.info",
+        },
+    ),
+    DetectRule(
+        gate="tests",
+        globs=("playwright.config.*",),
+        tool="playwright",
+        spec={"cmd": "npx --no-install playwright test", "parser": "playwright"},
+    ),
+    DetectRule(
+        gate="tests",
+        globs=("go.mod",),
+        tool="gotest",
+        spec={"cmd": "go test ./...", "parser": "gotest"},
+    ),
+)
+
+
+def _rule_matches(rule: DetectRule, target: Path) -> bool:
+    """Whether one detection rule's signal files exist under ``target`` (root-level, non-recursive)."""
+    for pattern in rule.globs:
+        for hit in target.glob(pattern):
+            if not hit.is_file():
+                continue
+            if not rule.contains:
+                return True
+            try:
+                if rule.contains in hit.read_text(encoding="utf-8", errors="replace"):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def detect_native_tools(
+    target: Path, skip: set[str] | None = None
+) -> dict[str, tuple[str, dict[str, str]]]:
+    """Probe ``target`` for project-native gate tooling (GATECFG-FR-004).
+
+    Returns ``{gate: (tool, gate_spec)}`` — the FIRST matching rule per gate wins, in the
+    declared table order. Gates in ``skip`` (those ``gates.yaml`` overrides) are never probed:
+    the explicit team configuration outranks detection (GATECFG-FR-003). Deterministic given the
+    tree; reads files, runs nothing."""
+    skip = skip or set()
+    found: dict[str, tuple[str, dict[str, str]]] = {}
+    for rule in DETECT_RULES:
+        if rule.gate in skip or rule.gate in found:
+            continue
+        if _rule_matches(rule, target):
+            found[rule.gate] = (rule.tool, dict(rule.spec))
+    return found
+
+
+@dataclass
+class EffectiveGates:
+    """The assembled gate configuration for one run (GATECFG-FR-003).
+
+    ``manifest`` is the adapter manifest with ``gates.yaml`` overrides and auto-detection applied,
+    in that precedence; ``sources`` tags each gate with where its configuration came from
+    (``adapter`` | ``gates.yaml`` | ``auto-detected``); ``detected`` names each auto-detected
+    gate's tool, for the one startup line (GATECFG-FR-005)."""
+
+    manifest: dict[str, Any]
+    sources: dict[str, str]
+    detected: dict[str, str]
+
+
+def effective_gates(settings: Settings, name: str, target: Path) -> EffectiveGates:
+    """Assemble the effective per-gate configuration: adapter < auto-detection < ``gates.yaml``.
+
+    Detection runs only for gates ``gates.yaml`` leaves alone (GATECFG-FR-003/004). A detected
+    tool the adapter already configures for that gate keeps the adapter's richer command
+    (coverage settings, shell guards, ``requires:``) — detection confirms, never degrades.
+    Configuration replaces tools, never gates (GATECFG-NFR-001)."""
+    manifest = _read_manifest(settings, name)
+    overridden = set(merge_gate_overrides(manifest, load_gate_overrides(settings)))
+    gates: dict[str, Any] = manifest.setdefault("gates", {})
+    sources = {gate: "gates.yaml" if gate in overridden else "adapter" for gate in gates}
+    detected: dict[str, str] = {}
+    for gate, (tool, spec) in detect_native_tools(target, skip=overridden).items():
+        existing = gates.get(gate) or {}
+        existing_tool = str(existing.get("parser") or command_of(existing) or "").split()
+        if not existing_tool or existing_tool[0] != tool:
+            gates[gate] = spec
+        detected[gate] = tool
+        sources[gate] = "auto-detected"
+    _strip_invalid_fix_cmds(manifest)
+    return EffectiveGates(manifest=manifest, sources=sources, detected=detected)

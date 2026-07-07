@@ -131,6 +131,8 @@ signed ledger entry.
   the **design oracles** onto the tier's set (see below). Kinds only ever *add* gates, never remove one.
 - `--report-only` — emit the verdict but **do not block** (exit 0 even on red); brownfield.
 - `--diff-scope` — block only on files changed vs `--base` (brownfield).
+- `--auto-fix` — when a format/lint check fails and a fix command is configured, run the fix and
+  re-check (opt-in only — never the default; see below).
 - `--no-ledger` — run without appending a ledger entry.
 ```bash
 3pwr gate run --path e2e/typescript-orders/project \
@@ -139,6 +141,38 @@ signed ledger entry.
 ```
 Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
 missing (see below).
+
+**Pipeline view.** On a capable terminal the run renders one compact status row per gate — status
+glyph, `gate · tool`, and the elapsed time plus a short summary — updated in place as each gate
+starts and finishes:
+
+```
+  ○ format  · biome   (running…)      → updated in place to:
+  ✓ format  · biome   0.4 s
+  ✗ types   · tsc     1.2 s  2 errors
+  – spec_integrity    skipped
+```
+
+Piped output, `NO_COLOR`, and `--json` degrade safely: piped/`NO_COLOR` runs print one plain-text
+row per finished gate (no in-place updates, no escape codes), and `--json` output is the unchanged
+machine payload — never routed through the rendering layer. A skipped `spec_integrity` (no
+approval recorded yet) renders with the `–` info glyph, not a failure mark.
+
+**Failure panels.** After the pipeline finishes, each failed gate gets its own panel: a dim
+`gate · tool` header with the elapsed time, the gate's error lines indented and trimmed to the
+first 30 meaningful lines (blank lines and Node.js `ExperimentalWarning` noise are filtered out
+unless `--verbose`) with a `… N more lines` note for the rest, and — when the gate's adapter
+configuration declares a fix command — a suggested manual fix:
+
+```
+  ── format · biome  1.2 s
+    vite.config.ts:12  formatting drift
+    ↳ auto-fix: biome check --write .
+```
+
+Dependency- and secret-scan panels list one line per finding (the advisory/rule ID and the
+package or file). The panels are the failure surface — there is no separate summary block at the
+bottom of the output.
 
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
@@ -177,6 +211,68 @@ or a signed, reversible `3pwr deviation --gate spec_integrity`.
 `--base` is given, graded against that tier's `mutation_score` — machine-graded test quality on every
 change without the full-sweep cost. Off by default; enabling it only ever *adds* a gate. A missing
 mutation tool quarantines, never silently passes.
+
+**Configurable gate tooling (`.3powers/config/gates.yaml`).** Each adapter ships default gate
+commands, but a project can pin its own: `gates.yaml` — **committed team configuration**,
+versioned with the rest of `.3powers/config/` and seeded (fully commented) by `3pwr init` —
+overrides any gate key in the adapter manifest. Keys match the adapter's `gates:` section names;
+only the keys you set override, and every absent gate/key keeps the adapter's value:
+
+```yaml
+# .3powers/config/gates.yaml
+format:
+  check_cmd: "npx prettier --check ."
+  fix_cmd: "npx prettier --write ."
+tests:
+  cmd: "npm run test:unit"
+  coverage_format: lcov
+  coverage_path: "coverage/lcov.info"
+```
+
+Overrides replace the **tool** a gate runs — never the gate itself: the risk tier alone decides
+which gates run, so no override can remove or weaken one.
+
+**Auto-detected project tooling.** For gates `gates.yaml` does not override, the engine probes the
+target once at gate-run startup and picks up the project's native tooling (first match wins):
+
+| Gate | Signal | Tool |
+|---|---|---|
+| `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` | biome · prettier · gofmt |
+| `lint` | `biome.json` · `.eslintrc*`/`eslint.config.*` | biome · eslint |
+| `types` | `tsconfig.json` · `pyproject.toml` with `[tool.pyright]` | tsc · pyright |
+| `tests` | `vitest.config.*` · `jest.config.*` · `playwright.config.*` · `go.mod` | vitest · jest · playwright · go test |
+
+When something was detected, one startup line names it — e.g.
+`auto-detected gates:  format=biome  tests=vitest` — on the human output only (never under
+`--json`). A detected tool the adapter already configures for that gate keeps the adapter's richer
+command (coverage settings, shell guards); detection confirms, never degrades. Precedence:
+**`gates.yaml` > auto-detection > adapter manifest**. Inspect the result with `gate config show`.
+
+**Auto-fix (`--auto-fix`, opt-in).** The format and lint gates — and only those — may declare a
+`fix_cmd` alongside their check command (the shipped adapters do). Without `--auto-fix`, a failing
+check fails the gate and the fix command appears only as the failure panel's suggested manual fix.
+With `--auto-fix` (available on `gate run` and `run`), a failing format/lint check runs its
+configured fix, prints `↳ auto-fixed by <tool>`, and re-checks: a passing re-check turns the gate
+green and the fixed files join the run's produced set, so a `3pwr run` stage commit picks them up;
+a failing re-check reports normally. Auto-fix is never the default — produced output is never
+silently mutated — and a `fix_cmd` on any other gate (types, tests, mutation, …) is discarded and
+never executed.
+
+### `gate config show` — the effective gate configuration
+Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
+overrides, and the auto-detected tooling — **without executing any gate**.
+- `--adapter ADAPTER` — language adapter (default: auto-detect).
+
+```
+$ 3pwr gate config show --adapter typescript
+gate    tool   check_cmd                        fix_cmd                                source
+format  biome  npx --no-install @biomejs/… ci . npx … @biomejs/biome check --write .   [adapter]
+tests   jest   npm run test:unit                —                                      [gates.yaml]
+types   tsc    npx --no-install tsc --noEmit    —                                      [auto-detected]
+```
+
+Each row's source tag names where that gate's configuration came from: `[adapter]` (the manifest),
+`[gates.yaml]` (the committed override), or `[auto-detected]` (the startup probe).
 
 ### `conformance` — the `spec_conformance` trace only
 Checks every requirement in a spec has a linked test, without running the full suite. Under `gate run`
@@ -380,8 +476,11 @@ pause, failure, and completion — best-effort and fully isolated: a broken chan
 alters the run, and with none configured no network call is made. On a capable TTY the run shows a
 **persistent bottom-anchored live bar** — the eight stages with done/current/upcoming marks, the
 active step, a heartbeat spinner with elapsed time, and the running / paused-at-gate / failed state
-— while agent stdout prints above it into ordinary, fully scrollable history; off a TTY, under
-`--json`/`NO_COLOR`, or on a dumb/tiny terminal it degrades to the plain streamed log, and the
+— rendered by the [Rich](https://github.com/Textualize/rich) library, while agent stdout streams
+above it, content unchanged and without syntax highlighting, into ordinary, fully scrollable
+history (no alternate screen, no scroll region). The degradation contracts are unchanged: off a
+TTY, under `--json`/`NO_COLOR`/`--yes`, or on a dumb/tiny terminal the output degrades to the plain
+streamed log with no escape codes, `--json` payloads never pass through the renderer, and the
 terminal is always restored on exit or Ctrl-C. When the verify stage goes red, the run prints a
 structured failure summary — one row per failed gate (`name · tool`) with its first actionable error
 line, followed by ready-to-run commands:
@@ -396,7 +495,9 @@ line, followed by ready-to-run commands:
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
-  `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--timeout N` /
+  `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--auto-fix` (at the
+  verify stage, let a failing format/lint check run its configured fix command and re-check —
+  opt-in, never the default; see `gate run`) · `--timeout N` /
   `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (SUPERSEDED by GITX — warns and
   commits anyway; relax with `3pwr deviation --gate git_stage_commit`) · `--notify CMD` (best-effort
   notification hook; fires alongside the configured channels) ·
