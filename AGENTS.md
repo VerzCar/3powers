@@ -8,7 +8,7 @@ Guidance for AI coding agents working in this repository. This file complements 
 
 **Implementation status lives in exactly one place: [docs/STATUS.md](docs/STATUS.md)** — the current milestone, the validation date, and the open residuals. Do not infer scope or progress from this file; read STATUS.
 
-Key technologies: Python ≥ 3.10 in `engine/` (a uv-managed, src-layout package shipping the `3pwr` CLI; runtime deps only `cryptography` and `PyYAML`), a runnable TypeScript sample in `examples/validation-utils/`, and declarative language adapters (TypeScript, Python, Go).
+Key technologies: Python ≥ 3.10 in `engine/` (a uv-managed, src-layout package shipping the `3pwr` CLI; runtime deps only `cryptography`, `PyYAML`, and `rich`), a runnable TypeScript sample in `examples/validation-utils/`, and declarative language adapters (TypeScript, Python, Go).
 
 Repository layout:
 

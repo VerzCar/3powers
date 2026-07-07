@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "cryptography>=42",
     "PyYAML>=6",
+    "rich>=13.7,<15",
 ]
 
 [project.scripts]

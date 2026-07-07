@@ -1,0 +1,27 @@
+# .3powers/config/gates.yaml — per-project gate TOOL overrides (committed, shared by the team).
+#
+# Keys match the adapter manifest's `gates:` section names. Only the keys you set here override
+# the adapter; every absent gate/key keeps the adapter's value. Overrides replace the TOOL a gate
+# runs — never the gate itself: the risk tier alone decides which gates run.
+#
+# Precedence: this file > auto-detected project tooling > the adapter manifest.
+# `fix_cmd` is honored for the format and lint gates only, and runs only under `--auto-fix`.
+# Inspect the result with: 3pwr gate config show
+#
+# Uncomment and adjust to pin your project's own toolchain:
+#
+# format:
+#   check_cmd: "npx prettier --check ."
+#   fix_cmd: "npx prettier --write ."
+#
+# lint:
+#   check_cmd: "npx eslint ."
+#   fix_cmd: "npx eslint --fix ."
+#
+# types:
+#   cmd: "npx tsc --noEmit"
+#
+# tests:
+#   cmd: "npm run test:unit"
+#   coverage_format: lcov
+#   coverage_path: "coverage/lcov.info"

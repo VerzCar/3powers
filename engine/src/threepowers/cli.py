@@ -85,9 +85,10 @@ from . import (
     workkind,
     workspace,
 )
-from .adapters import detect_adapter, run_cmd
+from .adapters import EffectiveGates, command_of, detect_adapter, effective_gates, run_cmd
 from .config import Settings, model_diversity_ok
 from .gates import PrerequisiteError, run_gates
+from .gates import fixed_paths as auto_fixed_paths
 from .ledger import Ledger, rotation_payload
 from .runner import CliAgentRunner, NativeRunner, TextSink
 from .verdict import GATE_ORDER, STATUS_PASS
@@ -303,7 +304,9 @@ def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler
     """Human-readable verdict: failing gate, class, and offending item — no transcript needed (3PWR-NFR-011).
 
     ``st`` colorizes the status markers consistently with the rest of the CLI (INITX-FR-013); a disabled
-    styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before."""
+    styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before.
+    Failure detail is no longer summarized in a bottom "failures:" block: each failed gate gets its
+    own panel after the pipeline view instead (GATEPIPE-FR-003)."""
     st = st or style.Styler()
     result = verdict.result.upper()
     head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
@@ -318,11 +321,6 @@ def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler
         lines.append(f"  {glyph} {g.gate}{(' · ' + g.tool) if g.tool else ''}{extra}")
         for finding in g.findings[:5]:
             lines.append(f"      - {finding}")
-    if verdict.failures:
-        lines.append("  failures:")
-        for fl in verdict.failures:
-            detail = fl.get("detail") or fl.get("requirement_id") or fl.get("file") or ""
-            lines.append(f"    • {fl['class']}: {detail}")
     if appended:
         lines.append(f"  ↳ ledger entry #{appended['seq']} signed by {appended['signer_key_id']}")
     return "\n".join(lines)
@@ -1277,6 +1275,30 @@ def cmd_init(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _detection_line(detected: dict[str, str]) -> str:
+    """The one auto-detection startup line (GATECFG-FR-005), e.g.
+    ``auto-detected gates:  format=biome  tests=vitest`` — printed once per gate run, human output
+    only (never on the ``--json`` path)."""
+    pairs = [f"{g}={detected[g]}" for g in GATE_ORDER if g in detected]
+    pairs += [f"{g}={t}" for g, t in sorted(detected.items()) if g not in GATE_ORDER]
+    return "auto-detected gates:  " + "  ".join(pairs)
+
+
+def _effective_gates_or_none(
+    s: Settings, adapter_name: Optional[str], target: Path
+) -> Optional[EffectiveGates]:
+    """Assemble the effective gate configuration (GATECFG-FR-003), or ``None`` when it cannot be.
+
+    ``None`` — no resolvable adapter or an unreadable manifest — hands configuration back to
+    :func:`run_gates`, which loads the adapter itself and surfaces the real error on its own
+    path; assembly here is an enrichment (overrides + detection), never a new failure mode."""
+    try:
+        name = adapter_name or detect_adapter(s, target)
+        return effective_gates(s, name, target)
+    except (FileNotFoundError, LookupError, OSError):
+        return None
+
+
 def cmd_gate_run(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else s.root
@@ -1308,6 +1330,23 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             else:
                 raise
 
+    # The live per-gate pipeline (GATEPIPE-FR-001/002): rows update in place on a capable TTY and
+    # degrade to sequential plain rows off it. Never constructed under --json — the machine payload
+    # is never routed through the rendering layer — and quiet keeps the result-only output.
+    gst = _styler(args)
+    v_level = _verbosity(args)
+    # The effective gate configuration (GATECFG-FR-003): the adapter manifest, the project's
+    # committed gates.yaml overrides, and — for gates the file leaves alone — the native tooling
+    # auto-detected once at startup (GATECFG-FR-004). One line names what was detected, never
+    # under --json (GATECFG-FR-005). An unassemblable config degrades to None: run_gates loads
+    # the adapter itself and surfaces the real error on its own path.
+    eff = _effective_gates_or_none(s, args.adapter, target)
+    if eff is not None and eff.detected and not args.json and v_level != "quiet":
+        print(_detection_line(eff.detected))
+    pipeline: Optional[orchestrate.GatePipeline] = None
+    if not args.json and v_level != "quiet":
+        pipeline = orchestrate.GatePipeline(sys.stdout, gst, verbose=v_level == "verbose")
+        pipeline.open()
     try:
         verdict = run_gates(
             s,
@@ -1321,12 +1360,18 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             report_only=args.report_only,
             diff_scope=args.diff_scope,
             work_kind=args.work_kind,
+            observer=pipeline,
+            auto_fix=args.auto_fix,
+            manifest=eff.manifest if eff is not None else None,
         )
     except PrerequisiteError as exc:
         # A required tool of a non-optional gate is absent (GDIAG-FR-004): no gate ran; the per-tool
         # install hints come from the adapter's toolchain data. A setup problem, never a gate verdict.
         print(str(exc), file=sys.stderr)
         return EXIT_SETUP
+    finally:
+        if pipeline is not None:
+            pipeline.close()
     s.verdicts_dir.mkdir(parents=True, exist_ok=True)
     verdict.write(s.verdicts_dir / "latest.json")
 
@@ -1344,8 +1389,20 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
-    gst = _styler(args)
     human = _format_verdict(verdict, appended, gst)
+    # The auto-fixed announcement (GATECFG-FR-008): one line per gate a fix turned green — human
+    # output only, so the --json payload stays pure machine data.
+    if not args.json:
+        for g in verdict.gates:
+            fixer = (g.details or {}).get("auto_fixed")
+            if fixer:
+                human += f"\n  ↳ auto-fixed by {fixer}"
+    # One panel per failed gate, printed after the live pipeline exits (GATEPIPE-FR-003) — the
+    # structured replacement for the former bottom "failures:" block. Human output only.
+    if not args.json:
+        panels = orchestrate.failure_panels(verdict.to_dict(), gst, verbose=v_level == "verbose")
+        if panels:
+            human += "\n" + panels
     if args.report_only and verdict.result != STATUS_PASS:
         human += "\n  " + gst.mark("info") + " report-only: verdict emitted but not enforced"
     # Consolidated install call-to-action: if gates couldn't run because their tools are absent, say
@@ -1382,6 +1439,52 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     if args.report_only:
         return EXIT_OK
     return EXIT_OK if verdict.result == STATUS_PASS else EXIT_FAIL
+
+
+def cmd_gate_config_show(args: argparse.Namespace) -> int:
+    """Render the effective per-gate configuration — without executing any gate (GATECFG-FR-010).
+
+    One row per gate: the gate, its tool, its check command, its fix command (— when none), and a
+    source tag naming where the configuration came from — the adapter manifest, the project's
+    committed ``gates.yaml`` override, or startup auto-detection (GATECFG-FR-003/004)."""
+    s = _settings(args.root)
+    try:
+        adapter_name = args.adapter or detect_adapter(s, s.root)
+        eff = effective_gates(s, adapter_name, s.root)
+    except (FileNotFoundError, LookupError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    gates_cfg: dict[str, Any] = eff.manifest.get("gates") or {}
+    order = [g for g in GATE_ORDER if g in gates_cfg]
+    order += sorted(g for g in gates_cfg if g not in GATE_ORDER)
+    header = ("gate", "tool", "check_cmd", "fix_cmd", "source")
+    data: list[tuple[str, str, str, str, str]] = []
+    obj: dict[str, Any] = {"adapter": adapter_name, "gates": {}}
+    for gate in order:
+        spec = gates_cfg.get(gate) or {}
+        cmd = str(command_of(spec) or "")
+        tool_tokens = str(spec.get("parser") or cmd).split()
+        tool = tool_tokens[0] if tool_tokens else "—"
+        fix = str(spec.get("fix_cmd") or "")
+        source = eff.sources.get(gate, "adapter")
+        data.append((gate, tool, cmd or "—", fix or "—", f"[{source}]"))
+        obj["gates"][gate] = {
+            "tool": tool if tool != "—" else "",
+            "check_cmd": cmd,
+            "fix_cmd": fix,
+            "source": source,
+        }
+    widths = [max(len(h), *(len(row[i]) for row in data), 0) for i, h in enumerate(header[:4])]
+    lines = ["  ".join(header[i].ljust(widths[i]) for i in range(4)) + "  " + header[4]]
+    for row in data:
+        lines.append("  ".join(row[i].ljust(widths[i]) for i in range(4)) + "  " + row[4])
+    cst = _styler(args)
+    _print(
+        obj,
+        args.json,
+        _compose(args, cst, title="gate config", subject=adapter_name, rows=lines),
+    )
+    return EXIT_OK
 
 
 def cmd_conformance(args: argparse.Namespace) -> int:
@@ -3138,6 +3241,12 @@ def _native_verdict(
         return "error"
     try:
         adapter_name = detect_adapter(s, s.root)
+        # The same effective configuration as a standalone gate run (GATECFG-FR-003/004): the
+        # committed gates.yaml overrides plus startup auto-detection; the one detection line is
+        # human output only (GATECFG-FR-005). Degrades to None — run_gates loads the adapter.
+        eff = _effective_gates_or_none(s, adapter_name, s.root)
+        if eff is not None and eff.detected and not getattr(args, "json", False):
+            print(_detection_line(eff.detected))
         verdict = run_gates(
             s,
             s.root,
@@ -3145,6 +3254,8 @@ def _native_verdict(
             spec_path=spec_path,
             adapter_name=adapter_name,
             work_kind=kinds,
+            auto_fix=bool(getattr(args, "auto_fix", False)),
+            manifest=eff.manifest if eff is not None else None,
         )
     except PrerequisiteError as exc:
         # No gate ran — say exactly what to install (GDIAG-FR-004), then report the setup failure.
@@ -3733,7 +3844,7 @@ def _native_runner(
         # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine. The
         # verdict dict lands in ``verdict_box`` so a red one renders its failed gates inline
         # (GDIAG-FR-001).
-        return _native_verdict(
+        outcome = _native_verdict(
             s,
             args,
             tier,
@@ -3743,6 +3854,28 @@ def _native_runner(
             feature_dir=feature_dir,
             out=verdict_box,
         )
+        # An --auto-fix run's fixed paths join the run's produced set (GATECFG-FR-008): they land
+        # as the verify stage's commit on the run branch, so no run-produced change is left
+        # uncommitted (GITX-FR-008). The signed ledger rides along, as on every stage commit.
+        fixed = auto_fixed_paths((verdict_box or {}).get("verdict") or {})
+        if fixed and run_branch and not commit_relaxed:
+            paths = list(fixed)
+            if s.ledger_path.is_file():
+                ledger_rel = str(s.ledger_path.relative_to(s.root))
+                if ledger_rel not in paths:
+                    paths.append(ledger_rel)
+            commit = gitflow.commit_stage(
+                s.root,
+                paths,
+                message=gitflow.stage_commit_message(
+                    spec_id, "verify", "apply configured auto-fixes"
+                ),
+                author_name=prefs.author_name,
+                author_email=prefs.author_email,
+            )
+            if commit.error:
+                print(f"warning: auto-fixed paths not committed — {commit.error}", file=sys.stderr)
+        return outcome
 
     return NativeRunner(
         dispatch=dispatch, run_verdict=run_verdict, start_index=start_index, on_progress=on_progress
@@ -5407,7 +5540,26 @@ def build_parser() -> argparse.ArgumentParser:
         "design adds the design oracles; never weakens a tier gate",
     )
     gr.add_argument("--no-ledger", action="store_true", help="do not append to the ledger")
+    gr.add_argument(
+        "--auto-fix",
+        dest="auto_fix",
+        action="store_true",
+        help="when a format/lint check fails and a fix command is configured, run the fix and "
+        "re-check (opt-in; never the default)",
+    )
     gr.set_defaults(func=cmd_gate_run)
+
+    gcp = gsub.add_parser("config", help="gate configuration")
+    gcsub = gcp.add_subparsers(dest="gate_config_cmd", required=True)
+    gcs = common(
+        gcsub.add_parser(
+            "show",
+            help="show the effective per-gate configuration — adapter defaults, gates.yaml "
+            "overrides, and auto-detected tooling — without running any gate",
+        )
+    )
+    gcs.add_argument("--adapter", help="language adapter (default: auto-detect)")
+    gcs.set_defaults(func=cmd_gate_config_show)
 
     cp = common(sub.add_parser("conformance", help="spec-conformance trace only"))
     cp.add_argument("--spec", help="path to the governing spec.md")
@@ -5543,6 +5695,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--tier",
         default=None,
         help="risk tier for the native verify stage (default: the inferred/suggested tier)",
+    )
+    rnp.add_argument(
+        "--auto-fix",
+        dest="auto_fix",
+        action="store_true",
+        help="when a format/lint check fails at the verify stage and a fix command is configured, "
+        "run the fix and re-check (opt-in; never the default)",
     )
     rnp.add_argument(
         "--timeout",

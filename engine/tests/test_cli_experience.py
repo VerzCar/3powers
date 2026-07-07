@@ -90,12 +90,14 @@ def test_status_meaning_never_carried_by_color_alone():
     assert "✗" in row and "boom" in row and "\033" not in row
 
 
-# --------------------------------------------------------------------------- CLIUX-FR-003/NFR-003 no deps
-def test_no_third_party_rendering_dependency():
-    """CLIUX-FR-003 / CLIUX-NFR-003: no rendering library is a runtime dependency (ANSI only)."""
+# --------------------------------------------------------------------------- CLIUX-FR-003/NFR-003 deps
+def test_rendering_dependency_is_rich_only():
+    """CLIUX-FR-003 (as amended) / CLIUX-NFR-003 / TRIX-FR-001: `rich` is the single permitted
+    rendering dependency; no other rendering/terminal library is a runtime dependency."""
     data = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
     deps = " ".join(data["project"]["dependencies"]).lower()
-    for banned in ("rich", "curses", "colorama", "blessed", "termcolor"):
+    assert "rich>=13.7,<15" in deps  # the declared bounds (TRIX-FR-001)
+    for banned in ("curses", "colorama", "blessed", "termcolor"):
         assert banned not in deps
 
 

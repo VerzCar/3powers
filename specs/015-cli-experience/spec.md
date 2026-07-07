@@ -216,10 +216,15 @@ machines see.
     aligned, labeled text.
   - *Property*: for identical inputs, the color-off rendering equals the color-on rendering with every ANSI
     SGR sequence removed — the styler adds only color, never structure.
-- **CLIUX-FR-003**: The toolkit shall introduce no third-party rendering dependency and make no network
-  call, building only on ANSI SGR sequences the terminal already understands.
-  - *Acceptance*: the engine's declared runtime dependencies are unchanged (`cryptography`, `PyYAML`);
-    importing the presentation layer pulls in no additional distribution; no code path opens a socket.
+- **CLIUX-FR-003** *(Amended 2026-07-06)*: The structured-output toolkit may depend on `rich`
+  (MIT-licensed, pure-Python, no transitive C extensions) as its sole third-party rendering
+  dependency, and shall make no network call. The `--json`/`--yes`/`NO_COLOR` and exit-code
+  contracts (CLIUX-NFR-001/002) are unchanged by this amendment.
+  - *Acceptance*: the engine's declared runtime dependencies are exactly `cryptography`, `PyYAML`,
+    and `rich`; no code path opens a socket; the pre-amendment `--json`, exit-code, and degradation
+    behavior is preserved byte-for-byte.
+  - *Amendment note*: the original FR-003 ("no third-party rendering dependency, ANSI SGR only")
+    is superseded per the terminal-UX spec (spec 026); everything else in this spec is unchanged.
 - **CLIUX-FR-004**: Human output shall not present a multi-field result as a single unstructured run-on
   line: results with more than one field shall render as labeled blocks or aligned rows, and long lists
   shall wrap or align rather than overflow one line.
@@ -307,9 +312,10 @@ machines see.
   exit codes, verdict bytes, or the ledger (preserve INITX-FR-014, 3PWR-FR-032/NFR-001).
   - *Acceptance*: existing `--json`, exit-code, and verdict-bytes tests are untouched and green; a test
     proves no `--json` payload changes with color forced on.
-- **CLIUX-NFR-003**: No third-party runtime dependency and no network access shall be introduced (ANSI SGR
-  only); the engine remains offline-reconstructable (ref 3PWR-NFR-004/010, INITX-NFR-004).
-  - *Acceptance*: dependency manifest unchanged; an offline install renders full color output.
+- **CLIUX-NFR-003** *(Amended 2026-07-06, consistent with the amended CLIUX-FR-003)*: No runtime
+  dependency beyond `rich` and no network access shall be introduced; the engine remains
+  offline-reconstructable (ref 3PWR-NFR-004/010, INITX-NFR-004).
+  - *Acceptance*: the dependency manifest adds only `rich`; an offline install renders full color output.
 - **CLIUX-NFR-004**: Output shall be accessible: color is never the sole carrier of meaning — a glyph or
   word always accompanies it — `NO_COLOR` yields fully readable structure, and an ASCII marker fallback is
   used when the stream cannot encode the Unicode glyphs.

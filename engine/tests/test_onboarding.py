@@ -256,14 +256,15 @@ def test_onboarding_does_not_weaken_any_gate_threshold(tmp_path):
 
 # --------------------------------------------------------------------------- NFR-005
 def test_no_new_runtime_dependency_for_prompting():
-    """ONBRD-NFR-005: the wizard uses the stdlib — no new required prompting dependency is added."""
+    """ONBRD-NFR-005: the wizard uses the stdlib — no prompting dependency is added. (`rich` is
+    present as the rendering dependency TRIX-FR-001 permits; the wizard's prompting stays stdlib.)"""
     import tomllib
 
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     deps = " ".join(
         tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["dependencies"]
     ).lower()
-    for banned in ("click", "typer", "questionary", "prompt_toolkit", "inquirer", "rich"):
+    for banned in ("click", "typer", "questionary", "prompt_toolkit", "inquirer"):
         assert banned not in deps
 
 
