@@ -15,6 +15,9 @@ import yaml
 
 THREEPOWERS_DIRNAME = ".3powers"
 
+# The scanner gates that honor scan.yaml exclusions — the loader always returns these keys.
+_SCAN_TOOLS = ("secret_scan", "dependency_scan", "sast")
+
 
 @dataclass
 class Settings:
@@ -87,6 +90,14 @@ class Settings:
         Applied to the run's git handling only; a missing or malformed file falls back to the
         documented defaults with at most one warning (see :mod:`threepowers.gitflow`)."""
         return self.dir / "config" / "git.yaml"
+
+    @property
+    def scan_config_path(self) -> Path:
+        """The auditable per-tool scanner-exclusion preferences (``scan.yaml``).
+
+        Committed team configuration for the scanner gates only. A missing or malformed file
+        yields no exclusions; the core private-key check can never be disabled here."""
+        return self.dir / "config" / "scan.yaml"
 
     @property
     def notifications_config_path(self) -> Path:
@@ -238,6 +249,38 @@ class Settings:
 
     def load_risk_tiers(self) -> dict[str, Any]:
         return _load_yaml(self.risk_tiers_path)
+
+    def load_scan_ignores(self) -> dict[str, dict[str, list[str]]]:
+        """Per-tool scanner exclusions from ``scan.yaml`` — tolerant, deterministic, never raises.
+
+        Returns ``{tool: {"ignore": [globs], "ignore_rules": [rule ids]}}`` for each scanner
+        gate (``secret_scan``, ``dependency_scan``, ``sast``), with empty lists when the file,
+        a tool's section, or a key is missing or malformed — mirroring the ``git.yaml``
+        handling. Only non-empty string entries are honored. The exclusions shape what the
+        scanners read — and are always reported in their gate output — never whether they run.
+        """
+        out: dict[str, dict[str, list[str]]] = {
+            tool: {"ignore": [], "ignore_rules": []} for tool in _SCAN_TOOLS
+        }
+        path = self.scan_config_path
+        if not path.exists():
+            return out
+        data: Any
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return out
+        if not isinstance(data, dict):
+            return out
+        for tool in _SCAN_TOOLS:
+            section = data.get(tool)
+            if not isinstance(section, dict):
+                continue
+            for key in ("ignore", "ignore_rules"):
+                vals = section.get(key)
+                if isinstance(vals, list):
+                    out[tool][key] = [v for v in vals if isinstance(v, str) and v.strip()]
+        return out
 
     def load_roles(self) -> dict[str, Any]:
         return _load_yaml(self.roles_path)

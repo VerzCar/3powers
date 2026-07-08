@@ -258,6 +258,40 @@ a failing re-check reports normally. Auto-fix is never the default — produced 
 silently mutated — and a `fix_cmd` on any other gate (types, tests, mutation, …) is discarded and
 never executed.
 
+**Scanner exclusions (`.3powers/config/scan.yaml`).** The three scanner gates — `secret_scan`,
+`dependency_scan`, and `sast` — honor an auditable, committed per-tool ignore config. Each tool
+takes `ignore` (path globs relative to the scanned target, `**` allowed); `secret_scan`
+additionally takes `ignore_rules`, a list of scanner rule ids to suppress:
+
+```yaml
+# .3powers/config/scan.yaml
+version: 1
+secret_scan:
+  ignore:
+    - "**/.next/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/node_modules/**"
+  ignore_rules: []          # optional: suppress specific secret-scanner rule ids
+dependency_scan:
+  ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
+sast:
+  ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
+```
+
+`3pwr init` seeds the file with that small default ignore set — generated and vendored trees
+(`**/.next/**`, `**/dist/**`, `**/build/**`, `**/node_modules/**`) for all three tools — and a
+re-init never overwrites a hand-edited one. A missing or malformed file simply means **no
+exclusions**. Exclusions are deterministic in the file's committed bytes and are **never
+silent**: every affected gate result reports the applied globs/rules and how many findings they
+excluded, in both the human output and `--json`.
+
+> **Security note.** Every glob removes real scan surface — a broad ignore weakens the gate, so
+> keep the set to generated or vendored trees and review changes to this file like any other
+> trust configuration. The engine's core `ed25519-priv` private-key check **always runs** and
+> cannot be disabled by this file: the `secret_scan` globs only shape its directory walk, and it
+> still fires on key material anywhere outside them.
+
 ### `gate config show` — the effective gate configuration
 Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
 overrides, and the auto-detected tooling — **without executing any gate**.

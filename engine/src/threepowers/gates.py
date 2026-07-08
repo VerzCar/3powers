@@ -412,6 +412,11 @@ def run_gates(
             for rel in covdiff.changed_files(settings.root, base, target)
         }
 
+    # Auditable scanner exclusions (scan.yaml), threaded into the scanner gates below.
+    # Tolerant: a missing/malformed file means no exclusions; every applied exclusion is
+    # reported in the gate output, and the core private-key check can never be disabled.
+    scan_ignores = settings.load_scan_ignores()
+
     adapter_name = adapter_name or adapters.detect_adapter(settings, target)
     if manifest is None:
         manifest = adapters.load_adapter(settings, adapter_name)
@@ -547,16 +552,26 @@ def run_gates(
         elif gate == "sast":
             _add(
                 scanners.sast_scan(
-                    target, settings.dir / "config" / "semgrep-rules.yml", changed_scope
+                    target,
+                    settings.dir / "config" / "semgrep-rules.yml",
+                    changed_scope,
+                    ignore=scan_ignores["sast"]["ignore"],
                 )
             )
 
         elif gate == "dependency_scan":
             # Dependency vulnerabilities are not file-local; never diff-scoped.
-            _add(scanners.dependency_scan(target))
+            _add(scanners.dependency_scan(target, ignore=scan_ignores["dependency_scan"]["ignore"]))
 
         elif gate == "secret_scan":
-            _add(scanners.secret_scan(target, changed_scope))
+            _add(
+                scanners.secret_scan(
+                    target,
+                    changed_scope,
+                    ignore=scan_ignores["secret_scan"]["ignore"],
+                    ignore_rules=scan_ignores["secret_scan"]["ignore_rules"],
+                )
+            )
 
         elif gate == "gate_gaming":
             _add(gaming.detect_gaming(settings.root, target, base))
