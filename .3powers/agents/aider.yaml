@@ -15,6 +15,10 @@ prompt_via: arg
 # opt-in (`--restore-chat-history`, default off) — the explicit no-restore flag makes every
 # dispatch a provably clean session regardless of local config.
 new_session_args: ["--no-restore-chat-history"]
-# Usage: aider's "Tokens: … sent/received" summary uses abbreviated counts (e.g. "12k") — not
-# machine-stable, so usage reads as unknown.
+# Usage (advisory): aider's per-turn summary reads "Tokens: 12k sent, 1.2k received." — the two
+# capture groups (sent + received) are summed. Caveat: `sent` includes any cached/repeated
+# context aider resends, so this is a documented over-count of the truly non-cached input.
+usage:
+  strategy: regex
+  pattern: 'Tokens:\s*([0-9.,_kKmM]+)\s*sent,\s*([0-9.,_kKmM]+)\s*received'
 notes: "Reference backend. `--message` runs a single non-interactive turn; provider-resilient (any OpenAI-compatible API)."

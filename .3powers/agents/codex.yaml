@@ -12,8 +12,17 @@ prompt_flag: null           # the prompt is the positional argument after `exec`
 prompt_via: arg
 # Session freshness: `codex exec` starts a NEW non-interactive session per invocation; reuse is
 # opt-in only (`codex exec resume`), which the engine never emits.
-# Usage: the exec summary prints "tokens used: <n>" — extracted advisorily, never into the verdict.
+# Usage (advisory, never in the verdict): the exec summary prints "tokens used: <n>" — a
+# cumulative TOTAL that includes cached input, extracted as-is (documented over-count). For the
+# real non-cached count, opt in to structured output: uncomment `usage_mode` and swap in the
+# json hint below — the JSONL `token_count` event separates cached input.
 usage:
   strategy: regex
   pattern: 'tokens used[:\s]+([0-9][0-9,]*)'
+# usage_mode: json
+usage_mode_args: ["--json"]
+# usage:
+#   strategy: json
+#   fields: [input_tokens, output_tokens]
+#   subtract: [cached_input_tokens]
 notes: "Reference backend. `codex exec` is the non-interactive entry point; `--full-auto` auto-approves."
