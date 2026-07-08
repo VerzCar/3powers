@@ -164,6 +164,14 @@ reconstructs offline and survives a fresh checkout. In practice `3pwr run` drive
 the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
 command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
 
+**Discovery runs when the change needs it.** Feature and design work opens with a dispatched
+exploration of the problem space whose record (`discovery.md`) feeds the Spec stage as prior
+context; a defect fix, docs, chore, or refactor skips straight to Spec (either default is
+overridable per run). Every dispatched stage's instructions come from one place: an editable
+markdown **template** (`.3powers/templates/agents/<name>.agent.md`, seeded by `3pwr init`). A
+repo-local template overrides the engine's bundled default, so a project can see — and tune —
+exactly what each stage's agent is told, without any prompt text hiding inside the engine.
+
 ### Observability registry
 
 The **Observe** stage closes the loop: production lessons return to the spec as new intent, never as

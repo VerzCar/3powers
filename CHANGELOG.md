@@ -12,6 +12,8 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 
 ### Changed
 
+- **`3pwr init` readiness summary.** The language / adapter / default tier / autonomous-default
+  facts print one per line. (plan/034)
 - **Public text hygiene.** All end-user-readable text — CLI help and messages, engine source
   docstrings and comments, `docs/` prose, and the scaffold assets `3pwr init` ships — no longer
   cites 3Powers' internal requirement IDs, epic letters, or plan/spec numbers; every citation was
@@ -25,6 +27,23 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 
 ### Added
 
+- **Prompt templates as the single source of truth.** Every dispatched agent prompt is now
+  assembled from the markdown `*.agent.md` templates (repo-local `.3powers/templates/agents/`
+  override → bundled default → generic fragment) — the engine carries no inline prompt text.
+  Four shared fragments (preamble, generic, commit-note, revise) ride the same chain, and a
+  closed `$`-variable vocabulary (`$STEP`, `$GATE`, `$ARTIFACT`, `$FEATURE_FOLDER`,
+  `$ORACLE_DESTINATION`, `$FEEDBACK`) substitutes real run values into template bodies only —
+  never into the intent, spec, or context blocks. (plan/034)
+- **Discovery stage.** `3pwr run` now dispatches a Discovery stage first when the work calls for
+  it (feature/design intents; defect/docs/chore/refactor skip it; `--discovery`/`--no-discovery`
+  override), producing `discovery.md` in the feature folder and feeding it to Specify as prior
+  context. A skipped discovery writes nothing and records nothing. (plan/034)
+- **Real per-stage token accounting.** The advisory per-stage token count is the real consumed
+  number — non-cached input + output — extracted from each backend's transcript with unit-aware
+  parsing (`629.8k`, `1.2M`, comma counts), summed regex groups, and JSON field sum/subtract
+  hints per agent manifest; an opt-in `usage_mode: json` switches backends whose usage only
+  appears in structured output. Shown in `progress.md`, the ledger, and `--json`; never in the
+  verdict. (plan/034)
 - **v1.0 readiness & lifecycle hardening.** The run-artifact base folder is now **`specs-src/`**
   (the legacy `specs/` base and split layout stay read-resolvable); the tasks artifact is
   **`implementation-plan.md`** and the implement record is an engine-generated, requirement-traced

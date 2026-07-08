@@ -80,7 +80,7 @@ next step. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 `init` also seeds one **editable agent template per dispatched stage** into
 `.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
 template is named for its agent, `implementation-plan.agent.md` —, oracle, implement, review,
-characterize — named for its agent, `implementation-plan.agent.md`). The executive uses a repo-local template as that
+characterize). The executive uses a repo-local template as that
 stage's instruction body when present; an absent, empty, or unreadable template falls back to the
 engine's built-in instruction. Seeding is non-clobbering — a hand-edited template is
 never overwritten. Declining the recommended defaults interactively also walks the **headless-CLI +
@@ -488,10 +488,17 @@ classifies the intent and carries the inferred work-kind into the run so the ver
 suite. Sign-offs, per-stage completions, verdicts, and any terminal failure are recorded in the signed
 ledger, so a run is resumable and its state is always visible (`--status` / `3pwr status`).
 
+**Discovery — the conditional first stage.** `feature` and `design` work opens with a dispatched
+**Discovery** stage that explores the problem space and writes `discovery.md` into the run's feature
+folder; the Spec stage then receives it as prior context. `defect`, `docs`, `chore`, and `refactor`
+runs skip it — the tracker shows the stage's outcome as *skipped* and nothing is written.
+`--discovery` forces the stage and `--no-discovery` skips it, whatever the inferred work kind.
+
 **The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
 allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
 from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
-alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`,
+alone. Every producing stage leaves its markdown FLAT in that folder — `discovery.md` (when the
+Discovery stage ran), `spec.md`, `plan.md`,
 `implementation-plan.md`, plus two records: **`oracle.md`**, the implementation-agnostic Tests
 Specification the oracle agent authors from the sealed spec (one section per requirement id with its
 Given/When/Then criterion; the engine validates it names every requirement and leaks no file path or
@@ -510,18 +517,35 @@ copy-pasteable helper commands, and the last verify attempt's failed gates — w
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
 **Token consumption (advisory).** When an agent backend reports its token usage (declared per
-manifest via a `usage` extraction hint — a JSON field or a regex over the agent's output), the run
-records the per-stage and per-phase counts **additively**: a **Tokens** column in both `progress.md`
-tables (showing `—` — unknown — when a backend does not report), a `tokens` field on the `--json`
-per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases` (per phase
-result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was captured
-and are never renamed or removed; tokens never enter the gate suite or the deterministic verdict,
-whose bytes are identical whether or not usage was captured.
+manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
+unit-aware parsing of `k`/`M`/comma-formatted counts), the run records the **real consumed** count —
+non-cached input plus output tokens — per stage and per phase, **additively**: a **Tokens** column in
+both `progress.md` tables (showing `—` — unknown — when a backend does not report), a `tokens` field
+on the `--json` per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases`
+(per phase result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was
+captured and are never renamed or removed; tokens never enter the gate suite or the deterministic
+verdict, whose bytes are identical whether or not usage was captured. Backends differ in what they
+can report: some text-mode totals are cache-inclusive (aider's "sent" includes the cached context;
+codex's plain-text total likewise), and a backend that reports nothing shows `—`. Where the backend
+supports it, a manifest can opt into structured output for the exact non-cached count: set
+`usage_mode: json` plus `usage_mode_args` — the backend's own flag, e.g. `--output-format json`
+(claude) or `--json` (codex). Off by default, preserving the live text stream.
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
 one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
 sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
+**Editing the agent prompts.** Every dispatched stage prompt is assembled from markdown
+templates — the single source of the stage instructions; no prompt text lives inline in the engine.
+A repo-local template at `.3powers/templates/agents/<name>.agent.md` (seeded by `3pwr init`)
+overrides the engine's bundled default; an absent, empty, or unreadable file falls back to the
+bundled template, then to the generic fragment. Four **fragments** compose the surrounding prompt —
+`preamble`, `generic`, `commit-note`, and `revise` — and are overridable the same way. A template
+body may reference the closed variable vocabulary `$STEP`, `$GATE`, `$ARTIFACT`, `$FEATURE_FOLDER`,
+`$ORACLE_DESTINATION`, `$FEEDBACK`, substituted at dispatch time: an unset variable renders empty,
+`$$` escapes a literal `$`, and any other `$name` is left verbatim. The engine-framed INTENT /
+APPROVED SPEC / PRIOR CONTEXT / FILE SCOPE blocks are never substituted — a template tunes the
+instruction body only.
 **The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
@@ -572,7 +596,8 @@ line, followed by ready-to-run commands:
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
   `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--auto-fix` (at the
   verify stage, let a failing format/lint check run its configured fix command and re-check —
-  opt-in, never the default; see `gate run`) · `--timeout N` /
+  opt-in, never the default; see `gate run`) · `--discovery` / `--no-discovery` (force or skip the
+  Discovery stage, overriding the work-kind default) · `--timeout N` /
   `--retries N` (per-stage dispatch bounds) · `--no-auto-commit` (SUPERSEDED by GITX — warns and
   commits anyway; relax with `3pwr deviation --gate git_stage_commit`) · `--notify CMD` (best-effort
   notification hook; fires alongside the configured channels) ·
