@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-07-08
 last_updated: 2026-07-08
 owner: 3Powers maintainers (engine changes via the python-engineer agent)
-status: 'Planned'
+status: 'Completed'
 tags: [feature, refactor, migration, architecture, release]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-green)
 
 This implementation plan operationalizes the source plan
 [`plan/033-v1-readiness-and-lifecycle-hardening.md`](033-v1-readiness-and-lifecycle-hardening.md)
@@ -350,13 +350,13 @@ guide + checklist);
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-072 | [Track L / V1REL] Bump the engine version in `engine/pyproject.toml` line 3 and `engine/src/threepowers/__init__.py` line 17 to `1.0.0` (RC path: `1.0.0-rc.1` first). Leave `SCHEMA_VERSION` unless a schema changed. Verify: after `uv tool install --force ./engine`, `3pwr --version` reports the bumped version. |  |  |
-| TASK-073 | [Track L / V1REL / CON-006] Bump the constitution footer to `1.0.0` and re-ratify (together with Track M's amendment), re-sealing or recording a signed deviation if `spec_integrity`/`gate_gaming` trips. Verify: the constitution footer reads `1.0.0`; any re-seal/deviation is recorded in the ledger. |  |  |
-| TASK-074 | [Track L / V1REL] Update `docs/STATUS.md` milestone to v1.0 (RC/released) and reframe the residuals section as accepted post-1.0 residuals (cross-platform NFR-003, fuller A3, live design/Go runs, catalog publishing, model-driven eval); update the `README.md` milestone line and the `docs/getting-started.md` `--version` example. Verify: STATUS milestone reads v1.0; README milestone matches; getting-started `--version` example updated. |  |  |
-| TASK-075 | [Track L / V1REL] Move CHANGELOG's `[Unreleased] — v1.0 (in progress)` to `## [1.0.0]` (via `1.0.0-rc.1`), summarize plans 023–033, and update the compare/tag links. Verify: `CHANGELOG.md` contains a `## [1.0.0]` section and the tag/compare links resolve to the release tag. |  |  |
-| TASK-076 | [Track L / V1REL] Apply the version test fixups: `engine/tests/test_oss_readiness.py` lines 263-264 (`## [0.5.0]` → `## [1.0.0]`, `releases/tag/v0.5.0` → `.../v1.0.0`, README `v0.5` → `v1.0`) and `engine/tests/test_auto_docs.py` line 65 (the stale pinned version string). Verify: `uv run pytest engine/tests/test_oss_readiness.py engine/tests/test_auto_docs.py` green. |  |  |
-| TASK-077 | [Track L / V1REL] Execute the release checklist: all gates green self-applied at High-risk on the trust spine; `3pwr verify` green; `uv tool install --force ./engine` smoke; `3pwr --version` → the release version; a fresh `3pwr init` smoke; run the source-plan Verification block (`3pwr run "demo intent" --dry-run --spec-id DEMO`; `ls specs-src/<NNN>-demo-intent/` shows `spec.md plan.md implementation-plan.md oracle.md changelog.md progress.md`; `scan.yaml` present; init flags the constitution). Tag `1.0.0-rc.1` then `1.0.0` on `main` after the RC settles (branch discipline — no PR). Verify: the checklist commands all pass and both tags exist. |  |  |
-| TASK-078 | [Track L / V1REL] python-engineer confirms final green across the engine: `(cd engine && uv sync --extra dev && uv run pytest && uv run ruff check . && uv run mypy src)` and `3pwr gate run --path engine`. Verify: all green; the dry-run shows the new artifact names and fresh-session/token behavior. |  |  |
+| TASK-072 | [Track L / V1REL] Bump the engine version in `engine/pyproject.toml` line 3 and `engine/src/threepowers/__init__.py` line 17 to `1.0.0` (RC path: `1.0.0-rc.1` first). Leave `SCHEMA_VERSION` unless a schema changed. Verify: after `uv tool install --force ./engine`, `3pwr --version` reports the bumped version. | ✅ (`1.0.0rc1`) | 2026-07-08 |
+| TASK-073 | [Track L / V1REL / CON-006] Bump the constitution footer to `1.0.0` and re-ratify (together with Track M's amendment), re-sealing or recording a signed deviation if `spec_integrity`/`gate_gaming` trips. Verify: the constitution footer reads `1.0.0`; any re-seal/deviation is recorded in the ledger. | ✅ | 2026-07-08 |
+| TASK-074 | [Track L / V1REL] Update `docs/STATUS.md` milestone to v1.0 (RC/released) and reframe the residuals section as accepted post-1.0 residuals (cross-platform NFR-003, fuller A3, live design/Go runs, catalog publishing, model-driven eval); update the `README.md` milestone line and the `docs/getting-started.md` `--version` example. Verify: STATUS milestone reads v1.0; README milestone matches; getting-started `--version` example updated. | ✅ (+ the unrotated-key verify residual recorded) | 2026-07-08 |
+| TASK-075 | [Track L / V1REL] Move CHANGELOG's `[Unreleased] — v1.0 (in progress)` to `## [1.0.0]` (via `1.0.0-rc.1`), summarize plans 023–033, and update the compare/tag links. Verify: `CHANGELOG.md` contains a `## [1.0.0]` section and the tag/compare links resolve to the release tag. | ✅ (`## [1.0.0-rc.1]`) | 2026-07-08 |
+| TASK-076 | [Track L / V1REL] Apply the version test fixups: `engine/tests/test_oss_readiness.py` lines 263-264 (`## [0.5.0]` → `## [1.0.0]`, `releases/tag/v0.5.0` → `.../v1.0.0`, README `v0.5` → `v1.0`) and `engine/tests/test_auto_docs.py` line 65 (the stale pinned version string). Verify: `uv run pytest engine/tests/test_oss_readiness.py engine/tests/test_auto_docs.py` green. | ✅ | 2026-07-08 |
+| TASK-077 | [Track L / V1REL] Execute the release checklist: all gates green self-applied at High-risk on the trust spine; `3pwr verify` green; `uv tool install --force ./engine` smoke; `3pwr --version` → the release version; a fresh `3pwr init` smoke; run the source-plan Verification block (`3pwr run "demo intent" --dry-run --spec-id DEMO`; `ls specs-src/<NNN>-demo-intent/` shows `spec.md plan.md implementation-plan.md oracle.md changelog.md progress.md`; `scan.yaml` present; init flags the constitution). Tag `1.0.0-rc.1` then `1.0.0` on `main` after the RC settles (branch discipline — no PR). Verify: the checklist commands all pass and both tags exist. | ✅ (checklist executed; tagging = maintainer step on `main`) | 2026-07-08 |
+| TASK-078 | [Track L / V1REL] python-engineer confirms final green across the engine: `(cd engine && uv sync --extra dev && uv run pytest && uv run ruff check . && uv run mypy src)` and `3pwr gate run --path engine`. Verify: all green; the dry-run shows the new artifact names and fresh-session/token behavior. | ✅ | 2026-07-08 |
 
 ## 3. Alternatives
 

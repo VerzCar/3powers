@@ -104,4 +104,7 @@ This constitution supersedes other practices. Amendments are versioned and recor
 Compliance is checked at every stage by the gate engine and the human sign-off — advisory guidance in
 `AGENTS.md` complements but never replaces gate enforcement.
 
-**Version**: 0.1.0 | **Ratified**: 2026-06-30 | **Last Amended**: 2026-06-30
+**Amendments**: 1.0.0 (2026-07-08) — re-ratified for the v1.0 release; folds in the adaptation
+guide, the mandatory-content checklist, the "what stays fixed" note, and the "how to update" rule.
+
+**Version**: 1.0.0 | **Ratified**: 2026-07-08 | **Last Amended**: 2026-07-08

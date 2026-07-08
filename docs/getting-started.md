@@ -24,7 +24,7 @@ You need [`uv`](https://docs.astral.sh/uv/) and `git`. Install `3pwr` from a clo
 
 ```bash
 git clone https://github.com/VerzCar/3powers && uv tool install ./3powers/engine
-3pwr --version        # prints the installed version (e.g. `3pwr 0.1.0`)
+3pwr --version        # prints the installed engine version
 ```
 
 ### Step 2 — Initialize your repository

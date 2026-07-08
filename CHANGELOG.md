@@ -3,12 +3,12 @@
 All notable changes to 3Powers are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-3Powers is pre-1.0. Entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in
-the spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
-plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the first tagged
-release is **v0.5.0**, matching the latest released milestone below.
+3Powers entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in the
+spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
+plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the current
+release is the first stable release candidate, **v1.0.0-rc.1**.
 
-## [Unreleased] — v1.0 (in progress): lifecycle & ecosystem
+## [1.0.0-rc.1] — v1.0: lifecycle & ecosystem (release candidate)
 
 ### Changed
 
@@ -24,6 +24,37 @@ release is **v0.5.0**, matching the latest released milestone below.
   the `3pwr` entry point is unchanged.
 
 ### Added
+
+- **v1.0 readiness & lifecycle hardening.** The run-artifact base folder is now **`specs-src/`**
+  (the legacy `specs/` base and split layout stay read-resolvable); the tasks artifact is
+  **`implementation-plan.md`** and the implement record is an engine-generated, requirement-traced
+  **`changelog.md`** (the legacy `tasks.md`/`implement.md` names stay readable); every build phase
+  runs the coding gates over its file scope as the agent's own advisory check, and a dedicated
+  Verification phase always closes the plan — the Verify stage remains the sole signed verdict; the
+  plan artifact drops its judiciary framing (no role→model table — roles live in `roles.yaml`
+  alone); oracle artifacts are keyed by the run's `<NNN>-<slug>` folder id everywhere, and
+  `oracle.md` is an authored, engine-validated, implementation-agnostic Tests Specification; each
+  stage and each phase provably runs in a **fresh headless session**, with `[P]` sub-agent parallel
+  dispatch explicit in the handoff; per-stage and per-phase **token consumption** is recorded
+  additively (a Tokens column in `progress.md` and the status commands — verdict bytes unchanged);
+  the secret/dependency/SAST scanners honor a committed **`.3powers/config/scan.yaml`** (per-tool
+  ignore globs, auditable in review — the core ed25519 private-key check always runs); the
+  observability registry (`observability.yaml`) ships with explanatory headers and a docs section;
+  and `3pwr init` now flags the seeded constitution as **mandatory to adapt**, with a "How to adapt"
+  guide, a mandatory-content checklist, and a "how to update" rule in the template itself.
+- **Per-adapter end-to-end notebook kit.** A top-level `e2e/` folder carries one small,
+  enterprise-baseline sample project per language adapter (TypeScript, Python, Go), each driven
+  through a complete real `3pwr run` by a committed Jupyter notebook — `./e2e/run.sh <lang>` for the
+  agent-driven lifecycle, `--check` for the deterministic no-agent path (baseline gates +
+  `3pwr run --dry-run`). Every run provisions a throwaway sandbox and never writes into the repo;
+  the headless integration is configured once in `e2e/config/` and shared by all projects.
+- **Run identity, configurable gate tooling, diagnostics & progress.** The run's auto-allocated
+  `<NNN>-<slug>` folder id is its identity everywhere (ledger entries, oracle folder, gate messages,
+  resume hints); gate failures list the individual gate results with copy-pasteable resume commands;
+  a committed **`.3powers/config/gates.yaml`** lets a project pin its own format/lint/type/test
+  commands (precedence: `gates.yaml` > auto-detected project tooling > adapter manifest — inspect
+  with `3pwr gate config show`), with an opt-in `--auto-fix` for the format/lint gates only; and
+  every run maintains a durable, human-readable **`progress.md`** in its feature folder.
 
 - **Run steering (STEER).** Three operator seams around `3pwr run` closed. *File-based intent*:
   `3pwr run --file my-intent.md ["<inline>"]` uses the file's contents as the intent, appending inline
@@ -61,6 +92,29 @@ release is **v0.5.0**, matching the latest released milestone below.
   `.3powers/config/git.yaml` (branch prefix / base / 3pwr author, tolerant defaults), and the run
   branch + committed stages surfaced by both status commands.
 
+- **Run artifact workspace (SRCX).** Every `3pwr run` auto-allocates one flat feature folder with a
+  deterministic `<NNN>-<slug>` identity; every producing stage leaves a ledger-tracked markdown in
+  it; and a deterministic artifact-∧-ledger stage-completion gate governs `advance` and `--resume`
+  (two named failure classes — an artifact missing on disk, or present but unrecorded).
+- **Per-stage agent templates + the headless-CLI / role→model setup (AGENTX).** One editable, merged
+  agent template per dispatched stage (`.3powers/templates/agents/<stage>.agent.md`, built-in
+  fallback when absent), a per-integration model catalog (`.3powers/config/models.yaml`), and an
+  init + `3pwr config roles setup` flow that binds every role — planner, coder, oracle, reviewer —
+  to a complete `roles.yaml` block so `3pwr run` needs no manual role editing.
+- **A first-class CLI experience (CLIUX).** A zero-dependency structured-output toolkit every
+  command renders through (headers, key/value blocks, aligned tables, status rows), a consistent
+  color + status-glyph vocabulary, a persistent colorized auto-mode stage header, and
+  `--quiet`/`--verbose` + an opt-in `.3powers/config/ui.yaml` — human output only; `--json`, exit
+  codes, and verdict bytes are byte-for-byte unchanged.
+- **Auto full-mode readiness & the run error contract (AUTOX).** One shared readiness/preflight
+  check set (`3pwr ready`, init, and the run can never disagree), signed run-failure ledger records
+  surfaced by both status commands, persisted credential-redacted per-attempt transcripts, a stable
+  exit-code/JSON status contract (0 done · 1 gates-red · 2 usage · 3 paused · 4 setup/dispatch), and
+  checkpoint-independent resume.
+- **Phased execution (PHASE).** A per-feature artifact workspace, hard plan/tasks artifact
+  contracts, context-budgeted phases against an advisory budget (warn, never block), one fresh
+  headless session per phase, and parallel subagent dispatch for `[P]` phases with disjoint file
+  scopes.
 - **Open-source launch readiness (OSSRD).** A CI workflow gates every pull request to `main` (engine
   lint, types, tests, and offline ledger verification, as required checks); a
   [glossary](docs/glossary.md) defines every term of art (trust spine, oracle, Phase A/B, residual,
@@ -146,5 +200,5 @@ release is **v0.5.0**, matching the latest released milestone below.
 - Two reference language adapters (TypeScript, Python), self-application of the engine on its own code, and
   supply-chain scanners. (plans 001–003)
 
-[Unreleased]: https://github.com/VerzCar/3powers/compare/v0.5.0...HEAD
+[1.0.0-rc.1]: https://github.com/VerzCar/3powers/releases/tag/v1.0.0-rc.1
 [0.5.0]: https://github.com/VerzCar/3powers/releases/tag/v0.5.0

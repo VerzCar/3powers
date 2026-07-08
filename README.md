@@ -149,7 +149,7 @@ To contribute, see **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, platform s
 
 ## Status
 
-**v0.5 complete; v1.0 in progress.** The full judiciary is built and self-applied at the strictest tier. Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
+**v1.0 release candidate (1.0.0-rc.1).** The full judiciary is built and self-applied at the strictest tier. Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
 
 ## License
 
