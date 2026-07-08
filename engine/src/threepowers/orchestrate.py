@@ -29,9 +29,10 @@ from .lifecycle import STAGES, canonical_stage
 from .verdict import GateResult
 
 # The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
+# The values are the human-readable labels rendered at a gate pause and recorded in run state.
 MANDATORY_GATES: dict[str, str] = {
-    "review-spec": "3PWR-FR-006",  # a human approves the spec before implementation begins
-    "signoff": "3PWR-FR-037",  # a human signs off on evidence + residual before advance
+    "review-spec": "spec approval",  # a human approves the spec before implementation begins
+    "signoff": "sign-off",  # a human signs off on evidence + residual before advance
 }
 
 # The lifecycle steps, in order, mapped to their stage — the native executive walks these directly.
@@ -87,7 +88,7 @@ class RunResult:
 
     status: str  # paused_at_gate | done | failed | aborted
     gate: str = ""
-    gate_fr: str = ""  # the FR id when the pause is a mandatory gate
+    gate_fr: str = ""  # the gate's human-readable label when the pause is a mandatory gate
     stage: str = ""
     verdict: str = (
         ""  # the deterministic-gate verdict when status == failed: "fail" = a real gate-red,

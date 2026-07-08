@@ -366,7 +366,7 @@ def test_gate_pause_notifies_enabled_channel_with_actionable_message(run_repo, m
     assert _run(run_repo, "steer the run") == EXIT_PAUSED
     assert sent and sent[0][0] == "https://hooks.example/T00/B00"
     text = sent[0][1]["text"]
-    assert "RUN" in text and "review-spec" in text and "3PWR-FR-006" in text
+    assert "RUN" in text and "review-spec" in text and "spec approval" in text
     assert "specs/001-steer-the-run/spec.md" in text
     assert "3pwr run --resume --spec-id RUN --approver <you>" in text
     assert "3pwr abort --spec-id RUN" in text and "--revise" in text

@@ -8,28 +8,28 @@ Subcommands:
   conformance   run only the spec-conformance trace
   verify        recompute the ledger hash chain + signatures (offline)
   signoff       append a signed human sign-off entry (a Spec-stage sign-off seals the
-                approved document's hash into the signed entry — SLOCK-FR-001)
+                approved document's hash into the signed entry)
   advance       local enforcement gate: refuse to proceed unless gate green + ledger
                 verifies + the tier-required sign-off is present (+ oracle independence
-                at High-risk + the approved spec unchanged, SLOCK-FR-005)
+                at High-risk + the approved spec unchanged)
   oracle        structural oracle independence: seal a spec-only bundle, record authoring
                 (refusing the coder's model family), dispatch it headlessly + read-path
-                isolated (A3), verify from the ledger
+                isolated, verify from the ledger
   deps-check    probe installed third-party versions against the supported ranges (preflight)
   ready         am I ready for `3pwr run --mode auto`? — the full run preflight + a dependency
-                summary; read-only, offline, the same checks init and the run use (AUTOX-FR-003)
+                summary; read-only, offline, the same checks init and the run use
   run           drive the whole lifecycle loop (§6): auto mode stops only at the two mandatory
-                human gates (spec approval FR-006, sign-off FR-037); the native executive
-                dispatches each stage to a headless agent (EXEC-FR-001) and streams progress
+                human gates (spec approval, sign-off); the native executive
+                dispatches each stage to a headless agent and streams progress
   observe       §13 feedback loop: record a production signal → route to new intent, NFR-instrumentation
                 coverage, and a tamper-evident, attributable runtime agent-action log
   spec diff     read-only spec-integrity report: does the spec still match its approval
-                hash? (SLOCK-FR-007)
+                hash?
   ledger show   print the ledger
 
 Exit codes: 0 = ok/green, 1 = gate failed / verification failed / advance refused,
-2 = usage or environment error. `3pwr run` additionally uses the stable terminal contract
-(AUTOX-FR-009): 3 = paused at a human gate, 4 = setup/dispatch failure (never a gate verdict).
+2 = usage or environment error. `3pwr run` additionally uses the stable terminal contract:
+3 = paused at a human gate, 4 = setup/dispatch failure (never a gate verdict).
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ from .verify import verify_ledger
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
-# The stable `3pwr run` terminal contract (AUTOX-FR-009): one documented (status, exit-code) pair
+# The stable `3pwr run` terminal contract: one documented (status, exit-code) pair
 # per outcome, so a script can branch on the exit code alone —
 #   0 done · 1 gates_red (a real deterministic verdict; also rejected/aborted) · 2 usage ·
 #   3 paused_at_gate (a human gate awaits) · 4 setup/dispatch failure (preflight_failed,
@@ -116,7 +116,7 @@ def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
     if spec:
         return Path(spec).resolve()
     # Native fallback: the newest spec under specs/ — exactly one per feature folder, whichever
-    # layout (the spec/ workspace subfolder or the legacy flat file — PHASE-FR-001).
+    # layout (the spec/ workspace subfolder or the legacy flat file).
     specs = sorted(workspace.find_specs(s.root), key=lambda q: q.stat().st_mtime, reverse=True)
     if specs:
         return specs[0]
@@ -134,7 +134,7 @@ def _resolve_ui(args: argparse.Namespace) -> tuple[dict[str, str], bool]:
     """Resolve ui.yaml preferences (color_mode / verbosity / layout) + a malformed flag, once per run.
 
     Tolerant of a not-yet-initialized repo: when no ``.3powers/`` is found (e.g. before ``3pwr init``)
-    the shipped defaults are used. Cached on ``args`` so the file is read at most once (CLIUX-FR-014)."""
+    the shipped defaults are used. Cached on ``args`` so the file is read at most once."""
     cached = getattr(args, "_ui_cache", None)
     if cached is not None:
         return cached
@@ -150,7 +150,7 @@ def _resolve_ui(args: argparse.Namespace) -> tuple[dict[str, str], bool]:
 
 def _styler(args: argparse.Namespace, stream: Any = None) -> style.Styler:
     """A :class:`style.Styler` for one command's human output, honoring ``--json`` / ``--yes`` and the
-    ui.yaml ``color_mode`` (CLIUX-FR-005/014). Machine output is never routed through it (CLIUX-FR-007)."""
+    ui.yaml ``color_mode``. Machine output is never routed through it."""
     prefs, _ = _resolve_ui(args)
     return style.styler(
         stream if stream is not None else sys.stdout,
@@ -161,7 +161,7 @@ def _styler(args: argparse.Namespace, stream: Any = None) -> style.Styler:
 
 
 def _verbosity(args: argparse.Namespace) -> str:
-    """The effective verbosity for this command (CLIUX-FR-013): ``quiet`` | ``normal`` | ``verbose``."""
+    """The effective verbosity for this command: ``quiet`` | ``normal`` | ``verbose``."""
     prefs, _ = _resolve_ui(args)
     return style.resolve_verbosity(
         getattr(args, "quiet", False), getattr(args, "verbose", False), prefs["verbosity"]
@@ -177,11 +177,11 @@ def _compose(
     rows: Optional[list[str]] = None,
     extra: Optional[list[str]] = None,
 ) -> str:
-    """Assemble a command's human output honoring verbosity (CLIUX-FR-004/006/013).
+    """Assemble a command's human output honoring verbosity.
 
     ``title`` renders a self-identifying header (hidden at ``quiet``); ``rows`` are the core result
     lines (always shown); ``extra`` are verbose-only detail lines. Detail grows monotonically
-    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload (CLIUX-FR-007)."""
+    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload."""
     v = _verbosity(args)
     out: list[str] = []
     if title and v != "quiet":
@@ -202,7 +202,7 @@ def _git_out(root: Path, args: list[str]) -> str:
 
 
 def _spec_approval_payload(s: Settings, spec: Optional[str]) -> dict:
-    """Best-effort spec-hash fields for a Spec-stage sign-off (SLOCK-FR-001).
+    """Best-effort spec-hash fields for a Spec-stage sign-off.
 
     An unresolvable spec records nothing — the sign-off itself still proceeds.
     """
@@ -215,7 +215,7 @@ def _spec_approval_payload(s: Settings, spec: Optional[str]) -> dict:
 
 
 def _init_interactive(args: argparse.Namespace) -> bool:
-    """Onboarding is interactive only with a real TTY and neither --yes nor --json (ONBRD-FR-006)."""
+    """Onboarding is interactive only with a real TTY and neither --yes nor --json."""
     return (
         (not getattr(args, "json", False))
         and (not getattr(args, "yes", False))
@@ -259,7 +259,7 @@ def _ask_multi(
     """Numbered multi-select with defaults; returns the (in-option) defaults when non-interactive.
 
     Accepts space/comma-separated indices or names; empty input keeps the defaults. Non-interactive
-    (``--yes``/``--json``/no TTY) prompts for nothing (ONBRD-FR-006), so an init stays byte-stable."""
+    (``--yes``/``--json``/no TTY) prompts for nothing, so an init stays byte-stable."""
     in_opts = [d for d in defaults if d in options]
     if not interactive or not options:
         return in_opts
@@ -301,12 +301,12 @@ def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
 
 
 def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler] = None) -> str:
-    """Human-readable verdict: failing gate, class, and offending item — no transcript needed (3PWR-NFR-011).
+    """Human-readable verdict: failing gate, class, and offending item — no transcript needed.
 
-    ``st`` colorizes the status markers consistently with the rest of the CLI (INITX-FR-013); a disabled
+    ``st`` colorizes the status markers consistently with the rest of the CLI; a disabled
     styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before.
     Failure detail is no longer summarized in a bottom "failures:" block: each failed gate gets its
-    own panel after the pipeline view instead (GATEPIPE-FR-003)."""
+    own panel after the pipeline view instead."""
     st = st or style.Styler()
     result = verdict.result.upper()
     head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
@@ -374,7 +374,7 @@ def cmd_keygen(args: argparse.Namespace) -> int:
 
 
 def cmd_rotate_key(args: argparse.Namespace) -> int:
-    """Rotate the ledger signer (HARDN-FR-004): the OUTGOING key signs its successor.
+    """Rotate the ledger signer: the OUTGOING key signs its successor.
 
     Appends a ``key_rotation`` entry authored by the current key and carrying the new public
     key, then installs the successor (private key outside the repo, public key committed).
@@ -451,7 +451,7 @@ def cmd_rotate_key(args: argparse.Namespace) -> int:
 
 
 def _init_layout(s: Settings) -> str:
-    """Create the ``.3powers/`` skeleton idempotently (ONBRD-FR-009). Returns created|kept."""
+    """Create the ``.3powers/`` skeleton idempotently. Returns created|kept."""
     status = "kept" if s.dir.exists() else "created"
     for d in (
         s.dir / "config",
@@ -473,14 +473,14 @@ def _readiness_checklist(
     model_div_ok: bool,
     auto_prqs: Optional[list[runpreflight.Prereq]] = None,
 ) -> list[tuple[str, str, str]]:
-    """Build the first-run readiness checklist (INITX-FR-009/010/011; AUTOX-FR-001/002).
+    """Build the first-run readiness checklist.
 
     Each item is ``(label, status, detail)`` with status ∈ ``pass`` | ``warn`` | ``fail`` | ``todo``.
-    A missing CI/CD configuration is a mandatory prerequisite for secure gate enforcement (fail,
-    INITX-FR-010); a 3Powers-generated AGENTS.md starter is an unfinished TODO (INITX-FR-011). No item
-    is omitted (INITX-FR-009). ``auto_prqs`` — the SAME check set the live run preflight enforces
+    A missing CI/CD configuration is a mandatory prerequisite for secure gate enforcement (fail);
+    a 3Powers-generated AGENTS.md starter is an unfinished TODO. No item
+    is omitted. ``auto_prqs`` — the SAME check set the live run preflight enforces
     (``runpreflight.check_auto``) — is appended per item, so init's "ready" and the run's refusal can
-    never drift (AUTOX-FR-002)."""
+    never drift."""
     items: list[tuple[str, str, str]] = []
     if ready.get("ci"):
         items.append(("CI/CD pipeline", "pass", "gates can run automatically on every change"))
@@ -523,7 +523,7 @@ def _readiness_checklist(
         )
     )
     # The auto full-mode prerequisites — sourced from the run's own preflight checks, so a "ready"
-    # here means `3pwr run --mode auto` will not refuse to start (AUTOX-FR-001/002).
+    # here means `3pwr run --mode auto` will not refuse to start.
     for p in auto_prqs or []:
         items.append(
             (f"auto run: {p.name}", "pass" if p.ok else "fail", p.label if p.ok else p.fix)
@@ -532,20 +532,20 @@ def _readiness_checklist(
 
 
 def _checklist_lines(st: style.Styler, items: list[tuple[str, str, str]]) -> list[str]:
-    """Render checklist items as colorized ``<mark> <label>: <detail>`` lines (INITX-FR-013)."""
+    """Render checklist items as colorized ``<mark> <label>: <detail>`` lines."""
     return [f"  {st.mark(status)} {st.bold(label)}: {detail}" for label, status, detail in items]
 
 
-# The configurable roles the setup walks, in the order they are asked (AGENTX-FR-012).
+# The configurable roles the setup walks, in the order they are asked.
 _SETUP_ROLES = ("planner", "coder", "oracle", "reviewer")
 
 
 def _warn_diversity(s: Settings, st: style.Styler) -> list[str]:
-    """Warn (stderr) when the oracle or reviewer resolves to the coder's family (AGENTX-FR-018).
+    """Warn (stderr) when the oracle or reviewer resolves to the coder's family.
 
-    Diversity is recommended, never forced (3PWR-FR-022/057): the warning names the signed
+    Diversity is recommended, never forced: the warning names the signed
     deviation path and the setup always proceeds. Warnings go to stderr so a ``--json`` run's
-    stdout stays byte-identical (INITX-FR-014). Returns the roles warned about."""
+    stdout stays byte-identical. Returns the roles warned about."""
     coder_fam = s.coder_family()
     hit: list[str] = []
     if not coder_fam:
@@ -553,7 +553,7 @@ def _warn_diversity(s: Settings, st: style.Styler) -> list[str]:
     for role in ("oracle", "reviewer"):
         r = s.role(role)
         # The explicit model_family wins — catalog bindings may use bare, integration-native ids
-        # whose family the id does not encode (AGENTX-FR-012/015).
+        # whose family the id does not encode.
         fam = (
             str(r.get("model_family") or "") or oracle.family_of(str(r.get("model") or ""))
         ).strip()
@@ -597,7 +597,7 @@ def _default_role_model(
 
     Coder/planner take the integration's documented default; oracle/reviewer prefer the first entry
     whose *family* differs from the coder's chosen family, so ``family`` diversity holds out of the
-    box even within a single BYOK integration (3PWR-FR-022)."""
+    box even within a single BYOK integration."""
     fallback = (default_entry or {}).get("model", "") or (entries[0]["model"] if entries else "")
     if role in ("oracle", "reviewer") and coder_fam:
         for e in entries:
@@ -614,23 +614,23 @@ def _roles_setup_flow(
     integration: Optional[str] = None,
     role_models: Optional[dict[str, str]] = None,
 ) -> dict[str, Any]:
-    """The shared headless-CLI + role→model + diversity setup (AGENTX-FR-011/012/014/015).
+    """The shared headless-CLI + role→model + diversity setup.
 
-    One pass: multi-select which agent-backend CLIs you use (no provider is forced — AGENTX-FR-011),
+    One pass: multi-select which agent-backend CLIs you use (no provider is forced),
     then bind each configurable role — planner, coder, oracle, reviewer — to an integration from that
-    selection and a model drawn from its catalog or entered free-form (AGENTX-FR-016), writing a
+    selection and a model drawn from its catalog or entered free-form, writing a
     complete block (``model_family``/``model``/``integration``/``label``, ``require_dispatch`` for the
-    oracle) so ``3pwr run`` needs no manual role editing (AGENTX-FR-012/013). Finally choose how
-    diversity is judged — by ``family`` or ``model`` (3PWR-FR-022).
+    oracle) so ``3pwr run`` needs no manual role editing. Finally choose how
+    diversity is judged — by ``family`` or ``model``.
 
     Integration and family are orthogonal: one BYOK integration (e.g. copilot) can bind coder and
     oracle to different families, so diversity never forces a second CLI. When ``integration`` is
     given it fixes the single backend (``3pwr config roles setup --integration``).
 
-    Non-interactive (AGENTX-NFR-004): prompts for nothing; explicit choices are applied, and a role
+    Non-interactive: prompts for nothing; explicit choices are applied, and a role
     with no binding yet receives a documented default — already-bound roles are preserved untouched
-    (non-destructive, AGENTX-FR-014/NFR-003). Deterministic and offline (AGENTX-NFR-001); diversity
-    only ever warns (AGENTX-FR-018)."""
+    (non-destructive). Deterministic and offline; diversity
+    only ever warns."""
     cat = catalog.load_catalog(s)
     roles_cfg = s.load_roles()
     known = [str(i) for i in (roles_cfg.get("headless_integrations") or [])]
@@ -745,7 +745,7 @@ def _roles_setup_flow(
             "label": label,
         }
 
-    # 3) How is diversity judged — family or model? (3PWR-FR-022)
+    # 3) How is diversity judged — family or model?
     level = _ask_choice(
         "Judge model diversity by…",
         ["family", "model"],
@@ -766,13 +766,13 @@ def _roles_setup_flow(
 
 
 def cmd_config_roles_setup(args: argparse.Namespace) -> int:
-    """(Re)run the headless-CLI + role→model setup without reinitializing (AGENTX-FR-014).
+    """(Re)run the headless-CLI + role→model setup without reinitializing.
 
     The same integration + per-role selection init performs, non-destructively: only the roles
-    reconfigured here are rewritten; every other roles.yaml field is preserved (AGENTX-NFR-003).
+    reconfigured here are rewritten; every other roles.yaml field is preserved.
     Non-interactive (``--yes``/``--json``/no TTY) prompts for nothing and applies the documented
-    defaults (AGENTX-NFR-004). Dispatch configuration only — no gate, verdict, ledger, or human
-    gate is touched (AGENTX-NFR-002), and model diversity only ever warns (AGENTX-FR-018)."""
+    defaults. Dispatch configuration only — no gate, verdict, ledger, or human
+    gate is touched, and model diversity only ever warns."""
     s = _settings(args.root)
     as_json = getattr(args, "json", False)
     interactive = _init_interactive(args)
@@ -818,7 +818,7 @@ def cmd_config_roles_setup(args: argparse.Namespace) -> int:
 
 
 def cmd_commit_stage(args: argparse.Namespace) -> int:
-    """Auto-commit after a successful lifecycle stage (INITX-FR-006).
+    """Auto-commit after a successful lifecycle stage.
 
     One commit, message ``3pwr(<spec-id>): <stage>``. It commits the currently-staged changes (or the
     files named by ``--paths``), so it never sweeps unrelated changes; when nothing is staged (a failed
@@ -873,9 +873,9 @@ def cmd_commit_stage(args: argparse.Namespace) -> int:
 def _notifications_setup_flow(
     s: Settings, st: style.Styler, *, interactive: bool
 ) -> dict[str, Any]:
-    """Pick one run-notification channel (or none) and write its config (STEER-FR-010).
+    """Pick one run-notification channel (or none) and write its config.
 
-    Secrets are never stored (STEER-NFR-002): slack/teams record only the env-var *name* holding the
+    Secrets are never stored: slack/teams record only the env-var *name* holding the
     webhook URL, email records ``password_env``. Non-interactive prompts for nothing — the seeded
     empty ``channels: []`` (notifications off) stands. Returns what to tell the user to export."""
     if not interactive:
@@ -933,19 +933,17 @@ def _notifications_setup_flow(
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Guided onboarding — make an existing or new project 3Powers-ready in one step (ONBRD-FR-001).
+    """Guided onboarding — make an existing or new project 3Powers-ready in one step.
 
     Interactive by default; with ``--yes``/``--json`` or no TTY it prompts for nothing and applies the
-    documented default for every choice (ONBRD-FR-006). It creates the signer OUTSIDE the repo
-    (ONBRD-NFR-001), seeds the baseline config + the selected language adapter without clobbering
-    (ONBRD-FR-008), records the autonomy default (ONBRD-FR-005), is idempotent on re-run
-    (ONBRD-FR-009), and prints greenfield-vs-brownfield next steps (ONBRD-FR-010). Fully offline
-    (ONBRD-NFR-002)."""
+    documented default for every choice. It creates the signer OUTSIDE the repo, seeds the baseline
+    config + the selected language adapter without clobbering, records the autonomy default, is
+    idempotent on re-run, and prints greenfield-vs-brownfield next steps. Fully offline."""
     as_json = getattr(args, "json", False)
     interactive = _init_interactive(args)
     st = _styler(args)
 
-    # 1) Target directory — default the current directory (ONBRD-FR-002).
+    # 1) Target directory — default the current directory.
     default_dir = str(Path(args.root).resolve() if args.root else Path.cwd())
     root = Path(_ask("Project directory", default_dir, interactive=interactive)).expanduser()
     if not root.is_dir():
@@ -967,7 +965,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    # 3) Brownfield detection + a suggested default language (ONBRD-FR-010).
+    # 3) Brownfield detection + a suggested default language.
     langs = scaffold.bundled_languages()
     detected = scaffold.detect_language(root)
     brownfield = scaffold.has_source(root)
@@ -980,12 +978,12 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
         return EXIT_USAGE
     default_lang = args.language or detected or (langs[0] if langs else "")
-    # 4) Language selection from the supported (adapter-backed) set (ONBRD-FR-003).
+    # 4) Language selection from the supported (adapter-backed) set.
     lang = args.language or _ask_choice(
         "Which language adapter?", langs, default_lang, interactive=interactive
     )
 
-    # 5) Signing key — a private location OUTSIDE the repo (ONBRD-FR-004/007, NFR-001).
+    # 5) Signing key — a private location OUTSIDE the repo.
     env_key = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE") or os.environ.get(
         "THREEPOWERS_SIGNING_KEY"
     )
@@ -1022,23 +1020,23 @@ def cmd_init(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         _sk, key_status = scaffold.create_signer(key_path, s.pubkey_path, force=args.force)
 
-    # 6) Autonomy default (ONBRD-FR-005) — advisory; never bypasses a human gate (NFR-004).
+    # 6) Autonomy default — advisory; never bypasses a human gate.
     auto_mode = (
         args.auto_mode
         if args.auto_mode is not None
         else _ask_yesno("Make autonomous mode the default?", True, interactive=interactive)
     )
 
-    # 7) Seed baseline config + the selected adapter, never clobbering (ONBRD-FR-008).
+    # 7) Seed baseline config + the selected adapter, never clobbering.
     cfg = scaffold.seed_config(s)
     scaffold.seed_gitignore(s)
     scaffold.seed_contract(s)
     adapter_status = scaffold.materialize_adapter(s, lang) if lang else "none"
 
     # 8) Config selection — accept the recommended defaults or customize the choices that can
-    #    never weaken a gate: the default risk tier + the headless-CLI/role→model bindings
-    #    (INITX-FR-001/002; AGENTX-FR-011/012). The seeded roles.yaml is the documented default,
-    #    so a non-interactive init prompts for nothing and stays run-ready (AGENTX-NFR-004).
+    #    never weaken a gate: the default risk tier + the headless-CLI/role→model bindings.
+    #    The seeded roles.yaml is the documented default,
+    #    so a non-interactive init prompts for nothing and stays run-ready.
     tier = getattr(args, "tier", None) or s.default_tier()
     oracle_model = getattr(args, "oracle_model", None)
     oracle_integration = getattr(args, "oracle_integration", None)
@@ -1047,9 +1045,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     roles_report: Optional[dict[str, Any]] = None
     notify_report: dict[str, Any] = {"channel": "none"}
     # The guided judiciary setup always runs interactively, each prompt carrying an accept-by-Enter
-    # default (INITX-FR-001/002; AGENTX-FR-011/012): risk tier → which agent CLIs → per-role model →
+    # default: risk tier → which agent CLIs → per-role model →
     # diversity mode → notifications. Non-interactive prompts for nothing — the seeded roles.yaml +
-    # empty notifications are the documented defaults and stay run-ready (AGENTX-NFR-004).
+    # empty notifications are the documented defaults and stay run-ready.
     if interactive and not oracle_model:
         customized = True
         tiers = list((s.load_risk_tiers().get("tiers") or {}).keys()) or [
@@ -1065,8 +1063,8 @@ def cmd_init(args: argparse.Namespace) -> int:
     if oracle_model:
         coder_fam = s.coder_family()
         if coder_fam and oracle.family_of(oracle_model) == coder_fam:
-            # Diversity is recommended, not forced (3PWR-FR-022/057). Warn to STDERR so a --json
-            # run's stdout stays byte-identical (INITX-FR-014); never a silent accept (INITX-FR-002).
+            # Diversity is recommended, not forced. Warn to STDERR so a --json
+            # run's stdout stays byte-identical; never a silent accept.
             print(
                 st.warn(
                     f"⚠ oracle model shares the coder's family ({coder_fam}) — model diversity is "
@@ -1090,21 +1088,21 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
     scaffold.write_onboarding(s, auto_mode=auto_mode, tier=tier, auto_commit=True)
 
-    # 9) AGENTS.md — create a 3Powers starter if the repo has none (ONBRD-FR-016).
+    # 9) AGENTS.md — create a 3Powers starter if the repo has none.
     agents_status = scaffold.seed_agents_md(root)
 
     # 10) Seed the native agent-backend manifests, the per-stage agent templates, and the 3Powers
     #     constitution (offline, non-clobber). `3pwr run` drives these agents directly — no Spec Kit
-    #     (EXEC-FR-004; SLIM removed the substrate) — and each dispatched stage's editable
-    #     instructions live in .3powers/templates/agents/ (AGENTX-FR-001/009).
+    #     substrate — and each dispatched stage's editable
+    #     instructions live in .3powers/templates/agents/.
     agents_seeded = scaffold.seed_agents(s)  # .3powers/agents/*.yaml
     templates_seeded = scaffold.seed_stage_templates(s)  # .3powers/templates/agents/*.agent.md
     constitution_status = scaffold.seed_constitution(root)
     ready = scaffold.readiness(root)
 
     # Judiciary model-diversity readiness (needs config): a concrete oracle model in a family
-    # different from the coder's (INITX-FR-002 / 3PWR-FR-022). The oracle's explicit model_family
-    # wins over prefix-derivation — catalog bindings may use bare ids (AGENTX-FR-012/015).
+    # different from the coder's. The oracle's explicit model_family
+    # wins over prefix-derivation — catalog bindings may use bare ids.
     oracle_pin = s.role_model_pin("oracle")
     coder_fam = s.coder_family()
     oracle_fam = (
@@ -1113,7 +1111,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     ).strip()
     model_div_ok = oracle_pin is not None and (not coder_fam or oracle_fam != coder_fam)
 
-    # Auto full-mode readiness — the SAME check set the live run preflight enforces (AUTOX-FR-001/002):
+    # Auto full-mode readiness — the SAME check set the live run preflight enforces:
     # a resolvable/usable signer (env keys validated, never trusted silently), a headless coder agent
     # with its CLI on PATH, and a different-family oracle. One source of checks — no drift possible.
     coder_int = runpreflight.resolve_coder_integration(s, getattr(args, "integration", None))
@@ -1153,7 +1151,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         "readiness": ready,
         "checklist": [{"item": it[0], "status": it[1], "detail": it[2]} for it in checklist],
         # The auto full-mode verdict + the remaining steps as exact fixes in dependency order
-        # (AUTOX-FR-002/005) — derived from the same checks the run preflight enforces.
+        # — derived from the same checks the run preflight enforces.
         "auto_ready": not auto_unmet,
         "auto_run": [
             {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix} for p in auto_prqs
@@ -1164,7 +1162,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         print(json.dumps(report, indent=2))
         return EXIT_OK
 
-    # ---- human, colorized summary (INITX-FR-013) ----
+    # ---- human, colorized summary ----
     lines = [st.ok("✓") + " " + st.bold(f"3Powers is ready under {s.dir}")]
     if key_status == "created":
         lines.append(f"  signer created (private key OUTSIDE the repo): {key_path}")
@@ -1199,8 +1197,8 @@ def cmd_init(args: argparse.Namespace) -> int:
             "(.3powers/config/notifications.yaml)"
         )
 
-    # Readiness checklist (INITX-FR-009/010/011). The header keeps the phrase the onboarding
-    # contract documents (ONBRD-FR-015) so existing guidance stays discoverable.
+    # Readiness checklist. The header keeps the phrase the onboarding
+    # contract documents so existing guidance stays discoverable.
     lines.append("")
     lines.append(st.head("Ready for the agentic workflow? — readiness checklist:"))
     lines.extend(_checklist_lines(st, checklist))
@@ -1210,7 +1208,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             + " — `git init` to unlock diff-scoped brownfield gating"
         )
 
-    # The remaining auto full-mode steps, as exact fixes in dependency order (AUTOX-FR-005):
+    # The remaining auto full-mode steps, as exact fixes in dependency order:
     # key → coder agent (roles + CLI) → different-family oracle. Derived from the same readiness
     # result above — exactly the unmet items, nothing more.
     lines.append("")
@@ -1230,7 +1228,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
 
     # Before-you-run env exports for a configured notification channel (secrets live in env, never
-    # in the config — STEER-NFR-002). Shown as a call-to-action alongside the signer export.
+    # in the config). Shown as a call-to-action alongside the signer export.
     notif_hint: list[str] = []
     if notif_channel in ("slack", "teams"):
         env = notify_report.get("webhook_env") or f"THREEPOWERS_{notif_channel.upper()}_WEBHOOK"
@@ -1248,7 +1246,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         )
 
     # Getting started — the primary call-to-action, shown ALWAYS (greenfield + brownfield):
-    # describe what you want and 3pwr drives the lifecycle (INITX-FR-012).
+    # describe what you want and 3pwr drives the lifecycle.
     lines.append("")
     lines.append(st.head("Get started — describe what you want and 3pwr drives the lifecycle:"))
     lines.append("  " + st.bold(f'3pwr run "<what you want built>" --mode {mode}'))
@@ -1260,7 +1258,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     lines.append("  (step-by-step: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance)")
     lines.extend(notif_hint)
 
-    # Existing code? The now-working brownfield on-ramp, demoted below the primary CTA (3PWR-FR-051/052).
+    # Existing code? The now-working brownfield on-ramp, demoted below the primary CTA.
     if brownfield:
         lines.append("")
         lines.append(st.head("Existing code? Adopt gradually first:"))
@@ -1275,7 +1273,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def _detection_line(detected: dict[str, str]) -> str:
-    """The one auto-detection startup line (GATECFG-FR-005), e.g.
+    """The one auto-detection startup line, e.g.
     ``auto-detected gates:  format=biome  tests=vitest`` — printed once per gate run, human output
     only (never on the ``--json`` path)."""
     pairs = [f"{g}={detected[g]}" for g in GATE_ORDER if g in detected]
@@ -1286,7 +1284,7 @@ def _detection_line(detected: dict[str, str]) -> str:
 def _effective_gates_or_none(
     s: Settings, adapter_name: Optional[str], target: Path
 ) -> Optional[EffectiveGates]:
-    """Assemble the effective gate configuration (GATECFG-FR-003), or ``None`` when it cannot be.
+    """Assemble the effective gate configuration, or ``None`` when it cannot be.
 
     ``None`` — no resolvable adapter or an unreadable manifest — hands configuration back to
     :func:`run_gates`, which loads the adapter itself and surfaces the real error on its own
@@ -1301,7 +1299,7 @@ def _effective_gates_or_none(
 def cmd_gate_run(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else s.root
-    # --id <NNN> is the run-number shorthand for --spec (GDIAG-FR-002): resolve the one matching
+    # --id <NNN> is the run-number shorthand for --spec: resolve the one matching
     # feature folder and its spec; zero or multiple matches are clear, actionable errors.
     if getattr(args, "id", None):
         try:
@@ -1318,7 +1316,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             return EXIT_USAGE
         spec_path: Path | None = resolved
     else:
-        # Brownfield adoption (3PWR-FR-051/052): report-only / diff-scope is the on-ramp for a repo
+        # Brownfield adoption: report-only / diff-scope is the on-ramp for a repo
         # that has no 3Powers spec yet, so a missing spec is not an error there — the two spec-bound
         # gates SKIP.
         try:
@@ -1329,15 +1327,15 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             else:
                 raise
 
-    # The live per-gate pipeline (GATEPIPE-FR-001/002): rows update in place on a capable TTY and
+    # The live per-gate pipeline: rows update in place on a capable TTY and
     # degrade to sequential plain rows off it. Never constructed under --json — the machine payload
     # is never routed through the rendering layer — and quiet keeps the result-only output.
     gst = _styler(args)
     v_level = _verbosity(args)
-    # The effective gate configuration (GATECFG-FR-003): the adapter manifest, the project's
+    # The effective gate configuration: the adapter manifest, the project's
     # committed gates.yaml overrides, and — for gates the file leaves alone — the native tooling
-    # auto-detected once at startup (GATECFG-FR-004). One line names what was detected, never
-    # under --json (GATECFG-FR-005). An unassemblable config degrades to None: run_gates loads
+    # auto-detected once at startup. One line names what was detected, never
+    # under --json. An unassemblable config degrades to None: run_gates loads
     # the adapter itself and surfaces the real error on its own path.
     eff = _effective_gates_or_none(s, args.adapter, target)
     if eff is not None and eff.detected and not args.json and v_level != "quiet":
@@ -1364,7 +1362,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             manifest=eff.manifest if eff is not None else None,
         )
     except PrerequisiteError as exc:
-        # A required tool of a non-optional gate is absent (GDIAG-FR-004): no gate ran; the per-tool
+        # A required tool of a non-optional gate is absent: no gate ran; the per-tool
         # install hints come from the adapter's toolchain data. A setup problem, never a gate verdict.
         print(str(exc), file=sys.stderr)
         return EXIT_SETUP
@@ -1389,14 +1387,14 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
     human = _format_verdict(verdict, appended, gst)
-    # The auto-fixed announcement (GATECFG-FR-008): one line per gate a fix turned green — human
+    # The auto-fixed announcement: one line per gate a fix turned green — human
     # output only, so the --json payload stays pure machine data.
     if not args.json:
         for g in verdict.gates:
             fixer = (g.details or {}).get("auto_fixed")
             if fixer:
                 human += f"\n  ↳ auto-fixed by {fixer}"
-    # One panel per failed gate, printed after the live pipeline exits (GATEPIPE-FR-003) — the
+    # One panel per failed gate, printed after the live pipeline exits — the
     # structured replacement for the former bottom "failures:" block. Human output only.
     if not args.json:
         panels = orchestrate.failure_panels(verdict.to_dict(), gst, verbose=v_level == "verbose")
@@ -1405,7 +1403,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     if args.report_only and verdict.result != STATUS_PASS:
         human += "\n  " + gst.mark("info") + " report-only: verdict emitted but not enforced"
     # Consolidated install call-to-action: if gates couldn't run because their tools are absent, say
-    # exactly what to install so the next `gate run` / `3pwr run` succeeds (3PWR-FR-034). Human-output
+    # exactly what to install so the next `gate run` / `3pwr run` succeeds. Human-output
     # only — the per-gate `missing_tool`/`install_hint` already ride the JSON verdict.
     missing: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -1434,18 +1432,18 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         ),
     )
     # Report-only never blocks the developer's flow; ratchet to a blocking run
-    # (optionally diff-scoped via --base/--paths) once the diff is clean (3PWR-FR-052).
+    # (optionally diff-scoped via --base/--paths) once the diff is clean.
     if args.report_only:
         return EXIT_OK
     return EXIT_OK if verdict.result == STATUS_PASS else EXIT_FAIL
 
 
 def cmd_gate_config_show(args: argparse.Namespace) -> int:
-    """Render the effective per-gate configuration — without executing any gate (GATECFG-FR-010).
+    """Render the effective per-gate configuration — without executing any gate.
 
     One row per gate: the gate, its tool, its check command, its fix command (— when none), and a
     source tag naming where the configuration came from — the adapter manifest, the project's
-    committed ``gates.yaml`` override, or startup auto-detection (GATECFG-FR-003/004)."""
+    committed ``gates.yaml`` override, or startup auto-detection."""
     s = _settings(args.root)
     try:
         adapter_name = args.adapter or detect_adapter(s, s.root)
@@ -1518,7 +1516,7 @@ def cmd_conformance(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     s = _settings(args.root)
     res = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
-    # Custody preflight (HARDN-FR-002): a private key inside the working tree or readable
+    # Custody preflight: a private key inside the working tree or readable
     # by other users is a custody violation — surfaced here, where trust is re-derived.
     custody = keys.custody_findings(s.root)
     ok = res.ok and not custody
@@ -1528,8 +1526,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
         rows.append(vst.status_row("fail", c))
     anchored: Optional[dict] = None
     if getattr(args, "anchored", False):
-        # Opt-in anchored mode (HARDN-FR-005): cross-check the chain against the latest
-        # local anchor tag. Plain `verify` never reads an anchor (HARDN-NFR-001).
+        # Opt-in anchored mode: cross-check the chain against the latest
+        # local anchor tag. Plain `verify` never reads an anchor.
         chk = anchor.check_anchored(Ledger(s.ledger_path).entries(), anchor.latest_anchor(s.root))
         anchored = {"ok": chk.ok, "anchor_seq": chk.anchor_seq, "problems": chk.problems}
         ok = ok and chk.ok
@@ -1563,11 +1561,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_anchor(args: argparse.Namespace) -> int:
-    """Record the ledger head with an external witness (HARDN-FR-005) — opt-in.
+    """Record the ledger head with an external witness — opt-in.
 
     Creates the annotated git tag ``3powers/anchor/<seq>`` carrying the head's entry hash,
     appends a local ``anchor`` receipt entry, and — only under ``--push`` — pushes the tag
-    (the sole network-capable operation, HARDN-NFR-001).
+    (the sole network-capable operation).
     """
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
@@ -1637,8 +1635,8 @@ def cmd_signoff(args: argparse.Namespace) -> int:
         return EXIT_USAGE
     payload = {"approver": args.approver, "stage": args.stage, "note": args.note or ""}
     # A Spec-stage sign-off freezes the law: seal the full document's hash inside the
-    # signed entry so any later silent mutation is caught (SLOCK-FR-001). A fresh
-    # Spec-stage sign-off supersedes the previous hash (SLOCK-FR-006).
+    # signed entry so any later silent mutation is caught. A fresh
+    # Spec-stage sign-off supersedes the previous hash.
     if args.stage.lower() == "spec":
         payload.update(_spec_approval_payload(s, getattr(args, "spec", None)))
     entry = Ledger(s.ledger_path).append("signoff", payload, sk, spec_id=args.spec_id or "")
@@ -1663,7 +1661,7 @@ def cmd_signoff(args: argparse.Namespace) -> int:
 
 
 def cmd_spec_diff(args: argparse.Namespace) -> int:
-    """Read-only spec-integrity report (SLOCK-FR-007) — never writes to the ledger.
+    """Read-only spec-integrity report — never writes to the ledger.
 
     Exit 0 when the spec matches its approval hash (or none is recorded); exit 1 on a
     mismatch, with a textual diff when the sign-off commit is known.
@@ -1757,7 +1755,7 @@ def cmd_spec_diff(args: argparse.Namespace) -> int:
 
 
 def cmd_advance(args: argparse.Namespace) -> int:
-    """Local, CI-independent enforcement (3PWR-FR-041/042)."""
+    """Local, CI-independent enforcement."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     entries = ledger.entries()
@@ -1771,7 +1769,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
         reasons.append("ledger fails verification")
 
     # 2. Latest *enforced* verdict must be green — OR every red gate must be covered by an
-    #    active, signed deviation (3PWR-FR-057). Report-only verdicts are advisory (3PWR-FR-052)
+    #    active, signed deviation. Report-only verdicts are advisory
     #    and never satisfy an advance.
     enforced = [
         e
@@ -1801,7 +1799,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
                 )
             )
 
-    # 2b. An emergency cleanup overdue past one working day blocks the advance (3PWR-FR-056).
+    # 2b. An emergency cleanup overdue past one working day blocks the advance.
     overdue = deviations.overdue_emergencies(entries)
     if overdue:
         reasons.append(
@@ -1809,18 +1807,18 @@ def cmd_advance(args: argparse.Namespace) -> int:
             "`3pwr deviation --revoke <seq>`"
         )
 
-    # 3. A human sign-off must exist at or after the latest verdict (3PWR-FR-037).
+    # 3. A human sign-off must exist at or after the latest verdict.
     last_signoff = ledger.latest_of("signoff")
     if not last_signoff:
         reasons.append("no human sign-off recorded")
     elif last_verdict and last_signoff.get("seq", -1) < last_verdict.get("seq", 0):
         reasons.append("sign-off predates the latest verdict")
 
-    # 4. Oracle independence (3PWR-FR-020/021/022/062). The judiciary must have authored the oracle
+    # 4. Oracle independence. The judiciary must have authored the oracle
     #    from the spec, with a different model family, before the implementation. This binds at the
     #    High-risk tier only (oracle separation IS High-risk, spec §4); lower tiers stay advisory.
     #    Detection that the author *touched* the implementation is advisory — surfaced, never blocking.
-    #    At High-risk, physical read-path isolation (FR-021, A3) is also proven when a dispatch
+    #    At High-risk, physical read-path isolation is also proven when a dispatch
     #    attestation is present — and *required* when the repo opts in (roles.oracle.require_dispatch).
     oracle_ok: Optional[bool] = None
     oracle_advisory: list[str] = []
@@ -1851,11 +1849,11 @@ def cmd_advance(args: argparse.Namespace) -> int:
         if not ind.ok:
             reasons += [f"oracle independence — {r}" for r in ind.reasons]
 
-    # 5. Spec integrity (SLOCK-FR-005): once a human has approved the spec, its recorded
+    # 5. Spec integrity: once a human has approved the spec, its recorded
     #    hash must still match the document on disk — at every tier. A signed, active
-    #    `spec_integrity` deviation (3PWR-FR-057) turns the refusal into a warned,
+    #    `spec_integrity` deviation turns the refusal into a warned,
     #    recorded pass; revoking or expiring it re-blocks. A never-approved spec is
-    #    never blocked (SLOCK-FR-003).
+    #    never blocked.
     lock = speclock.check(entries, spec_for_oracle, s.root)
     spec_integrity_deviated = False
     if not lock.ok:
@@ -1875,10 +1873,10 @@ def cmd_advance(args: argparse.Namespace) -> int:
                 "record a `3pwr deviation --gate spec_integrity`"
             )
 
-    # 6. Git run discipline (GITX-FR-016): when the spec's run records a dedicated branch, a
+    # 6. Git run discipline: when the spec's run records a dedicated branch, a
     #    stage-boundary advance refuses off the run branch or with the completed stage's work
     #    uncommitted — naming the condition and the fix. Relaxable only via the named signed
-    #    deviations (GITX-FR-014); a pre-GITX ledger records no branch and is untouched.
+    #    deviations; a ledger predating branch binding records no branch and is untouched.
     git_branch = gitflow.branch_from_ledger(entries, spec_for_oracle)
     if git_branch:
         covered_git = deviations.covered_gates(active, spec_for_oracle)
@@ -1963,7 +1961,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
 
 
 def cmd_deviation(args: argparse.Namespace) -> int:
-    """Record (or revoke) a signed, reversible gate deviation (3PWR-FR-057)."""
+    """Record (or revoke) a signed, reversible gate deviation."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     try:
@@ -2044,7 +2042,7 @@ def cmd_deviation(args: argparse.Namespace) -> int:
 
 
 def cmd_emergency(args: argparse.Namespace) -> int:
-    """Open the constrained emergency fast path (3PWR-FR-056)."""
+    """Open the constrained emergency fast path."""
     s = _settings(args.root)
     if not args.approver:
         print("error: --approver is required — a human opens the emergency path", file=sys.stderr)
@@ -2125,10 +2123,10 @@ def cmd_ledger_show(args: argparse.Namespace) -> int:
 
 
 def cmd_roles_check(args: argparse.Namespace) -> int:
-    """Check model diversity between two roles (3PWR-FR-022), at the configured granularity.
+    """Check model diversity between two roles, at the configured granularity.
 
     Recommended, not forced: a same-family setup passes only under a signed ``model_diversity``
-    deviation (3PWR-FR-057), which turns the VIOLATION into a warned RELAXED (exit 0)."""
+    deviation, which turns the VIOLATION into a warned RELAXED (exit 0)."""
     s = _settings(args.root)
     level = s.diversity_level()
     ok = model_diversity_ok(s.load_roles(), args.role_a, args.role_b, level)
@@ -2170,7 +2168,7 @@ def cmd_roles_check(args: argparse.Namespace) -> int:
 
 
 def cmd_oracle_seal(args: argparse.Namespace) -> int:
-    """Seal a spec-only oracle bundle the judiciary authors from (3PWR-FR-020)."""
+    """Seal a spec-only oracle bundle the judiciary authors from."""
     s = _settings(args.root)
     spec_path = _resolve_spec(s, args.spec)
     spec_id, criteria = oracle.extract_criteria(spec_path)
@@ -2226,7 +2224,7 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
 
 
 def cmd_oracle_record(args: argparse.Namespace) -> int:
-    """Record oracle authoring; refuse the coder's model family (3PWR-FR-022/062)."""
+    """Record oracle authoring; refuse the coder's model family."""
     s = _settings(args.root)
     entries = Ledger(s.ledger_path).entries()
     seal = oracle.active_seal(entries, args.spec_id)
@@ -2246,8 +2244,8 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
     if not coder:
         print("error: coder model family is unset in roles.yaml", file=sys.stderr)
         return EXIT_USAGE
-    # Diversity is recommended, not forced (3PWR-FR-022): a same-family/model setup proceeds only under
-    # a signed model_diversity deviation (3PWR-FR-057) — warned and recorded, never a silent drop.
+    # Diversity is recommended, not forced: a same-family/model setup proceeds only under
+    # a signed model_diversity deviation — warned and recorded, never a silent drop.
     diversity_dev: Optional[int] = None
     if not oracle.diverse(coder_side, args.model, level):
         diversity_dev = deviations.diversity_deviation(
@@ -2301,7 +2299,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
         test_hashes[rel] = canonical.sha256_hex(text.encode("utf-8"))
         test_texts[rel] = text
 
-    # Advisory (non-blocking) peek/touch signals for human review (3PWR-FR-021).
+    # Advisory (non-blocking) peek/touch signals for human review.
     bundle_file = s.dir / "oracle" / args.spec_id / "sealed.json"
     criteria_text = ""
     if bundle_file.exists():
@@ -2360,7 +2358,7 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
 
 
 def cmd_oracle_verify(args: argparse.Namespace) -> int:
-    """Verify oracle independence structurally, from the ledger (3PWR-FR-020/021/022/062)."""
+    """Verify oracle independence structurally, from the ledger."""
     s = _settings(args.root)
     entries = Ledger(s.ledger_path).entries()
     rec = oracle.authoring_record(entries, args.spec_id)
@@ -2427,10 +2425,10 @@ def cmd_oracle_verify(args: argparse.Namespace) -> int:
 
 def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
     """Author the oracle headlessly under a non-coder integration, in a sanitized worktree from
-    which the implementation is physically absent (3PWR-FR-021/012/013; A3).
+    which the implementation is physically absent.
 
     Dispatch is Phase-A provisioning, recorded in the ledger — it never enters the deterministic
-    gate verdict (3PWR-NFR-001). The blocking isolation check binds at ``advance`` (High-risk)."""
+    gate verdict. The blocking isolation check binds at ``advance`` (High-risk)."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     seal = oracle.active_seal(ledger.entries(), args.spec_id)
@@ -2441,8 +2439,8 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
         )
         return EXIT_USAGE
 
-    # Resolve the oracle model/family. Diversity is recommended, not forced (3PWR-FR-022): a
-    # same-family/model dispatch proceeds only under a signed model_diversity deviation (FR-057).
+    # Resolve the oracle model/family. Diversity is recommended, not forced: a
+    # same-family/model dispatch proceeds only under a signed model_diversity deviation.
     coder = oracle.coder_family(s.load_roles())
     coder_side = s.coder_model() or coder
     level = s.diversity_level()
@@ -2515,8 +2513,8 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             return EXIT_FAIL
 
         # Dispatch the authoring step to the oracle agent directly, headless, inside the sanitized
-        # worktree — no external workflow substrate (EXEC-FR-009; supersedes the Spec Kit dispatch).
-        # The engine issues no model call itself; the agent process does (EXEC-NFR-001).
+        # worktree — no external workflow substrate (supersedes the Spec Kit dispatch).
+        # The engine issues no model call itself; the agent process does.
         dispatched_model = model
         if not args.dry_run:
             try:
@@ -2576,7 +2574,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             test_hashes[rel] = canonical.sha256_hex(text.encode("utf-8"))
             test_texts[rel] = text
 
-        # Advisory (non-blocking) peek/touch signals, unchanged from plan 008 (3PWR-FR-021).
+        # Advisory (non-blocking) peek/touch signals, unchanged from the standalone oracle path.
         criteria_text = ""
         if sealed_bundle.exists():
             data = json.loads(sealed_bundle.read_text(encoding="utf-8"))
@@ -2686,7 +2684,7 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
 
 
 def cmd_observe_signal(args: argparse.Namespace) -> int:
-    """Record a production signal and route it to the legislature as new intent (3PWR-FR-054)."""
+    """Record a production signal and route it to the legislature as new intent."""
     s = _settings(args.root)
     if args.kind not in observe.SIGNAL_KINDS:
         print(f"error: --kind must be one of {', '.join(observe.SIGNAL_KINDS)}", file=sys.stderr)
@@ -2744,7 +2742,7 @@ def cmd_observe_signal(args: argparse.Namespace) -> int:
 
 
 def cmd_observe_coverage(args: argparse.Namespace) -> int:
-    """Report NFR-instrumentation coverage — which NFRs have a live check (3PWR-FR-054)."""
+    """Report NFR-instrumentation coverage — which NFRs have a live check."""
     s = _settings(args.root)
     spec_path = _resolve_spec(s, args.spec)
     reg_path = (
@@ -2782,7 +2780,7 @@ def _actions_path(s: Settings) -> Path:
 
 
 def cmd_observe_log_action(args: argparse.Namespace) -> int:
-    """Append a tamper-evident, attributable runtime agent action (3PWR-FR-055)."""
+    """Append a tamper-evident, attributable runtime agent action."""
     s = _settings(args.root)
     if not args.agent or not args.action:
         print("error: --agent and --action are required", file=sys.stderr)
@@ -2821,7 +2819,7 @@ def cmd_observe_log_action(args: argparse.Namespace) -> int:
 
 
 def cmd_observe_verify_actions(args: argparse.Namespace) -> int:
-    """Verify the runtime agent-action log's chain + signatures (3PWR-FR-055/040)."""
+    """Verify the runtime agent-action log's chain + signatures."""
     s = _settings(args.root)
     res = verify_ledger(_actions_path(s), s.pubkey_path)
     ost = _styler(args)
@@ -2839,7 +2837,7 @@ def cmd_observe_verify_actions(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Per-spec lifecycle stage, derived from the ledger (3PWR-FR-011/019)."""
+    """Per-spec lifecycle stage, derived from the ledger."""
     s = _settings(args.root)
     ledger_entries = Ledger(s.ledger_path).entries()
     states = lifecycle.derive(ledger_entries)
@@ -2852,7 +2850,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             "last_verdict": st.last_verdict,
             "signed_off": st.signed_off,
             "aborted": st.aborted,
-            # The most recent unresolved run failure, if any (AUTOX-FR-007).
+            # The most recent unresolved run failure, if any.
             "failed": st.failed,
             "failed_stage": st.failed_stage,
             "failed_class": st.failed_class,
@@ -2878,7 +2876,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             if r["aborted"]:
                 flags.append("ABORTED")
             if r["failed"]:
-                # Distinct from paused-at-gate and from in-progress (AUTOX-FR-007).
+                # Distinct from paused-at-gate and from in-progress.
                 flags.append(
                     f"failed at {r['failed_stage'] or '?'} ({r['failed_class']}) at "
                     f"{r['failed_at'] or '?'}"
@@ -2898,7 +2896,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                 ]
             )
         out.append(sst.table(table_rows, headers=["", "spec", "stage", "verdict", "notes"]))
-    # Surface active deviations + overdue emergency cleanups (3PWR-FR-056/057).
+    # Surface active deviations + overdue emergency cleanups.
     active = deviations.active_deviations(ledger_entries)
     overdue_seqs = {d.get("seq") for d in deviations.overdue_emergencies(ledger_entries)}
     for d in active:
@@ -2911,7 +2909,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                 f"by {d.get('approver', '?')}{tag}",
             )
         )
-    # Surface each run's git lifecycle state (GITX-FR-009): its dedicated branch and the committed
+    # Surface each run's git lifecycle state: its dedicated branch and the committed
     # stages — derived from the signed ledger alone, consistent with the existing status semantics.
     for r in rows:
         run_branch = gitflow.branch_from_ledger(ledger_entries, str(r["spec_id"]))
@@ -2924,7 +2922,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                     f"committed stages: {', '.join(done_steps) or '—'}",
                 )
             )
-    # Surface oracle authoring records + advisory peek/touch findings (3PWR-FR-020/021/062).
+    # Surface oracle authoring records + advisory peek/touch findings.
     for e in ledger_entries:
         if e.get("type") != "oracle" or (e.get("payload") or {}).get("kind") != "record":
             continue
@@ -2943,12 +2941,12 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_git_start(args: argparse.Namespace) -> int:
-    """Establish the run's dedicated branch for a MANUAL drive (GITX-FR-016).
+    """Establish the run's dedicated branch for a MANUAL drive.
 
     The command-by-command `/3pwr.*` path gets the same guarantees as `3pwr run`: a working git
-    repository (GITX-FR-002), the clean-start guard (GITX-FR-007), and one dedicated branch named
-    from the run's SRCX identity (GITX-FR-003/004) — bound to the run in the signed ledger so a
-    later resume or `advance` recovers it offline (GITX-FR-005). Idempotent: an already-established
+    repository, the clean-start guard, and one dedicated branch named
+    from the run's <NNN>-<slug> workspace identity — bound to the run in the signed ledger so a
+    later resume or `advance` recovers it offline. Idempotent: an already-established
     run re-enters its recorded branch and appends nothing new."""
     s = _settings(args.root)
     gst = _styler(args)
@@ -2977,8 +2975,8 @@ def cmd_git_start(args: argparse.Namespace) -> int:
     recorded_branch = gitflow.branch_from_ledger(entries, args.spec_id)
     identity = feature_dir.name if feature_dir is not None else workspace.slugify(args.spec_id)
     branch = recorded_branch or gitflow.run_branch_name(prefs.branch_prefix, identity)
-    # The clean-start guard (GITX-FR-007) — the run's own recorded paths and its feature folder are
-    # tolerated; only unrelated changes refuse, relaxable via the signed deviation (GITX-FR-014).
+    # The clean-start guard — the run's own recorded paths and its feature folder are
+    # tolerated; only unrelated changes refuse, relaxable via the signed deviation.
     covered = deviations.covered_gates(deviations.active_deviations(entries), args.spec_id)
     if deviations.GIT_CLEAN_START not in covered:
         prefix = ""
@@ -3002,7 +3000,7 @@ def cmd_git_start(args: argparse.Namespace) -> int:
     appended: Optional[int] = None
     if not recorded_branch:
         # Bind the branch to the run — the same additive field on the existing run/start payload
-        # the orchestrated path records (GITX-FR-005, GITX-NFR-002).
+        # the orchestrated path records.
         try:
             sk = keys.resolve_signer(s.root)
         except FileNotFoundError as exc:
@@ -3031,10 +3029,10 @@ def cmd_git_start(args: argparse.Namespace) -> int:
 
 
 def cmd_classify(args: argparse.Namespace) -> int:
-    """Infer work kind(s) + a suggested risk tier from free-form intent (3PWR-FR-058).
+    """Infer work kind(s) + a suggested risk tier from free-form intent.
 
-    Deterministic (keyword heuristics, no model call — never perturbs the verdict, 3PWR-NFR-001). The
-    inference shapes the tier + oracle strategy; it never bypasses the human sign-off (3PWR-FR-006)."""
+    Deterministic (keyword heuristics, no model call — never perturbs the verdict). The
+    inference shapes the tier + oracle strategy; it never bypasses the human sign-off."""
     wk = workkind.classify(args.intent)
     cst = _styler(args)
     rows = [
@@ -3059,17 +3057,15 @@ def _notify(cmd: Optional[str], message: str) -> None:
 def _notify_event(
     s: Settings, args: argparse.Namespace, event: str, message: str, spec_id: str
 ) -> None:
-    """Fire ``event`` at the ``--notify`` hook AND every configured channel (STEER-FR-009/011).
+    """Fire ``event`` at the ``--notify`` hook AND every configured channel.
 
-    Best-effort and fully isolated from the trust path (STEER-NFR-001): the channels are loaded at
-    most once per invocation (a malformed file warns once — STEER-FR-010), delivery never raises,
-    and every problem is at most a one-line stderr warning that never carries a secret value
-    (STEER-NFR-002). With no ``notifications.yaml`` and no ``--notify``, nothing happens and no
+    Best-effort and fully isolated from the trust path: the channels are loaded at
+    most once per invocation (a malformed file warns once), delivery never raises,
+    and every problem is at most a one-line stderr warning that never carries a secret value.
+    With no ``notifications.yaml`` and no ``--notify``, nothing happens and no
     network call is made. The subject carries the run's RESOLVED identity — the caller's ``spec_id``
-    local, so a workspace-derived NNN reaches the notification too (RUNID-FR-003)."""
-    _notify(
-        args.notify, message
-    )  # the existing command hook keeps working alongside (STEER-FR-011)
+    local, so a workspace-derived NNN reaches the notification too."""
+    _notify(args.notify, message)  # the existing command hook keeps working alongside
     channels = getattr(args, "_notify_channels", None)
     if channels is None:
         channels, warns = notify.load_channels(s.notifications_config_path)
@@ -3081,10 +3077,11 @@ def _notify_event(
 
 
 def _run_feature_dir_from_ledger(s: Settings, entries: list[dict], spec_id: str) -> Optional[Path]:
-    """The run's bound feature folder, read back from the signed ``run``/``start`` entry (SRCX-FR-011).
+    """The run's bound feature folder, read back from the signed ``run``/``start`` entry.
 
     The latest ``start`` entry carrying a ``feature_dir`` wins — recovered offline from the ledger
-    alone, no modification-time scan. ``None`` for a pre-SRCX run (legacy fallback applies)."""
+    alone, no modification-time scan. ``None`` for a run recorded before folder binding existed
+    (legacy fallback applies)."""
     rel = ""
     for e in entries:
         if e.get("spec_id") != spec_id or e.get("type") != "run":
@@ -3103,8 +3100,8 @@ def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
 def _run_intent_from_ledger(entries: list[dict], spec_id: str) -> str:
     """The run's resolved intent, read back from the latest signed ``run``/``start`` entry.
 
-    A revise re-dispatches the paused stage WITH the original intent (STEER-FR-006) — recovered from
-    the ledger alone (STEER-FR-004's reproducibility), never re-asked."""
+    A revise re-dispatches the paused stage WITH the original intent — recovered from
+    the ledger alone, never re-asked."""
     intent = ""
     for e in entries:
         if e.get("spec_id") != spec_id or e.get("type") != "run":
@@ -3117,7 +3114,7 @@ def _run_intent_from_ledger(entries: list[dict], spec_id: str) -> str:
 
 def _gate_pause_rows(rst: style.Styler, spec_id: str, artifact: str) -> list[str]:
     """The three human-gate actions, each with its copy-pasteable command, plus the artifact under
-    review (STEER-FR-005) — one source for the pause screen and the interactive prompt."""
+    review — one source for the pause screen and the interactive prompt."""
     rows = []
     if artifact:
         rows.append(f"  {rst.dim('review:'.ljust(9))}{artifact}")
@@ -3137,17 +3134,18 @@ def _run_signoff(
     approver: Optional[str],
     note: Optional[str],
 ) -> None:
-    """Record the human's gate approval as a signed sign-off (3PWR-FR-006 spec / FR-037 evidence).
+    """Record the human's gate approval as a signed sign-off.
 
     The spec-approval gate additionally seals the approved document's hash into the
-    signed entry (SLOCK-FR-001) — same capture as a manual `3pwr signoff --stage spec`.
+    signed entry — same capture as a manual `3pwr signoff --stage spec`.
     """
     stage = "Spec" if gate == "review-spec" else "Review"
-    fr = orchestrate.MANDATORY_GATES.get(gate, "")
+    label = orchestrate.MANDATORY_GATES.get(gate, "")
     payload = {
         "approver": approver or "human",
         "stage": stage,
-        "note": note or f"approved gate '{gate}' {fr}".strip(),
+        "note": note
+        or (f"approved gate '{gate}' ({label})" if label else f"approved gate '{gate}'"),
     }
     if stage == "Spec":
         payload.update(_spec_approval_payload(s, None))
@@ -3165,11 +3163,11 @@ def _record_run_failure(
     detail: str,
     transcript: str = "",
 ) -> None:
-    """Append the signed run-failure record before exiting (AUTOX-FR-006).
+    """Append the signed run-failure record before exiting.
 
     Stage, failure class, attempt count, and a bounded detail ride in a ``run``/``failure`` entry via
-    the existing append API — additive content only, so ``3pwr verify`` stays green (AUTOX-NFR-003).
-    The transcript field carries the persisted path, never the output itself (AUTOX-FR-008)."""
+    the existing append API — additive content only, so ``3pwr verify`` stays green.
+    The transcript field carries the persisted path, never the output itself."""
     payload: dict[str, Any] = {
         "kind": "failure",
         "stage": stage or "",
@@ -3183,15 +3181,15 @@ def _record_run_failure(
 
 
 def _resolve_runner_kind(args: argparse.Namespace) -> str:
-    """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to ``native``
-    (EXEC-FR-013)."""
+    """The executive runner to use: --dry-run forces ``sim``; else --runner, defaulting to
+    ``native``."""
     if args.dry_run:
         return "sim"
     return getattr(args, "runner", None) or "native"
 
 
 def _resolve_coder_agent(s: Settings, args: argparse.Namespace) -> str:
-    """The coder agent backend: --agent wins, else --integration/roles.coder.integration (EXEC-FR-009)."""
+    """The coder agent backend: --agent wins, else --integration/roles.coder.integration."""
     return getattr(args, "agent", None) or runpreflight.resolve_coder_integration(
         s, args.integration
     )
@@ -3201,7 +3199,7 @@ def _resolve_run_spec(
     s: Settings, args: argparse.Namespace, feature_dir: Optional[Path] = None
 ) -> Optional[Path]:
     """The spec the native run resolves: --spec if given, else the run's bound feature folder
-    (SRCX-FR-011 — no modification-time scan), else the newest feature spec under specs/ (legacy)."""
+    (no modification-time scan), else the newest feature spec under specs/ (legacy)."""
     if getattr(args, "spec", None):
         p = Path(args.spec)
         return p if p.exists() else None
@@ -3222,27 +3220,27 @@ def _native_verdict(
     feature_dir: Optional[Path] = None,
     out: Optional[dict[str, Any]] = None,
 ) -> str:
-    """Run the deterministic gate suite IN-PROCESS for the native verify stage (EXEC-FR-006).
+    """Run the deterministic gate suite IN-PROCESS for the native verify stage.
 
     Returns ``pass`` / ``fail``; returns ``error`` when the gates cannot even run (no spec resolvable, no
-    adapter detected, bad tier, or a missing gate prerequisite — GDIAG-FR-004) so the caller reports a
-    setup/dispatch problem, never a false gate-red (EXEC-FR-016). The engine computes the verdict itself
-    — no subprocess dispatch, no model (3PWR-NFR-001).
+    adapter detected, bad tier, or a missing gate prerequisite) so the caller reports a
+    setup/dispatch problem, never a false gate-red. The engine computes the verdict itself
+    — no subprocess dispatch, no model.
 
     When a ledger + signer are supplied, the verdict is recorded exactly as a standalone
     ``3pwr gate run`` records it — written to ``verdicts/latest.json`` and appended as a signed
-    ``verdict`` entry — so an in-run red or green is never invisible to the trust spine (AUTOX-FR-011).
-    The verdict bytes themselves are unchanged (AUTOX-NFR-003). When ``out`` is given, the computed
+    ``verdict`` entry — so an in-run red or green is never invisible to the trust spine.
+    The verdict bytes themselves are unchanged. When ``out`` is given, the computed
     verdict dict is stashed under ``out['verdict']`` so the caller can render a red verdict's failed
-    gates inline (GDIAG-FR-001)."""
+    gates inline."""
     spec_path = _resolve_run_spec(s, args, feature_dir)
     if spec_path is None:
         return "error"
     try:
         adapter_name = detect_adapter(s, s.root)
-        # The same effective configuration as a standalone gate run (GATECFG-FR-003/004): the
+        # The same effective configuration as a standalone gate run: the
         # committed gates.yaml overrides plus startup auto-detection; the one detection line is
-        # human output only (GATECFG-FR-005). Degrades to None — run_gates loads the adapter.
+        # human output only. Degrades to None — run_gates loads the adapter.
         eff = _effective_gates_or_none(s, adapter_name, s.root)
         if eff is not None and eff.detected and not getattr(args, "json", False):
             print(_detection_line(eff.detected))
@@ -3257,7 +3255,7 @@ def _native_verdict(
             manifest=eff.manifest if eff is not None else None,
         )
     except PrerequisiteError as exc:
-        # No gate ran — say exactly what to install (GDIAG-FR-004), then report the setup failure.
+        # No gate ran — say exactly what to install, then report the setup failure.
         print(str(exc), file=sys.stderr)
         return "error"
     except (KeyError, LookupError, FileNotFoundError, ValueError, OSError):
@@ -3278,19 +3276,19 @@ def _native_verdict(
 
 
 def _dispatch_timeout(s: Settings, args: argparse.Namespace) -> int:
-    """The per-stage dispatch timeout (RUNLIVE-FR-004): --timeout wins, else the configured default."""
+    """The per-stage dispatch timeout: --timeout wins, else the configured default."""
     v = getattr(args, "timeout", None)
     return int(v) if v else s.dispatch_timeout()
 
 
 def _dispatch_retries(s: Settings, args: argparse.Namespace) -> int:
-    """The dispatch retry budget (RUNLIVE-FR-005): --retries wins, else the configured default."""
+    """The dispatch retry budget: --retries wins, else the configured default."""
     v = getattr(args, "retries", None)
     return int(v) if v is not None else s.dispatch_retries()
 
 
 def _run_stream(args: argparse.Namespace) -> bool:
-    """Stream agent output live only on a real TTY and not under --json (RUNLIVE-FR-006)."""
+    """Stream agent output live only on a real TTY and not under --json."""
     return bool(sys.stdout.isatty()) and not args.json
 
 
@@ -3305,12 +3303,13 @@ def _make_agent_runner(
     transcripts_sink: Optional[transcripts.TranscriptSink] = None,
     echo: Optional[TextSink] = None,
 ):
-    """Build the backend that dispatches a role's stages: a local headless CLI (:class:`CliAgentRunner`) or,
-    when the manifest declares ``mode: async-hosted``, the async hosted backend (:class:`HostedAgentRunner`,
-    RUNLIVE-FR-008). Both satisfy the same ``dispatch(step, stage) -> DispatchResult`` contract, so the
-    verdict is judged identically (RUNLIVE-NFR-003). The transcript sink persists each local attempt's
-    output (AUTOX-FR-008); a hosted backend's output lives with its hosting service. ``echo`` routes the
-    streamed agent conversation above the run's live bar instead of raw stdout (STEER-FR-012)."""
+    """Build the backend that dispatches a role's stages: a local headless CLI
+    (:class:`CliAgentRunner`) or, when the manifest declares ``mode: async-hosted``, the async hosted
+    backend (:class:`HostedAgentRunner`). Both satisfy the same ``dispatch(step, stage) ->
+    DispatchResult`` contract, so the
+    verdict is judged identically. The transcript sink persists each local attempt's
+    output; a hosted backend's output lives with its hosting service. ``echo`` routes the
+    streamed agent conversation above the run's live bar instead of raw stdout."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -3330,12 +3329,12 @@ def _make_agent_runner(
 
 
 def _dispatch_spec_text(s: Settings, step: str, spec_path: Optional[Path]) -> str:
-    """The approved-spec text a stage's prompt reloads (PHASE-FR-005).
+    """The approved-spec text a stage's prompt reloads.
 
     Stages after the ``review-spec`` human gate (plan, tasks, oracle, implement, advance) get the
     approved specification injected, so no stage depends on the agent rediscovering the law. Stages
     before approval (specify, clarify) author/refine the spec and get none. Deterministic given the
-    tree (PHASE-NFR-001)."""
+    tree."""
     if orchestrate.step_index(step) <= orchestrate.step_index("review-spec"):
         return ""
     if spec_path is None:
@@ -3347,7 +3346,7 @@ def _dispatch_spec_text(s: Settings, step: str, spec_path: Optional[Path]) -> st
 
 
 def _prior_artifact_ref(s: Settings, step: str, result: runnermod.StageResult) -> str:
-    """A reference to (digest of) an accepted stage artifact for the NEXT stage's prompt (PHASE-FR-005)."""
+    """A reference to (digest of) an accepted stage artifact for the NEXT stage's prompt."""
     if not result.artifact_paths:
         return ""
     path = result.artifact_paths[0]
@@ -3360,7 +3359,7 @@ def _prior_artifact_ref(s: Settings, step: str, result: runnermod.StageResult) -
 
 
 def _implement_phases(s: Settings, spec_path: Optional[Path]) -> list[phases.Phase]:
-    """The ordered phases declared by the feature's tasks artifact, or ``[]`` (PHASE-FR-010).
+    """The ordered phases declared by the feature's tasks artifact, or ``[]``.
 
     An empty result — no tasks artifact, or one that declares no phases — means the implement stage
     runs the whole task set as a single fresh session, preserving the pre-phase behavior as the
@@ -3379,12 +3378,11 @@ def _implement_phases(s: Settings, spec_path: Optional[Path]) -> list[phases.Pha
 def _report_phase_estimates(
     s: Settings, result: runnermod.StageResult, spec_path: Optional[Path], *, coder_model: str
 ) -> None:
-    """Per-phase context estimates + the advisory oversize warnings after the tasks stage (PHASE-FR-008/009).
+    """Per-phase context estimates + the advisory oversize warnings after the tasks stage.
 
     Each phase's deterministic estimate is reported; an over-budget phase gets a warning naming the
     phase, its estimate, and the budget, advising a split — and the run proceeds. Written to stderr
-    (never the --json stdout) and carried on the stage result; no gate or verdict is touched
-    (PHASE-NFR-002)."""
+    (never the --json stdout) and carried on the stage result; no gate or verdict is touched."""
     phase_list = _implement_phases(s, spec_path)
     if not phase_list:
         return
@@ -3409,11 +3407,11 @@ def _report_phase_estimates(
 
 
 def _warn_if_unanswered(s: Settings, ph: phases.Phase, transcript_rel: str, spec_id: str) -> None:
-    """Advisory stall check after one phase session ends (PHASEPR-FR-005).
+    """Advisory stall check after one phase session ends.
 
     Scans the last 500 bytes of the session's persisted transcript for unanswered-question
     patterns and, on a match, prints a warning naming the phase plus the run's ``--status`` hint.
-    Strictly advisory (PHASEPR-NFR-002): it never raises, never retries, and never changes a stage
+    Strictly advisory: it never raises, never retries, and never changes a stage
     outcome, ledger entry, or exit code — a missing/unreadable transcript reads as empty and stays
     silent."""
     if not transcript_rel:
@@ -3447,15 +3445,15 @@ def _dispatch_phased(
     sk,
     spec_id: str,
 ) -> runnermod.StageResult:
-    """Run the implement stage phase by phase (PHASE-FR-010/011/012).
+    """Run the implement stage phase by phase.
 
     Each phase is a NEW headless session whose prompt reloads that phase's handoff set — the approved
     spec, the constitution/rules, the phase's tasks, the declared file scope — with no conversation
-    state carried between phases (3PWR-FR-061). Phases marked parallel with disjoint declared scopes
+    state carried between phases. Phases marked parallel with disjoint declared scopes
     and no dependency are dispatched concurrently; results are recorded in deterministic artifact
     order via one ledger entry appended AFTER collection, from this thread — parallel completion never
-    touches the trust spine concurrently (PHASE-NFR-003). Any phase failure fails the stage naming the
-    phase(s); later phases are recorded as explicitly skipped, never as passed (PHASE-FR-012)."""
+    touches the trust spine concurrently. Any phase failure fails the stage naming the
+    phase(s); later phases are recorded as explicitly skipped, never as passed."""
     t0 = time.monotonic()
     batches, notes = phases.schedule(phase_list)
     for note in notes:
@@ -3496,7 +3494,7 @@ def _dispatch_phased(
         ok: bool, outcome: str, detail: str = "", artifact: str = "", paths: list[str] | None = None
     ) -> runnermod.StageResult:
         # Per-phase transcripts share the run's sink; the stage result names its directory so a
-        # phased failure still points at the persisted output (AUTOX-FR-008).
+        # phased failure still points at the persisted output.
         sink = getattr(backend, "transcripts", None)
         return runnermod.StageResult(
             step=step,
@@ -3527,11 +3525,11 @@ def _dispatch_phased(
 
 
 def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
-    """The deterministic prompt line naming the run's feature folder (SRCX-FR-001/008).
+    """The deterministic prompt line naming the run's feature folder.
 
     Injected into the agent-authored markdown stages (specify/clarify/plan/tasks) so the agent writes
     the stage's artifact FLAT into the allocated folder — the same location the workspace computes and
-    the completion gate asserts (SRCX-FR-013's property)."""
+    the completion gate asserts."""
     if feature_dir is None:
         return ""
     try:
@@ -3546,7 +3544,7 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
 
 
 def _progress_safe(update: Callable[[], Any]) -> None:
-    """Run one progress-file update, degrading any error to a stderr warning (PROGFILE-NFR-001).
+    """Run one progress-file update, degrading any error to a stderr warning.
 
     The progress file is an operator convenience view of the signed ledger — an IO problem writing
     it must never fail a run or a stage, so every trigger call goes through this guard."""
@@ -3575,12 +3573,12 @@ def _native_runner(
     verdict_box: Optional[dict[str, Any]] = None,
     progress_reporter: Optional[progress.Reporter] = None,
 ) -> NativeRunner:
-    """Build the native executive runner: dispatch each stage to the role's agent (EXEC-FR-001/009), verify
-    its declared artifact (RUNLIVE-FR-001/002), retry/timeout-bound the dispatch (RUNLIVE-FR-004/005),
+    """Build the native executive runner: dispatch each stage to the role's agent, verify
+    its declared artifact, retry/timeout-bound the dispatch,
     run the mandatory pre/post-stage git hooks — branch isolation + the agentically-messaged,
-    3pwr-authored stage commit (GITX-FR-001/010/011/012, superseding RUNLIVE-FR-010's opt-out
+    3pwr-authored stage commit (superseding the earlier opt-out
     checkpoint) — write the oracle/implement records and run the deterministic completion gate per
-    producing stage (SRCX-FR-004/005/012), and run the gate suite in-process at Verify (EXEC-FR-006)."""
+    producing stage, and run the gate suite in-process at Verify."""
     intent = args.intent or ""
     wk = workkind.classify(intent)
     tier = args.tier or wk.suggested_tier or s.default_tier()
@@ -3592,7 +3590,7 @@ def _native_runner(
     oracle_agent = runpreflight.resolve_oracle_integration(s)
     coder_manifest = agents.load_agent(s, coder_agent)
     # One transcript sink per run, shared by both roles: every stage attempt's output is persisted
-    # under .3powers/runs/<spec-id>/, credential-redacted (AUTOX-FR-008, AUTOX-NFR-002).
+    # under .3powers/runs/<spec-id>/, credential-redacted.
     sink = transcripts.TranscriptSink(s.root, spec_id)
     coder = _make_agent_runner(
         s,
@@ -3620,13 +3618,13 @@ def _native_runner(
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
-    # knows the committed context boundary it continues from (PHASE-FR-005).
+    # knows the committed context boundary it continues from.
     prior_box: dict[str, str] = {"ref": ""}
 
     def dispatch(step: str, stage: str) -> runnermod.StageResult:
-        # The mandatory PRE-STAGE git hook (GITX-FR-001): every stage of a live run happens on the
+        # The mandatory PRE-STAGE git hook: every stage of a live run happens on the
         # run's dedicated branch — strayed mid-run (e.g. the user switched away), it switches back
-        # before dispatching; a switch git refuses is a named failure, never forced (GITX-NFR-003).
+        # before dispatching; a switch git refuses is a named failure, never forced.
         if run_branch:
             b_err = gitflow.ensure_run_branch(s.root, run_branch, prefs.base_branch)
             if b_err:
@@ -3637,9 +3635,9 @@ def _native_runner(
                     outcome=gitflow.CLASS_BRANCH_FAILED,
                     detail=b_err,
                 )
-        # The oracle role (Phase A) runs under its own agent/model — a different family than the coder
-        # (3PWR-FR-022). Physical read-path isolation stays with `3pwr oracle dispatch`, which a
-        # High-risk `advance` enforces (3PWR-FR-021); the run routes the oracle stage to its backend here.
+        # The oracle role (Phase A) runs under its own agent/model — a different family than the
+        # coder's. Physical read-path isolation stays with `3pwr oracle dispatch`, which a
+        # High-risk `advance` enforces; the run routes the oracle stage to its backend here.
         backend = oracle_runner if step == "oracle" else coder
         agent_name = oracle_agent if step == "oracle" else coder_agent
         contract = artifacts.contract_for(step)
@@ -3650,14 +3648,14 @@ def _native_runner(
             post = runnermod.worktree_state(s.root)
             produced = runnermod.produced_paths(pre, post)
             produced_box["paths"] = produced
-            # A None contract verifies leniently (RUNLIVE-FR-003), so this always runs.
+            # A None contract verifies leniently, so this always runs.
             check = artifacts.verify(contract, produced)
             if not check.ok:
-                # A completion-gate re-run (SRCX-FR-017) may regenerate a committed artifact
+                # A completion-gate re-run may regenerate a committed artifact
                 # byte-identical to HEAD — an empty diff. The stage still satisfies its contract
                 # when every artifact its PRIOR run/stage entry recorded is still on disk; the
                 # completion gate then re-asserts disk ∧ ledger. A fresh stage has no prior entry,
-                # so nothing is weakened for a first run (3PWR-FR-032).
+                # so nothing is weakened for a first run.
                 prior = completion.recorded_stage_artifacts(ledger.entries(), spec_id).get(step)
                 if prior and all((s.root / p).is_file() for p in prior):
                     return artifacts.ArtifactCheck(
@@ -3666,8 +3664,8 @@ def _native_runner(
             return check
 
         # Assemble the stage's context: the approved spec text (post-approval stages), the run's
-        # feature folder (the agent-authored markdown stages — SRCX-FR-001), and the prior stage's
-        # accepted artifact reference — no stage rediscovers its inputs (PHASE-FR-005).
+        # feature folder (the agent-authored markdown stages), and the prior stage's
+        # accepted artifact reference — no stage rediscovers its inputs.
         spec_path = _resolve_run_spec(s, args, feature_dir)
         spec_text = _dispatch_spec_text(s, step, spec_path)
         ctx_parts = []
@@ -3676,14 +3674,14 @@ def _native_runner(
         ctx_parts.append(prior_box["ref"])
         if revise:
             # The revise re-dispatch carries the human's gate feedback + the artifact under review
-            # (STEER-FR-006) — assembled deterministically upstream (STEER-NFR-003).
+            # — assembled deterministically upstream.
             ctx_parts.append(revise)
         context = "\n".join(p for p in ctx_parts if p)
 
         phase_list = _implement_phases(s, spec_path) if step == "implement" else []
         if phase_list:
             # A phased tasks artifact: one fresh session per phase, parallel where the declared
-            # scopes are disjoint (PHASE-FR-010/011); a phaseless artifact stays a single dispatch.
+            # scopes are disjoint; a phaseless artifact stays a single dispatch.
             result = _dispatch_phased(
                 s,
                 step,
@@ -3712,12 +3710,12 @@ def _native_runner(
         if result.ok:
             if step in completion.RECORD_STEPS and feature_dir is not None:
                 # The oracle/implement stages leave a markdown *record* in the feature folder linking
-                # their real outputs at their real repo paths (SRCX-FR-004/005). For a phased
+                # their real outputs at their real repo paths. For a phased
                 # implement this runs on the collecting thread AFTER all phases completed, one record
-                # in deterministic order (SRCX-FR-006, SRCX-NFR-006).
+                # in deterministic order.
                 scopes = {ph.index: ph.file_scope for ph in phase_list}
                 if step == "implement":
-                    # the record links the full produced change set (SRCX-FR-005's property)
+                    # the record links the full produced change set
                     linked = produced_box.get("paths") or result.artifact_paths
                 else:
                     linked = result.artifact_paths  # the contract-matched oracle test paths
@@ -3739,30 +3737,30 @@ def _native_runner(
                 prior_box["ref"] = ref
             if step == "tasks":
                 # Report each phase's deterministic context estimate; warn (never block) on an
-                # over-budget phase (PHASE-FR-008/009).
+                # over-budget phase.
                 _report_phase_estimates(s, result, spec_path, coder_model=str(coder.model))
-            # Record the completion itself — lightweight, additive (AUTOX-FR-010, extends
-            # RUNLIVE-FR-010): resume progress lives in the signed ledger, not only in checkpoint
+            # Record the completion itself — lightweight, additive: resume progress lives in the
+            # signed ledger, not only in checkpoint
             # commits, so a failed `--no-auto-commit` run still resumes from the next stage.
             stage_payload: dict[str, Any] = {"kind": "stage", "step": step, "stage": stage}
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
             if progress_reporter is not None:
-                # The stage-complete trigger (PROGFILE-FR-007), BEFORE the post-stage commit below,
-                # so the committed progress.md already shows this stage ✓ done (PROGFILE-FR-008).
+                # The stage-complete trigger, BEFORE the post-stage commit below,
+                # so the committed progress.md already shows this stage ✓ done.
                 _progress_safe(lambda: progress_reporter.stage_completed(step, stage))
         if result.ok and run_branch and not commit_relaxed:
-            # The mandatory POST-STAGE git hook (GITX-FR-001/010, superseding RUNLIVE-FR-010's
+            # The mandatory POST-STAGE git hook (superseding the earlier
             # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
             # branch — never a blanket `add -A` — with an agent-written message carrying the stage
-            # and spec id (deterministic fallback — GITX-FR-011) and the 3pwr author applied
-            # per-commit (GITX-FR-012, GITX-NFR-004). A stage that produced nothing forces no empty
+            # and spec id (deterministic fallback) and the 3pwr author applied
+            # per-commit. A stage that produced nothing forces no empty
             # commit; paths a human already committed by hand are a no-op keeping the human's own
-            # author. After it, no run-produced change is left uncommitted (GITX-FR-008).
+            # author. After it, no run-produced change is left uncommitted.
             produced = produced_box.get("paths", [])
             if produced and s.ledger_path.is_file():
-                # The engine's ledger rides every producing stage commit (RUNID-FR-005): the
+                # The engine's ledger rides every producing stage commit: the
                 # signed entries that recorded this stage land atomically with its artifact, so
                 # the trust state at each stage boundary is recoverable from git history alone.
                 # A stage that produced nothing still forces no commit.
@@ -3770,7 +3768,7 @@ def _native_runner(
                 if ledger_rel not in produced:
                     produced = [*produced, ledger_rel]
             if produced and feature_dir is not None:
-                # The run's progress file rides the same stage commit (PROGFILE-FR-008): committed
+                # The run's progress file rides the same stage commit: committed
                 # alongside the stage artifact and the ledger whenever it exists — never forcing a
                 # commit for a stage that produced nothing, never duplicating a listed path.
                 prog = feature_dir / progress.FILENAME
@@ -3789,7 +3787,7 @@ def _native_runner(
                 author_email=prefs.author_email,
             )
             if commit.error:
-                # Clean-stop would be violated (GITX-FR-008) — a named, recorded failure on the
+                # Clean-stop would be violated — a named, recorded failure on the
                 # setup/dispatch path, never silently carried on.
                 return runnermod.StageResult(
                     step=step,
@@ -3812,15 +3810,15 @@ def _native_runner(
                 }
                 if result.artifact_paths:
                     # The accepted artifact's path rides in the signed stage entry, so the committed
-                    # artifact trail is reconstructable from the ledger alone (PHASE-FR-003).
+                    # artifact trail is reconstructable from the ledger alone.
                     payload["artifacts"] = result.artifact_paths
                 ledger.append("run", payload, sk, spec_id=spec_id)
         if result.ok and feature_dir is not None and completion.is_producing(step):
-            # The deterministic completion gate (SRCX-FR-012): the stage's declared markdown must
+            # The deterministic completion gate: the stage's declared markdown must
             # exist on disk AND be recorded in a matching signed ledger entry before the run may
             # advance — else the run blocks with a named, classified failure and the stage must be
-            # re-run (SRCX-FR-014/015). Pure given (disk state, ledger entries, step); one ledger
-            # read serves the check (SRCX-NFR-001/004).
+            # re-run. Pure given (disk state, ledger entries, step); one ledger
+            # read serves the check.
             recorded = completion.recorded_stage_artifacts(ledger.entries(), spec_id)
             chk = completion.check_step(s.root, feature_dir, step, recorded)
             if not chk.ok:
@@ -3839,10 +3837,9 @@ def _native_runner(
         return result
 
     def run_verdict(stage: str) -> str:
-        # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it
-        # (AUTOX-FR-011): a red or green at Verify is never invisible to the trust spine. The
-        # verdict dict lands in ``verdict_box`` so a red one renders its failed gates inline
-        # (GDIAG-FR-001).
+        # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it:
+        # a red or green at Verify is never invisible to the trust spine. The
+        # verdict dict lands in ``verdict_box`` so a red one renders its failed gates inline.
         outcome = _native_verdict(
             s,
             args,
@@ -3853,9 +3850,9 @@ def _native_runner(
             feature_dir=feature_dir,
             out=verdict_box,
         )
-        # An --auto-fix run's fixed paths join the run's produced set (GATECFG-FR-008): they land
+        # An --auto-fix run's fixed paths join the run's produced set: they land
         # as the verify stage's commit on the run branch, so no run-produced change is left
-        # uncommitted (GITX-FR-008). The signed ledger rides along, as on every stage commit.
+        # uncommitted. The signed ledger rides along, as on every stage commit.
         fixed = auto_fixed_paths((verdict_box or {}).get("verdict") or {})
         if fixed and run_branch and not commit_relaxed:
             paths = list(fixed)
@@ -3941,7 +3938,7 @@ def _run_revise(
     commit_relaxed: bool,
     rst: style.Styler,
 ) -> int:
-    """Revise-with-message at a paused human gate (STEER-FR-006..008).
+    """Revise-with-message at a paused human gate.
 
     Re-dispatches the stage that owns the artifact under review — with the ORIGINAL intent (read back
     from the signed ``start`` entry), the current artifact, and the human's feedback — records the
@@ -3957,13 +3954,13 @@ def _run_revise(
     )
     artifact = steering.gate_artifact(s.root, feature_dir, gate)
     if _resolve_runner_kind(args) == "sim":
-        # --dry-run / the simulator dispatch nothing (the SRCX dry-run stance) — the revise is
+        # --dry-run / the simulator dispatch nothing — the revise is
         # recorded and the gate re-presented, so the whole loop stays visible offline.
         result = runnermod.StageResult(
             step=step, stage=stage, ok=True, outcome="ok", detail="simulated (dry-run)"
         )
     else:
-        args.intent = _run_intent_from_ledger(ledger.entries(), spec_id)  # STEER-FR-006
+        args.intent = _run_intent_from_ledger(ledger.entries(), spec_id)
         runner = _native_runner(
             s,
             args,
@@ -3983,7 +3980,7 @@ def _run_revise(
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return EXIT_SETUP
-    # The revision is auditable from the ledger alone (STEER-FR-008): feedback + outcome ride the
+    # The revision is auditable from the ledger alone: feedback + outcome ride the
     # EXISTING run-entry append path — no new entry type, no signing change, `3pwr verify` unchanged.
     ledger.append(
         "run",
@@ -3999,7 +3996,7 @@ def _run_revise(
         sk,
         spec_id=spec_id,
     )
-    # The run returns to the SAME gate (STEER-FR-006): re-record the pause so the ledger-derived
+    # The run returns to the SAME gate: re-record the pause so the ledger-derived
     # state stays paused-at-gate and a later plain --resume still records the human sign-off.
     ledger.append("run", {"kind": "gate", "gate": gate, "stage": gate_stage}, sk, spec_id=spec_id)
     if not result.ok:
@@ -4067,11 +4064,11 @@ def _run_revise(
 
 
 def _gate_decision(gate: str, fr: str) -> str:
-    """The three-action interactive choice at a paused human gate (STEER-FR-005): approve / revise /
+    """The three-action interactive choice at a paused human gate: approve / revise /
     reject — the same vocabulary the non-interactive pause prints as commands.
 
     Empty input and EOF mean reject — the conservative default: nothing advances without an explicit
-    approval (3PWR-FR-006). An unrecognized answer re-prompts."""
+    approval. An unrecognized answer re-prompts."""
     aliases = {
         "a": "approve",
         "approve": "approve",
@@ -4108,15 +4105,15 @@ def _prompt_line(prompt: str) -> str:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    """Drive the whole lifecycle loop (3PWR-FR-011; §6). ``auto`` stops only at the two mandatory human
-    gates (FR-006 spec approval, FR-037 sign-off); ``commit`` stops at every gate. By default the
-    **native** executive dispatches each stage to a headless agent directly (EXEC-FR-001) and runs the
-    gate suite in-process at Verify (EXEC-FR-006); ``--runner sim`` uses the offline simulator (also
-    forced by ``--dry-run``). The engine makes no model call itself (EXEC-NFR-001) and never enters the
-    deterministic verdict (3PWR-NFR-001)."""
+    """Drive the whole lifecycle loop (§6). ``auto`` stops only at the two mandatory human
+    gates (spec approval, sign-off); ``commit`` stops at every gate. By default the
+    **native** executive dispatches each stage to a headless agent directly and runs the
+    gate suite in-process at Verify; ``--runner sim`` uses the offline simulator (also
+    forced by ``--dry-run``). The engine makes no model call itself and never enters the
+    deterministic verdict."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
-    mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default (ONBRD-FR-005)
+    mode = args.mode or s.default_mode()  # --mode wins; else the `3pwr init` default
     spec_id = args.spec_id or "RUN"
     rst = _styler(args)  # human-output styler (color per --json/--yes/NO_COLOR/ui.yaml)
 
@@ -4145,7 +4142,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             )
         if st.failed:
-            # A recorded, unresolved run failure — distinct from paused and in-progress (AUTOX-FR-007).
+            # A recorded, unresolved run failure — distinct from paused and in-progress.
             rows.append(
                 rst.status_row(
                     "fail",
@@ -4155,9 +4152,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             if st.failed_transcript:
                 rows.append("      " + rst.dim(f"agent transcript: {st.failed_transcript}"))
-        # The run's git lifecycle state (GITX-FR-009): its dedicated branch and the per-stage
+        # The run's git lifecycle state: its dedicated branch and the per-stage
         # committed indication — a deterministic function of the ledger and the local branches,
-        # no model and no network (GITX-NFR-001).
+        # no model and no network.
         entries_st = ledger.entries()
         run_branch_st = gitflow.branch_from_ledger(entries_st, spec_id)
         committed_st = gitflow.committed_steps(entries_st, spec_id)
@@ -4188,9 +4185,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
-    # File-based intent (STEER-FR-001..003): resolve --file (+ the optional inline instruction)
+    # File-based intent: resolve --file (+ the optional inline instruction)
     # BEFORE any side effect — a bad file fails fast with the setup exit code and no ledger entry
-    # is written; every downstream consumer sees ONLY the resolved intent (STEER-FR-004).
+    # is written; every downstream consumer sees ONLY the resolved intent.
     if getattr(args, "file", None):
         if args.resume:
             print(
@@ -4205,17 +4202,16 @@ def cmd_run(args: argparse.Namespace) -> int:
             return EXIT_SETUP
         args.intent = resolved_intent
 
-    # Resolve the coder + oracle agents from config/flags — provider-agnostic (EXEC-NFR-003).
+    # Resolve the coder + oracle agents from config/flags — provider-agnostic.
     coder_int = _resolve_coder_agent(s, args)
     oracle_int = runpreflight.resolve_oracle_integration(s)
     coder_model = str(s.role("coder").get("model") or "")
     oracle_model = str(s.role("oracle").get("model") or "")
 
-    # Preflight — a live run must not dispatch a stage until its prerequisites hold (EXEC-FR-015):
+    # Preflight — a live run must not dispatch a stage until its prerequisites hold:
     # a resolvable signer, a headless coder agent, and a different-family oracle agent — the SAME
-    # shared check set init's readiness and `3pwr ready` report (AUTOX-FR-002), so they cannot
-    # disagree. --dry-run needs none of this: it dispatches nothing and is always available offline
-    # (EXEC-FR-016).
+    # shared check set init's readiness and `3pwr ready` report, so they cannot
+    # disagree. --dry-run needs none of this: it dispatches nothing and is always available offline.
     if not args.dry_run and not args.status:
         prqs = runpreflight.check_auto(
             s,
@@ -4227,8 +4223,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         missing = runpreflight.unmet(prqs)
         if missing:
             # Fail fast, BEFORE any dispatch, with a named prerequisite + fix and the offline
-            # alternatives — never "gates red", never the incident path (RUNX-FR-010/012, NFR-004).
-            # Exits with the setup/dispatch code, distinct from usage and gates-red (AUTOX-FR-009).
+            # alternatives — never "gates red", never the incident path.
+            # Exits with the setup/dispatch code, distinct from usage and gates-red.
             obj = {
                 "status": "preflight_failed",
                 "spec_id": spec_id,
@@ -4260,12 +4256,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_SETUP
 
     interactive = (not args.json) and (not args.no_input) and sys.stdin.isatty()
-    stream = _run_stream(args)  # stream agent output live on a TTY (RUNLIVE-FR-006)
+    stream = _run_stream(args)  # stream agent output live on a TTY
     tracker = orchestrate.Tracker(sys.stdout, mode, st=rst, subject=spec_id)
 
-    # The git discipline (GITX): applied to every LIVE native run — mandatory, with the recorded
-    # signed deviation as the only relaxation (GITX-FR-014). --dry-run / the simulator dispatch
-    # nothing and write nothing, so the git hooks are a no-op there (the SRCX dry-run stance).
+    # The git discipline: applied to every LIVE native run — mandatory, with the recorded
+    # signed deviation as the only relaxation. --dry-run / the simulator dispatch
+    # nothing and write nothing, so the git hooks are a no-op there.
     git_on = _resolve_runner_kind(args) == "native"
     git_prefs = gitflow.load_prefs(s.git_config_path)
     if git_on and git_prefs.malformed and not args.json:
@@ -4279,7 +4275,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     clean_start_relaxed = deviations.GIT_CLEAN_START in covered_guards
     commit_relaxed = deviations.GIT_STAGE_COMMIT in covered_guards
     if git_on and (getattr(args, "no_auto_commit", False) or not s.auto_commit()):
-        # The plain opt-out is SUPERSEDED (GITX-FR-014): the stage commit is mandatory; the only
+        # The plain opt-out is SUPERSEDED: the stage commit is mandatory; the only
         # relaxation is the signed `git_stage_commit` deviation — warned, never silent.
         if not commit_relaxed and not args.json:
             print(
@@ -4290,22 +4286,22 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
     run_branch = ""
     # The Verify stage's full verdict dict lands here (filled by _native_verdict), so a gate-red
-    # event can render each failed gate inline with the run's resolved identity (GDIAG-FR-001/006).
+    # event can render each failed gate inline with the run's resolved identity.
     verdict_box: dict[str, Any] = {}
-    # The run's progress-file reporter (PROGFILE-FR-001) — bound once the live run's feature folder
+    # The run's progress-file reporter — bound once the live run's feature folder
     # is resolved below; absent (a dry-run / simulated / folder-less run), no file is written.
     progress_box: dict[str, progress.Reporter] = {}
 
     def on_event(ev: orchestrate.Event) -> None:
         if ev.kind == "failed" and (ev.step == "gate_red" or ev.detail == "fail"):
             # Enrich the gate-red event with the failed verdict + the resolved spec id at the one
-            # choke point every runner path flows through (GDIAG-FR-001/006).
+            # choke point every runner path flows through.
             if verdict_box.get("verdict"):
                 ev.data.setdefault("verdict", verdict_box["verdict"])
             ev.data.setdefault("spec_id", spec_id)
         rep = progress_box.get("reporter")
         if rep is not None:
-            # The progress file's lifecycle triggers (PROGFILE-FR-007), at the same choke point:
+            # The progress file's lifecycle triggers, at the same choke point:
             # stage start, gate verdict pass/fail, human-gate pause, run failure, completion. The
             # stage-complete trigger fires inside the runner's dispatch, before the stage commit.
             if ev.kind == "step":
@@ -4323,11 +4319,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             tracker.on_event(ev)
 
     def _record_dispatch(start_index: int) -> None:
-        """Record one signed executive-dispatch provenance entry per stage in the next live segment
-        (RUNX-FR-007/NFR-002); the oracle stage carries the oracle integration/model. No-op for --dry-run
-        (it dispatches nothing) so the offline simulation records nothing (RUNX-FR-012). Keyed on the actual
+        """Record one signed executive-dispatch provenance entry per stage in the next live
+        segment; the oracle stage carries the oracle integration/model. No-op for --dry-run
+        (it dispatches nothing) so the offline simulation records nothing. Keyed on the actual
         start index, so a resume that skipped committed checkpoints records only the stages it will
-        dispatch (RUNLIVE-FR-010)."""
+        dispatch."""
         if args.dry_run:
             return
         for step, _stage in orchestrate.segment_actions_from(start_index):
@@ -4357,10 +4353,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             run_branch=run_branch,
             git_prefs=git_prefs,
             commit_relaxed=commit_relaxed,
-            # The streamed agent conversation prints ABOVE the live bar, into ordinary scrollback
-            # (STEER-FR-012); with no bar (off-TTY/degraded) the echo stays the process's stdout.
+            # The streamed agent conversation prints ABOVE the live bar, into ordinary scrollback;
+            # with no bar (off-TTY/degraded) the echo stays the process's stdout.
             echo=(tracker.echo_sink() if (stream and tracker.live) else None),
-            # Live event delivery (STEER-FR-013): the bar learns a stage is running the moment its
+            # Live event delivery: the bar learns a stage is running the moment its
             # dispatch starts, not one whole segment later; on_event self-guards under --json.
             on_progress=on_event,
             verdict_box=verdict_box,
@@ -4368,10 +4364,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
 
     def _stages() -> list[dict]:
-        """The per-stage machine-readable results of the dispatched stages, for --json (RUNLIVE-FR-006)."""
+        """The per-stage machine-readable results of the dispatched stages, for --json."""
         return [sr.as_dict() for sr in getattr(runner, "stage_results", [])]
 
-    # The run's bound feature folder (SRCX-FR-008/010/011) — resolved per branch below.
+    # The run's bound feature folder — resolved per branch below.
     feature_dir: Optional[Path] = None
 
     if args.resume:
@@ -4382,7 +4378,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         completed = orchestrate.last_completed_step(ledger.entries(), spec_id)
         feedback = ""
         if revising:
-            # The third gate action (STEER-FR-006/007): a revise outside a paused gate, or with
+            # The third gate action: a revise outside a paused gate, or with
             # empty feedback, is an actionable error leaving the artifact and gate state unchanged.
             if not pending:
                 st_now = lifecycle.derive(ledger.entries()).get(spec_id)
@@ -4400,7 +4396,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(f"error: {ferr}", file=sys.stderr)
                 return EXIT_USAGE
         if not pending and not completed:
-            # No recorded progress at all — say so honestly and name the fresh start (AUTOX-FR-010).
+            # No recorded progress at all — say so honestly and name the fresh start.
             print(
                 f"nothing to resume for {spec_id} — no recorded progress; start fresh: "
                 f'3pwr run "<intent>" --spec-id {spec_id}',
@@ -4408,19 +4404,17 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return EXIT_USAGE
         if pending and not revising:
-            # A human gate was awaiting approval — record the sign-off before continuing (FR-006/037).
+            # A human gate was awaiting approval — record the sign-off before continuing.
             _run_signoff(s, ledger, sk, spec_id, pending, args.approver, args.note)
         # A resume resolves the EXISTING feature folder recorded for the run — never allocating a new
-        # one (SRCX-FR-010/011); a pre-SRCX run falls back to the resolvable spec's folder.
-        entries_now = (
-            ledger.entries()
-        )  # one read serves resume + the completion checks (SRCX-NFR-004)
+        # one; a run recorded before folder binding falls back to the resolvable spec's folder.
+        entries_now = ledger.entries()  # one read serves resume + the completion checks
         feature_dir = _run_feature_dir_from_ledger(s, entries_now, spec_id)
         if feature_dir is None:
             legacy_spec = _resolve_run_spec(s, args)
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
         if git_on and feature_dir is not None:
-            # Rebind the run's progress file to the recorded workspace (PROGFILE-FR-001): the
+            # Rebind the run's progress file to the recorded workspace: the
             # resumed segment's triggers keep updating specs/<NNN>-<slug>/progress.md.
             progress_box["reporter"] = progress.Reporter(
                 feature_dir,
@@ -4430,9 +4424,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 or s.default_tier(),
             )
         if git_on:
-            # The pre-stage git hook on resume (GITX-FR-004/005/007): recover the run's branch from
-            # the signed ledger alone (a pre-GITX run derives the same deterministic name from its
-            # SRCX identity), refuse a dirty start whose changes the run did not produce, and
+            # The pre-stage git hook on resume: recover the run's branch from
+            # the signed ledger alone (a run recorded before branch binding derives the same
+            # deterministic name from its workspace identity), refuse a dirty start whose changes
+            # the run did not produce, and
             # re-enter the EXISTING branch — never a new one, never a new run number.
             run_branch = gitflow.branch_from_ledger(entries_now, spec_id)
             if not run_branch:
@@ -4461,7 +4456,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 return EXIT_SETUP
         if revising:
             # Re-dispatch the paused stage with the original intent, the current artifact, and the
-            # feedback, then return to the SAME gate (STEER-FR-006..008).
+            # feedback, then return to the SAME gate.
             return _run_revise(
                 s,
                 args,
@@ -4477,8 +4472,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 rst=rst,
             )
         # Re-enter after the later of the approved gate and the last committed checkpoint, so a mid-run
-        # failure resumes from the next uncompleted stage without re-dispatching a committed one (FR-010)
-        # — then intersect with the on-disk completion check (SRCX-FR-017): a recorded stage whose
+        # failure resumes from the next uncompleted stage without re-dispatching a committed one
+        # — then intersect with the on-disk completion check: a recorded stage whose
         # artifact is broken becomes the re-entry point, never skipped on its ledger entry alone.
         start_index = orchestrate.resume_start_index(entries_now, spec_id, pending)
         start_index, broken = completion.resume_entry_index(
@@ -4487,21 +4482,18 @@ def cmd_run(args: argparse.Namespace) -> int:
         if broken is not None and not args.json:
             print(f"  ⟲ resume re-enters at '{broken.step}' — {broken.message}", file=sys.stderr)
         runner = _make_runner(start_index)
-        _record_dispatch(start_index)  # provenance for the resumed segment only (RUNX-FR-004/007)
+        _record_dispatch(start_index)  # provenance for the resumed segment only
     else:
-        wk = workkind.classify(
-            args.intent or ""
-        )  # FR-058: shape the tier + oracle, not the sign-off
+        wk = workkind.classify(args.intent or "")  # shape the tier + oracle, not the sign-off
         if git_on and not clean_start_relaxed:
-            # The pre-stage git hook's clean-start guard (GITX-FR-007), BEFORE any side effect: a
+            # The pre-stage git hook's clean-start guard, BEFORE any side effect: a
             # fresh run owns no paths yet, so any uncommitted change outside the engine's own state
-            # blocks — naming the paths and the signed deviation, never discarding them
-            # (GITX-NFR-003).
+            # blocks — naming the paths and the signed deviation, never discarding them.
             unrelated = gitflow.unrelated_changes(gitflow.uncommitted(s.root), set())
             if unrelated:
                 print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
                 return EXIT_SETUP
-        # Bind the run's feature folder (SRCX-FR-008/011): an explicit --spec names it; otherwise a
+        # Bind the run's feature folder: an explicit --spec names it; otherwise a
         # LIVE run auto-allocates specs/<NNN>-<slug>/ deterministically from the intent. --dry-run and
         # the simulator dispatch nothing and write no artifacts, so they allocate nothing.
         if getattr(args, "spec", None):
@@ -4519,15 +4511,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
                 return EXIT_SETUP
         if not args.spec_id and feature_dir is not None:
-            # The workspace's NNN is the run's real identity (RUNID-FR-001): derived once here,
+            # The workspace's NNN is the run's real identity: derived once here,
             # immediately after the feature folder is bound, so every downstream consumer —
             # ledger writes, gate messages, resume hints, notifications, oracle dispatch, and
-            # the branch name below — reads the derived value, never the pre-derivation default
-            # (RUNID-FR-003). An explicit --spec-id always wins (RUNID-FR-002).
+            # the branch name below — reads the derived value, never the pre-derivation default.
+            # An explicit --spec-id always wins.
             spec_id = feature_dir.name.split("-")[0]
             tracker.retitle(spec_id)
         if git_on and feature_dir is not None:
-            # The run's human-readable progress file (PROGFILE-FR-001): bound to the allocated
+            # The run's human-readable progress file: bound to the allocated
             # workspace and the resolved identity, written at every lifecycle trigger below. A
             # dry-run / simulated run allocates no folder and writes no file.
             progress_box["reporter"] = progress.Reporter(
@@ -4537,9 +4529,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
         if git_on:
             # Create + switch to the run's dedicated branch off the configured base BEFORE any
-            # stage commit (GITX-FR-003/006): the branch name reuses SRCX's <NNN>-<slug> identity
-            # — GITX allocates no number and derives no slug — and the run never commits on the
-            # base branch. Detached HEAD / unborn repo: created off the current commit.
+            # stage commit: the branch name reuses the workspace's <NNN>-<slug> identity
+            # — the git hook allocates no number and derives no slug — and the run never commits
+            # on the base branch. Detached HEAD / unborn repo: created off the current commit.
             identity = feature_dir.name if feature_dir is not None else workspace.slugify(spec_id)
             run_branch = gitflow.run_branch_name(git_prefs.branch_prefix, identity)
             b_err = gitflow.ensure_run_branch(s.root, run_branch, git_prefs.base_branch)
@@ -4555,13 +4547,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             "suggested_tier": wk.suggested_tier,
         }
         if run_branch:
-            # The additive branch binding on the existing run/start payload (GITX-FR-005): a later
+            # The additive branch binding on the existing run/start payload: a later
             # resume recovers the branch from the signed ledger alone — no branch scan, no
-            # guessing; no new entry type and no signing change (GITX-NFR-002).
+            # guessing; no new entry type and no signing change.
             start_payload["branch"] = run_branch
         if feature_dir is not None:
-            # The additive folder binding on the existing run/start payload (SRCX-FR-011): a later
-            # resume reads it back from the signed ledger alone — no mtime scan (SRCX-NFR-002).
+            # The additive folder binding on the existing run/start payload: a later
+            # resume reads it back from the signed ledger alone — no mtime scan.
             try:
                 start_payload["feature_dir"] = feature_dir.relative_to(s.root).as_posix()
             except ValueError:
@@ -4578,7 +4570,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     ]
                 )
             )
-            print("  " + rst.dim("you still approve the spec — FR-006"))
+            print("  " + rst.dim("you still approve the spec"))
         runner = _make_runner(0)
         _record_dispatch(0)  # provenance for the first segment (up to the spec-approval gate)
     first_resuming = False  # start_index already positions native/sim runners; resume==run for both
@@ -4586,7 +4578,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         if not args.json:
             # The live bar is on screen BEFORE the first dispatch produces any output, so the run
-            # shows its heartbeat from the first moment (STEER-FR-012/013). No-op off-TTY/degraded.
+            # shows its heartbeat from the first moment. No-op off-TTY/degraded.
             tracker.begin()
         result = orchestrate.drive(runner, mode, on_event, resuming=first_resuming)
         while result.status == "paused_at_gate":
@@ -4631,18 +4623,16 @@ def cmd_run(args: argparse.Namespace) -> int:
                     args.json,
                     human,
                 )
-                # Paused-at-gate is distinguishable from completed by exit code alone (AUTOX-FR-009).
+                # Paused-at-gate is distinguishable from completed by exit code alone.
                 return EXIT_PAUSED
             fr = f" ({result.gate_fr})" if result.gate_fr else ""
             for line in _gate_pause_rows(rst, spec_id, gate_artifact):
-                print(
-                    line
-                )  # the three actions, on-screen at the interactive pause too (STEER-FR-005)
+                print(line)  # the three actions, on-screen at the interactive pause too
             while True:
                 decision = _gate_decision(result.gate, fr)
                 if decision != "revise":
                     break
-                # Revise-with-message, inline (STEER-FR-005/006): take the feedback here, re-run the
+                # Revise-with-message, inline: take the feedback here, re-run the
                 # paused stage with it, and come back to the SAME gate for a fresh decision.
                 feedback = _prompt_line("  feedback for the revision (required): ")
                 if not feedback:
@@ -4685,10 +4675,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
             _record_dispatch(
                 orchestrate.resume_start_index(ledger.entries(), spec_id, result.gate)
-            )  # provenance for the next segment (no re-record — RUNX-FR-004, RUNLIVE-FR-010)
+            )  # provenance for the next segment (no re-record)
             if not args.json:
                 # The gate pause finalized the bar; the approved run's next segment gets it back on
-                # screen immediately (STEER-FR-012/013).
+                # screen immediately.
                 tracker.begin()
             result = orchestrate.drive(runner, mode, on_event, resuming=True)
     except FileNotFoundError as exc:  # a role's agent manifest is missing on the live path
@@ -4696,14 +4686,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         return EXIT_SETUP
     finally:
         # The live bar never outlives the run — its last state left as ordinary lines, cursor
-        # restored, on normal exit, interruption, and failure alike (STEER-FR-016, STEER-NFR-004).
+        # restored, on normal exit, interruption, and failure alike.
         # Idempotent: a bar already finalized by a terminal event is a no-op here.
         tracker.close()
 
     if result.status == "failed":
-        # Every terminal failure is recorded as a signed run-failure ledger entry BEFORE exiting
-        # (AUTOX-FR-006), so `--status`/`3pwr status` can say "failed at <stage> (<class>)"
-        # afterwards (AUTOX-FR-007). Attempts come from the failing stage's dispatch result.
+        # Every terminal failure is recorded as a signed run-failure ledger entry BEFORE exiting,
+        # so `--status`/`3pwr status` can say "failed at <stage> (<class>)"
+        # afterwards. Attempts come from the failing stage's dispatch result.
         failed_srs = [sr for sr in getattr(runner, "stage_results", []) if not sr.ok]
         attempts = failed_srs[-1].attempts if failed_srs else 1
         transcript = failed_srs[-1].transcript if failed_srs else ""
@@ -4722,7 +4712,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         transcript_line = f"\n  agent transcript: {transcript}" if transcript else ""
         if result.is_gate_red:
-            # A real deterministic-gate verdict failed at Verify (RUNX-FR-011): report gate-red,
+            # A real deterministic-gate verdict failed at Verify: report gate-red,
             # show Verify reached. No incident/observe-signal suggestion — that is not the remedy.
             record("gates_red")
             reached = result.stage or "Verify"
@@ -4748,7 +4738,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         reached = result.stage or "an early stage"
         if result.outcome == "verdict_error":
             # The gate suite could not even run (no spec resolvable, no adapter, bad tier) — a
-            # setup problem, never a false gate-red (EXEC-FR-016).
+            # setup problem, never a false gate-red.
             record("verdict_error")
             _notify_event(
                 s,
@@ -4776,9 +4766,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return EXIT_SETUP
         if result.is_artifact_missing:
-            # A stage produced no declared artifact (RUNLIVE-FR-002): distinct from a gate-red and from a
+            # A stage produced no declared artifact: distinct from a gate-red and from a
             # bare dispatch failure — name the stage and the expected artifact; committed checkpoints let a
-            # resume pick up here without re-running completed stages (RUNLIVE-FR-010).
+            # resume pick up here without re-running completed stages.
             record("artifact_missing")
             _notify_event(
                 s,
@@ -4808,9 +4798,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return EXIT_SETUP
         if result.outcome in (gitflow.CLASS_COMMIT_FAILED, gitflow.CLASS_BRANCH_FAILED):
-            # The mandatory git hook could not hold its guarantee (GITX-FR-001/008/010): the stage
-            # commit failed, or the run branch could not be created/switched (never forced —
-            # GITX-NFR-003). Named, recorded, and exiting on the setup/dispatch path — never a
+            # The mandatory git hook could not hold its guarantee: the stage
+            # commit failed, or the run branch could not be created/switched (never forced).
+            # Named, recorded, and exiting on the setup/dispatch path — never a
             # gate verdict.
             record(result.outcome)
             _notify_event(
@@ -4824,7 +4814,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"{orchestrate.render_tracker(result.stage, rst)}\n"
                 f"  {rst.err('✗')} git discipline failed at {reached} — {result.detail}\n"
                 "  the run isolates its work on a dedicated branch and commits every producing "
-                f"stage (GITX). Fix the repository state, then resume: "
+                f"stage. Fix the repository state, then resume: "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
             _print(
@@ -4840,9 +4830,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             return EXIT_SETUP
         if result.outcome in (completion.CLASS_ABSENT, completion.CLASS_UNRECORDED):
-            # The deterministic stage-completion gate blocked the run (SRCX-FR-012/014/015): the
+            # The deterministic stage-completion gate blocked the run: the
             # stage's declared markdown and its matching signed ledger entry must BOTH exist. The
-            # named class is recorded (SRCX-FR-016) and surfaced by both status commands; the stage
+            # named class is recorded and surfaced by both status commands; the stage
             # must be re-run — the non-gate-red setup/dispatch exit path.
             record(result.outcome)
             _notify_event(
@@ -4870,7 +4860,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 human,
             )
             return EXIT_SETUP
-        # A dispatch/execution failure — NOT a gate verdict (RUNX-FR-010): name the stage, never say
+        # A dispatch/execution failure — NOT a gate verdict: name the stage, never say
         # "gates red", never route to the incident/observe-signal path; exit with the setup/dispatch code.
         record("dispatch_failed")
         _notify_event(
@@ -4922,7 +4912,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_revert(args: argparse.Namespace) -> int:
-    """Reverse to a prior recorded state via a signed reversal entry (3PWR-FR-070)."""
+    """Reverse to a prior recorded state via a signed reversal entry."""
     s = _settings(args.root)
     ledger = Ledger(s.ledger_path)
     entries = ledger.entries()
@@ -4966,7 +4956,7 @@ def cmd_revert(args: argparse.Namespace) -> int:
 
 
 def cmd_abort(args: argparse.Namespace) -> int:
-    """Record an abort for a spec's run (3PWR-FR-019)."""
+    """Record an abort for a spec's run."""
     s = _settings(args.root)
     try:
         sk = keys.resolve_signer(s.root)
@@ -4992,7 +4982,7 @@ def cmd_abort(args: argparse.Namespace) -> int:
 
 
 def cmd_coverage_check(args: argparse.Namespace) -> int:
-    """Two-way requirement<->task coverage before code (3PWR-FR-015)."""
+    """Two-way requirement<->task coverage before code."""
     from .conformance import two_way_coverage
 
     s = _settings(args.root)
@@ -5020,7 +5010,7 @@ def cmd_coverage_check(args: argparse.Namespace) -> int:
 
 
 def cmd_scope_check(args: argparse.Namespace) -> int:
-    """Task requirement-ID + file-scope discipline (3PWR-FR-016/017)."""
+    """Task requirement-ID + file-scope discipline."""
     s = _settings(args.root)
     target = Path(args.path).resolve() if args.path else None
     gate = scope.scope_check(Path(args.tasks).resolve(), s.root, base=args.base, target=target)
@@ -5038,7 +5028,7 @@ def cmd_scope_check(args: argparse.Namespace) -> int:
 
 
 def cmd_provenance(args: argparse.Namespace) -> int:
-    """Sign build provenance + SBOM for an artifact (3PWR-FR-066/068)."""
+    """Sign build provenance + SBOM for an artifact."""
     s = _settings(args.root)
     artifact = Path(args.artifact).resolve()
     if not artifact.exists():
@@ -5084,7 +5074,7 @@ def cmd_provenance(args: argparse.Namespace) -> int:
 
 
 def cmd_deploy_gate(args: argparse.Namespace) -> int:
-    """Verify an artifact's provenance; refuse if missing or invalid (3PWR-FR-067)."""
+    """Verify an artifact's provenance; refuse if missing or invalid."""
     s = _settings(args.root)
     artifact = Path(args.artifact).resolve()
     if not artifact.exists():
@@ -5132,7 +5122,7 @@ def cmd_deploy_gate(args: argparse.Namespace) -> int:
 
 
 def cmd_residual(args: argparse.Namespace) -> int:
-    """Record a signed residual review (3PWR-FR-036/037)."""
+    """Record a signed residual review."""
     s = _settings(args.root)
     try:
         sk = keys.resolve_signer(s.root)
@@ -5161,7 +5151,7 @@ def cmd_residual(args: argparse.Namespace) -> int:
 
 
 def cmd_characterize(args: argparse.Namespace) -> int:
-    """Reconstruct a spec + characterization tests for a legacy module (3PWR-FR-053)."""
+    """Reconstruct a spec + characterization tests for a legacy module."""
     from . import characterize
 
     # Brownfield Stage Zero runs *before* a repo has adopted 3Powers, so a `.3powers/`
@@ -5225,7 +5215,7 @@ def cmd_characterize(args: argparse.Namespace) -> int:
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
-    """Run the prompt/constitution eval set; block on regression (3PWR-FR-050)."""
+    """Run the prompt/constitution eval set; block on regression."""
     from .evals import run_evals
 
     s = _settings(args.root)
@@ -5251,10 +5241,10 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def cmd_deps_check(args: argparse.Namespace) -> int:
-    """Probe installed third-party versions against the supported ranges (3PWR-FR-048/NFR-014).
+    """Probe installed third-party versions against the supported ranges.
 
     A preflight command, not a verdict gate — installed versions are environment-dependent, so
-    keeping them out of the verdict preserves determinism (3PWR-NFR-001)."""
+    keeping them out of the verdict preserves determinism."""
     s = _settings(args.root)
     manifest_path = (
         Path(args.manifest).resolve() if args.manifest else s.dir / "config" / "dependencies.yaml"
@@ -5309,11 +5299,11 @@ def cmd_deps_check(args: argparse.Namespace) -> int:
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
-    """Standalone, re-runnable auto-run readiness (AUTOX-FR-003): the full ``3pwr run --mode auto``
-    preflight — the SAME shared check set init and the run itself use (AUTOX-FR-002) — plus a
-    dependency summary (3PWR-FR-048), with one overall ready/not-ready verdict and a per-item fix.
+    """Standalone, re-runnable auto-run readiness: the full ``3pwr run --mode auto``
+    preflight — the SAME shared check set init and the run itself use — plus a
+    dependency summary, with one overall ready/not-ready verdict and a per-item fix.
 
-    Read-only and fully offline (AUTOX-NFR-001): it probes config, PATH, and the key custody chain,
+    Read-only and fully offline: it probes config, PATH, and the key custody chain,
     changes nothing on disk, and is never a gate. Exits 0 when ready, 1 when not."""
     s = _settings(args.root)
     entries = Ledger(s.ledger_path).entries()
@@ -5328,7 +5318,7 @@ def cmd_ready(args: argparse.Namespace) -> int:
     )
     missing = runpreflight.unmet(prqs)
 
-    # Dependency summary (3PWR-FR-048) — informational; never flips the readiness verdict (never a gate).
+    # Dependency summary — informational; never flips the readiness verdict (never a gate).
     deps_summary: Optional[dict[str, Any]] = None
     manifest_path = s.dir / "config" / "dependencies.yaml"
     if manifest_path.exists():
