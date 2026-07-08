@@ -6,7 +6,9 @@ Two run-workspace concerns live here, both pure given injected inputs:
   the repository — ``oracle`` (authored test files) and ``implement`` (code changes) — each leave a
   short markdown *record* in the run's feature folder that links those outputs at their real paths.
   The record never relocates or duplicates them; a multi-phase implement yields exactly one
-  ``implement.md`` enumerating every phase in deterministic artifact order.
+  ``changelog.md`` enumerating every phase in deterministic artifact order (the legacy record name
+  ``implement.md`` stays read-resolvable; the top-level project ``CHANGELOG.md`` is hand-maintained
+  and never touched by a run).
 
 * **The completion gate**: a producing stage is *done* only when BOTH its declared
   markdown artifact exists on disk in the feature folder AND a matching signed ``run``/``stage`` (or
@@ -165,42 +167,95 @@ def render_oracle_record(spec_id: str, linked: Sequence[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_implement_record(
+def _changelog_section(work_kinds: Sequence[str]) -> str:
+    """The Keep-a-Changelog section heading the run's inferred work kind(s) map to.
+
+    ``defect`` → ``Fixed`` (a bug fix outranks anything it rode in with), ``feature`` → ``Added``,
+    anything else (design, refactor, docs, chore, unknown) → ``Changed``. Deterministic."""
+    kinds = set(work_kinds)
+    if "defect" in kinds:
+        return "Fixed"
+    if "feature" in kinds:
+        return "Added"
+    return "Changed"
+
+
+def _requirement_rows(
+    requirement_ids: Sequence[str], files: Sequence[str], summary: str
+) -> list[str]:
+    """The machine-parseable table rows for one phase: one row per requirement id.
+
+    Each row carries the requirement id, the phase's changed files, and the one-line what/why.
+    A phase tracing to no id gets a single ``(untraced)`` row so the gap stays visible."""
+    listed = ", ".join(files) if files else "(no scoped change linked)"
+    ids = list(requirement_ids) or ["(untraced)"]
+    return [f"| {rid} | {listed} | {summary} |" for rid in ids]
+
+
+def render_changelog(
     spec_id: str,
     produced: Sequence[str],
     phases: Sequence[dict] | None = None,
     phase_scopes: Mapping[int, Sequence[str]] | None = None,
+    *,
+    phase_requirements: Mapping[int, Sequence[str]] | None = None,
+    work_kinds: Sequence[str] = (),
+    report: str = "",
 ) -> str:
-    """The single ``implement.md`` record — every phase, every change, deterministic order.
+    """The single engine-generated ``changelog.md`` record — grouped by phase, requirement-traced.
 
-    ``phases`` are the per-phase results in artifact order (as collected); each phase
-    section links the produced paths inside that phase's declared file scope. The full produced change
-    set is always listed, so the record links a superset of the stage's change set."""
+    Keep-a-Changelog flavored: the run's changes land under one ``Added``/``Changed``/``Fixed``
+    section chosen by the inferred work kind(s). Inside it, one subsection per phase (deterministic
+    artifact order, as collected) carries a machine-parseable table — a ``Requirement`` id column,
+    the phase's changed files, and a one-line what/why. The changed files live at their real
+    repository paths; nothing is relocated or duplicated, and the top-level project ``CHANGELOG.md``
+    is never touched. ``report`` — the implement agent's completion report — is folded in verbatim
+    when present. Byte-deterministic: identical inputs always render identical bytes."""
     all_changes = sorted(set(produced))
+    section = _changelog_section(work_kinds)
+    reqs = phase_requirements or {}
     lines = [
-        f"# Implement record — {spec_id}",
+        f"# Changelog — {spec_id}",
         "",
-        "The implementation changes live at their real repository paths (linked below) — this record",
-        "neither relocates nor duplicates them.",
+        "Engine-generated record of the Implement stage's changes, grouped by phase. Each entry",
+        "traces to a requirement id; the changed files live at their real repository paths — this",
+        "record neither relocates nor duplicates them. The project's top-level CHANGELOG.md is",
+        "hand-maintained and untouched by runs.",
+        "",
+        f"## {section}",
         "",
     ]
+    header = ["| Requirement | Files changed | Summary |", "|---|---|---|"]
     if phases:
         scopes = phase_scopes or {}
-        lines += [f"## Phases ({len(phases)})", ""]
         for ph in phases:  # deterministic artifact order, as collected
             idx = int(ph.get("phase", 0))
             status = (
                 "completed" if ph.get("ok") else f"failed — {ph.get('detail', '')}".rstrip(" —")
             )
-            lines.append(f"### Phase {idx}: {ph.get('name', '')} — {status}")
+            name = str(ph.get("name", ""))
+            lines.append(f"### Phase {idx}: {name} — {status}")
+            lines.append("")
             scope = set(scopes.get(idx, ()))
             scoped = [p for p in all_changes if p in scope]
-            lines += [f"- {p}" for p in scoped] or ["- (no scoped change linked)"]
+            summary = f"Phase {idx} ({name}) {status}"
+            lines += header
+            lines += _requirement_rows(list(reqs.get(idx, ())), scoped, summary)
             lines.append("")
     else:
-        lines += ["## Session", "", "A single implement session (no phased tasks artifact).", ""]
-    lines += ["## Changes", ""]
+        lines += [
+            "### Session",
+            "",
+            "A single implement session (no phased implementation plan).",
+            "",
+        ]
+        lines += header
+        lines += _requirement_rows(list(reqs.get(0, ())), all_changes, "single implement session")
+        lines.append("")
+    lines += ["## All changes", ""]
     lines += [f"- {p}" for p in all_changes] or ["- (none linked)"]
+    if report.strip():
+        lines += ["", "## Implement agent report", "", report.strip()]
     return "\n".join(lines) + "\n"
 
 
@@ -213,17 +268,29 @@ def write_record(
     linked: Sequence[str],
     phases: Sequence[dict] | None = None,
     phase_scopes: Mapping[int, Sequence[str]] | None = None,
+    phase_requirements: Mapping[int, Sequence[str]] | None = None,
+    work_kinds: Sequence[str] = (),
+    report: str = "",
 ) -> str:
-    """Write the ``oracle.md`` / ``implement.md`` record flat into the feature folder.
+    """Write the ``oracle.md`` / ``changelog.md`` record flat into the feature folder.
 
     Returns the record's repo-relative POSIX path — the caller adds it to the stage's artifact paths
     so the signed ``run``/``stage`` entry records it and the completion gate can hold. For a
     phased implement the caller invokes this from the collecting thread AFTER all phases complete,
-    in deterministic order."""
+    in deterministic order. The implement record's legacy name (``implement.md``) is never written;
+    it stays read-resolvable through :func:`threepowers.workspace.find_artifact`."""
     if step == "oracle":
         text = render_oracle_record(spec_id, linked)
     else:
-        text = render_implement_record(spec_id, linked, phases=phases, phase_scopes=phase_scopes)
+        text = render_changelog(
+            spec_id,
+            linked,
+            phases=phases,
+            phase_scopes=phase_scopes,
+            phase_requirements=phase_requirements,
+            work_kinds=work_kinds,
+            report=report,
+        )
     target = stage_artifact_path(feature_dir, step)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")

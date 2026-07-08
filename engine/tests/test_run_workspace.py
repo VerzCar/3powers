@@ -26,12 +26,15 @@ from threepowers.verdict import STATUS_PASS, Verdict
 
 # --------------------------------------------------------------------------- flat workspace (SRCX-FR-001)
 def test_stage_artifact_paths_are_flat(tmp_path):
-    """SRCX-FR-001 (property): every producing step writes feature_dir/<step>.md — spec.md for
-    specify — with no spec/ or artifacts/ subfolder in any write location."""
+    """SRCX-FR-001 (property): every producing step writes its canonical markdown flat in the
+    feature folder — spec.md for specify, implementation-plan.md for tasks, changelog.md for
+    implement — with no spec/ or artifacts/ subfolder in any write location."""
     f = tmp_path / "specs-src" / "017-x"
     assert workspace.stage_artifact_path(f, "specify") == f / "spec.md"
-    for step in ("plan", "tasks", "oracle", "implement"):
-        assert workspace.stage_artifact_path(f, step) == f / f"{step}.md"
+    assert workspace.stage_artifact_path(f, "plan") == f / "plan.md"
+    assert workspace.stage_artifact_path(f, "tasks") == f / "implementation-plan.md"
+    assert workspace.stage_artifact_path(f, "oracle") == f / "oracle.md"
+    assert workspace.stage_artifact_path(f, "implement") == f / "changelog.md"
     for step in workspace.PRODUCING_STEPS:
         p = workspace.stage_artifact_path(f, step)
         assert p.parent == f  # flat: never a spec/ or artifacts/ subfolder
@@ -91,7 +94,7 @@ def test_producing_steps_declare_exactly_five_markdowns():
 
 # --------------------------------------------------------------------------- records (SRCX-FR-005/006)
 def test_records_link_real_outputs_without_moving_them(tmp_path):
-    """SRCX-FR-005: oracle.md/implement.md link the real outputs at their existing repo paths —
+    """SRCX-FR-005: oracle.md/changelog.md link the real outputs at their existing repo paths —
     a superset of the contract-matched / produced set — and relocate nothing."""
     f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
@@ -109,13 +112,13 @@ def test_records_link_real_outputs_without_moving_them(tmp_path):
     rel2 = completion.write_record(
         tmp_path, f, "implement", spec_id="X", linked=["src/a.py", "src/b.py"]
     )
-    text2 = (f / "implement.md").read_text(encoding="utf-8")
-    assert rel2 == "specs-src/017-x/implement.md"
+    text2 = (f / "changelog.md").read_text(encoding="utf-8")
+    assert rel2 == "specs-src/017-x/changelog.md"
     assert "src/a.py" in text2 and "src/b.py" in text2  # links ⊇ the produced change set
 
 
 def test_phased_implement_yields_one_record_enumerating_phases(tmp_path):
-    """SRCX-FR-006: an N-phase implement yields exactly ONE implement.md enumerating each phase and
+    """SRCX-FR-006: an N-phase implement yields exactly ONE changelog.md enumerating each phase and
     linking its scoped changes in deterministic artifact order; SRCX-NFR-006: identical inputs
     render byte-identical records (written after collection, one record — never one per phase)."""
     f = tmp_path / "specs-src" / "017-x"
@@ -126,20 +129,71 @@ def test_phased_implement_yields_one_record_enumerating_phases(tmp_path):
     ]
     scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
     produced = ["src/alpha.py", "src/core.py"]
-    a = completion.render_implement_record("X", produced, phases=phases, phase_scopes=scopes)
-    b = completion.render_implement_record("X", produced, phases=phases, phase_scopes=scopes)
+    a = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
+    b = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
     assert a == b  # deterministic (SRCX-NFR-001/006)
     assert a.index("Phase 1: core") < a.index("Phase 2: alpha")  # artifact order
     completion.write_record(
         tmp_path, f, "implement", spec_id="X", linked=produced, phases=phases, phase_scopes=scopes
     )
     records = [p.name for p in f.glob("*.md")]
-    assert records == ["implement.md"]  # exactly one, not one per phase
-    text = (f / "implement.md").read_text(encoding="utf-8")
+    assert records == ["changelog.md"]  # exactly one, not one per phase
+    text = (f / "changelog.md").read_text(encoding="utf-8")
     assert "src/core.py" in text.split("Phase 2")[0]  # phase 1's scoped change under phase 1
     # a phaseless implement still yields one record for the single session
-    solo = completion.render_implement_record("X", ["src/one.py"])
+    solo = completion.render_changelog("X", ["src/one.py"])
     assert "single implement session" in solo.lower() and "src/one.py" in solo
+
+
+def test_changelog_groups_by_phase_traces_requirements_and_is_byte_deterministic(tmp_path):
+    """SRCX-FR-006 (changelog): the engine-generated changelog groups by phase, carries each
+    phase's requirement ids in a machine-parseable Requirement column with the phase's changed
+    files and a one-line what/why, lands under a Keep-a-Changelog section chosen by work kind,
+    folds the implement agent's report, and renders byte-identical for identical inputs."""
+    phases = [
+        {"phase": 1, "name": "core", "ok": True, "detail": ""},
+        {"phase": 2, "name": "alpha", "ok": False, "detail": "boom"},
+    ]
+    scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
+    reqs = {1: ("DEMO-FR-001", "DEMO-FR-002"), 2: ("DEMO-FR-003",)}
+    produced = ["src/alpha.py", "src/core.py"]
+    kwargs = dict(
+        phases=phases,
+        phase_scopes=scopes,
+        phase_requirements=reqs,
+        work_kinds=["defect"],
+        report="- **Stage**: Implement — done",
+    )
+    a = completion.render_changelog("X", produced, **kwargs)
+    b = completion.render_changelog("X", produced, **kwargs)
+    assert a.encode("utf-8") == b.encode("utf-8")  # byte-deterministic
+    assert "## Fixed" in a  # work-kind defect → Keep-a-Changelog "Fixed"
+    assert "| Requirement | Files changed | Summary |" in a  # machine-parseable id column
+    p1 = a.split("### Phase 2")[0]
+    assert "| DEMO-FR-001 | src/core.py |" in p1 and "| DEMO-FR-002 | src/core.py |" in p1
+    assert "| DEMO-FR-003 | src/alpha.py |" in a.split("### Phase 2")[1]
+    assert "failed — boom" in a  # a failed phase stays visible, never silently green
+    assert "## Implement agent report" in a and "- **Stage**: Implement — done" in a
+    # work-kind mapping: feature → Added; unknown/design → Changed
+    assert "## Added" in completion.render_changelog("X", produced, work_kinds=["feature"])
+    assert "## Changed" in completion.render_changelog("X", produced)
+    # an untraced phase stays visibly untraced
+    solo = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
+    assert "(untraced)" in solo
+
+
+def test_legacy_implement_md_still_resolves(tmp_path):
+    """SRCX-FR-003 (legacy record name): an existing implement.md keeps resolving through
+    find_artifact and satisfies the completion gate at its legacy path — no rewrite required."""
+    f = tmp_path / "specs-src" / "013-old"
+    f.mkdir(parents=True)
+    (f / "implement.md").write_text("# Implement record\n", encoding="utf-8")
+    assert workspace.find_artifact(f, "implement") == f / "implement.md"
+    recorded = completion.recorded_stage_artifacts(
+        [_stage_entry("implement", ["specs-src/013-old/implement.md"])], "RUN"
+    )
+    chk = completion.check_step(tmp_path, f, "implement", recorded)
+    assert chk.ok and chk.path == "specs-src/013-old/implement.md"
 
 
 # --------------------------------------------------------------------------- allocation (SRCX-FR-008/009)
@@ -359,7 +413,7 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt and "tasks" not in skip:
             d.mkdir(parents=True, exist_ok=True)
-            (d / "tasks.md").write_text(
+            (d / "implementation-plan.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
@@ -448,20 +502,34 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
     capsys.readouterr()
 
     fdir = run_repo / "specs-src" / "001-add-x"
-    for name in ("spec.md", "plan.md", "tasks.md", "oracle.md", "implement.md"):
+    changelog_before = (
+        (run_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+        if (run_repo / "CHANGELOG.md").is_file()
+        else None
+    )
+    for name in ("spec.md", "plan.md", "implementation-plan.md", "oracle.md", "changelog.md"):
         assert (fdir / name).is_file(), name  # SRCX-FR-004: the five producing markdowns, flat
+    for legacy in ("tasks.md", "implement.md"):
+        assert not (fdir / legacy).exists(), legacy  # legacy names are never written
     assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()  # SRCX-FR-001
     for name in ("review-spec.md", "verify.md", "signoff.md", "advance.md", "clarify.md"):
         assert not (fdir / name).exists(), name  # SRCX-FR-007: ledger-only stages
     # the records link the real outputs at their real repo paths (SRCX-FR-005)
     assert "tests/oracle/RUN/test_oracle.py" in (fdir / "oracle.md").read_text(encoding="utf-8")
-    assert "src/impl.py" in (fdir / "implement.md").read_text(encoding="utf-8")
+    assert "src/impl.py" in (fdir / "changelog.md").read_text(encoding="utf-8")
     assert (run_repo / "tests" / "oracle" / "RUN" / "test_oracle.py").is_file()  # not relocated
+    # the top-level project CHANGELOG.md is untouched by a run
+    changelog_after = (
+        (run_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+        if (run_repo / "CHANGELOG.md").is_file()
+        else None
+    )
+    assert changelog_after == changelog_before
 
     entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
     recorded = completion.recorded_stage_artifacts(entries, "RUN")
     for step in workspace.PRODUCING_STEPS:  # SRCX-SC-002: every markdown named in a signed entry
-        rel = f"specs-src/001-add-x/{'spec' if step == 'specify' else step}.md"
+        rel = f"specs-src/001-add-x/{workspace.step_filename(step)}"
         assert rel in recorded[step], (step, recorded)
     # SRCX-FR-011: the run/start payload binds the allocated folder, recoverable offline
     assert _run_feature_dir_from_ledger(Settings(root=run_repo), entries, "RUN") == fdir

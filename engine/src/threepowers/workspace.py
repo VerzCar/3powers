@@ -5,17 +5,19 @@ Every lifecycle stage's artifact for a run lies flat in that run's feature folde
 ``specs-src/<NNN>-<slug>/``::
 
     specs-src/<NNN>-<slug>/
-      spec.md          # the specification (the Specify stage's artifact)
-      plan.md          # every other producing stage's markdown, flat
-      tasks.md
-      oracle.md        # a *record* linking the authored oracle tests
-      implement.md     # a *record* linking the implementation changes
+      spec.md                  # the specification (the Specify stage's artifact)
+      plan.md                  # the Plan stage's markdown, flat
+      implementation-plan.md   # the Tasks stage's artifact (legacy name: tasks.md)
+      oracle.md                # a *record* linking the authored oracle tests
+      changelog.md             # a *record* of the implementation changes (legacy: implement.md)
 
 Legacy layouts stay resolvable and runnable for existing features: the legacy base folder
-``specs/`` (read-resolved after ``specs-src/``, never written), the older flat layout inside a
-feature folder (identical to the new canonical one), and the legacy split layout
-(``spec/spec.md`` + ``artifacts/<step>.md``). Resolution prefers the canonical location and falls
-back to the legacy one — never yielding two paths for one stage or one feature.
+``specs/`` (read-resolved after ``specs-src/``, never written), the legacy stage filenames
+(``tasks.md`` for the tasks step, ``implement.md`` for the implement step — read-resolved after
+the canonical names, never written), the older flat layout inside a feature folder (identical to
+the new canonical one), and the legacy split layout (``spec/spec.md`` + ``artifacts/<step>.md``).
+Resolution prefers the canonical location and falls back to the legacy one — never yielding two
+paths for one stage or one feature.
 
 The engine auto-allocates the ``<NNN>-<slug>`` run folder: ``<NNN>`` is the maximum
 existing ``NNN-`` prefix under ``specs-src/`` plus one, zero-padded to three digits, and ``<slug>``
@@ -40,6 +42,22 @@ ARTIFACTS_DIR = "artifacts"
 # The producing lifecycle steps — exactly the steps that declare a flat markdown artifact in the
 # feature folder. Pure gate / verdict / sign-off / advance steps stay ledger-only.
 PRODUCING_STEPS: tuple[str, ...] = ("specify", "plan", "tasks", "oracle", "implement")
+
+# The canonical artifact filename per producing step where it differs from ``<step>.md``: the
+# tasks step writes the detail-level implementation plan, and the implement step leaves an
+# engine-generated changelog record. Legacy filenames stay read-resolvable, never written.
+_STEP_FILENAMES: dict[str, str] = {
+    "specify": "spec.md",
+    "tasks": "implementation-plan.md",
+    "implement": "changelog.md",
+}
+_LEGACY_STEP_FILENAMES: dict[str, str] = {"tasks": "tasks.md", "implement": "implement.md"}
+
+
+def step_filename(step: str) -> str:
+    """The canonical flat artifact filename a producing step WRITES (``<step>.md`` by default)."""
+    return _STEP_FILENAMES.get(step, f"{step}.md")
+
 
 # Slug bounds: a fixed maximum length, and a fixed fallback token when the intent
 # slugifies to empty (e.g. all punctuation).
@@ -76,23 +94,28 @@ def artifacts_dir(feature_dir: Path) -> Path:
 def stage_artifact_path(feature_dir: Path, step: str) -> Path:
     """Where a producing step's artifact is WRITTEN — flat in the feature folder.
 
-    ``spec.md`` for ``specify``; ``<step>.md`` for every other step. No ``spec/`` or ``artifacts/``
-    subfolder is ever part of a write location."""
-    if step == "specify":
-        return feature_dir / "spec.md"
-    return feature_dir / f"{step}.md"
+    ``spec.md`` for ``specify``, ``implementation-plan.md`` for ``tasks``, ``changelog.md`` for
+    ``implement``, and ``<step>.md`` for every other step. No ``spec/`` or ``artifacts/``
+    subfolder is ever part of a write location; the legacy filenames are never written."""
+    return feature_dir / step_filename(step)
 
 
 def find_artifact(feature_dir: Path, step: str) -> Path | None:
-    """An existing stage artifact — the flat path when it exists, else the split fallback.
+    """An existing stage artifact — the canonical flat path first, then the legacy fallbacks.
 
-    Never returns two paths for one stage: flat (canonical, also the older legacy location) wins;
-    the legacy split location (``artifacts/<step>.md``) stays readable for existing features."""
+    Never returns two paths for one stage: the canonical flat filename wins; the legacy flat
+    filename (``tasks.md`` / ``implement.md``) and the legacy split location
+    (``artifacts/<step>.md``) stay readable for existing features, in that order."""
     if step == "specify":
         return spec_path(feature_dir)
-    flat = feature_dir / f"{step}.md"
+    flat = feature_dir / step_filename(step)
     if flat.is_file():
         return flat
+    legacy_name = _LEGACY_STEP_FILENAMES.get(step)
+    if legacy_name is not None:
+        legacy = feature_dir / legacy_name
+        if legacy.is_file():
+            return legacy
     split = artifacts_dir(feature_dir) / f"{step}.md"
     if split.is_file():
         return split

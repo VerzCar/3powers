@@ -75,7 +75,7 @@ def test_templates_carry_merged_structure_and_no_substrate_machinery():
     template contains a .specify/ script call, an extension-hook block, $ARGUMENTS, or handoffs:."""
     plan = (BUNDLED / "plan.agent.md").read_text(encoding="utf-8")
     # merged from the reference plan agent + the native planning agent:
-    for token in ("Judicial Plan", "context budget", "[P]", "file scope", "Think first"):
+    for token in ("Risk tier & gates", "context budget", "[P]", "file scope", "Think first"):
         assert token.lower() in plan.lower(), f"plan template lost merged structure: {token!r}"
     tasks = (BUNDLED / "implementation-plan.agent.md").read_text(encoding="utf-8")
     # merged from the reference implementation-plan agent + the tasks-checklist template:
@@ -182,6 +182,53 @@ def test_tasks_template_binds_parallel_marker_to_disjoint_scope_and_no_dependenc
     assert "disjoint" in text
     assert "dependency" in text.lower()
     assert "never a licence" in text
+
+
+def test_implementation_plan_template_mandates_per_phase_gates_and_final_verification():
+    """AGENTX-FR-006 (extension): every generated implementation plan runs the coding-section gates
+    per phase over its file scope, and its LAST phase is always a dedicated Verification phase
+    depending on all prior phases whose goal is a fully green build — named in the shipped agent
+    template and its .3powers mirror, with the concrete gate command."""
+    for base in (BUNDLED, REPO / ".3powers" / "templates" / "agents"):
+        text = (base / "implementation-plan.agent.md").read_text(encoding="utf-8")
+        assert "coding-section gates" in text or "coding gate" in text.lower(), base
+        assert "3pwr gate run --path" in text, base
+        assert "Verification" in text and "all prior phases" in text, base
+        assert "fully green build" in text, base
+        # the output skeleton itself carries the final Verification phase depending on all others
+        assert "## Phase N: Verification" in text, base
+        assert "**Depends on**: all prior phases" in text, base
+
+
+def test_implement_template_makes_the_coding_gate_mandatory():
+    """AGENTX-FR-008 (extension): the implement template promotes validate-as-you-go to a mandatory
+    per-phase coding gate — run the gates after each phase, fix everything before reporting done;
+    a phase with a red coding gate is not complete — and asks for the per-change summary the engine
+    folds into changelog.md."""
+    for base in (BUNDLED, REPO / ".3powers" / "templates" / "agents"):
+        text = (base / "implement.agent.md").read_text(encoding="utf-8")
+        assert "coding gate" in text.lower(), base
+        assert "mandatory" in text.lower(), base
+        assert "A phase with a red coding gate" in text, base
+        assert "changelog.md" in text, base
+        assert "Change summary" in text, base
+
+
+def test_plan_surfaces_carry_no_judicial_label_or_model_family_table():
+    """AGENTX-FR-002 (de-judicialized plan doc): the plan agent template (both copies), the built-in
+    plan prompt body, and the plan document template carry no "Judicial" label and no
+    role→model-family table — tier→gates and requirement→phase coverage stay. roles.yaml diversity
+    enforcement is untouched by this (it was never parsed from the plan doc)."""
+    surfaces = [
+        (BUNDLED / "plan.agent.md").read_text(encoding="utf-8"),
+        (REPO / ".3powers" / "templates" / "agents" / "plan.agent.md").read_text(encoding="utf-8"),
+        (REPO / ".3powers" / "templates" / "plan-template.md").read_text(encoding="utf-8"),
+        prompts.stage_prompt_body("plan"),
+    ]
+    for text in surfaces:
+        assert "Judicial" not in text
+        assert "model-family" not in text and "model family" not in text.lower()
+        assert "Risk tier & gates" in text or "risk tier" in text.lower()
 
 
 # --------------------------------------------------------------------------- AGENTX-FR-008 (implement discipline)

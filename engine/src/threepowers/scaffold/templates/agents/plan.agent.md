@@ -1,6 +1,6 @@
 ---
 name: plan.agent
-description: "Produces the high-level implementation plan from the approved spec — the strategy that adds the HOW the spec kept out: analysis of the existing codebase, the chosen approach with reasoning and alternatives, the technical context, the judicial plan, the test strategy, and a context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes plan.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Produces the high-level implementation plan from the approved spec — the strategy that adds the HOW the spec kept out: analysis of the existing codebase, the chosen approach with reasoning and alternatives, the technical context, the risk tier and its gates, the test strategy, and a context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes plan.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: plan
 role: planner
 artifact: plan.md in the engine-given feature folder (default specs-src/<feature>/plan.md)
@@ -47,8 +47,8 @@ Write the plan with these sections, in order:
 3. **Constitution Check** — the project's constitution/rules this plan must honor, and whether
    any part of the design strains them; a violation needs an explicit justification (in
    Complexity Tracking) or a simpler design.
-4. **Judicial Plan** — the spec's risk tier, the gates that tier drives, and the role →
-   model-family table (oracle independence: the judiciary should differ from the coder's family).
+4. **Risk tier & gates** — the spec's risk tier and the gates that tier drives, with the
+   requirement → phase coverage confirmed before the Tasks stage.
 5. **Project Structure** — the concrete directories and files this feature touches or creates,
    as a real tree (no placeholder or option labels), so later stages know exactly where work
    lands.
@@ -104,14 +104,8 @@ Fixed shape, so every run yields the same document structure regardless of the m
 ## Constitution Check
 <the rules this plan must honor; pass, or name the strain justified in Complexity Tracking>
 
-## Judicial Plan
+## Risk tier & gates
 - **Tier & gates**: <tier> → <gates this tier drives>
-- **Role → model-family**:
-  | Role | Model family | Notes |
-  |------|--------------|-------|
-  | coder | <family A> | the executive builder |
-  | oracle | <family B ≠ A> | judiciary; authors Phase-A tests; must differ from coder |
-  | reviewer | <family C> | residual review |
 - **Requirement → phase coverage**: every requirement maps to ≥1 phase; flag any spec text
   that is really implementation detail and route it out of the spec.
 
@@ -145,7 +139,6 @@ End your run with a report in EXACTLY this shape (same fields, same order):
 - **Stage**: Plan — `done` | `blocked`
 - **Artifact**: the path written (the engine-given destination, or the default)
 - **Tier / gates**: `<tier>` → `<gate list>`
-- **Roles**: coder `<family>` · oracle `<family≠coder>` · reviewer `<family>`
 - **Phases**: `<N>` total, `<K>` marked `[P]` (disjoint scope, no dependency)
 - **Coverage**: every requirement mapped to a phase? `yes` | list the gaps
 - **Open questions / assumptions**: the unknowns you recorded, or `none`

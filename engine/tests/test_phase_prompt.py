@@ -81,14 +81,29 @@ def test_phase_prompt_instructs_parallel_subagent_dispatch():
 
 def test_phase_prompt_instructs_completion_markers_and_forbids_questions():
     """PHASEPR-FR-003: the prompt names the completion-marker contract — `[x]` done, `[!]` plus a
-    one-line reason when blocked, written to tasks.md — and forbids operator questions (assumptions
-    documented in code comments instead)."""
+    one-line reason when blocked, written to the implementation plan (implementation-plan.md;
+    legacy tasks.md) — and forbids operator questions (assumptions documented in code comments
+    instead)."""
     p = _prompt_for(2)
-    assert "update tasks.md" in p
+    assert "update the implementation plan (implementation-plan.md; legacy tasks.md)" in p
     assert "mark each completed task with `[x]` in its checkbox" in p
     assert "mark it `[!]` and append a one-line reason." in p
     assert "CLARIFICATIONS: do not ask the operator for input." in p
-    assert "document your assumption in a comment in the code (not in tasks.md)." in p
+    assert (
+        "document your assumption in a comment in the code (not in the implementation plan)." in p
+    )
+
+
+def test_phase_prompt_names_the_concrete_coding_gate_command():
+    """PHASEPR-FR-001 (extension): every phase handoff injects the concrete coding-gate command —
+    `3pwr gate run --path <scope>` resolved against the phase's declared file scope — so a fresh
+    session knows exactly what to run, and states the gate is advisory (Verify stays the sole
+    ledger verdict)."""
+    p = _prompt_for(1)  # phase 1's scope is src/core.py → the shared top-level dir is `src`
+    assert "CODING GATE:" in p
+    assert "`3pwr gate run --path src`" in p
+    assert "A phase with a red coding gate is not complete." in p
+    assert "the Verify stage remains the sole signed verdict" in p
 
 
 def test_tasks_stage_template_names_the_same_completion_markers():

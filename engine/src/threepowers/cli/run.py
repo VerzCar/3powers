@@ -584,6 +584,20 @@ def _report_phase_estimates(
             print(f"  ⚠ {warn}", file=sys.stderr)
 
 
+def _implement_report(s: Settings, transcript_rel: str) -> str:
+    """The implement agent's completion report, extracted from the stage's persisted transcript.
+
+    Deterministic given the transcript bytes: the text from the last ``- **Stage**:`` marker onward
+    (the fixed report shape the implement agent template mandates), within the tail read window. A
+    missing or unreadable transcript, or one carrying no report marker, yields ``""`` — the
+    changelog record then simply omits the folded report. Never raises."""
+    if not transcript_rel:
+        return ""
+    tail = transcripts.tail_text(s.root / transcript_rel, limit=4000)
+    marker = tail.rfind("- **Stage**:")
+    return tail[marker:].strip() if marker >= 0 else ""
+
+
 def _warn_if_unanswered(s: Settings, ph: phases.Phase, transcript_rel: str, spec_id: str) -> None:
     """Advisory stall check after one phase session ends.
 
@@ -716,8 +730,8 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
         rel = feature_dir.as_posix()
     return (
         f"FEATURE FOLDER: {rel} — the run's allocated feature workspace. Write this stage's markdown "
-        f"artifact FLAT into this folder (spec.md for Specify; <step>.md otherwise); create no spec/ "
-        f"or artifacts/ subfolder."
+        f"artifact FLAT into this folder (spec.md for Specify; implementation-plan.md for Tasks; "
+        f"<step>.md otherwise); create no spec/ or artifacts/ subfolder."
     )
 
 
@@ -890,7 +904,8 @@ def _native_runner(
                 # The oracle/implement stages leave a markdown *record* in the feature folder linking
                 # their real outputs at their real repo paths. For a phased
                 # implement this runs on the collecting thread AFTER all phases completed, one record
-                # in deterministic order.
+                # in deterministic order. The implement record is the engine-generated changelog.md
+                # (grouped by phase, requirement-traced); the top-level CHANGELOG.md is untouched.
                 scopes = {ph.index: ph.file_scope for ph in phase_list}
                 if step == "implement":
                     # the record links the full produced change set
@@ -905,6 +920,9 @@ def _native_runner(
                     linked=linked,
                     phases=result.phases or None,
                     phase_scopes=scopes,
+                    phase_requirements={ph.index: phases.requirement_ids(ph) for ph in phase_list},
+                    work_kinds=wk.kinds,
+                    report=_implement_report(s, result.transcript) if step == "implement" else "",
                 )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)

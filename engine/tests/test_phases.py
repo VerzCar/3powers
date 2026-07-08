@@ -48,9 +48,29 @@ def test_legacy_layout_still_resolves(tmp_path):
     (f / "spec.md").write_text("# Spec\n", encoding="utf-8")
     assert workspace.spec_path(f) == f / "spec.md"
     assert workspace.feature_dir_of(f / "spec.md") == f
-    # a flat tasks artifact next to the spec is found (SRCX-FR-003)
+    # a flat LEGACY-named tasks artifact next to the spec is still found (SRCX-FR-003)
     (f / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
     assert workspace.find_artifact(f, "tasks") == f / "tasks.md"
+
+
+def test_renamed_stage_artifacts_write_new_names_and_resolve_legacy(tmp_path):
+    """SRCX-FR-001/003 (rename): the tasks step WRITES implementation-plan.md and the implement
+    step WRITES changelog.md; find_artifact resolves the canonical name first and falls back to
+    the legacy tasks.md / implement.md — never yielding two paths for one stage."""
+    f = tmp_path / "specs-src" / "030-x"
+    f.mkdir(parents=True)
+    assert workspace.stage_artifact_path(f, "tasks").name == "implementation-plan.md"
+    assert workspace.stage_artifact_path(f, "implement").name == "changelog.md"
+    # legacy filenames resolve when the canonical one is absent…
+    (f / "tasks.md").write_text("# Tasks\n", encoding="utf-8")
+    (f / "implement.md").write_text("# Record\n", encoding="utf-8")
+    assert workspace.find_artifact(f, "tasks") == f / "tasks.md"
+    assert workspace.find_artifact(f, "implement") == f / "implement.md"
+    # …and the canonical name wins when both exist
+    (f / "implementation-plan.md").write_text("# Plan\n", encoding="utf-8")
+    (f / "changelog.md").write_text("# Changelog\n", encoding="utf-8")
+    assert workspace.find_artifact(f, "tasks") == f / "implementation-plan.md"
+    assert workspace.find_artifact(f, "implement") == f / "changelog.md"
 
 
 def test_exactly_one_spec_per_feature_whichever_layout(tmp_path):
@@ -80,6 +100,10 @@ def test_plan_and_tasks_now_carry_hard_contracts():
         assert artifacts.verify(c, [f"specs-src/013-x/{step}.md"]).ok
         # legacy base back-compat: recorded specs/… paths keep matching
         assert artifacts.verify(c, [f"specs/013-x/artifacts/{step}.md"]).ok
+    # the tasks contract's canonical artifact is the renamed implementation-plan.md
+    tc = artifacts.contract_for("tasks")
+    assert artifacts.verify(tc, ["specs-src/013-x/implementation-plan.md"]).ok
+    assert artifacts.verify(tc, ["specs/013-x/implementation-plan.md"]).ok
 
 
 def test_empty_plan_dispatch_is_a_named_artifact_failure():
@@ -88,7 +112,7 @@ def test_empty_plan_dispatch_is_a_named_artifact_failure():
     assert not chk.ok and "plan artifact" in chk.message
     assert "specs-src/<feature>/plan.md" in chk.message
     chk2 = artifacts.verify(artifacts.contract_for("tasks"), ["notes.txt"])
-    assert not chk2.ok and "tasks artifact" in chk2.message
+    assert not chk2.ok and "implementation-plan artifact" in chk2.message
 
 
 def test_specify_contract_accepts_workspace_layout():
@@ -110,7 +134,7 @@ def test_plan_tasks_prompts_name_artifact_sections_and_rules():
     assert "file scope" in plan and "[P]" in plan
     assert "110k tokens" in plan and "4 bytes per token" in plan
     tasks = prompts.stage_prompt_body("tasks")
-    assert "specs-src/<feature>/tasks.md" in tasks
+    assert "specs-src/<feature>/implementation-plan.md" in tasks
     assert "## Phase N" in tasks and "**File scope**" in tasks and "**Depends on**" in tasks
     assert "HANDOFF" in tasks and "Estimated context" in tasks
     assert "exactly ONE requirement id" in tasks
@@ -162,16 +186,25 @@ def test_spec_text_injected_only_after_spec_approval(tmp_path):
 
 # --------------------------------------------------------------------------- templates (PHASE-FR-006)
 def test_templates_carry_handoff_size_and_no_speckit():
-    """PHASE-FR-006: the shipped plan/tasks templates present phases as self-contained delegable units
-    (handoff block + estimated size + parallel markers) and carry no Spec-Kit command references."""
+    """PHASE-FR-006: the shipped plan/implementation-plan templates present phases as self-contained
+    delegable units (handoff block + estimated size + parallel markers), mandate per-phase coding
+    gates and a final Verification phase, drop the role→model-family table, and carry no Spec-Kit
+    command references."""
     tdir = REPO_ROOT / ".3powers" / "templates"
-    tasks = (tdir / "tasks-template.md").read_text(encoding="utf-8")
+    tasks = (tdir / "implementation-plan-template.md").read_text(encoding="utf-8")
     assert "**Handoff**" in tasks and "**File scope**" in tasks and "**Depends on**" in tasks
     assert "Estimated context" in tasks and "[P]" in tasks
     for reload_item in ("spec", "constitution", "tasks", "file scope"):
         assert reload_item in tasks.lower()
+    # per-phase coding gates + the mandatory final Verification phase
+    assert "coding gate" in tasks.lower() and "3pwr gate run --path" in tasks
+    assert "Verification" in tasks and "all prior phases" in tasks
     plan = (tdir / "plan-template.md").read_text(encoding="utf-8")
     assert "Phase Decomposition" in plan and "context budget" in plan
+    assert "Risk tier & gates" in plan
+    assert "coding gate" in plan.lower() and "Verification" in plan
+    # the de-judicialized plan doc: no "Judicial" label, no role→model-family table
+    assert "Judicial" not in plan and "model-family" not in plan
     for f in tdir.glob("*.md"):
         assert "/speckit." not in f.read_text(encoding="utf-8"), f.name
 
@@ -476,7 +509,7 @@ def phased_project(tmp_path, monkeypatch):
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt:
             d.mkdir(parents=True, exist_ok=True)
-            (d / "tasks.md").write_text(_TASKS_3PHASE, encoding="utf-8")
+            (d / "implementation-plan.md").write_text(_TASKS_3PHASE, encoding="utf-8")
         elif "STAGE: Oracle" in prompt:
             t = cwd / "tests" / "oracle" / "RUN"
             t.mkdir(parents=True, exist_ok=True)
@@ -530,7 +563,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     fdir = root / "specs-src" / "001-add-x"
     assert (fdir / "spec.md").is_file()
     assert (fdir / "plan.md").is_file()
-    assert (fdir / "tasks.md").is_file()
+    assert (fdir / "implementation-plan.md").is_file()
     assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()
     log = subprocess.run(
         ["git", "log", "--pretty=%s"], cwd=str(root), capture_output=True, text=True
@@ -563,7 +596,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
         if e.get("type") == "run" and e.get("payload", {}).get("kind") == "checkpoint"
     }
     assert "specs-src/001-add-x/plan.md" in cp["plan"]["artifacts"]
-    assert "specs-src/001-add-x/tasks.md" in cp["tasks"]["artifacts"]
+    assert "specs-src/001-add-x/implementation-plan.md" in cp["tasks"]["artifacts"]
     assert "specs-src/001-add-x/spec.md" in cp["specify"]["artifacts"]
 
     # PHASE-FR-012/NFR-003: the phases entry records results in artifact order; the ledger verifies
@@ -661,7 +694,7 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
         if "STAGE: Tasks" in prompt:
             m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
             d = Path(kw["cwd"]) / (m.group(1) if m else "specs-src/RUN")
-            (d / "tasks.md").write_text(
+            (d / "implementation-plan.md").write_text(
                 "# Tasks\n- [ ] T001 [RUN-FR-001] everything\n", encoding="utf-8"
             )
         return rc

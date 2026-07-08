@@ -47,7 +47,8 @@ independence, brownfield Stage Zero, deviations/emergency, observe — is docume
 **`3pwr run "<intent>"` drives the whole lifecycle**: the native executive
 dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
 and in `auto` mode stops only at the two human gates (spec approval, sign-off). Post-approval stage
-prompts reload the approved spec + the prior stage's artifact reference; a phased tasks
+prompts reload the approved spec + the prior stage's artifact reference; a phased implementation
+plan (`implementation-plan.md`; legacy `tasks.md`)
 artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with
 disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
 budget in `.3powers/config/context.yaml`. Each run's artifacts lie flat in its auto-allocated feature

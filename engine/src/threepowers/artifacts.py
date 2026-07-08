@@ -101,9 +101,13 @@ STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
         step="tasks",
         kind="path",
         expected=(
-            "a tasks artifact (specs-src/<feature>/tasks.md, or the legacy specs/<feature>/…)"
+            "an implementation-plan artifact (specs-src/<feature>/implementation-plan.md, or the "
+            "legacy tasks.md)"
         ),
-        patterns=(r"(^|/)specs(-src)?/.+/tasks\.md$",),
+        patterns=(
+            r"(^|/)specs(-src)?/.+/implementation-plan\.md$",
+            r"(^|/)specs(-src)?/.+/tasks\.md$",
+        ),
     ),
     "oracle": ArtifactContract(
         step="oracle",

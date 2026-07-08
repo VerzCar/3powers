@@ -411,7 +411,7 @@ def conformance_failures(gate: GateResult) -> list[dict]:
     return out
 
 
-# A task line in tasks.md carries a task id like T001.
+# A task line in the implementation plan artifact carries a task id like T001.
 _TASK_RE = re.compile(r"\bT\d{2,}\b")
 
 

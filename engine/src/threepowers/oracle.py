@@ -449,8 +449,15 @@ def parse_dispatched_model(stdout: str) -> Optional[str]:
 
 
 # What the oracle author must never see: the implementation, the plan, contracts, and
-# source code. Named planning/design docs + any non-test source file + contracts/.
-_EXCLUDED_BASENAMES = ("plan.md", "tasks.md", "research.md", "data-model.md")
+# source code. Named planning/design docs (including the tasks stage's renamed
+# implementation-plan.md) + any non-test source file + contracts/.
+_EXCLUDED_BASENAMES = (
+    "plan.md",
+    "tasks.md",
+    "implementation-plan.md",
+    "research.md",
+    "data-model.md",
+)
 
 
 def _is_excluded_path(rel: str) -> bool:

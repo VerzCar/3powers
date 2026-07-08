@@ -1,15 +1,16 @@
 ---
 
-description: "Task list template for feature implementation — context-sized phases, delegable handoffs"
+description: "Implementation-plan template — context-sized phases, delegable handoffs, per-phase coding gates"
 ---
 
-# Tasks: [FEATURE NAME]
+# Implementation Plan (tasks): [FEATURE NAME]
 
-**Input**: `specs-src/[###-feature-name]/artifacts/plan.md` (required) and
+**Input**: `specs-src/[###-feature-name]/plan.md` (required) and
 `specs-src/[###-feature-name]/spec.md` (flat in the feature folder; legacy split features keep `spec/spec.md`)
 
-**Output**: This file, committed to `specs-src/[###-feature-name]/artifacts/tasks.md` — the Tasks stage's
-artifact. A tasks artifact that was not written to the feature workspace fails the stage.
+**Output**: This file, committed to `specs-src/[###-feature-name]/implementation-plan.md` — the Tasks
+stage's artifact. An
+implementation plan that was not written to the feature workspace fails the stage.
 
 **Organization**: Tasks are grouped into ORDERED PHASES. Each phase is a
 self-contained, delegable unit sized so one **fresh agent session** — the approved spec + the
@@ -38,6 +39,15 @@ Each `## Phase N: <name>` section carries, in this order:
   sessions. Overlapping scopes run sequentially regardless of the marker.
 - A **Handoff** block naming what a fresh session must reload — the session starts cold; nothing
   outside the handoff can be assumed.
+
+## Per-phase coding gates (mandatory)
+
+Every phase's tasks include running the coding-section gates — format, lint, types, tests +
+diff-coverage — over the phase's file scope (`3pwr gate run --path <scope>`, or the project's own
+verify commands) and fixing every failure before the phase is "done": a phase with a red coding
+gate is not complete. The LAST phase is always a dedicated **Verification** phase depending on all
+prior phases, whose goal is a fully green build across the whole change. These per-phase runs are
+the executor's own advisory checks; the Verify stage remains the sole ledger verdict.
 
 ---
 
@@ -83,7 +93,22 @@ tasks below, and the file scope above.
 
 ---
 
-[Add more phases as needed. Keep every phase under the budget — split, don't stretch.]
+## Phase 4: Verification
+
+**File scope**: [the whole change — may overlap every earlier phase]
+**Depends on**: all prior phases
+**Estimated context**: ~[N]k tokens (budget ~110k)
+
+**Handoff** (what a fresh session reloads): the approved spec, the constitution/rules, this phase's
+tasks below, and the file scope above.
+
+- [ ] T005 [SPECID-FR-001] Run the full coding-gate suite (`3pwr gate run --path <scope>` and the
+  project's verify commands) and fix everything red — goal: a fully green build (files: …)
+
+---
+
+[Add more phases as needed — keeping Verification LAST. Keep every phase under the budget —
+split, don't stretch.]
 
 ## Dependencies & execution order
 
@@ -97,6 +122,8 @@ tasks below, and the file scope above.
 
 - One requirement per task; exact file paths in every scope declaration.
 - Each phase must be independently completable from its handoff block alone.
+- Every phase ends by running the coding gates over its file scope and fixing failures; the final
+  Verification phase depends on all others and delivers a fully green build.
 - Commit after each phase — the committed artifact is the context boundary between sessions.
 - Avoid: vague tasks, undeclared file scopes, cross-phase edits, parallel markers on overlapping
   scopes.

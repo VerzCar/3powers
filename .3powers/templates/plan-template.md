@@ -5,7 +5,7 @@
 **Input**: Feature specification from `specs-src/[###-feature-name]/spec.md`
 (legacy features keep `specs/[###-feature-name]/spec.md`)
 
-**Output**: This file, committed to `specs-src/[###-feature-name]/artifacts/plan.md` — the Plan stage's
+**Output**: This file, committed to `specs-src/[###-feature-name]/plan.md` — the Plan stage's
 artifact. A plan that was not written to the feature workspace fails the stage.
 
 ## Summary
@@ -43,22 +43,12 @@ artifact. A plan that was not written to the feature workspace fails the stage.
 
 [Gates determined from `.3powers/memory/constitution.md`]
 
-## 3Powers Judicial Plan *(mandatory)*
+## Risk tier & gates *(mandatory)*
 
 *GATE: Must be filled before the Tasks stage.*
 
-### Risk tier & gates
-
 - **Tier**: [from spec] → thresholds resolved from `.3powers/config/risk-tiers.yaml`.
 - **Required gates this tier**: [format, lint, types, tests, diff_coverage, spec_conformance, …].
-
-### Role → model-family assignment
-
-| Role | Model family | Notes |
-|------|--------------|-------|
-| coder | [family A] | the executive builder |
-| oracle | [family B ≠ A] | judiciary; authors Phase-A tests; **must differ from coder** |
-| reviewer | [family C] | residual review |
 
 ### Phase-A oracle specification
 
@@ -93,11 +83,18 @@ Rules:
   blocking).
 - Mark independent phases with **disjoint file scopes** `[P]` — the executive may dispatch them to
   parallel subagent sessions. Phases sharing files, or depending on another phase, run sequentially.
+- **Every phase runs the coding gates** — format, lint, types, tests + diff-coverage over its file
+  scope (`3pwr gate run --path <scope>`, or the project's own verify commands) — and fixes every
+  failure before the phase is done (the executor's own advisory checks; the Verify stage remains
+  the sole ledger verdict).
+- **The last phase is always a dedicated Verification phase** depending on all prior phases, whose
+  goal is a fully green build across the whole change.
 
 | Phase | Name | File scope | Depends on | Est. context | Parallel? |
 |-------|------|------------|------------|--------------|-----------|
 | 1 | [name] | [files] | none | ~[N]k tokens | no |
 | 2 | [name] | [files] | Phase 1 | ~[N]k tokens | no |
+| N | Verification | [the whole change] | all prior phases | ~[N]k tokens | no |
 
 ## Project Structure
 
@@ -105,11 +102,9 @@ Rules:
 
 ```text
 specs-src/[###-feature]/
-├── spec/
-│   └── spec.md          # the specification (Specify stage's artifact)
-└── artifacts/
-    ├── plan.md          # this file (Plan stage's artifact)
-    └── tasks.md         # Tasks stage's artifact
+├── spec.md                  # the specification (Specify stage's artifact)
+├── plan.md                  # this file (Plan stage's artifact)
+└── implementation-plan.md   # Tasks stage's artifact (legacy runs: tasks.md)
 ```
 
 ### Source Code (repository root)

@@ -437,8 +437,11 @@ ledger, so a run is resumable and its state is always visible (`--status` / `3pw
 **The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
 allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
 from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
-alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`, `tasks.md`,
-plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
+alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`,
+`implementation-plan.md`, plus the `oracle.md`/`changelog.md` records linking the real test/code
+outputs at their real repo paths (the run's `changelog.md` is engine-generated — grouped by phase
+and traced to requirement ids — and never touches the project's top-level `CHANGELOG.md`; features
+written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
@@ -644,14 +647,14 @@ for a target system's runtime agents, and verifies it — the same tamper-eviden
 Every requirement maps to ≥1 task and every task traces to a requirement, *before* code.
 - `--spec SPEC` · `--tasks TASKS` (required).
 ```bash
-3pwr coverage-check --spec specs-src/003-x/spec.md --tasks specs-src/003-x/tasks.md
+3pwr coverage-check --spec specs-src/003-x/spec.md --tasks specs-src/003-x/implementation-plan.md
 ```
 
 ### `scope-check` — task req-id + file-scope discipline
 Fails a task line with no requirement ID, and flags edits outside a task's declared file scope.
 - `--tasks TASKS` (required) · `--base BASE` · `--path PATH`.
 ```bash
-3pwr scope-check --tasks specs-src/003-x/tasks.md --base main
+3pwr scope-check --tasks specs-src/003-x/implementation-plan.md --base main
 ```
 
 ---
