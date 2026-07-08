@@ -299,6 +299,31 @@ def test_next_steps_are_explained_not_bare(tmp_path, capsys):
     assert "drives the lifecycle" in out
 
 
+def test_summary_prints_one_fact_per_line(tmp_path, capsys):
+    """The human readiness summary prints language, adapter, default tier, and autonomous
+    default each on its own line (no ·-joined line); the --json report stays structured
+    and unchanged."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    out_lines = capsys.readouterr().out.splitlines()
+    assert "  language: python" in out_lines
+    assert any(ln.startswith("  adapter: ") for ln in out_lines)
+    assert "  default tier: Standard" in out_lines
+    assert "  autonomous default: yes" in out_lines  # the non-interactive recommended default
+    assert not any(" · " in ln for ln in out_lines if ln.lstrip().startswith("language:"))
+
+    # the --json report is untouched: the same facts stay as structured fields
+    jroot = tmp_path / "jproj"
+    jroot.mkdir()
+    assert _init(jroot, "--language", "python", "--json", key=tmp_path / "kj.key") == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["language"] == "python"
+    assert report["adapter"] in ("created", "kept", "overlaid")
+    assert report["tier"] == "Standard"
+    assert report["auto_mode"] is True
+
+
 # --------------------------------------------------------------------------- INITX-FR-001, NFR-001/002/003
 def test_default_flow_makes_no_network_call(tmp_path, monkeypatch):
     """INITX-NFR-001: the default flow completes fully offline (a blocked socket does not stop it)."""
