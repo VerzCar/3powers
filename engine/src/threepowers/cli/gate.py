@@ -55,7 +55,8 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         resolved = workspace.spec_path(feature)
         if resolved is None:
             print(
-                f"error: specs/{feature.name} contains no spec.md — pass --spec <path/to/spec.md>",
+                f"error: {feature.parent.name}/{feature.name} contains no spec.md — pass "
+                "--spec <path/to/spec.md>",
                 file=sys.stderr,
             )
             return EXIT_USAGE
@@ -336,7 +337,7 @@ def _register_gate(sub: SubParsers, common: AddCommon) -> None:
     spec_src.add_argument(
         "--id",
         metavar="NNN",
-        help="feature folder number — resolves the spec of specs/<NNN>-*/ (exactly one must match)",
+        help="feature folder number — resolves the spec of specs-src/<NNN>-*/ (exactly one must match)",
     )
     gr.add_argument("--base", help="git ref for diff-coverage base")
     gr.add_argument("--mutation", action="store_true", help="run the mutation gate")
@@ -405,13 +406,17 @@ def _register_classify(sub: SubParsers, common: AddCommon) -> None:
 def _register_coverage_check(sub: SubParsers, common: AddCommon) -> None:
     ccp = common(sub.add_parser("coverage-check", help="two-way requirement<->task coverage"))
     ccp.add_argument("--spec", help="path to the governing spec.md")
-    ccp.add_argument("--tasks", required=True, help="path to tasks.md")
+    ccp.add_argument(
+        "--tasks", required=True, help="path to implementation-plan.md (legacy: tasks.md)"
+    )
     ccp.set_defaults(func=cmd_coverage_check)
 
 
 def _register_scope_check(sub: SubParsers, common: AddCommon) -> None:
     scp = common(sub.add_parser("scope-check", help="task req-id + file-scope discipline"))
-    scp.add_argument("--tasks", required=True, help="path to tasks.md")
+    scp.add_argument(
+        "--tasks", required=True, help="path to implementation-plan.md (legacy: tasks.md)"
+    )
     scp.add_argument("--base", help="git ref for the changed-file base")
     scp.add_argument("--path", help="restrict the changed-file scan to this dir")
     scp.set_defaults(func=cmd_scope_check)

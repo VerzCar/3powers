@@ -13,6 +13,9 @@ base_args: ["--permission-mode", "acceptEdits"]
 model_flag: "--model"       # coder/oracle model pin is inserted here when configured
 prompt_flag: "-p"           # print/headless mode; the assembled stage prompt follows
 prompt_via: arg             # arg | stdin
+# Session freshness: each `claude -p` invocation starts a NEW session by default; reuse is
+# opt-in only (`--continue` / `--resume`), which the engine never emits — no new-session flag needed.
+# Usage: plain `-p` text output carries no token summary — usage reads as unknown.
 notes: >
   Reference backend. Verified present on PATH in this repo. For enterprise model access set the
   ANTHROPIC_* / CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX env before running `3pwr run`.

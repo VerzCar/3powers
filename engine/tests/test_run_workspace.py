@@ -26,12 +26,15 @@ from threepowers.verdict import STATUS_PASS, Verdict
 
 # --------------------------------------------------------------------------- flat workspace (SRCX-FR-001)
 def test_stage_artifact_paths_are_flat(tmp_path):
-    """SRCX-FR-001 (property): every producing step writes feature_dir/<step>.md — spec.md for
-    specify — with no spec/ or artifacts/ subfolder in any write location."""
-    f = tmp_path / "specs" / "017-x"
+    """SRCX-FR-001 (property): every producing step writes its canonical markdown flat in the
+    feature folder — spec.md for specify, implementation-plan.md for tasks, changelog.md for
+    implement — with no spec/ or artifacts/ subfolder in any write location."""
+    f = tmp_path / "specs-src" / "017-x"
     assert workspace.stage_artifact_path(f, "specify") == f / "spec.md"
-    for step in ("plan", "tasks", "oracle", "implement"):
-        assert workspace.stage_artifact_path(f, step) == f / f"{step}.md"
+    assert workspace.stage_artifact_path(f, "plan") == f / "plan.md"
+    assert workspace.stage_artifact_path(f, "tasks") == f / "implementation-plan.md"
+    assert workspace.stage_artifact_path(f, "oracle") == f / "oracle.md"
+    assert workspace.stage_artifact_path(f, "implement") == f / "changelog.md"
     for step in workspace.PRODUCING_STEPS:
         p = workspace.stage_artifact_path(f, step)
         assert p.parent == f  # flat: never a spec/ or artifacts/ subfolder
@@ -41,20 +44,20 @@ def test_spec_resolution_across_three_layouts(tmp_path):
     """SRCX-FR-002: flat (canonical), pre-013 flat (identical), and PHASE split each resolve to
     exactly one spec; when both flat and split exist the single deterministic precedence rule
     (flat wins) still yields exactly one."""
-    flat = tmp_path / "specs" / "001-flat"
+    flat = tmp_path / "specs-src" / "001-flat"
     flat.mkdir(parents=True)
     (flat / "spec.md").write_text("flat\n", encoding="utf-8")
-    split = tmp_path / "specs" / "002-split"
+    split = tmp_path / "specs-src" / "002-split"
     (split / "spec").mkdir(parents=True)
     (split / "spec" / "spec.md").write_text("split\n", encoding="utf-8")
-    both = tmp_path / "specs" / "003-both"
+    both = tmp_path / "specs-src" / "003-both"
     (both / "spec").mkdir(parents=True)
     (both / "spec.md").write_text("flat\n", encoding="utf-8")
     (both / "spec" / "spec.md").write_text("split\n", encoding="utf-8")
     assert workspace.spec_path(flat) == flat / "spec.md"
     assert workspace.spec_path(split) == split / "spec" / "spec.md"
     assert workspace.spec_path(both) == both / "spec.md"  # exactly one, flat wins
-    assert workspace.spec_path(tmp_path / "specs" / "004-none") is None
+    assert workspace.spec_path(tmp_path / "specs-src" / "004-none") is None
     # property: at most one spec per feature folder, whole-tree
     assert len(workspace.find_specs(tmp_path)) == 3
 
@@ -62,7 +65,7 @@ def test_spec_resolution_across_three_layouts(tmp_path):
 def test_find_artifact_prefers_flat_never_two(tmp_path):
     """SRCX-FR-003: locating a stage artifact returns the flat path when present, else the split
     fallback, else nothing — never two paths for one stage."""
-    f = tmp_path / "specs" / "010-f"
+    f = tmp_path / "specs-src" / "010-f"
     (f / "artifacts").mkdir(parents=True)
     assert workspace.find_artifact(f, "plan") is None
     (f / "artifacts" / "plan.md").write_text("split\n", encoding="utf-8")
@@ -91,34 +94,41 @@ def test_producing_steps_declare_exactly_five_markdowns():
 
 # --------------------------------------------------------------------------- records (SRCX-FR-005/006)
 def test_records_link_real_outputs_without_moving_them(tmp_path):
-    """SRCX-FR-005: oracle.md/implement.md link the real outputs at their existing repo paths —
-    a superset of the contract-matched / produced set — and relocate nothing."""
-    f = tmp_path / "specs" / "017-x"
+    """SRCX-FR-005: changelog.md links the real outputs at their existing repo paths and relocates
+    nothing; the oracle record is the path-free Tests Specification keyed by the folder id — the
+    authored test files stay at their real paths and their machine record lives in the signed
+    ledger entries, never inside oracle.md (CON-005)."""
+    f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
-    tests_dir = tmp_path / "tests" / "oracle" / "X"
+    (f / "spec.md").write_text(
+        "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: The system shall work.\n", encoding="utf-8"
+    )
+    tests_dir = tmp_path / "tests" / "oracle" / "017-x"
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_o.py").write_text("def test_o(): ...\n", encoding="utf-8")
     rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="X", linked=["tests/oracle/X/test_o.py"]
+        tmp_path, f, "oracle", spec_id="X", linked=["tests/oracle/017-x/test_o.py"]
     )
-    assert rel == "specs/017-x/oracle.md"
+    assert rel == "specs-src/017-x/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
-    assert "tests/oracle/X/test_o.py" in text  # links ⊇ contract-matched paths
+    assert "Tests Specification — 017-x" in text  # keyed by the feature-folder id
+    assert "tests/oracle/017-x/test_o.py" not in text  # path-free: no test path leaks in
+    assert "DEMO-FR-001" in text and "not authored" in text  # the visible structural stub
     assert (tests_dir / "test_o.py").is_file()  # the real output was not moved
     assert not (f / "test_o.py").exists()  # ...nor copied into the feature folder
     rel2 = completion.write_record(
         tmp_path, f, "implement", spec_id="X", linked=["src/a.py", "src/b.py"]
     )
-    text2 = (f / "implement.md").read_text(encoding="utf-8")
-    assert rel2 == "specs/017-x/implement.md"
+    text2 = (f / "changelog.md").read_text(encoding="utf-8")
+    assert rel2 == "specs-src/017-x/changelog.md"
     assert "src/a.py" in text2 and "src/b.py" in text2  # links ⊇ the produced change set
 
 
 def test_phased_implement_yields_one_record_enumerating_phases(tmp_path):
-    """SRCX-FR-006: an N-phase implement yields exactly ONE implement.md enumerating each phase and
+    """SRCX-FR-006: an N-phase implement yields exactly ONE changelog.md enumerating each phase and
     linking its scoped changes in deterministic artifact order; SRCX-NFR-006: identical inputs
     render byte-identical records (written after collection, one record — never one per phase)."""
-    f = tmp_path / "specs" / "017-x"
+    f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
     phases = [
         {"phase": 1, "name": "core", "ok": True, "detail": ""},
@@ -126,20 +136,71 @@ def test_phased_implement_yields_one_record_enumerating_phases(tmp_path):
     ]
     scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
     produced = ["src/alpha.py", "src/core.py"]
-    a = completion.render_implement_record("X", produced, phases=phases, phase_scopes=scopes)
-    b = completion.render_implement_record("X", produced, phases=phases, phase_scopes=scopes)
+    a = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
+    b = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
     assert a == b  # deterministic (SRCX-NFR-001/006)
     assert a.index("Phase 1: core") < a.index("Phase 2: alpha")  # artifact order
     completion.write_record(
         tmp_path, f, "implement", spec_id="X", linked=produced, phases=phases, phase_scopes=scopes
     )
     records = [p.name for p in f.glob("*.md")]
-    assert records == ["implement.md"]  # exactly one, not one per phase
-    text = (f / "implement.md").read_text(encoding="utf-8")
+    assert records == ["changelog.md"]  # exactly one, not one per phase
+    text = (f / "changelog.md").read_text(encoding="utf-8")
     assert "src/core.py" in text.split("Phase 2")[0]  # phase 1's scoped change under phase 1
     # a phaseless implement still yields one record for the single session
-    solo = completion.render_implement_record("X", ["src/one.py"])
+    solo = completion.render_changelog("X", ["src/one.py"])
     assert "single implement session" in solo.lower() and "src/one.py" in solo
+
+
+def test_changelog_groups_by_phase_traces_requirements_and_is_byte_deterministic(tmp_path):
+    """SRCX-FR-006 (changelog): the engine-generated changelog groups by phase, carries each
+    phase's requirement ids in a machine-parseable Requirement column with the phase's changed
+    files and a one-line what/why, lands under a Keep-a-Changelog section chosen by work kind,
+    folds the implement agent's report, and renders byte-identical for identical inputs."""
+    phases = [
+        {"phase": 1, "name": "core", "ok": True, "detail": ""},
+        {"phase": 2, "name": "alpha", "ok": False, "detail": "boom"},
+    ]
+    scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
+    reqs = {1: ("DEMO-FR-001", "DEMO-FR-002"), 2: ("DEMO-FR-003",)}
+    produced = ["src/alpha.py", "src/core.py"]
+    kwargs = dict(
+        phases=phases,
+        phase_scopes=scopes,
+        phase_requirements=reqs,
+        work_kinds=["defect"],
+        report="- **Stage**: Implement — done",
+    )
+    a = completion.render_changelog("X", produced, **kwargs)
+    b = completion.render_changelog("X", produced, **kwargs)
+    assert a.encode("utf-8") == b.encode("utf-8")  # byte-deterministic
+    assert "## Fixed" in a  # work-kind defect → Keep-a-Changelog "Fixed"
+    assert "| Requirement | Files changed | Summary |" in a  # machine-parseable id column
+    p1 = a.split("### Phase 2")[0]
+    assert "| DEMO-FR-001 | src/core.py |" in p1 and "| DEMO-FR-002 | src/core.py |" in p1
+    assert "| DEMO-FR-003 | src/alpha.py |" in a.split("### Phase 2")[1]
+    assert "failed — boom" in a  # a failed phase stays visible, never silently green
+    assert "## Implement agent report" in a and "- **Stage**: Implement — done" in a
+    # work-kind mapping: feature → Added; unknown/design → Changed
+    assert "## Added" in completion.render_changelog("X", produced, work_kinds=["feature"])
+    assert "## Changed" in completion.render_changelog("X", produced)
+    # an untraced phase stays visibly untraced
+    solo = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
+    assert "(untraced)" in solo
+
+
+def test_legacy_implement_md_still_resolves(tmp_path):
+    """SRCX-FR-003 (legacy record name): an existing implement.md keeps resolving through
+    find_artifact and satisfies the completion gate at its legacy path — no rewrite required."""
+    f = tmp_path / "specs-src" / "013-old"
+    f.mkdir(parents=True)
+    (f / "implement.md").write_text("# Implement record\n", encoding="utf-8")
+    assert workspace.find_artifact(f, "implement") == f / "implement.md"
+    recorded = completion.recorded_stage_artifacts(
+        [_stage_entry("implement", ["specs-src/013-old/implement.md"])], "RUN"
+    )
+    chk = completion.check_step(tmp_path, f, "implement", recorded)
+    assert chk.ok and chk.path == "specs-src/013-old/implement.md"
 
 
 # --------------------------------------------------------------------------- allocation (SRCX-FR-008/009)
@@ -147,7 +208,7 @@ def test_allocation_is_deterministic_max_plus_one(tmp_path, monkeypatch):
     """SRCX-FR-008: <NNN> is the max existing NNN- prefix plus one, zero-padded; identical listing +
     intent yield a byte-identical name (SRCX-NFR-001); an existing target fails fast, never
     overwritten."""
-    specs = tmp_path / "specs"
+    specs = tmp_path / "specs-src"
     specs.mkdir()
     (specs / "016-old-feature").mkdir()
     (specs / "notes").mkdir()  # a non-numbered folder is ignored
@@ -162,11 +223,11 @@ def test_allocation_is_deterministic_max_plus_one(tmp_path, monkeypatch):
     monkeypatch.setattr(workspace, "next_feature_number", lambda p: 18)
     with pytest.raises(FileExistsError):
         workspace.allocate_feature_dir(tmp_path, "boom")
-    # an empty specs/ starts at 001
+    # an empty specs-src/ starts at 001
     monkeypatch.undo()
     fresh = tmp_path / "other"
-    (fresh / "specs").mkdir(parents=True)
-    assert workspace.feature_folder_name(fresh / "specs", "x") == "001-x"
+    (fresh / "specs-src").mkdir(parents=True)
+    assert workspace.feature_folder_name(fresh / "specs-src", "x") == "001-x"
 
 
 def test_slugify_rules_idempotent_bounded_fallback():
@@ -189,7 +250,7 @@ def test_slugify_rules_idempotent_bounded_fallback():
 
 # --------------------------------------------------------------------------- the completion gate (unit)
 def _mk_feature(tmp_path: Path) -> Path:
-    f = tmp_path / "specs" / "017-x"
+    f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
     return f
 
@@ -208,19 +269,19 @@ def test_completion_check_passes_when_disk_and_ledger_agree(tmp_path):
     same tree and entries yields the identical verdict (SRCX-NFR-001)."""
     f = _mk_feature(tmp_path)
     (f / "plan.md").write_text("# Plan\n", encoding="utf-8")
-    entries = [_stage_entry("plan", ["specs/017-x/plan.md"])]
+    entries = [_stage_entry("plan", ["specs-src/017-x/plan.md"])]
     recorded = completion.recorded_stage_artifacts(entries, "RUN")
     chk = completion.check_step(tmp_path, f, "plan", recorded)
-    assert chk.ok and chk.path == "specs/017-x/plan.md"
+    assert chk.ok and chk.path == "specs-src/017-x/plan.md"
     assert completion.check_step(tmp_path, f, "plan", recorded) == chk  # deterministic repeat
     # a checkpoint entry satisfies condition (b) too (SRCX-FR-013)
     cp = completion.recorded_stage_artifacts(
-        [_stage_entry("plan", ["specs/017-x/plan.md"], kind="checkpoint")], "RUN"
+        [_stage_entry("plan", ["specs-src/017-x/plan.md"], kind="checkpoint")], "RUN"
     )
     assert completion.check_step(tmp_path, f, "plan", cp).ok
     # an entry omitting the declared path does NOT satisfy it
     other = completion.recorded_stage_artifacts(
-        [_stage_entry("plan", ["specs/other/plan.md"])], "RUN"
+        [_stage_entry("plan", ["specs-src/other/plan.md"])], "RUN"
     )
     assert not completion.check_step(tmp_path, f, "plan", other).ok
 
@@ -231,11 +292,11 @@ def test_completion_check_absent_and_unrecorded_are_distinct(tmp_path):
     distinct from RUNLIVE's dispatch-time artifact_missing."""
     f = _mk_feature(tmp_path)
     recorded = completion.recorded_stage_artifacts(
-        [_stage_entry("plan", ["specs/017-x/plan.md"])], "RUN"
+        [_stage_entry("plan", ["specs-src/017-x/plan.md"])], "RUN"
     )
     absent = completion.check_step(tmp_path, f, "plan", recorded)  # recorded, not on disk
     assert not absent.ok and absent.failure_class == completion.CLASS_ABSENT
-    assert "plan" in absent.message and "specs/017-x/plan.md" in absent.message
+    assert "plan" in absent.message and "specs-src/017-x/plan.md" in absent.message
     (f / "plan.md").write_text("# Plan\n", encoding="utf-8")
     orphan = completion.check_step(tmp_path, f, "plan", {})  # on disk, no ledger entry
     assert not orphan.ok and orphan.failure_class == completion.CLASS_UNRECORDED
@@ -252,7 +313,7 @@ def test_completion_gate_ignores_non_producing_and_unexecuted_steps(tmp_path):
     assert completion.check_step(tmp_path, f, "verify", {}).ok
     # a run recorded only through specify: plan was never executed, so it is not gated on resume
     (f / "spec.md").write_text("# Spec\n", encoding="utf-8")
-    entries = [_stage_entry("specify", ["specs/017-x/spec.md"])]
+    entries = [_stage_entry("specify", ["specs-src/017-x/spec.md"])]
     idx, broken = completion.resume_entry_index(entries, "RUN", 5, root=tmp_path, feature_dir=f)
     assert idx == 5 and broken is None
 
@@ -263,28 +324,64 @@ def test_recorded_stage_artifacts_is_a_single_pass(tmp_path):
     constant number of filesystem stats against that map."""
     entries = iter(
         [
-            _stage_entry("plan", ["specs/017-x/plan.md"]),
-            _stage_entry("tasks", ["specs/017-x/tasks.md"]),
-            _stage_entry("plan", ["specs/017-x/plan.md"], kind="checkpoint"),
+            _stage_entry("plan", ["specs-src/017-x/plan.md"]),
+            _stage_entry("tasks", ["specs-src/017-x/tasks.md"]),
+            _stage_entry("plan", ["specs-src/017-x/plan.md"], kind="checkpoint"),
         ]
     )
     recorded = completion.recorded_stage_artifacts(entries, "RUN")  # a generator: single pass only
-    assert recorded["plan"] == ["specs/017-x/plan.md"]  # deduped union across stage+checkpoint
-    assert recorded["tasks"] == ["specs/017-x/tasks.md"]
+    assert recorded["plan"] == ["specs-src/017-x/plan.md"]  # deduped union across stage+checkpoint
+    assert recorded["tasks"] == ["specs-src/017-x/tasks.md"]
 
 
 def test_legacy_split_feature_still_gates_at_split_path(tmp_path):
     """SRCX-NFR-003 / SRCX-FR-003: an already-written split-layout artifact is checked AT its split
     path (nothing relocated), while the flat location stays the canonical write target."""
-    f = tmp_path / "specs" / "013-legacy"
+    f = tmp_path / "specs-src" / "013-legacy"
     (f / "artifacts").mkdir(parents=True)
     (f / "artifacts" / "plan.md").write_text("# Plan\n", encoding="utf-8")
     recorded = completion.recorded_stage_artifacts(
-        [_stage_entry("plan", ["specs/013-legacy/artifacts/plan.md"])], "RUN"
+        [_stage_entry("plan", ["specs-src/013-legacy/artifacts/plan.md"])], "RUN"
     )
     chk = completion.check_step(tmp_path, f, "plan", recorded)
-    assert chk.ok and chk.path == "specs/013-legacy/artifacts/plan.md"
+    assert chk.ok and chk.path == "specs-src/013-legacy/artifacts/plan.md"
     assert (f / "artifacts" / "plan.md").is_file()  # no file was moved
+
+
+# --------------------------------------------------------------------- legacy base folder back-compat
+def test_legacy_specs_base_still_resolves(tmp_path):
+    """SRCX-FR-002 (legacy base): features under the legacy ``specs/`` base keep resolving through
+    find_specs and resolve_feature_dir, while the canonical ``specs-src/`` base is searched first
+    and wins when both bases hold the same number."""
+    canonical = tmp_path / "specs-src" / "020-new"
+    canonical.mkdir(parents=True)
+    (canonical / "spec.md").write_text("new\n", encoding="utf-8")
+    legacy = tmp_path / "specs" / "010-old"
+    legacy.mkdir(parents=True)
+    (legacy / "spec.md").write_text("old\n", encoding="utf-8")
+    # both bases contribute — one spec per feature, across the mixed tree
+    assert workspace.find_specs(tmp_path) == sorted([canonical / "spec.md", legacy / "spec.md"])
+    assert workspace.resolve_feature_dir(tmp_path, "020") == canonical
+    assert workspace.resolve_feature_dir(tmp_path, "010") == legacy
+    # the same number in both bases: the canonical base wins, deterministically
+    shadow = tmp_path / "specs" / "020-shadow"
+    shadow.mkdir(parents=True)
+    (shadow / "spec.md").write_text("shadow\n", encoding="utf-8")
+    assert workspace.resolve_feature_dir(tmp_path, "020") == canonical
+
+
+def test_legacy_base_ledger_entry_still_passes_completion(tmp_path):
+    """SRCX-FR-012 (legacy base, no ledger rewrite): a signed entry recording the old
+    ``specs/<f>/...`` path keeps satisfying the stage-completion gate for a feature that still
+    lives under the legacy base — resume/re-check never requires rewriting ledger history."""
+    f = tmp_path / "specs" / "013-x"
+    f.mkdir(parents=True)
+    (f / "plan.md").write_text("# Plan\n", encoding="utf-8")
+    recorded = completion.recorded_stage_artifacts(
+        [_stage_entry("plan", ["specs/013-x/plan.md"])], "RUN"
+    )
+    chk = completion.check_step(tmp_path, f, "plan", recorded)
+    assert chk.ok and chk.path == "specs/013-x/plan.md"
 
 
 # --------------------------------------------------------------------------- live runs (fake agent, no network)
@@ -303,7 +400,7 @@ def _feature_dir_of_prompt(prompt: str, cwd: Path, spec_id: str) -> Path:
     import re
 
     m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-    return cwd / (m.group(1) if m else f"specs/{spec_id}")
+    return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 
 def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
@@ -323,12 +420,15 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
         elif "STAGE: Tasks" in prompt and "tasks" not in skip:
             d.mkdir(parents=True, exist_ok=True)
-            (d / "tasks.md").write_text(
+            (d / "implementation-plan.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
         elif "STAGE: Oracle" in prompt and "oracle" not in skip:
-            t = cwd / "tests" / "oracle" / spec_id
+            import re
+
+            m = re.search(r"ORACLE DESTINATION: [^\n]*?tests/oracle/([^<\s/]+)/", prompt)
+            t = cwd / "tests" / "oracle" / (m.group(1) if m else spec_id)
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt and "implement" not in skip:
@@ -402,7 +502,7 @@ def _resume(root: Path) -> int:
 
 
 def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, capsys):
-    """SRCX-FR-001/004/005/007/011 + SRCX-SC-001/002: a fresh run allocates specs/<NNN>-<slug>/,
+    """SRCX-FR-001/004/005/007/011 + SRCX-SC-001/002: a fresh run allocates specs-src/<NNN>-<slug>/,
     every producing stage's markdown lies FLAT in it and is named in a signed run/stage entry;
     the gate/verdict/sign-off stages leave no document; the run/start entry binds the folder;
     `3pwr verify` stays green over the new records (SRCX-NFR-002)."""
@@ -411,21 +511,42 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
     assert _resume(run_repo) == 3  # → signoff gate
     capsys.readouterr()
 
-    fdir = run_repo / "specs" / "001-add-x"
-    for name in ("spec.md", "plan.md", "tasks.md", "oracle.md", "implement.md"):
+    fdir = run_repo / "specs-src" / "001-add-x"
+    changelog_before = (
+        (run_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+        if (run_repo / "CHANGELOG.md").is_file()
+        else None
+    )
+    for name in ("spec.md", "plan.md", "implementation-plan.md", "oracle.md", "changelog.md"):
         assert (fdir / name).is_file(), name  # SRCX-FR-004: the five producing markdowns, flat
+    for legacy in ("tasks.md", "implement.md"):
+        assert not (fdir / legacy).exists(), legacy  # legacy names are never written
     assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()  # SRCX-FR-001
     for name in ("review-spec.md", "verify.md", "signoff.md", "advance.md", "clarify.md"):
         assert not (fdir / name).exists(), name  # SRCX-FR-007: ledger-only stages
-    # the records link the real outputs at their real repo paths (SRCX-FR-005)
-    assert "tests/oracle/RUN/test_oracle.py" in (fdir / "oracle.md").read_text(encoding="utf-8")
-    assert "src/impl.py" in (fdir / "implement.md").read_text(encoding="utf-8")
-    assert (run_repo / "tests" / "oracle" / "RUN" / "test_oracle.py").is_file()  # not relocated
+    # the changelog links the real outputs at their real repo paths (SRCX-FR-005); the oracle
+    # tests land under the run's keyed destination tests/oracle/<NNN>-<slug>/ and oracle.md is
+    # the path-free Tests Specification keyed by the same folder id (CON-005)
+    oracle_md = (fdir / "oracle.md").read_text(encoding="utf-8")
+    assert "Tests Specification — 001-add-x" in oracle_md
+    assert "tests/oracle/" not in oracle_md  # path-free: the machine record lives in the ledger
+    assert "src/impl.py" in (fdir / "changelog.md").read_text(encoding="utf-8")
+    assert (run_repo / "tests" / "oracle" / "001-add-x" / "test_oracle.py").is_file()
+    # the top-level project CHANGELOG.md is untouched by a run
+    changelog_after = (
+        (run_repo / "CHANGELOG.md").read_text(encoding="utf-8")
+        if (run_repo / "CHANGELOG.md").is_file()
+        else None
+    )
+    assert changelog_after == changelog_before
 
     entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
     recorded = completion.recorded_stage_artifacts(entries, "RUN")
+    # the machine record of the actual oracle test paths lives in the signed stage entry —
+    # keyed by the run's folder id — so oracle.md can stay path-free
+    assert "tests/oracle/001-add-x/test_oracle.py" in recorded["oracle"]
     for step in workspace.PRODUCING_STEPS:  # SRCX-SC-002: every markdown named in a signed entry
-        rel = f"specs/001-add-x/{'spec' if step == 'specify' else step}.md"
+        rel = f"specs-src/001-add-x/{workspace.step_filename(step)}"
         assert rel in recorded[step], (step, recorded)
     # SRCX-FR-011: the run/start payload binds the allocated folder, recoverable offline
     assert _run_feature_dir_from_ledger(Settings(root=run_repo), entries, "RUN") == fdir
@@ -437,12 +558,12 @@ def test_wrong_folder_spec_is_blocked_as_artifact_absent(run_repo, monkeypatch, 
     agent wrote elsewhere; the dispatch contract still matched) is blocked by the completion gate —
     classified artifact_absent, naming the stage and the missing path, on the non-gate-red exit
     path — and both status commands report it until a later record passes the stage."""
-    monkeypatch.setattr(runner, "dispatch_agent", _writer(spec_folder="specs/elsewhere"))
+    monkeypatch.setattr(runner, "dispatch_agent", _writer(spec_folder="specs-src/elsewhere"))
     rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"])
     obj = json.loads(capsys.readouterr().out)
     assert rc == EXIT_SETUP == 4  # blocked, not a gate verdict
     assert obj["status"] == "artifact_absent"
-    assert "specify" in obj["detail"] and "specs/001-add-x/spec.md" in obj["detail"]
+    assert "specify" in obj["detail"] and "specs-src/001-add-x/spec.md" in obj["detail"]
     # the failure is a signed run/failure record carrying the new class (SRCX-FR-016)
     entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
     failures = [
@@ -464,7 +585,7 @@ def test_unrecorded_artifact_blocks_via_the_failure_branch(run_repo, monkeypatch
         return completion.CompletionCheck(
             ok=False,
             step=step,
-            path=f"specs/001-add-x/{'spec' if step == 'specify' else step}.md",
+            path=f"specs-src/001-add-x/{'spec' if step == 'specify' else step}.md",
             failure_class=completion.CLASS_UNRECORDED,
         )
 
@@ -491,7 +612,7 @@ def test_resume_reruns_stage_whose_artifact_vanished(run_repo, monkeypatch, caps
     # segment 2: plan+tasks complete, oracle produces nothing → the run stops at Build
     monkeypatch.setattr(runner, "dispatch_agent", _writer(skip=("oracle",)))
     assert _resume(run_repo) == EXIT_SETUP
-    plan_md = run_repo / "specs" / "001-add-x" / "plan.md"
+    plan_md = run_repo / "specs-src" / "001-add-x" / "plan.md"
     assert plan_md.is_file()
     plan_md.unlink()  # the artifact vanishes after its stage completed
 
@@ -509,7 +630,7 @@ def test_resume_reruns_stage_whose_artifact_vanished(run_repo, monkeypatch, caps
     rc = _resume(run_repo)
     err = capsys.readouterr().err
     assert rc == 3  # reached the signoff gate — the broken stage was re-run, not skipped
-    assert "resume re-enters at 'plan'" in err and "specs/001-add-x/plan.md" in err
+    assert "resume re-enters at 'plan'" in err and "specs-src/001-add-x/plan.md" in err
     assert seen and seen[0] == "plan"  # re-entered at plan, NOT at oracle (SRCX-SC-003)
     assert "oracle" in seen and "implement" in seen  # later stages re-ran in order
     assert "specify" not in seen  # an intact completed stage is never re-dispatched
@@ -535,9 +656,9 @@ def test_resume_never_allocates_and_a_paused_run_is_not_failed_early(run_repo, m
     assert (
         rc == EXIT_PAUSED
     )  # paused at review-spec — no completion failure about plan/tasks (FR-018)
-    folders_before = sorted(p.name for p in (run_repo / "specs").iterdir() if p.is_dir())
+    folders_before = sorted(p.name for p in (run_repo / "specs-src").iterdir() if p.is_dir())
     assert _resume(run_repo) == 3
-    folders_after = sorted(p.name for p in (run_repo / "specs").iterdir() if p.is_dir())
+    folders_after = sorted(p.name for p in (run_repo / "specs-src").iterdir() if p.is_dir())
     assert folders_before == folders_after == ["001-add-x"]  # resume allocated nothing (FR-010)
 
 
@@ -548,7 +669,7 @@ def test_dry_run_allocates_nothing_and_stays_green(run_repo, capsys):
         ["--root", str(run_repo), "run", "add x", "--dry-run", "--no-input", "--spec-id", "D"]
     )
     assert rc == EXIT_PAUSED
-    assert not (run_repo / "specs").exists() or not any((run_repo / "specs").iterdir())
+    assert not (run_repo / "specs-src").exists() or not any((run_repo / "specs-src").iterdir())
 
 
 def test_pre_srcx_ledger_still_verifies_and_resolves(run_repo, capsys):
@@ -562,7 +683,7 @@ def test_pre_srcx_ledger_still_verifies_and_resolves(run_repo, capsys):
     ledger.append("run", {"kind": "start", "intent": "old", "mode": "auto"}, sk, spec_id="OLD")
     ledger.append(
         "run",
-        {"kind": "stage", "step": "specify", "stage": "Spec", "artifacts": ["specs/x/spec.md"]},
+        {"kind": "stage", "step": "specify", "stage": "Spec", "artifacts": ["specs-src/x/spec.md"]},
         sk,
         spec_id="OLD",
     )

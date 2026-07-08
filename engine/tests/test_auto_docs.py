@@ -8,6 +8,7 @@ Spec Kit as current. Skips cleanly when run against a packaged engine without th
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -62,7 +63,7 @@ def test_getting_started_version_string_is_not_stale():
     `3pwr --version` without pinning a stale literal output."""
     text = _read(REPO / "docs" / "getting-started.md")
     assert "3pwr --version" in text
-    assert "# 3pwr 0.1.0" not in text  # the stale pinned form is gone
+    assert not re.search(r"3pwr \d+\.\d+\.\d+", text)  # no pinned literal version can go stale
 
 
 # --------------------------------------------------------------------------- AUTOX-FR-013

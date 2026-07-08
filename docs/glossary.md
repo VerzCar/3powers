@@ -1,7 +1,7 @@
 # Glossary
 
 The terms of art used across the 3Powers documentation, defined once. Entry documents link here on
-first use. The normative definitions live in the [spec](../specs/3Powers_Spec_v0.2.md) (Spec ID `3PWR`)
+first use. The normative definitions live in the [spec](../specs-src/3Powers_Spec_v0.2.md) (Spec ID `3PWR`)
 and the [constitution](../.3powers/memory/constitution.md); this page is the plain-English lookup.
 
 ## Adapter

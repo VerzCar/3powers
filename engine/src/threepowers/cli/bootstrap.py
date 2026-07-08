@@ -70,6 +70,17 @@ def _init_layout(s: Settings) -> str:
     return status
 
 
+# The always-on constitution call to action: the seeded constitution is mandatory but ships generic —
+# adapting it to the project is a first-run prerequisite the offline engine cannot verify itself, so
+# init surfaces it both interactively and as the final --json next step (additive; the auto-run
+# fixes keep their dependency order ahead of it).
+_CONSTITUTION_CTA = (
+    "adapt the constitution: open .3powers/memory/constitution.md and complete its "
+    '"How to adapt this constitution" checklist (technical baseline + policies) — '
+    "mandatory before the first real run"
+)
+
+
 def _readiness_checklist(
     ready: dict[str, object],
     *,
@@ -100,7 +111,10 @@ def _readiness_checklist(
         (
             "3Powers constitution",
             "pass" if ready.get("constitution") else "warn",
-            "in place" if ready.get("constitution") else "seeded by `3pwr init`",
+            'in place — ADAPT IT to this project: complete the "How to adapt this constitution" '
+            "checklist in .3powers/memory/constitution.md before the first real run"
+            if ready.get("constitution")
+            else "seeded by `3pwr init` — adapt it to this project before the first real run",
         )
     )
     if ready.get("agents_md_todo"):
@@ -759,7 +773,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         "auto_run": [
             {"prerequisite": p.name, "ok": p.ok, "label": p.label, "fix": p.fix} for p in auto_prqs
         ],
-        "next_steps": [p.fix for p in auto_unmet],
+        # The auto-run fixes first (dependency order), then the always-on constitution-adaptation
+        # step — the constitution is mandatory and must be adapted before the first real run.
+        "next_steps": [p.fix for p in auto_unmet] + [_CONSTITUTION_CTA],
     }
     if as_json:
         print(json.dumps(report, indent=2))
@@ -810,6 +826,15 @@ def cmd_init(args: argparse.Namespace) -> int:
             st.warn("  ⚠ no git repo detected")
             + " — `git init` to unlock diff-scoped brownfield gating"
         )
+
+    # The constitution is mandatory and ships generic: adapting it is a first-run prerequisite the
+    # offline engine cannot check itself — surface it prominently, always.
+    lines.append("")
+    lines.append(st.warn("⚠ ") + st.bold("Adapt the constitution before your first real run:"))
+    lines.append(
+        "  .3powers/memory/constitution.md is mandatory and ships generic — open it and complete"
+    )
+    lines.append('  its "How to adapt this constitution" checklist (technical baseline + policies)')
 
     # The remaining auto full-mode steps, as exact fixes in dependency order:
     # key → coder agent (roles + CLI) → different-family oracle. Derived from the same readiness

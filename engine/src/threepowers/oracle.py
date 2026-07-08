@@ -39,7 +39,13 @@ from pathlib import Path
 from typing import Optional
 
 from . import canonical
-from .conformance import _TEST_GLOBS, _iter_req_ids, extract_spec, referenced_ids
+from .conformance import (
+    _TEST_GLOBS,
+    _iter_req_ids,
+    extract_spec,
+    referenced_ids,
+    requirement_namespaces,
+)
 
 ORACLE_ENTRY = "oracle"
 
@@ -326,9 +332,12 @@ def independence(
                 "Phase A must precede Phase B"
             )
 
-        # coverage: each sealed acceptance criterion has ≥1 oracle test.
+        # coverage: each sealed acceptance criterion has ≥1 oracle test. The reference scan
+        # filters by the requirement NAMESPACE taken from the sealed criteria themselves (e.g.
+        # DEMO for DEMO-FR-*), never by the storage key — a seal keyed by the run's
+        # <NNN>-<slug> folder id still counts every reference to its sealed requirements.
         req_ids = set(seal["payload"].get("requirement_ids", []))
-        refs = referenced_ids(test_roots, spec_id) if test_roots else {}
+        refs = referenced_ids(test_roots, requirement_namespaces(req_ids)) if test_roots else {}
         covered = sorted(req_ids & set(refs))
         missing = sorted(req_ids - set(refs))
         if missing:
@@ -449,8 +458,15 @@ def parse_dispatched_model(stdout: str) -> Optional[str]:
 
 
 # What the oracle author must never see: the implementation, the plan, contracts, and
-# source code. Named planning/design docs + any non-test source file + contracts/.
-_EXCLUDED_BASENAMES = ("plan.md", "tasks.md", "research.md", "data-model.md")
+# source code. Named planning/design docs (including the tasks stage's renamed
+# implementation-plan.md) + any non-test source file + contracts/.
+_EXCLUDED_BASENAMES = (
+    "plan.md",
+    "tasks.md",
+    "implementation-plan.md",
+    "research.md",
+    "data-model.md",
+)
 
 
 def _is_excluded_path(rel: str) -> bool:

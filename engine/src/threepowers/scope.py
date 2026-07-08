@@ -2,7 +2,8 @@
 
 Two executive boundaries, checked deterministically:
 
-* **Traceability** — every task traces to a requirement: each task line in ``tasks.md``
+* **Traceability** — every task traces to a requirement: each task line in the implementation
+  plan artifact (``implementation-plan.md``; legacy ``tasks.md``)
   must carry a spec-namespaced requirement ID.
 * **Declared file scope** — a task declares the files it will touch (``(files: …)``); a
   change that edits files outside the union of declared scopes is flagged, because an

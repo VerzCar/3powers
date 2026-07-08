@@ -1,6 +1,6 @@
 ---
 name: characterize.agent
-description: "Brownfield Stage Zero — reconstructs the spec a legacy module's current behavior implies and pins that behavior with characterization tests that serve as its oracle. NEVER changes the module. Produces a reconstructed spec under specs/ plus characterization tests. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Brownfield Stage Zero — reconstructs the spec a legacy module's current behavior implies and pins that behavior with characterization tests that serve as its oracle. NEVER changes the module. Produces a reconstructed spec under specs-src/ plus characterization tests. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: characterize
 role: oracle
 artifact: a reconstructed spec + characterization tests pinning the module's current behavior
@@ -37,7 +37,7 @@ input channel exists.
 
 Produce two artifacts, in fixed shapes. Write the reconstructed spec to the destination the
 engine has given in this prompt's run-context blocks; if none has been given, default to
-`specs-source/<module>-characterization/spec.md`:
+`specs-src/<module>-characterization/spec.md`:
 
 - A **reconstructed spec** at that destination, following
   the same section order the Specify stage uses (Spec ID, risk tier, non-goals, requirements with

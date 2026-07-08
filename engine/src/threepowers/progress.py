@@ -1,4 +1,4 @@
-"""Human-readable run progress — ``specs/<NNN>-<slug>/progress.md``.
+"""Human-readable run progress — ``specs-src/<NNN>-<slug>/progress.md``.
 
 The signed ledger is the run's authoritative, machine-readable record; this module writes the
 *operator's* view of it: one markdown file in the run's feature folder that an operator can ``cat``
@@ -70,6 +70,7 @@ class StageRow:
     status: str = STATUS_PENDING
     completed: str = ""  # the completion timestamp, empty until the stage is done
     label: str = ""  # an override for the status word (e.g. "phase 2/3" on a phased Build)
+    tokens: Optional[int] = None  # agent-reported usage; None renders the unknown placeholder
 
 
 @dataclass
@@ -80,6 +81,7 @@ class PhaseRow:
     description: str
     status: str  # done | running | pending | failed
     tasks_done: str  # "3/5", or "—" for an untouched pending phase
+    tokens: Optional[int] = None  # agent-reported usage; None renders the unknown placeholder
 
 
 @dataclass
@@ -112,28 +114,40 @@ def failed_gate_names(verdict: dict[str, Any]) -> list[str]:
     return [str(g.get("gate", "?")) for g in gates if g.get("status") == "fail"]
 
 
+def _tokens_cell(tokens: Optional[int]) -> str:
+    """The Tokens column cell: the agent-reported count, or the unknown placeholder ``—``."""
+    return str(tokens) if tokens is not None else "—"
+
+
 def render(snap: Snapshot) -> str:
     """Render the progress markdown for ``snap`` — pure and deterministic given the snapshot.
 
     Layout per the progress-file content schema: the title line, the stage-progress
     table, the phase-detail table only when the snapshot carries phases,
     then the Current state / Last verdict / fenced Helper commands / Gate
-    failures sections with the run's real identity interpolated."""
+    failures sections with the run's real identity interpolated. Both tables carry a Tokens
+    column — the agent-reported usage per stage/phase, ``—`` when the backend reports none."""
     lines = [f"# Run {snap.nnn} · {snap.slug} · {snap.timestamp}", ""]
     lines += ["## Stage progress", ""]
-    lines += ["| Stage | Status | Completed |", "|-------|--------|-----------|"]
+    lines += [
+        "| Stage | Status | Completed | Tokens |",
+        "|-------|--------|-----------|--------|",
+    ]
     for row in snap.stages:
         cell = f"{GLYPHS.get(row.status, '·')} {row.label or row.status}"
-        lines.append(f"| {row.stage} | {cell} | {row.completed} |")
+        lines.append(f"| {row.stage} | {cell} | {row.completed} | {_tokens_cell(row.tokens)} |")
     if snap.phases:
         lines += ["", f"### {snap.phase_stage} — phase detail", ""]
         lines += [
-            "| Phase | Description | Status | Tasks done |",
-            "|-------|-------------|--------|------------|",
+            "| Phase | Description | Status | Tasks done | Tokens |",
+            "|-------|-------------|--------|------------|--------|",
         ]
         for ph in snap.phases:
             status_cell = f"{GLYPHS.get(ph.status, '·')} {ph.status}"
-            lines.append(f"| {ph.index} | {ph.description} | {status_cell} | {ph.tasks_done} |")
+            lines.append(
+                f"| {ph.index} | {ph.description} | {status_cell} | {ph.tasks_done} | "
+                f"{_tokens_cell(ph.tokens)} |"
+            )
     lines += ["", "## Current state", "", snap.current_state or "○ not started yet"]
     if snap.since:
         lines.append(f"**Since:** {snap.since}")
@@ -224,6 +238,10 @@ class Reporter:
         self._since = ""
         self._last_verdict = ""
         self._failed_gates: list[str] = []
+        # Advisory agent-reported usage: per-stage totals (accumulated over the stage's steps)
+        # and per-phase counts for the phase-detail table. Unknown stays absent — rendered —.
+        self._stage_tokens: dict[str, int] = {}
+        self._phase_tokens: dict[int, int] = {}
 
     # ------------------------------------------------------------------ the lifecycle triggers
     def stage_started(self, step: str, stage: str) -> Path:
@@ -239,12 +257,23 @@ class Reporter:
         self._current_state = f"**Stage:** {stage} — running '{step}'"
         return self.write()
 
-    def stage_completed(self, step: str, stage: str) -> Path:
+    def stage_completed(self, step: str, stage: str, tokens: Optional[int] = None) -> Path:
         """Stage complete: record the step; when it was the stage's last non-gate
-        step the row turns ``✓ done`` with a completion timestamp."""
+        step the row turns ``✓ done`` with a completion timestamp. ``tokens`` — the step's
+        agent-reported usage — accumulates into the stage's Tokens cell (additive; ``None``
+        leaves the cell unknown)."""
+        if tokens is not None and stage in self._status:
+            self._stage_tokens[stage] = self._stage_tokens.get(stage, 0) + int(tokens)
         self._mark_step_done(step, stage)
         self._current_state = f"**Stage:** {stage} — '{step}' complete"
         return self.write()
+
+    def phase_tokens(self, tokens_by_index: dict[int, int]) -> None:
+        """Record the agent-reported usage of a phased build's phases, keyed by phase index.
+
+        Feeds the phase-detail table's Tokens column; phases absent from the mapping stay
+        unknown. No write is triggered — the next lifecycle trigger renders the counts."""
+        self._phase_tokens.update({int(k): int(v) for k, v in tokens_by_index.items()})
 
     def verdict(self, result: str, failed_gates: list[str]) -> Path:
         """Gate verdict PASS/FAIL: update the last-verdict block; a red verdict
@@ -308,6 +337,7 @@ class Reporter:
                     status=status,
                     completed=self._completed_at.get(stage, ""),
                     label=label,
+                    tokens=self._stage_tokens.get(stage),
                 )
             )
         return Snapshot(
@@ -378,6 +408,12 @@ class Reporter:
                 status = STATUS_PENDING
             tasks_done = "—" if (status == STATUS_PENDING and done == 0) else f"{done}/{total}"
             rows.append(
-                PhaseRow(index=ph.index, description=ph.name, status=status, tasks_done=tasks_done)
+                PhaseRow(
+                    index=ph.index,
+                    description=ph.name,
+                    status=status,
+                    tasks_done=tasks_done,
+                    tokens=self._phase_tokens.get(ph.index),
+                )
             )
         return rows, running_label

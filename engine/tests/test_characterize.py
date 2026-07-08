@@ -49,7 +49,7 @@ def test_public_symbols_skips_private():
 def test_characterize_writes_spec_and_runnable_tests(tmp_path):
     repo, module = _legacy_repo(tmp_path)
     res = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "lib"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "lib"
     )
     assert res.spec_id == "CALC"
     assert res.requirement_ids == ["CALC-FR-001", "CALC-FR-002"]
@@ -67,7 +67,7 @@ def test_characterize_writes_spec_and_runnable_tests(tmp_path):
 def test_generated_tests_pass_when_executed(tmp_path):
     repo, module = _legacy_repo(tmp_path)
     res = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "lib"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "lib"
     )
     # The pinned public surface must actually hold for the current module.
     proc = subprocess.run(
@@ -82,7 +82,7 @@ def test_characterized_module_passes_conformance(tmp_path):
     """The reconstructed spec + characterization tests trace cleanly (3PWR-FR-030)."""
     repo, module = _legacy_repo(tmp_path)
     res = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "lib"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "lib"
     )
     gate = run_conformance(res.spec_path, [res.test_path])
     assert gate.status == "pass", gate.findings
@@ -91,13 +91,13 @@ def test_characterized_module_passes_conformance(tmp_path):
 def test_characterize_is_idempotent(tmp_path):
     repo, module = _legacy_repo(tmp_path)
     first = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "lib"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "lib"
     )
     second = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "lib"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "lib"
     )
     assert first.spec_path == second.spec_path  # reuses the same feature dir
-    assert len(list((repo / "specs").glob("*-calc-characterization"))) == 1
+    assert len(list((repo / "specs-src").glob("*-calc-characterization"))) == 1
 
 
 def test_non_python_module_gets_spec_and_scaffold(tmp_path):
@@ -106,7 +106,7 @@ def test_non_python_module_gets_spec_and_scaffold(tmp_path):
     module = repo / "web" / "app.js"
     module.write_text("export function go() { return 1 }\n", encoding="utf-8")
     res = characterize.characterize_module(
-        repo, module, specs_dir=repo / "specs", tests_dir=repo / "web"
+        repo, module, specs_dir=repo / "specs-src", tests_dir=repo / "web"
     )
     assert res.spec_path.exists()
     assert res.test_path.suffix == ".md"  # scaffold note for non-Python

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 660" width="100%" role="img">
+  <title>3Powers, a harness with a judiciary</title>
+  <desc>A bare agent harness is a single executive branch that grades its own work, so validation is circular. 3Powers keeps that executive and surrounds it with an independent legislative branch (the spec is the law), an independent judicial branch (an independent oracle, deterministic gates, human review), all resting on a signed, hash-chained ledger you can verify offline.</desc>
+
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1 L9 5 L1 9 Z" fill="#211c16"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="660" fill="#efebe2"/>
+  <rect x="90" y="120" width="430" height="470" rx="24" fill="#e7e2d7" stroke="#d9d3c5" stroke-width="1"/>
+  <rect x="660" y="120" width="480" height="470" rx="24" fill="#e7e2d7" stroke="#d9d3c5" stroke-width="1"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">
+
+    <!-- headers -->
+    <text x="305" y="90" fill="#211c16" font-size="27" font-weight="600" text-anchor="middle">A bare agent harness</text>
+    <text x="900" y="90" fill="#211c16" font-size="31" font-weight="700" text-anchor="middle">3Powers</text>
+
+    <!-- left: the harness alone -->
+    <path d="M450 292 C450 200 170 200 170 292" fill="none" stroke="#211c16" stroke-width="3" marker-end="url(#ah)"/>
+    <text x="310" y="256" fill="#6b6153" font-size="16" font-style="italic" text-anchor="middle">reviews its own work</text>
+    <rect x="150" y="290" width="320" height="130" rx="16" fill="#4d5159" stroke="#33363c" stroke-width="1.5"/>
+    <text x="310" y="343" fill="#f0ede6" font-size="30" font-weight="600" text-anchor="middle">Executive</text>
+    <text x="310" y="375" fill="#cfccc4" font-size="17" text-anchor="middle">one model writes the spec,</text>
+    <text x="310" y="397" fill="#cfccc4" font-size="17" text-anchor="middle">the code, the tests, the review</text>
+    <text x="310" y="460" fill="#6b6153" font-size="18" font-style="italic" text-anchor="middle">it grades its own exam</text>
+
+    <!-- connector -->
+    <text x="590" y="308" fill="#211c16" font-size="19" font-weight="600" text-anchor="middle">3Powers wraps it</text>
+    <text x="590" y="334" fill="#6b6153" font-size="15" text-anchor="middle">in the separation of powers</text>
+    <line x1="500" y1="368" x2="688" y2="368" stroke="#211c16" stroke-width="3" marker-end="url(#ah)"/>
+
+    <!-- right: three branches on a signed ledger -->
+    <rect x="710" y="150" width="360" height="92" rx="14" fill="#b98e4c" stroke="#8f6a33" stroke-width="1.5"/>
+    <text x="735" y="193" fill="#211c16" font-size="24" font-weight="600" text-anchor="start">Legislative</text>
+    <text x="735" y="221" fill="#47391c" font-size="17" text-anchor="start">the spec is the law</text>
+
+    <rect x="710" y="262" width="360" height="92" rx="14" fill="#4d5159" stroke="#33363c" stroke-width="1.5"/>
+    <text x="735" y="305" fill="#f0ede6" font-size="24" font-weight="600" text-anchor="start">Executive</text>
+    <text x="735" y="333" fill="#cfccc4" font-size="17" text-anchor="start">agents build against it</text>
+
+    <rect x="710" y="374" width="360" height="92" rx="14" fill="#7b1818" stroke="#4f0f0f" stroke-width="1.5"/>
+    <text x="735" y="411" fill="#f0ede6" font-size="24" font-weight="600" text-anchor="start">Judicial</text>
+    <text x="735" y="437" fill="#cfccc4" font-size="16" text-anchor="start">independent oracle, gates, human</text>
+
+    <rect x="690" y="488" width="400" height="74" rx="14" fill="#2b2d31" stroke="#141518" stroke-width="1.5"/>
+    <text x="890" y="524" fill="#f0ede6" font-size="21" font-weight="600" text-anchor="middle">Signed, hash-chained ledger</text>
+    <text x="890" y="548" fill="#cfccc4" font-size="15" text-anchor="middle">every verdict verifiable offline</text>
+
+    <!-- legend -->
+    <rect x="240" y="620" width="14" height="14" rx="2" fill="#b98e4c" stroke="#8f6a33" stroke-width="1"/>
+    <text x="262" y="632" fill="#5f574a" font-size="15" text-anchor="start">Legislative</text>
+    <rect x="460" y="620" width="14" height="14" rx="2" fill="#4d5159" stroke="#33363c" stroke-width="1"/>
+    <text x="482" y="632" fill="#5f574a" font-size="15" text-anchor="start">Executive</text>
+    <rect x="670" y="620" width="14" height="14" rx="2" fill="#7b1818" stroke="#4f0f0f" stroke-width="1"/>
+    <text x="692" y="632" fill="#5f574a" font-size="15" text-anchor="start">Judicial</text>
+    <rect x="858" y="620" width="14" height="14" rx="2" fill="#2b2d31" stroke="#141518" stroke-width="1"/>
+    <text x="880" y="632" fill="#5f574a" font-size="15" text-anchor="start">Trust spine</text>
+
+  </g>
+</svg>

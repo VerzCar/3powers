@@ -260,10 +260,10 @@ def test_troubleshooting_covers_the_required_failures_with_fixes():
 def test_changelog_and_readme_agree_on_the_tagged_milestone():
     """OSSRD-FR-011: the CHANGELOG references the release tag; README names the same milestone."""
     ch = _read(CHANGELOG)
-    assert "## [0.5.0]" in ch
-    assert "releases/tag/v0.5.0" in ch
+    assert "## [1.0.0-rc.1]" in ch
+    assert "releases/tag/v1.0.0-rc.1" in ch
     status_section = _read(README).split("## Status", 1)[1]
-    assert "v0.5" in status_section
+    assert "v1.0" in status_section
 
 
 # --------------------------------------------------------------------------- NFR-001

@@ -51,7 +51,7 @@ and a requirement is a note, not a finding. Severity is graded by consequence:
 ## Output destination
 
 If the engine has given a destination in this prompt's run-context blocks, write the findings
-report there; if none has been given, default to `specs-source/<feature>/review.md`. Recording
+report there; if none has been given, default to `specs-src/<feature>/review.md`. Recording
 the summary via `3pwr residual` (below) is required either way.
 
 ## Output — the findings report

@@ -9,7 +9,8 @@ only then modify it.
 The module is parsed statically (``ast``) — never executed at generation time — so
 characterizing untrusted legacy code is safe. We emit:
 
-* a minimal **spec stub** under ``specs/`` with one requirement per public symbol, and
+* a minimal **spec stub** under the run-artifact base folder (``specs-src/``) with one requirement
+  per public symbol, and
 * a runnable **characterization test** that references those requirement IDs (so the
   spec-conformance gate traces them) and pins the public surface, with a
   clear place to add behavioral golden-master assertions.

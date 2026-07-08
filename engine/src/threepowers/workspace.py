@@ -2,23 +2,26 @@
 stage.
 
 Every lifecycle stage's artifact for a run lies flat in that run's feature folder
-``specs/<NNN>-<slug>/``::
+``specs-src/<NNN>-<slug>/``::
 
-    specs/<NNN>-<slug>/
-      spec.md          # the specification (the Specify stage's artifact)
-      plan.md          # every other producing stage's markdown, flat
-      tasks.md
-      oracle.md        # a *record* linking the authored oracle tests
-      implement.md     # a *record* linking the implementation changes
+    specs-src/<NNN>-<slug>/
+      spec.md                  # the specification (the Specify stage's artifact)
+      plan.md                  # the Plan stage's markdown, flat
+      implementation-plan.md   # the Tasks stage's artifact (legacy name: tasks.md)
+      oracle.md                # a *record* linking the authored oracle tests
+      changelog.md             # a *record* of the implementation changes (legacy: implement.md)
 
-Both legacy layouts stay resolvable and runnable for existing features:
-the older flat layout (identical to the new canonical one) and the legacy split layout
-(``spec/spec.md`` + ``artifacts/<step>.md``). Resolution prefers the flat location and falls back to
-the split one — never yielding two paths for one stage.
+Legacy layouts stay resolvable and runnable for existing features: the legacy base folder
+``specs/`` (read-resolved after ``specs-src/``, never written), the legacy stage filenames
+(``tasks.md`` for the tasks step, ``implement.md`` for the implement step — read-resolved after
+the canonical names, never written), the older flat layout inside a feature folder (identical to
+the new canonical one), and the legacy split layout (``spec/spec.md`` + ``artifacts/<step>.md``).
+Resolution prefers the canonical location and falls back to the legacy one — never yielding two
+paths for one stage or one feature.
 
 The engine auto-allocates the ``<NNN>-<slug>`` run folder: ``<NNN>`` is the maximum
-existing ``NNN-`` prefix under ``specs/`` plus one, zero-padded to three digits, and ``<slug>`` is
-derived deterministically from the intent. All functions here are deterministic, offline path
+existing ``NNN-`` prefix under ``specs-src/`` plus one, zero-padded to three digits, and ``<slug>``
+is derived deterministically from the intent. All functions here are deterministic, offline path
 logic — no network, no model, no ledger.
 """
 
@@ -27,6 +30,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+# The run-artifact base folder every new run writes under, and the legacy base folder name —
+# still read-resolvable (after the canonical one), never written.
+SPECS_DIR = "specs-src"
+LEGACY_SPECS_DIR = "specs"
+
 # The legacy split-layout workspace subfolders — still resolvable, never written.
 SPEC_DIR = "spec"
 ARTIFACTS_DIR = "artifacts"
@@ -34,6 +42,22 @@ ARTIFACTS_DIR = "artifacts"
 # The producing lifecycle steps — exactly the steps that declare a flat markdown artifact in the
 # feature folder. Pure gate / verdict / sign-off / advance steps stay ledger-only.
 PRODUCING_STEPS: tuple[str, ...] = ("specify", "plan", "tasks", "oracle", "implement")
+
+# The canonical artifact filename per producing step where it differs from ``<step>.md``: the
+# tasks step writes the detail-level implementation plan, and the implement step leaves an
+# engine-generated changelog record. Legacy filenames stay read-resolvable, never written.
+_STEP_FILENAMES: dict[str, str] = {
+    "specify": "spec.md",
+    "tasks": "implementation-plan.md",
+    "implement": "changelog.md",
+}
+_LEGACY_STEP_FILENAMES: dict[str, str] = {"tasks": "tasks.md", "implement": "implement.md"}
+
+
+def step_filename(step: str) -> str:
+    """The canonical flat artifact filename a producing step WRITES (``<step>.md`` by default)."""
+    return _STEP_FILENAMES.get(step, f"{step}.md")
+
 
 # Slug bounds: a fixed maximum length, and a fixed fallback token when the intent
 # slugifies to empty (e.g. all punctuation).
@@ -70,23 +94,28 @@ def artifacts_dir(feature_dir: Path) -> Path:
 def stage_artifact_path(feature_dir: Path, step: str) -> Path:
     """Where a producing step's artifact is WRITTEN — flat in the feature folder.
 
-    ``spec.md`` for ``specify``; ``<step>.md`` for every other step. No ``spec/`` or ``artifacts/``
-    subfolder is ever part of a write location."""
-    if step == "specify":
-        return feature_dir / "spec.md"
-    return feature_dir / f"{step}.md"
+    ``spec.md`` for ``specify``, ``implementation-plan.md`` for ``tasks``, ``changelog.md`` for
+    ``implement``, and ``<step>.md`` for every other step. No ``spec/`` or ``artifacts/``
+    subfolder is ever part of a write location; the legacy filenames are never written."""
+    return feature_dir / step_filename(step)
 
 
 def find_artifact(feature_dir: Path, step: str) -> Path | None:
-    """An existing stage artifact — the flat path when it exists, else the split fallback.
+    """An existing stage artifact — the canonical flat path first, then the legacy fallbacks.
 
-    Never returns two paths for one stage: flat (canonical, also the older legacy location) wins;
-    the legacy split location (``artifacts/<step>.md``) stays readable for existing features."""
+    Never returns two paths for one stage: the canonical flat filename wins; the legacy flat
+    filename (``tasks.md`` / ``implement.md``) and the legacy split location
+    (``artifacts/<step>.md``) stay readable for existing features, in that order."""
     if step == "specify":
         return spec_path(feature_dir)
-    flat = feature_dir / f"{step}.md"
+    flat = feature_dir / step_filename(step)
     if flat.is_file():
         return flat
+    legacy_name = _LEGACY_STEP_FILENAMES.get(step)
+    if legacy_name is not None:
+        legacy = feature_dir / legacy_name
+        if legacy.is_file():
+            return legacy
     split = artifacts_dir(feature_dir) / f"{step}.md"
     if split.is_file():
         return split
@@ -94,47 +123,53 @@ def find_artifact(feature_dir: Path, step: str) -> Path | None:
 
 
 def find_specs(root: Path) -> list[Path]:
-    """Every feature's resolved specification under ``<root>/specs`` — one per feature folder.
+    """Every feature's resolved specification under ``<root>/specs-src`` — one per feature folder.
 
+    Read-tolerant of the legacy base: features under the legacy ``<root>/specs`` are included
+    after the canonical ones, so existing repositories keep resolving without a rewrite.
     Deduplicates by feature folder so a feature never yields two specs (the flat layout wins),
     keeping the exactly-one property across a mixed-layout tree."""
-    specs_root = root / "specs"
-    if not specs_root.is_dir():
-        return []
     seen: dict[Path, Path] = {}
-    for candidate in sorted(specs_root.glob("**/spec.md")):
-        feature = feature_dir_of(candidate)
-        resolved = spec_path(feature)
-        if resolved is not None:
-            seen[feature] = resolved
+    for base in (SPECS_DIR, LEGACY_SPECS_DIR):
+        specs_root = root / base
+        if not specs_root.is_dir():
+            continue
+        for candidate in sorted(specs_root.glob("**/spec.md")):
+            feature = feature_dir_of(candidate)
+            resolved = spec_path(feature)
+            if resolved is not None:
+                seen[feature] = resolved
     return sorted(set(seen.values()))
 
 
 def resolve_feature_dir(root: Path, nnn: str) -> Path:
-    """Resolve a feature workspace folder from its number: ``specs/<nnn>-*/``.
+    """Resolve a feature workspace folder from its number: ``specs-src/<nnn>-*/``.
 
     ``nnn`` is the folder-name prefix before the first ``-`` (usually the zero-padded run number the
-    engine allocated, e.g. ``030``). Exactly one directory must match; the two failure modes carry
-    user-facing messages naming the fix:
+    engine allocated, e.g. ``030``). Read-tolerant of the legacy base: the canonical ``specs-src/``
+    is searched first, then the legacy ``specs/`` — the canonical base wins when both hold a match,
+    mirroring the flat-wins layout resolution. Exactly one directory must match within the resolved
+    base; the two failure modes carry user-facing messages naming the fix:
 
     Raises:
-        FileNotFoundError: no ``specs/<nnn>-*/`` directory exists under ``root``.
+        FileNotFoundError: no ``specs-src/<nnn>-*/`` (or legacy ``specs/<nnn>-*/``) directory
+            exists under ``root``.
         LookupError: more than one directory matches — the prefix is ambiguous.
     """
-    specs_root = root / "specs"
-    matches = sorted(p for p in specs_root.glob(f"{nnn}-*") if p.is_dir())
-    if not matches:
-        raise FileNotFoundError(
-            f"no feature folder matches specs/{nnn}-*/ — check the number, or pass "
-            "--spec <path/to/spec.md>"
-        )
-    if len(matches) > 1:
-        names = ", ".join(f"specs/{p.name}" for p in matches)
-        raise LookupError(
-            f"'{nnn}' is ambiguous — {len(matches)} feature folders match ({names}); pass "
-            "--spec <path/to/spec.md>"
-        )
-    return matches[0]
+    for base in (SPECS_DIR, LEGACY_SPECS_DIR):
+        matches = sorted(p for p in (root / base).glob(f"{nnn}-*") if p.is_dir())
+        if len(matches) > 1:
+            names = ", ".join(f"{base}/{p.name}" for p in matches)
+            raise LookupError(
+                f"'{nnn}' is ambiguous — {len(matches)} feature folders match ({names}); pass "
+                "--spec <path/to/spec.md>"
+            )
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(
+        f"no feature folder matches {SPECS_DIR}/{nnn}-*/ (or legacy {LEGACY_SPECS_DIR}/) — "
+        "check the number, or pass --spec <path/to/spec.md>"
+    )
 
 
 # --------------------------------------------------------------------------- run-folder allocation
@@ -151,7 +186,7 @@ def slugify(text: str, max_len: int = SLUG_MAX_LEN) -> str:
 
 
 def next_feature_number(specs_root: Path) -> int:
-    """The next ``<NNN>`` under ``specs/``: the maximum existing ``NNN-`` prefix plus one."""
+    """The next ``<NNN>`` under the base folder: the maximum existing ``NNN-`` prefix plus one."""
     nums = [0]
     if specs_root.is_dir():
         for d in specs_root.iterdir():
@@ -163,17 +198,18 @@ def next_feature_number(specs_root: Path) -> int:
 
 def feature_folder_name(specs_root: Path, intent: str) -> str:
     """The ``<NNN>-<slug>`` folder name a new run allocates — a pure function of the
-    ``specs/`` directory listing and the intent string, byte-identical on any machine."""
+    ``specs-src/`` directory listing and the intent string, byte-identical on any machine."""
     return f"{next_feature_number(specs_root):03d}-{slugify(intent)}"
 
 
 def allocate_feature_dir(root: Path, intent: str) -> Path:
-    """Allocate the new run's feature folder ``specs/<NNN>-<slug>/``.
+    """Allocate the new run's feature folder ``specs-src/<NNN>-<slug>/``.
 
-    Creates the folder, failing fast with :class:`FileExistsError` when the target already exists
-    (e.g. two concurrent runs picked the same number) — a folder allocated for a different run is
-    never overwritten. Cross-process locking is an explicit non-goal."""
-    specs_root = root / "specs"
+    New runs always write under the canonical base (``specs-src/``); the legacy ``specs/`` base is
+    read-only. Creates the folder, failing fast with :class:`FileExistsError` when the target
+    already exists (e.g. two concurrent runs picked the same number) — a folder allocated for a
+    different run is never overwritten. Cross-process locking is an explicit non-goal."""
+    specs_root = root / SPECS_DIR
     target = specs_root / feature_folder_name(specs_root, intent)
     specs_root.mkdir(parents=True, exist_ok=True)
     target.mkdir(exist_ok=False)

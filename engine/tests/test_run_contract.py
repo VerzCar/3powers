@@ -36,7 +36,7 @@ def _feature_dir(prompt: str, cwd: Path, spec_id: str) -> Path:
     import re
 
     m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-    return cwd / (m.group(1) if m else f"specs/{spec_id}")
+    return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 
 def _stage_writer(spec_id="RUN", skip=()):

@@ -1,7 +1,7 @@
 # Concepts — how 3Powers thinks
 
 > Plain-English tour of the ideas. The **normative** version lives in the
-> [constitution](../.3powers/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
+> [constitution](../.3powers/memory/constitution.md) and the [spec](../specs-src/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`); this page explains *why* they say what they say. New to the project? Read this,
 > then [Getting Started](getting-started.md). Terms of art are defined in the [glossary](glossary.md).
 
@@ -27,7 +27,7 @@ accountable**, and it makes that separation mechanical rather than a matter of g
 The rule (constitution, Principle I): **no single model or actor occupies two branches for the same
 change.** The model that wrote the code does not get to write the answer key.
 
-- **Legislative — the spec is law.** Requirements live versioned in [`specs/`](../specs/), in
+- **Legislative — the spec is law.** Requirements live versioned in [`specs-src/`](../specs-src/), in
   [EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `DEMO-FR-001`. Every spec
   declares a **risk tier** and an explicit **non-goals** section *before* planning starts. Implementation
   detail (a database, a framework) does **not** belong in a spec and is flagged out.
@@ -40,7 +40,13 @@ change.** The model that wrote the code does not get to write the answer key.
 ## Oracle independence (the heart of it)
 
 The oracle is the **answer key**: acceptance tests authored *from the spec's acceptance criteria alone*.
-Two rules make it independent (constitution, Principle III):
+The judiciary produces two artifacts. First the **Tests Specification** — the run's `oracle.md`, an
+implementation-agnostic document with one section per requirement id stating the measurable
+Given/When/Then criterion (never a file path, framework, or source path; the engine validates that).
+Then the **runnable oracle tests** implementing it, named by the requirement id they verify and written
+to `tests/oracle/<NNN>-<slug>/` — keyed by the run's feature-folder id, the same single id under which
+the sealed bundle, the authoring record, and the run's ledger entries resolve, so which oracle belongs
+to which spec is self-evident. Two rules make it independent (constitution, Principle III):
 
 1. **Different mind.** The oracle is pinned to a **different model family** than the coder. The engine
    refuses to proceed when they match (`3pwr roles-check`).
@@ -157,6 +163,32 @@ The state isn't stored in some external tracker — it's **derived from the ledg
 reconstructs offline and survives a fresh checkout. In practice `3pwr run` drives the whole lifecycle via
 the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
 command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
+
+### Observability registry
+
+The **Observe** stage closes the loop: production lessons return to the spec as new intent, never as
+ad-hoc patches. Its anchor is the observability registry, `.3powers/config/observability.yaml` — a
+declaration of which of a spec's **non-functional requirements have a live check in production** (a
+probe, an SLO monitor, an alert, a scheduled job). The engine is fully offline and cannot see your
+production system, so the registry is how that knowledge enters the trust spine: each entry pairs an
+`nfr` requirement ID with a human `check` note, and `3pwr observe coverage --spec <spec.md>` flags
+every NFR with no registered check — the instrumentation gap stays visible instead of silently
+unmonitored. See the [CLI Reference](cli-reference.md#observability-registry-observabilityyaml) for
+the schema.
+
+### Fresh sessions, visible cost
+
+Each dispatched stage — and each phase of a phased build — runs as a **fresh agent session**: an
+independent process whose prompt reloads everything it needs (the approved spec, the rules, the
+phase's tasks and file scope). No conversation state carries over, and the engine never asks a
+backend to resume a prior session; a backend that could restore state gets its no-resume flag from
+its manifest. Parallelism is two-level: the *engine* dispatches `[P]`-marked phases with disjoint
+file scopes concurrently as separate fresh sessions, while `[P]`-marked *tasks inside* a phase must
+be executed via the agent's own sub-agents. Cost stays visible without touching determinism: the
+agent-reported token usage per stage and phase is recorded additively — in `progress.md`, the signed
+ledger's run entries, and the `--json` results — and shows as unknown when a backend doesn't report
+it. Tokens never enter the gates or the verdict. See
+[Engine Architecture](engine-architecture.md#session-freshness-and-cost-visibility).
 
 ## Agnostic by construction
 

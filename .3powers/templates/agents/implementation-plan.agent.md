@@ -1,9 +1,9 @@
 ---
 name: implementation-plan.agent
-description: "Breaks the approved high-level plan into the detailed implementation plan — an ordered, phase-organized, requirement-traced task checklist a machine executor can run with zero interpretation, with every parallelizable phase marked. Runs at the Tasks stage and writes tasks.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
+description: "Breaks the approved high-level plan into the detailed implementation plan — an ordered, phase-organized, requirement-traced task checklist a machine executor can run with zero interpretation, with every parallelizable phase marked. Runs at the Tasks stage and writes implementation-plan.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: tasks
 role: planner
-artifact: tasks.md in the engine-given feature folder (default specs-source/<feature>/tasks.md)
+artifact: implementation-plan.md in the engine-given feature folder (default specs-src/<feature>/implementation-plan.md)
 ---
 
 # Implementation-plan agent — an executable, phase-organized checklist
@@ -39,7 +39,10 @@ One `## Phase N: <name>` section per phase, numbered sequentially in execution o
    independently completable and verifiable, so P1 alone yields a testable MVP and every later
    story adds value without breaking the earlier ones. End each with a `**Checkpoint**:` line
    stating what is now demonstrably working.
-3. **Polish / cross-cutting last** — cleanup, docs, hardening that spans stories.
+3. **Polish / cross-cutting next** — cleanup, docs, hardening that spans stories.
+4. **A dedicated Verification phase LAST, always** — the final phase depends on ALL prior phases
+   and its goal is a fully green build: run the full coding-gate suite and the project's own
+   verify commands over the whole change, and fix everything red before the stage is done.
 
 Each phase carries:
 
@@ -50,6 +53,19 @@ Each phase carries:
   estimate exceeds the budget;
 - a HANDOFF block naming what a fresh session must reload: the approved spec, the
   constitution/rules, this phase's tasks, and the declared file scope.
+
+## Per-phase coding gates (mandatory in every phase)
+
+Every phase's tasks include running the coding-section gates — format, lint, types, tests +
+diff-coverage — over the phase's file scope and fixing every failure BEFORE the phase is "done":
+name `3pwr gate run --path <scope>` (or the project's own verify commands, e.g. the build/test
+scripts the constitution declares) as an explicit task in each phase. A phase with a red coding
+gate is not complete. These per-phase runs are the executor's own advisory checks; the Verify
+stage remains the sole ledger verdict.
+
+The LAST phase is always a dedicated **Verification** phase depending on all prior phases, whose
+goal is a fully green build across the whole change — the full gate suite plus the project's own
+verify commands, everything fixed, nothing weakened.
 
 ## Parallelize everything that can be
 
@@ -83,7 +99,7 @@ keeping the checklist the single source of task state.
 Write the checklist FLAT into the destination the engine has given — the FEATURE FOLDER (or
 explicit destination path) named in this prompt's run-context blocks; create no spec/ or
 artifacts/ subfolder inside it. If the engine has given no destination, default to
-`specs-source/<feature>/tasks.md`.
+`specs-src/<feature>/implementation-plan.md`.
 
 ## Output — the file's required structure
 
@@ -117,9 +133,20 @@ Fixed shape, so every run yields the same document structure regardless of the m
 
 **Checkpoint**: <User Story 1 independently verifiable>
 
+## Phase N: Verification
+**File scope**: <the whole change — may overlap every earlier phase>
+**Depends on**: all prior phases
+**Estimated context**: ~<N>k tokens (budget ~110k)
+**Handoff**: the approved spec, the constitution/rules, this phase's tasks below, and the file scope above.
+
+- [ ] T### [DEMO-FR-001] run the full coding-gate suite (`3pwr gate run --path <scope>` and the project's verify commands) and fix everything red (files: …)
+
+**Checkpoint**: a fully green build — every coding gate passes over the whole change
+
 ## Dependencies & execution order
 - Phases execute in artifact order; a phase declaring `**Depends on**:` waits for the named phase(s).
 - `[P]` phases with disjoint scopes and no dependency may run concurrently; results record in artifact order.
+- Every phase ends by running the coding gates over its file scope; the final Verification phase depends on all others.
 - <any cross-phase note the executor needs — nothing that requires interpretation>
 ```
 

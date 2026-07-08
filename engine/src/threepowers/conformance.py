@@ -17,6 +17,7 @@ checks ride the same scan pass.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -45,6 +46,18 @@ _LAYER_HINTS = {
 }
 
 _TEST_GLOBS = ("*.test.*", "*.spec.*", "test_*.py", "*_test.py")
+
+
+def requirement_namespaces(ids: Iterable[str]) -> set[str]:
+    """The requirement-id namespaces (spec-document Spec IDs) present in ``ids``.
+
+    A requirement id is ``<NAMESPACE>-<FR|NFR>-<NNN>``; the namespace is the token before the
+    first ``-`` (e.g. ``DEMO`` for ``DEMO-FR-001``). Storage/record keys — such as a run's
+    ``<NNN>-<slug>`` feature-folder id — are NOT namespaces: this helper is how a caller holding
+    a stored requirement set translates it back into the namespace filter
+    :func:`referenced_ids` expects, keeping "where it's filed" decoupled from "what namespace
+    its requirements use"."""
+    return {rid.split("-", 1)[0] for rid in ids if "-" in rid}
 
 
 def extract_spec(spec_path: Path | None) -> tuple[str, set[str]]:
@@ -85,8 +98,18 @@ def _iter_test_files(roots: list[Path]):
             yield from root.rglob(pattern)
 
 
-def referenced_ids(test_roots: list[Path], spec_id: str) -> dict[str, set[str]]:
-    """Map each referenced requirement ID → the set of layers that reference it."""
+def referenced_ids(
+    test_roots: list[Path], namespaces: str | Collection[str]
+) -> dict[str, set[str]]:
+    """Map each referenced requirement ID → the set of layers that reference it.
+
+    ``namespaces`` filters by the requirement-id NAMESPACE — the spec document's Spec ID parsed
+    from ``spec.md`` front matter (e.g. ``DEMO`` for ``DEMO-FR-001``) — never by a storage/record
+    key such as a run's ``<NNN>-<slug>`` feature-folder id; the two are decoupled so an oracle
+    keyed by its folder id still counts every ``DEMO-FR-*`` reference. Accepts one namespace, a
+    collection of them, or an empty value (no filter)."""
+    wanted = {namespaces} if isinstance(namespaces, str) else set(namespaces)
+    wanted.discard("")
     refs: dict[str, set[str]] = {}
     seen: set[Path] = set()
     for f in _iter_test_files(test_roots):
@@ -99,7 +122,7 @@ def referenced_ids(test_roots: list[Path], spec_id: str) -> dict[str, set[str]]:
             continue  # skip binary / unreadable files
         layer = _layer_of(f)
         for sid, kind, num in _iter_req_ids(text):
-            if spec_id and sid != spec_id:
+            if wanted and sid not in wanted:
                 continue
             refs.setdefault(f"{sid}-{kind}-{num}", set()).add(layer)
     return refs
@@ -411,7 +434,7 @@ def conformance_failures(gate: GateResult) -> list[dict]:
     return out
 
 
-# A task line in tasks.md carries a task id like T001.
+# A task line in the implementation plan artifact carries a task id like T001.
 _TASK_RE = re.compile(r"\bT\d{2,}\b")
 
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import prompts
+from .agents import extract_usage
 from .config import Settings
 from .runner import DispatchResult
 
@@ -172,6 +173,9 @@ class HostedAgentRunner:
             return DispatchResult(
                 False, detail=f"hosted trigger failed at {stage}: {_short(err or out, rc)}"
             )
+        # Every step's stdout feeds the advisory usage extraction — a hosted service typically
+        # reports usage in its trigger response or final poll status. Unknown reads as None.
+        usage_output: list[str] = [out]
         lines = [ln for ln in out.splitlines() if ln.strip()]
         run_id = lines[-1].strip() if lines else ""
         mapping["run_id"] = run_id
@@ -188,6 +192,7 @@ class HostedAgentRunner:
                     )
                 status = self._classify(out)
                 if status == "completed":
+                    usage_output.append(out)
                     break
                 if status == "failed":
                     return DispatchResult(
@@ -206,7 +211,13 @@ class HostedAgentRunner:
                 return DispatchResult(
                     False, detail=f"hosted collect failed at {stage}: {_short(err or out, rc)}"
                 )
-        return DispatchResult(True, detail=f"hosted run {run_id}".strip(), model=self.model)
+            usage_output.append(out)
+        return DispatchResult(
+            True,
+            detail=f"hosted run {run_id}".strip(),
+            model=self.model,
+            tokens=extract_usage(self.manifest, "\n".join(usage_output)),
+        )
 
 
 def _short(text: str, rc: int) -> str:

@@ -138,3 +138,23 @@ def test_missing_trigger_command_is_reported(tmp_path):
     r = HostedAgentRunner(s, {"mode": "async-hosted"}, command_runner=lambda a, c: (0, "", ""))
     res = r.dispatch("specify", "Spec")
     assert not res.ok and "trigger_command" in res.detail
+
+
+def test_hosted_usage_extracted_per_manifest_hint_or_unknown(tmp_path):
+    """Plan 033 Track H (RUNVIS): a hosted manifest's `usage` hint extracts the token count from
+    the hosted run's reported status JSON; a manifest without the hint reads as None (unknown)."""
+    s = Settings(root=tmp_path)
+
+    def fake_run(argv, cwd):
+        if argv[:2] == ["gh", "trigger"]:
+            return (0, "run-5", "")
+        if argv[:2] == ["gh", "poll"]:
+            return (0, '{"status": "completed", "usage": {"total_tokens": 9876}}', "")
+        return (0, "ok", "")
+
+    reporting = _manifest(usage={"strategy": "json", "field": "usage.total_tokens"})
+    r = HostedAgentRunner(s, reporting, command_runner=fake_run, sleep=lambda _s: None)
+    res = r.dispatch("implement", "Build")
+    assert res.ok and res.tokens == 9876
+    silent = HostedAgentRunner(s, _manifest(), command_runner=fake_run, sleep=lambda _s: None)
+    assert silent.dispatch("implement", "Build").tokens is None

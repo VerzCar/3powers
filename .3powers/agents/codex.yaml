@@ -10,4 +10,10 @@ base_args: ["exec", "--full-auto"]
 model_flag: "--model"
 prompt_flag: null           # the prompt is the positional argument after `exec`
 prompt_via: arg
+# Session freshness: `codex exec` starts a NEW non-interactive session per invocation; reuse is
+# opt-in only (`codex exec resume`), which the engine never emits.
+# Usage: the exec summary prints "tokens used: <n>" — extracted advisorily, never into the verdict.
+usage:
+  strategy: regex
+  pattern: 'tokens used[:\s]+([0-9][0-9,]*)'
 notes: "Reference backend. `codex exec` is the non-interactive entry point; `--full-auto` auto-approves."

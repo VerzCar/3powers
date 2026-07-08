@@ -1,6 +1,6 @@
 [project]
 name = "threepowers"
-version = "0.1.0"
+version = "1.0.0rc1"
 description = "3Powers — judiciary kit engine (native provider-agnostic executive, gate runner, hash-chained verdict ledger, verify)."
 readme = "README.md"
 requires-python = ">=3.11"

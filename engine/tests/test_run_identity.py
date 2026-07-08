@@ -54,7 +54,7 @@ def _writer():
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else "specs/unknown")
+        d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
         if "STAGE: Specify" in prompt:
             d.mkdir(parents=True, exist_ok=True)
@@ -96,9 +96,9 @@ def run_repo(tmp_path, monkeypatch):
     keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
-    # Seed specs/029-seed so the run's workspace allocates 030 — committed, so the GITX
+    # Seed specs-src/029-seed so the run's workspace allocates 030 — committed, so the GITX
     # clean-start guard sees a clean tree.
-    seed = root / "specs" / "029-seed"
+    seed = root / "specs-src" / "029-seed"
     seed.mkdir(parents=True)
     (seed / "spec.md").write_text("# seed\n", encoding="utf-8")
     _git_init(root)
@@ -113,12 +113,12 @@ def _entries(root: Path) -> list[dict]:
 
 # --------------------------------------------------------------------------- A1. derivation (RUNID-FR-001/002)
 def test_spec_id_derives_from_workspace_nnn(run_repo, capsys):
-    """RUNID-FR-001 + RUNID-FR-003: a fresh run with no --spec-id allocating specs/030-add-x/
+    """RUNID-FR-001 + RUNID-FR-003: a fresh run with no --spec-id allocating specs-src/030-add-x/
     derives spec id "030" — every ledger entry of the run and the paused-gate report carry it."""
     rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--json"])
     obj = json.loads(capsys.readouterr().out)
     assert rc == EXIT_PAUSED
-    assert (run_repo / "specs" / "030-add-x").is_dir()
+    assert (run_repo / "specs-src" / "030-add-x").is_dir()
     assert obj["status"] == "paused_at_gate" and obj["spec_id"] == "030"
     run_entries = [e for e in _entries(run_repo) if e.get("type") == "run"]
     assert run_entries and all(e["spec_id"] == "030" for e in run_entries)
@@ -132,7 +132,7 @@ def test_explicit_spec_id_always_wins(run_repo, capsys):
     rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--json", "--spec-id", "PAY"])
     obj = json.loads(capsys.readouterr().out)
     assert rc == EXIT_PAUSED and obj["spec_id"] == "PAY"
-    assert (run_repo / "specs" / "030-add-x").is_dir()  # the workspace still allocated its NNN
+    assert (run_repo / "specs-src" / "030-add-x").is_dir()  # the workspace still allocated its NNN
     run_entries = [e for e in _entries(run_repo) if e.get("type") == "run"]
     assert run_entries and all(e["spec_id"] == "PAY" for e in run_entries)
 
@@ -209,17 +209,38 @@ def test_stage_commit_bundles_the_ledger_file(run_repo):
     assert subject.startswith("3pwr(030): specify")
     files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
     assert ".3powers/ledger.jsonl" in files
-    assert "specs/030-add-x/spec.md" in files
+    assert "specs-src/030-add-x/spec.md" in files
 
 
 # --------------------------------------------------------------------------- A2. oracle destination (RUNID-FR-006)
-def test_oracle_instructions_target_the_spec_id_folder():
-    """RUNID-FR-006: the oracle stage instruction — engine built-in and the scaffolded repo
-    template — names tests/oracle/<spec-id>/ as the destination, never a slug-based folder."""
+def test_oracle_instructions_target_the_feature_folder_id():
+    """RUNID-FR-006 (as re-keyed by plan 033 Track E): the oracle stage instruction — engine
+    built-in and the scaffolded repo template — names tests/oracle/<NNN>-<slug>/ (the run's
+    feature-folder id) as the destination; the retired <spec-id> placeholder is gone."""
     body = prompts.stage_prompt_body("oracle")
-    assert "tests/oracle/<spec-id>/" in body
-    assert "slug" not in body.lower()
+    assert "tests/oracle/<NNN>-<slug>/" in body
+    assert "<spec-id>" not in body
     template = scaffold.SCAFFOLD_DIR / "templates" / "agents" / "oracle.agent.md"
     text = template.read_text(encoding="utf-8")
-    assert "tests/oracle/<spec-id>/" in text
-    assert "<slug>" not in text and "{slug}" not in text
+    assert "tests/oracle/<NNN>-<slug>/" in text
+    assert "<spec-id>" not in text
+
+
+def test_run_oracle_stage_prompt_names_the_concrete_destination(tmp_path):
+    """Track E (plan 033): the assembled oracle-stage prompt on the run path names the concrete
+    keyed destination tests/oracle/<NNN>-<slug>/ — computed from the run's bound feature folder —
+    and ships no placeholder token to the agent."""
+    from threepowers.cli.run import _oracle_destination_context
+    from threepowers.config import Settings
+
+    root = tmp_path / "repo"
+    fdir = root / "specs-src" / "030-add-x"
+    fdir.mkdir(parents=True)
+    ctx = _oracle_destination_context(Settings(root=root), fdir)
+    assert "tests/oracle/030-add-x/" in ctx
+    assert "specs-src/030-add-x/" in ctx  # oracle.md lands flat in the feature folder
+    assembled = prompts.assemble("oracle", intent="add x", spec_text="S", context=ctx)
+    assert "tests/oracle/030-add-x/" in assembled
+    assert "<spec-id>" not in assembled
+    # a run without a bound folder injects nothing rather than a placeholder
+    assert _oracle_destination_context(Settings(root=root), None) == ""

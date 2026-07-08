@@ -26,7 +26,7 @@ from threepowers.verdict import STATUS_FAIL, STATUS_SKIP, Verdict
 def _repo(tmp_path: Path) -> Path:
     """A minimal rooted repo (`.3powers/` present) with one numbered feature folder."""
     (tmp_path / ".3powers" / "config").mkdir(parents=True)
-    feature = tmp_path / "specs" / "030-add-button"
+    feature = tmp_path / "specs-src" / "030-add-button"
     feature.mkdir(parents=True)
     (feature / "spec.md").write_text(
         "**Spec ID**: GD\n\n- **GD-FR-001**: shall.\n", encoding="utf-8"
@@ -59,29 +59,29 @@ _OK_PROBE = 'python -c "print(1)"'
 
 # --------------------------------------------------------------------------- B2. resolve_feature_dir (GDIAG-FR-002)
 def test_resolve_feature_dir_returns_the_single_match(tmp_path):
-    """GDIAG-FR-002: exactly one specs/<NNN>-*/ directory resolves to that directory."""
+    """GDIAG-FR-002: exactly one specs-src/<NNN>-*/ directory resolves to that directory."""
     root = _repo(tmp_path)
-    assert workspace.resolve_feature_dir(root, "030") == root / "specs" / "030-add-button"
+    assert workspace.resolve_feature_dir(root, "030") == root / "specs-src" / "030-add-button"
 
 
 def test_resolve_feature_dir_errors_on_zero_matches(tmp_path):
     """GDIAG-FR-002: no matching folder is a user-facing error naming the pattern and the fix."""
     root = _repo(tmp_path)
-    with pytest.raises(FileNotFoundError, match=r"specs/031-\*/"):
+    with pytest.raises(FileNotFoundError, match=r"specs-src/031-\*/"):
         workspace.resolve_feature_dir(root, "031")
 
 
 def test_resolve_feature_dir_errors_on_multiple_matches(tmp_path):
     """GDIAG-FR-002: an ambiguous prefix is a user-facing error naming every candidate."""
     root = _repo(tmp_path)
-    (root / "specs" / "030-other").mkdir()
-    with pytest.raises(LookupError, match="specs/030-add-button.*specs/030-other"):
+    (root / "specs-src" / "030-other").mkdir()
+    with pytest.raises(LookupError, match="specs-src/030-add-button.*specs-src/030-other"):
         workspace.resolve_feature_dir(root, "030")
 
 
 # --------------------------------------------------------------------------- B2. gate run --id (GDIAG-FR-002/003)
 def test_gate_run_id_resolves_the_same_spec_as_spec(tmp_path, monkeypatch, capsys):
-    """GDIAG-FR-002: `gate run --id 030` targets exactly the spec path `--spec specs/030-*/spec.md`
+    """GDIAG-FR-002: `gate run --id 030` targets exactly the spec path `--spec specs-src/030-*/spec.md`
     targets — the shorthand and the explicit path are interchangeable."""
     root = _repo(tmp_path)
     captured: list[Path] = []
@@ -93,7 +93,7 @@ def test_gate_run_id_resolves_the_same_spec_as_spec(tmp_path, monkeypatch, capsy
     monkeypatch.setattr(cli, "run_gates", fake_run_gates)
     base = ["--root", str(root), "gate", "run", "--adapter", "a", "--no-ledger"]
     assert main([*base, "--id", "030"]) == 0
-    assert main([*base, "--spec", str(root / "specs" / "030-add-button" / "spec.md")]) == 0
+    assert main([*base, "--spec", str(root / "specs-src" / "030-add-button" / "spec.md")]) == 0
     capsys.readouterr()
     assert len(captured) == 2 and captured[0] == captured[1]
     assert captured[0].name == "spec.md" and captured[0].parent.name == "030-add-button"
@@ -102,12 +102,12 @@ def test_gate_run_id_resolves_the_same_spec_as_spec(tmp_path, monkeypatch, capsy
 def test_gate_run_id_errors_clearly_on_zero_and_multiple_matches(tmp_path, monkeypatch, capsys):
     """GDIAG-FR-002: `--id` with zero or multiple matching folders errors without running a gate."""
     root = _repo(tmp_path)
-    (root / "specs" / "030-other").mkdir()
+    (root / "specs-src" / "030-other").mkdir()
     ran: list[Path] = []
     monkeypatch.setattr(cli, "run_gates", lambda *a, **kw: ran.append(kw.get("spec_path")))
     base = ["--root", str(root), "gate", "run", "--adapter", "a", "--no-ledger"]
     assert main([*base, "--id", "031"]) == EXIT_USAGE
-    assert "specs/031-*/" in capsys.readouterr().err
+    assert "specs-src/031-*/" in capsys.readouterr().err
     assert main([*base, "--id", "030"]) == EXIT_USAGE
     assert "ambiguous" in capsys.readouterr().err
     assert ran == []  # no gate ran in either failure mode

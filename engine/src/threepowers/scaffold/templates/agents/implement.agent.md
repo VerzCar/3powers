@@ -29,6 +29,11 @@ over. No other input channel exists.
 1. Execute the phase's tasks in checklist order, respecting declared dependencies: independent
    tasks (disjoint files, no dependency) proceed together; only true dependencies are serialized.
    Tasks touching the same file run sequentially, never concurrently.
+   **Tasks marked `[P]` MUST be executed via your own sub-agents** — dispatch one sub-agent per
+   `[P]` task, run them concurrently, and collect their results before proceeding; do not
+   serialize `[P]` tasks in your own session. (Whole `[P]` phases with disjoint file scopes are
+   already dispatched by the engine as separate fresh sessions — that engine-level parallelism
+   is not yours to manage.)
 2. **Stay within the declared file scope.** Needing to edit a file outside a task's declared
    scope is a signal to STOP and re-spec — report it; do not make the edit.
 3. Never modify, weaken, or delete an oracle test. Never game a gate: no inline lint-disables, no
@@ -37,12 +42,15 @@ over. No other input channel exists.
 4. Add the coder's own tests (Phase B) for what you build — they self-verify but never replace
    the oracle. Name the requirement id each test exercises, and cover the error paths, not only
    the happy path.
-5. **Validate as you go, not at the end.** After each task (or coherent group), run the tests and
-   checks relevant to the touched files; fix failures before moving on. Before finishing the
-   phase, run the phase's full relevant test set — a task is not done until its completion signal
-   is observably true.
-6. Mark each completed task `[X]` in the tasks artifact as you finish it, keeping the checklist
-   the single source of task state.
+5. **Validate as you go — and gate every phase. This is mandatory, not advice.** After each task
+   (or coherent group), run the tests and checks relevant to the touched files; fix failures
+   before moving on. After finishing the phase's tasks, run the **coding gate** over the phase's
+   file scope — `3pwr gate run --path <scope>` or the project's own format/lint/type/test verify
+   scripts — and fix EVERYTHING before reporting the phase done. A phase with a red coding gate
+   is not complete; do not report `done` over one. These per-phase runs are your own advisory
+   checks — the Verify stage remains the sole ledger verdict.
+6. Mark each completed task `[X]` in the implementation plan artifact as you finish it, keeping
+   the checklist the single source of task state.
 7. Follow the codebase's existing conventions, patterns, and architecture; handle error paths
    deliberately; comment only where the code cannot say why. Keep changes minimal, surgical, and
    traceable — no drive-by refactors or adjacent fixes that hurt reviewability.
@@ -52,8 +60,9 @@ over. No other input channel exists.
 This stage must produce a non-empty implementation change within the declared file scope — code
 plus the coder's tests. A stage that produces nothing, or only an off-target change, has failed.
 If the engine asks this stage for a markdown note, write it to the destination the engine has
-given in this prompt's run-context blocks; if none has been given, default to
-`specs-source/<feature>/implement.md`. Do not commit, tag, push, or advance the lifecycle; the
+given in this prompt's run-context blocks; the engine itself generates the stage's changelog
+record (`specs-src/<feature>/changelog.md`) from the collected phase results and your completion
+report. Do not commit, tag, push, or advance the lifecycle; the
 executive records the verdict and the human gate does the rest.
 
 ## Completion report
@@ -64,8 +73,10 @@ identically no matter which model ran it):
 - **Stage**: Implement (phase `<N>`) — `done` | `blocked`
 - **Tasks**: `<done>/<total>` marked `[X]` this phase; any left undone, with why
 - **Files changed**: the paths touched — all MUST be inside the declared FILE SCOPE
+- **Change summary**: one concise line per change — what changed and why, naming the `[REQ-ID]`
+  it traces to; the engine folds these into the run's changelog.md record
 - **Coder tests added**: the test files/cases, each with the `[REQ-ID]` it exercises
-- **Validation**: the test/check commands you ran and their final result
+- **Validation**: the coding gate and test/check commands you ran and their final result
 - **Out-of-scope needs**: any file you needed but could not touch (a STOP-and-re-spec signal), or `none`
 - **Blockers**: what could not be resolved autonomously — the exact impediment, what you attempted,
   and what a human must decide — or `none`

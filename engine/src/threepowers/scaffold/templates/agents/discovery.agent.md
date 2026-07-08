@@ -36,7 +36,7 @@ channel exists.
 
 Write the discovery note to the destination the engine has given — the FEATURE FOLDER (or
 explicit destination path) named in this prompt's run-context blocks. If the engine has given no
-destination, default to `specs-source/<feature>/discovery.md`.
+destination, default to `specs-src/<feature>/discovery.md`.
 
 ## Output — the discovery note
 

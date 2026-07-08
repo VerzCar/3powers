@@ -80,28 +80,34 @@ class ArtifactCheck:
 # committed artifact carries a hard contract: specify/oracle/implement plus plan/tasks — removed
 # from the lenient fallback, so a plan or tasks dispatch that writes no
 # artifact is a named failure, never a silent pass. Remaining steps (clarify/…) still fall back leniently.
-# The spec/plan/tasks patterns accept the canonical FLAT layout (specs/<f>/<step>.md) and
-# the legacy split layout (specs/<f>/spec/spec.md, specs/<f>/artifacts/<step>.md).
+# The spec/plan/tasks patterns accept the canonical FLAT layout (specs-src/<f>/<step>.md), the
+# legacy base folder (specs/<f>/…), and the legacy split layout (spec/spec.md,
+# artifacts/<step>.md) — signed ledger history keeps its recorded specs/… paths, so the
+# patterns must keep matching both bases forever.
 STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
     "specify": ArtifactContract(
         step="specify",
         kind="path",
-        expected="a spec file (specs/<feature>/spec.md, or legacy specs/<feature>/spec/spec.md)",
-        patterns=(r"(^|/)specs/.+/spec\.md$",),
+        expected="a spec file (specs-src/<feature>/spec.md, or the legacy specs/<feature>/…)",
+        patterns=(r"(^|/)specs(-src)?/.+/spec\.md$",),
     ),
     "plan": ArtifactContract(
         step="plan",
         kind="path",
-        expected="a plan artifact (specs/<feature>/plan.md, or legacy specs/<feature>/artifacts/plan.md)",
-        patterns=(r"(^|/)specs/.+/plan\.md$",),
+        expected="a plan artifact (specs-src/<feature>/plan.md, or the legacy specs/<feature>/…)",
+        patterns=(r"(^|/)specs(-src)?/.+/plan\.md$",),
     ),
     "tasks": ArtifactContract(
         step="tasks",
         kind="path",
         expected=(
-            "a tasks artifact (specs/<feature>/tasks.md, or legacy specs/<feature>/artifacts/tasks.md)"
+            "an implementation-plan artifact (specs-src/<feature>/implementation-plan.md, or the "
+            "legacy tasks.md)"
         ),
-        patterns=(r"(^|/)specs/.+/tasks\.md$",),
+        patterns=(
+            r"(^|/)specs(-src)?/.+/implementation-plan\.md$",
+            r"(^|/)specs(-src)?/.+/tasks\.md$",
+        ),
     ),
     "oracle": ArtifactContract(
         step="oracle",

@@ -1,6 +1,7 @@
-"""Context-sized phases — parse, estimate, schedule, and dispatch a phased tasks artifact.
+"""Context-sized phases — parse, estimate, schedule, and dispatch a phased implementation plan.
 
-The tasks artifact decomposes work into ordered **phases**, each a self-contained delegable unit sized so
+The tasks stage's artifact (``implementation-plan.md``; legacy ``tasks.md``) decomposes work into
+ordered **phases**, each a self-contained delegable unit sized so
 one fresh agent session (spec + rules + phase tasks + files in scope) fits inside the configured context
 budget. This module owns the deterministic mechanics:
 
@@ -73,6 +74,21 @@ _SCOPE_LINE = re.compile(r"^\*\*File scope\*\*\s*:\s*(.*)$", re.IGNORECASE)
 _DEPENDS_LINE = re.compile(r"^\*\*Depends on\*\*\s*:\s*(.*)$", re.IGNORECASE)
 _PARALLEL_LINE = re.compile(r"^\*\*Parallel\*\*\s*:\s*(.*)$", re.IGNORECASE)
 _TASK_LINE = re.compile(r"^-\s*\[[ xX]\]\s+")
+# A task line's bracketed requirement id, e.g. `[DEMO-FR-001]` — the trace the changelog carries.
+_REQ_ID = re.compile(r"\[([0-9A-Z]{2,16}-(?:FR|NFR)-\d{3,})\]")
+
+
+def requirement_ids(phase: Phase) -> tuple[str, ...]:
+    """The requirement ids the phase's task lines trace to — first-appearance order, deduped.
+
+    Pure and deterministic; a phase whose tasks carry no bracketed requirement id yields ``()``,
+    so an untraced phase stays visibly untraced in the changelog record."""
+    seen: list[str] = []
+    for task in phase.tasks:
+        for rid in _REQ_ID.findall(task):
+            if rid not in seen:
+                seen.append(rid)
+    return tuple(seen)
 
 
 def _split_paths(raw: str) -> list[str]:
@@ -341,6 +357,18 @@ def completed_phases_summary(phase_list: list[Phase], current_index: int) -> str
     return ", ".join(f"Phase {p.index} ({p.name})" for p in done)
 
 
+def _scope_gate_target(phase: Phase) -> str:
+    """The concrete ``--path`` target for the phase's coding-gate command — deterministic.
+
+    The first declared scope path's top-level directory when every scope path shares it, else the
+    repository root (``.``); an undeclared scope also yields the root, so the command is always
+    concrete and runnable."""
+    tops = {p.split("/", 1)[0] for p in phase.file_scope if p}
+    if len(tops) == 1:
+        return tops.pop()
+    return "."
+
+
 def handoff_context(
     phase: Phase,
     total: int,
@@ -353,12 +381,14 @@ def handoff_context(
 
     Carries the PHASE INSTRUCTION contract: scope limited to the declared
     phase's tasks and file scope, ``[P]`` tasks dispatched concurrently via subagents, completion
-    markers (``[x]`` done / ``[!]`` + reason) written back to tasks.md, no operator questions —
-    plus the completed-phases summary, the phase's tasks, and the
+    markers (``[x]`` done / ``[!]`` + reason) written back to the implementation plan
+    (``implementation-plan.md``; legacy ``tasks.md``), the per-phase coding-gate command, no
+    operator questions — plus the completed-phases summary, the phase's tasks, and the
     constitution/rules text. The approved spec and the file scope travel in their own prompt blocks
     (:func:`threepowers.prompts.assemble`), so the whole handoff set is reloaded with no carried
     conversation state. Deterministic given the inputs."""
     run_label = f" for run {spec_id}" if spec_id else ""
+    gate_target = _scope_gate_target(phase)
     parts = [
         "═══════════════════ PHASE INSTRUCTION ════════════════════════",
         f"PHASE {phase.index}/{total}: {phase.name}",
@@ -369,17 +399,32 @@ def handoff_context(
         "Do NOT modify files outside the declared file scope for this phase.",
         "Do NOT implement tasks from other phases.",
         "",
-        "PARALLEL TASKS: any task marked [P] in this phase may be dispatched concurrently via "
-        "subagents.",
-        "Dispatch all [P]-marked tasks in parallel, then collect their results before proceeding.",
+        "PARALLEL TASKS: tasks marked [P] in this phase MUST be executed via your own sub-agents "
+        "— dispatch one sub-agent per [P] task, run them concurrently, and collect their results "
+        "before proceeding.",
+        "Do not serialize [P] tasks in your own session; sub-agent dispatch is the required "
+        "execution mode for them.",
+        "(Whole phases marked [P] with disjoint file scopes are already dispatched concurrently "
+        "by the engine as separate fresh sessions — that engine-level parallelism is not yours "
+        "to manage.)",
         "",
-        "COMPLETION: when you have finished every task in this phase, update tasks.md:",
+        "CODING GATE: after finishing this phase's tasks, run the coding gates over this phase's "
+        "file scope —",
+        f"`3pwr gate run --path {gate_target}` (or the project's own format/lint/type/test verify "
+        "commands) —",
+        "and fix every failure before reporting the phase done. A phase with a red coding gate is "
+        "not complete.",
+        "These per-phase runs are the coder's own advisory checks; the Verify stage remains the "
+        "sole signed verdict.",
+        "",
+        "COMPLETION: when you have finished every task in this phase, update the implementation "
+        "plan (implementation-plan.md; legacy tasks.md):",
         "mark each completed task with `[x]` in its checkbox. If a task cannot be completed,",
         "mark it `[!]` and append a one-line reason.",
         "",
         "CLARIFICATIONS: do not ask the operator for input. If something is unclear, make the most",
-        "reasonable decision and document your assumption in a comment in the code (not in "
-        "tasks.md).",
+        "reasonable decision and document your assumption in a comment in the code (not in the "
+        "implementation plan).",
         "",
         "This session is fresh: reload everything from this handoff — the approved spec (above), "
         "the constitution/rules (below), this phase's tasks, and the declared file scope.",

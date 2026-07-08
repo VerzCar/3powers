@@ -8,8 +8,9 @@ requests**), and the open-source-readiness rules. Those rules are binding here t
 
 ## What 3Powers is
 
-A portable, open **judiciary kit** for spec-driven, agentic software delivery. Premise: when one model
-writes the spec, the code, the tests, *and* the review, validation becomes circular — the
+A portable, open **agent harness with a judiciary** for spec-driven, agentic software delivery. It
+drives coding agents through the whole lifecycle, then judges their work independently. Premise: when
+one model writes the spec, the code, the tests, *and* the review, validation becomes circular, the
 **separation-of-powers collapse**. 3Powers restores three independent branches:
 
 - **Legislative** — the spec is the law every later stage answers to.
@@ -46,18 +47,20 @@ independence, brownfield Stage Zero, deviations/emergency, observe — is docume
 **`3pwr run "<intent>"` drives the whole lifecycle**: the native executive
 dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
 and in `auto` mode stops only at the two human gates (spec approval, sign-off). Post-approval stage
-prompts reload the approved spec + the prior stage's artifact reference; a phased tasks
+prompts reload the approved spec + the prior stage's artifact reference; a phased implementation
+plan (`implementation-plan.md`; legacy `tasks.md`)
 artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with
 disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
 budget in `.3powers/config/context.yaml`. Each run's artifacts lie flat in its auto-allocated feature
-folder `specs/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy split layout
-(`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stays readable. For a hands-on,
+folder `specs-src/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy base folder
+`specs/` and the legacy split layout
+(`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stay readable. For a hands-on,
 step-by-step run, drive the stages with the `3pwr` CLI and the judiciary `/3pwr.*` prompts (`/3pwr.oracle`
 → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`);
 
 ## Architecture (the big picture)
 
-The framework drives an **eight-stage lifecycle** with explicit human gates: Discovery → Spec → Plan →
+3Powers drives an **eight-stage lifecycle** with explicit human gates: Discovery → Spec → Plan →
 Build → Verify → Review → Ship → Observe. Three pillars carry the trust (the High-risk tier):
 
 1. **Oracle independence.** Oracle tests are authored from the spec's acceptance criteria by a

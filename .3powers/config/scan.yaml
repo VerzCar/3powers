@@ -1,0 +1,44 @@
+# 3Powers scanner-exclusion preferences (`secret_scan` / `dependency_scan` / `sast`).
+#
+# Auditable, committed exclusions for the scanner gates — the sanctioned way to carve build
+# output or vendored trees out of a scan. Schema (version 1), one section per tool:
+#
+#   secret_scan:            # also: dependency_scan, sast
+#     ignore:               # path globs, relative to the scanned target (** allowed)
+#       - "**/dist/**"
+#     ignore_rules:         # optional scanner rule ids to suppress (secret scanner RuleIDs)
+#       - "generic-api-key"
+#
+# SECURITY — read before widening this list:
+#   * Every glob removes real scan surface: a broad ignore weakens the gate. Keep the set to
+#     generated or vendored trees.
+#   * Exclusions are never silent — each scanner reports the applied globs/rules and how many
+#     findings they excluded in its gate output.
+#   * The engine's core ed25519-priv private-key check ALWAYS runs and cannot be disabled by
+#     this file: the secret_scan globs only shape its directory walk, and it still fires on
+#     key material anywhere outside them.
+#   * A missing or malformed file simply means no exclusions. Exclusions are deterministic in
+#     this file's committed bytes.
+version: 1
+
+# Defaults: generated/vendored trees that produce noise, not signal.
+secret_scan:
+  ignore:
+    - "**/.next/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/node_modules/**"
+
+dependency_scan:
+  ignore:
+    - "**/.next/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/node_modules/**"
+
+sast:
+  ignore:
+    - "**/.next/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/node_modules/**"

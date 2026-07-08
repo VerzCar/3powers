@@ -16,7 +16,7 @@ def _ledger(tmp_path):
 
 
 def _spec(tmp_path, text="# Spec\n\n- **SLK-FR-001**: shall hold.\n"):
-    p = tmp_path / "specs" / "spec.md"
+    p = tmp_path / "specs-src" / "spec.md"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
     return p
@@ -48,7 +48,7 @@ def test_approval_fields_are_root_relative_with_optional_commit(tmp_path):
     spec = _spec(tmp_path)
     fields = speclock.approval_fields(tmp_path, spec, commit="abc1234")
     assert fields["spec_hash"] == speclock.spec_file_hash(spec)
-    assert fields["spec_path"] == "specs/spec.md"
+    assert fields["spec_path"] == "specs-src/spec.md"
     assert fields["commit"] == "abc1234"
     assert "commit" not in speclock.approval_fields(tmp_path, spec)
 

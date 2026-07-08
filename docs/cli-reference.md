@@ -72,7 +72,10 @@ next steps. Interactive by default; falls back to defaults with no TTY. Runs off
 `init` is idempotent — re-running preserves your ledger, keys, hand-edited config, an existing AGENTS.md,
 and an existing constitution. For the autonomous lifecycle you also need the constitution
 (`.3powers/memory/constitution.md`) and an agent backend on PATH for each role; `init` reports what's
-missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
+missing. The seeded constitution is mandatory but generic — **adapt it before the first real run** by
+completing its in-file "How to adapt this constitution" checklist (technical baseline + policies);
+`init` surfaces this as a call to action in the readiness checklist and as the final `--json`
+next step. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
 `init` also seeds one **editable agent template per dispatched stage** into
 `.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
@@ -120,7 +123,7 @@ signed ledger entry.
 - `--tier TIER` — `Cosmetic` | `Standard` | `High-risk` (default: `Standard`).
 - `--adapter ADAPTER` — language adapter (default: auto-detect).
 - `--spec SPEC` — path to the governing `spec.md`.
-- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs/<NNN>-*/`
+- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs-src/<NNN>-*/`
   (the number `3pwr run` allocated and prints in its hints). Exactly one folder must match — zero
   or multiple matches are a clear error — and `--id` cannot be combined with `--spec`.
 - `--base BASE` — git ref for the `diff_coverage` / diff-scope base.
@@ -136,7 +139,7 @@ signed ledger entry.
 - `--no-ledger` — run without appending a ledger entry.
 ```bash
 3pwr gate run --path e2e/typescript-orders/project \
-              --spec specs/<NNN>-<slug>/spec.md --tier Standard
+              --spec specs-src/<NNN>-<slug>/spec.md --tier Standard
 3pwr gate run --id <NNN> --tier Standard      # same spec, resolved by run number
 ```
 Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
@@ -258,6 +261,40 @@ a failing re-check reports normally. Auto-fix is never the default — produced 
 silently mutated — and a `fix_cmd` on any other gate (types, tests, mutation, …) is discarded and
 never executed.
 
+**Scanner exclusions (`.3powers/config/scan.yaml`).** The three scanner gates — `secret_scan`,
+`dependency_scan`, and `sast` — honor an auditable, committed per-tool ignore config. Each tool
+takes `ignore` (path globs relative to the scanned target, `**` allowed); `secret_scan`
+additionally takes `ignore_rules`, a list of scanner rule ids to suppress:
+
+```yaml
+# .3powers/config/scan.yaml
+version: 1
+secret_scan:
+  ignore:
+    - "**/.next/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/node_modules/**"
+  ignore_rules: []          # optional: suppress specific secret-scanner rule ids
+dependency_scan:
+  ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
+sast:
+  ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
+```
+
+`3pwr init` seeds the file with that small default ignore set — generated and vendored trees
+(`**/.next/**`, `**/dist/**`, `**/build/**`, `**/node_modules/**`) for all three tools — and a
+re-init never overwrites a hand-edited one. A missing or malformed file simply means **no
+exclusions**. Exclusions are deterministic in the file's committed bytes and are **never
+silent**: every affected gate result reports the applied globs/rules and how many findings they
+excluded, in both the human output and `--json`.
+
+> **Security note.** Every glob removes real scan surface — a broad ignore weakens the gate, so
+> keep the set to generated or vendored trees and review changes to this file like any other
+> trust configuration. The engine's core `ed25519-priv` private-key check **always runs** and
+> cannot be disabled by this file: the `secret_scan` globs only shape its directory walk, and it
+> still fires on key material anywhere outside them.
+
 ### `gate config show` — the effective gate configuration
 Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
 overrides, and the auto-detected tooling — **without executing any gate**.
@@ -282,7 +319,7 @@ comment-only mention fails as `untraced_requirement`, and every requirement-boun
 assertion (`weak_test` otherwise). Adapters without patterns degrade to a visible quarantine.
 - `--spec SPEC` · `--tests [TESTS ...]` — test roots to scan.
 ```bash
-3pwr conformance --spec specs/002-engine-trust-spine/spec.md --tests engine/tests engine/src
+3pwr conformance --spec specs-src/002-engine-trust-spine/spec.md --tests engine/tests engine/src
 ```
 
 ### `verify` — verify the ledger (offline)
@@ -316,13 +353,24 @@ sealed, spec-only bundle, and independence is proven from the signed ledger. The
 `advance` under **risk-tier scoping** (High-risk); detection that the author *touched/read* the
 implementation is an **advisory** flag surfaced for review, never a blocker.
 
+**One key threads everything.** Every keyed `oracle` subcommand takes `--spec-id` — the oracle
+**storage key**, by convention the run's `<NNN>-<slug>` feature-folder name. When you omit it inside
+a repository whose spec lives in a feature workspace (`specs-src/<NNN>-<slug>/spec.md`), the key
+defaults to that folder name, so the sealed bundle, the authoring record, the dispatch attestation,
+the collected test destination `tests/oracle/<NNN>-<slug>/`, and the run's own ledger records all
+resolve under the one id you browse in `specs-src/`. The key is decoupled from the requirement
+namespace: a spec whose requirements are `DEMO-FR-*` keeps that namespace in the sealed criteria and
+in coverage, whatever the storage key. Records keyed by older tokens keep verifying — pass the
+original `--spec-id` explicitly.
+
 ### `oracle seal` — seal a spec-only bundle
 Extracts the acceptance criteria (requirement IDs + text — no impl/plan/tasks/contracts) to
 `.3powers/oracle/<spec-id>/sealed.json`, hashed with a re-seal-stable content hash, and records a signed
 `oracle` seal entry.
-- `--spec SPEC` · `--spec-id SPEC_ID`.
+- `--spec SPEC` · `--spec-id SPEC_ID` (default: the spec's `<NNN>-<slug>` feature-folder name, else
+  the spec document's own Spec ID).
 ```bash
-3pwr oracle seal --spec specs/<NNN>-<slug>/spec.md --spec-id VUTIL
+3pwr oracle seal --spec specs-src/<NNN>-<slug>/spec.md   # keys by the folder id
 ```
 
 ### `oracle record` — record oracle authoring
@@ -330,34 +378,40 @@ Records the authoring event, bound to the sealed bundle: the model actually used
 (hashed), and any advisory peek/touch findings. **Refuses** when the oracle's model family equals the
 coder's, checking the model actually recorded (oracle model diversity — a different model family than the
 coder).
-- `--spec-id SPEC_ID` (required) · `--model FAMILY/MODEL` (required) · `--tests PATHS…` (required) ·
-  `--base BASE` (git ref for the touched-implementation advisory scan).
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--model FAMILY/MODEL`
+  (required) · `--tests PATHS…` (required) · `--base BASE` (git ref for the touched-implementation
+  advisory scan).
 ```bash
-3pwr oracle record --spec-id VUTIL --model anthropic/claude-opus \
-                   --tests e2e/typescript-orders/project/tests/unit/lineItem.test.ts
+3pwr oracle record --model anthropic/claude-opus \
+                   --tests tests/oracle/<NNN>-<slug>/lineItem.test.ts
 ```
 
 ### `oracle verify` — verify independence from the ledger
 Checks seal-binding, model-family diversity, Phase-A-before-B ordering (by ledger seq, not git time), and
-one oracle test per criterion; prints advisory findings too. With `--require-dispatch`, also confirms the
-oracle was authored via a read-path-isolated headless dispatch. Exit `1` if the structural check fails.
-- `--spec-id SPEC_ID` (required) · `--tests [ROOTS …]` (default: the recorded oracle test paths) ·
-  `--require-dispatch` (also require an isolated dispatch attestation).
+one oracle test per criterion; prints advisory findings too. Coverage counts references in the spec's own
+requirement namespace (e.g. `DEMO-FR-*`), whatever the storage key. With `--require-dispatch`, also
+confirms the oracle was authored via a read-path-isolated headless dispatch. Exit `1` if the structural
+check fails.
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--tests [ROOTS …]`
+  (default: the recorded oracle test paths) · `--require-dispatch` (also require an isolated dispatch
+  attestation).
 ```bash
-3pwr oracle verify --spec-id VUTIL
+3pwr oracle verify   # inside a feature workspace: seal ↔ record ↔ verdict from the one folder id
 ```
 
 ### `oracle dispatch` — author the oracle headlessly, read-path isolated
 Authors the oracle **headlessly** via the native executive runner, under a non-coder integration inside a
 **sanitized git worktree** where the implementation, plan, tasks, and contracts are physically absent —
-attested by a worktree manifest hash recorded in the ledger. This is the physical read-path isolation
-behind oracle sealing; it never enters the deterministic verdict.
-- `--spec-id SPEC_ID` (required) · `--integration INTEGRATION` (the headless CLI, e.g. `claude`) ·
-  `--model FAMILY/MODEL` (override the resolved oracle model) · `--workflow WORKFLOW` · `--base BASE`
-  (clean git ref for the worktree, default `HEAD`) · `--tests [PATHS …]` · `--dry-run` (build + attest
-  isolation offline, no model call) · `--keep-worktree` (leave the sanitized worktree in place).
+attested by a worktree manifest hash recorded in the ledger. The authored tests are collected under
+`tests/oracle/<spec-id>/` (with the defaulted key: `tests/oracle/<NNN>-<slug>/`). This is the physical
+read-path isolation behind oracle sealing; it never enters the deterministic verdict.
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--integration INTEGRATION`
+  (the headless CLI, e.g. `claude`) · `--model FAMILY/MODEL` (override the resolved oracle model) ·
+  `--workflow WORKFLOW` · `--base BASE` (clean git ref for the worktree, default `HEAD`) ·
+  `--tests [PATHS …]` · `--dry-run` (build + attest isolation offline, no model call) ·
+  `--keep-worktree` (leave the sanitized worktree in place).
 ```bash
-3pwr oracle dispatch --spec-id VUTIL --integration claude
+3pwr oracle dispatch --integration claude
 ```
 
 ---
@@ -370,10 +424,10 @@ approved document into the signed payload — its raw-bytes SHA-256 (`spec_hash`
 `spec_path`, and the current git commit — which is what the `spec_integrity` gate and `advance` enforce
 thereafter. A fresh Spec-stage sign-off supersedes the previous hash.
 - `--approver APPROVER` (required) · `--stage STAGE` (default `review`) · `--note NOTE` · `--spec-id SPEC_ID` ·
-  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs/**/spec.md`).
+  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs-src/**/spec.md`).
 ```bash
 3pwr signoff --approver "$(git config user.name)" --stage spec --spec-id VUTIL \
-             --spec specs/<NNN>-<slug>/spec.md   # seals the approved spec's hash
+             --spec specs-src/<NNN>-<slug>/spec.md   # seals the approved spec's hash
 3pwr signoff --approver "$(git config user.name)" --stage review --spec-id VUTIL
 ```
 
@@ -435,10 +489,18 @@ suite. Sign-offs, per-stage completions, verdicts, and any terminal failure are 
 ledger, so a run is resumable and its state is always visible (`--status` / `3pwr status`).
 
 **The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
-allocates `specs/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
+allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
 from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
-alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`, `tasks.md`,
-plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
+alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`,
+`implementation-plan.md`, plus two records: **`oracle.md`**, the implementation-agnostic Tests
+Specification the oracle agent authors from the sealed spec (one section per requirement id with its
+Given/When/Then criterion; the engine validates it names every requirement and leaks no file path or
+test framework, and writes a visible structural stub when it is absent — the machine record of the
+actual oracle test paths lives in the signed ledger entries, and the runnable tests land under
+`tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, the run's
+engine-generated change record — grouped by phase and traced to requirement ids, linking the real
+code outputs at their real repo paths — which never touches the project's top-level `CHANGELOG.md`
+(features written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
@@ -447,6 +509,19 @@ completion times, per-phase detail during a phased build, the current state, the
 copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
+**Token consumption (advisory).** When an agent backend reports its token usage (declared per
+manifest via a `usage` extraction hint — a JSON field or a regex over the agent's output), the run
+records the per-stage and per-phase counts **additively**: a **Tokens** column in both `progress.md`
+tables (showing `—` — unknown — when a backend does not report), a `tokens` field on the `--json`
+per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases` (per phase
+result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was captured
+and are never renamed or removed; tokens never enter the gate suite or the deterministic verdict,
+whose bytes are identical whether or not usage was captured.
+**Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
+independent process with no conversation state carried between dispatches; the engine never emits a
+resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
+one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
+sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
 **The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
@@ -548,10 +623,10 @@ the git precondition, applies the clean-start guard (unrelated uncommitted chang
 paths and the `git_clean_start` deviation), creates-or-re-enters the run's dedicated branch, and binds
 the branch to the spec-id in the signed ledger (the same additive `run`/`start` field the orchestrated
 path records). Idempotent — an already-established run re-enters its recorded branch and appends nothing.
-- `--spec-id SPEC_ID` (required) · `--feature specs/<NNN>-<slug>` (the run's feature folder; default:
+- `--spec-id SPEC_ID` (required) · `--feature specs-src/<NNN>-<slug>` (the run's feature folder; default:
   the ledger's recorded binding).
 ```bash
-3pwr git start --spec-id GITX --feature specs/018-git-lifecycle-integration
+3pwr git start --spec-id GITX --feature specs-src/018-git-lifecycle-integration
 ```
 
 ### `revert` — reverse to a prior recorded state
@@ -624,7 +699,24 @@ Reports which of a spec's NFRs have a declared live check in `.3powers/config/ob
 `1` if any NFR is uninstrumented.
 - `--spec SPEC` · `--registry REGISTRY` (default `.3powers/config/observability.yaml`).
 ```bash
-3pwr observe coverage --spec specs/002-engine-trust-spine/spec.md
+3pwr observe coverage --spec specs-src/002-engine-trust-spine/spec.md
+```
+
+#### Observability registry (`observability.yaml`)
+The registry `observe coverage` reads is `.3powers/config/observability.yaml` (seeded by `3pwr init`,
+never clobbered). It declares which of a spec's **NFRs have a live check in production** — the engine
+is fully offline and never runs or inspects your production system, so it cannot discover this
+instrumentation itself; you register it, and `observe coverage --spec <spec.md>` flags every NFR in
+the spec with no registered check. Schema (`version: 1`): a top-level `checks` list where each entry
+names one NFR —
+- `nfr` — the requirement ID exactly as it appears in the spec (e.g. `DEMO-NFR-001`);
+- `check` — a human-readable note describing *how* the NFR is verified in production (a probe, an
+  SLO monitor, an alert, a scheduled job).
+```yaml
+version: 1
+checks:
+  - nfr: DEMO-NFR-001
+    check: "p99 latency SLO monitor on the checkout endpoint, alerting at 250 ms"
 ```
 
 ### `observe log-action` / `observe verify-actions` — tamper-evident agent log
@@ -644,14 +736,14 @@ for a target system's runtime agents, and verifies it — the same tamper-eviden
 Every requirement maps to ≥1 task and every task traces to a requirement, *before* code.
 - `--spec SPEC` · `--tasks TASKS` (required).
 ```bash
-3pwr coverage-check --spec specs/003-x/spec.md --tasks specs/003-x/tasks.md
+3pwr coverage-check --spec specs-src/003-x/spec.md --tasks specs-src/003-x/implementation-plan.md
 ```
 
 ### `scope-check` — task req-id + file-scope discipline
 Fails a task line with no requirement ID, and flags edits outside a task's declared file scope.
 - `--tasks TASKS` (required) · `--base BASE` · `--path PATH`.
 ```bash
-3pwr scope-check --tasks specs/003-x/tasks.md --base main
+3pwr scope-check --tasks specs-src/003-x/implementation-plan.md --base main
 ```
 
 ---

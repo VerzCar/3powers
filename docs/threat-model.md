@@ -5,7 +5,7 @@ It states precisely what each trust-spine mechanism guarantees, which tamper cla
 `3pwr verify` detects, which it **cannot** detect, and the custody assumptions everything rests
 on. It exists so an enterprise security review can answer these questions from the repository
 alone (HARDN-SC-007). The spec governing this document is
-[`specs/005-trust-hardening/spec.md`](../specs/005-trust-hardening/spec.md).
+[`specs/005-trust-hardening/spec.md`](../specs-src/005-trust-hardening/spec.md).
 
 The one-sentence summary: **the ledger is tamper-*evident*, not tamper-*proof*.** Every
 mechanism below turns a class of silent manipulation into a loud, locatable failure — none of

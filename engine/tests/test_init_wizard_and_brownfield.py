@@ -202,7 +202,7 @@ def test_characterize_path_walks_a_directory(tmp_path):
     (src / "node_modules").mkdir()
     (src / "node_modules" / "dep.py").write_text("def skip():\n    return 0\n", encoding="utf-8")
 
-    results = characterize.characterize_path(tmp_path, src, specs_dir=tmp_path / "specs")
+    results = characterize.characterize_path(tmp_path, src, specs_dir=tmp_path / "specs-src")
     spec_ids = sorted(r.spec_id for r in results)
     assert spec_ids == ["A", "B"]  # a.py + pkg/b.py; test file and node_modules skipped
 
@@ -211,5 +211,5 @@ def test_characterize_single_file_still_one_result(tmp_path):
     """3PWR-FR-053: a file target keeps single-file behavior (one result)."""
     f = tmp_path / "money.py"
     f.write_text("def total():\n    return 0\n", encoding="utf-8")
-    results = characterize.characterize_path(tmp_path, f, specs_dir=tmp_path / "specs")
+    results = characterize.characterize_path(tmp_path, f, specs_dir=tmp_path / "specs-src")
     assert len(results) == 1 and results[0].spec_id == "MONEY"

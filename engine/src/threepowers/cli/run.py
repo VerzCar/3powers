@@ -377,7 +377,7 @@ def _resolve_run_spec(
     s: Settings, args: argparse.Namespace, feature_dir: Optional[Path] = None
 ) -> Optional[Path]:
     """The spec the native run resolves: --spec if given, else the run's bound feature folder
-    (no modification-time scan), else the newest feature spec under specs/ (legacy)."""
+    (no modification-time scan), else the newest feature spec under specs-src/ (legacy)."""
     if getattr(args, "spec", None):
         p = Path(args.spec)
         return p if p.exists() else None
@@ -584,6 +584,20 @@ def _report_phase_estimates(
             print(f"  ⚠ {warn}", file=sys.stderr)
 
 
+def _implement_report(s: Settings, transcript_rel: str) -> str:
+    """The implement agent's completion report, extracted from the stage's persisted transcript.
+
+    Deterministic given the transcript bytes: the text from the last ``- **Stage**:`` marker onward
+    (the fixed report shape the implement agent template mandates), within the tail read window. A
+    missing or unreadable transcript, or one carrying no report marker, yields ``""`` — the
+    changelog record then simply omits the folded report. Never raises."""
+    if not transcript_rel:
+        return ""
+    tail = transcripts.tail_text(s.root / transcript_rel, limit=4000)
+    marker = tail.rfind("- **Stage**:")
+    return tail[marker:].strip() if marker >= 0 else ""
+
+
 def _warn_if_unanswered(s: Settings, ph: phases.Phase, transcript_rel: str, spec_id: str) -> None:
     """Advisory stall check after one phase session ends.
 
@@ -642,6 +656,9 @@ def _dispatch_phased(
         constitution = ""
     total = len(phase_list)
     attempt_counts: list[int] = []  # list.append is atomic — safe across the batch threads
+    # Advisory per-phase usage: distinct keys per phase, so concurrent batch threads never
+    # collide. Feeds the additive ledger fields and the progress table — never the verdict.
+    tokens_by_phase: dict[int, int] = {}
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
         ctx = phases.handoff_context(
@@ -661,11 +678,19 @@ def _dispatch_phased(
             retries=retries,
         )
         attempt_counts.append(attempts)
+        if res.tokens is not None:
+            tokens_by_phase[ph.index] = res.tokens
         _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
     prun = phases.run_phases(batches, run_one)
     results = [r.as_dict() for r in prun.results]
+    for r in results:
+        # Additive per-phase token field — present only when that phase's backend reported usage.
+        tok = tokens_by_phase.get(int(r["phase"]))
+        if tok is not None:
+            r["tokens"] = tok
+    stage_tokens = sum(tokens_by_phase.values()) if tokens_by_phase else None
     ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
@@ -688,6 +713,7 @@ def _dispatch_phased(
             transcript=sink.rel_dir if sink is not None else "",
             artifact_paths=paths or [],
             phases=results,
+            tokens=stage_tokens,
         )
 
     if not prun.ok:
@@ -716,8 +742,31 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
         rel = feature_dir.as_posix()
     return (
         f"FEATURE FOLDER: {rel} — the run's allocated feature workspace. Write this stage's markdown "
-        f"artifact FLAT into this folder (spec.md for Specify; <step>.md otherwise); create no spec/ "
-        f"or artifacts/ subfolder."
+        f"artifact FLAT into this folder (spec.md for Specify; implementation-plan.md for Tasks; "
+        f"<step>.md otherwise); create no spec/ or artifacts/ subfolder."
+    )
+
+
+def _oracle_destination_context(s: Settings, feature_dir: Optional[Path]) -> str:
+    """The deterministic destination block for the run's oracle-stage prompt.
+
+    Keys the run's oracle by its feature-folder id (mirroring how ``oracle dispatch`` re-keys the
+    collected files): the runnable oracle tests go under ``tests/oracle/<NNN>-<slug>/`` and the
+    implementation-agnostic Tests Specification ``oracle.md`` lies flat in the feature folder —
+    one concrete id shared by the ledger records, the seal/record commands, and the folder the
+    user browses, so which oracle belongs to which spec is self-evident. No placeholder ever
+    reaches the agent on the run path; a run without a bound folder injects nothing."""
+    if feature_dir is None:
+        return ""
+    fid = feature_dir.name
+    try:
+        rel = feature_dir.relative_to(s.root).as_posix()
+    except ValueError:
+        rel = feature_dir.as_posix()
+    return (
+        f"ORACLE DESTINATION: write the runnable oracle test files under tests/oracle/{fid}/ — "
+        f"the run's feature-folder id keys the oracle. Write the implementation-agnostic Tests "
+        f"Specification oracle.md FLAT into {rel}/ before authoring the test files."
     )
 
 
@@ -849,6 +898,11 @@ def _native_runner(
         ctx_parts = []
         if step in ("specify", "clarify", "plan", "tasks"):
             ctx_parts.append(_feature_folder_context(s, feature_dir))
+        if step == "oracle":
+            # The concrete keyed destination (tests/oracle/<NNN>-<slug>/) replaces any
+            # placeholder: the oracle agent receives the folder id the run's ledger and
+            # records already use, never a token to fill in.
+            ctx_parts.append(_oracle_destination_context(s, feature_dir))
         ctx_parts.append(prior_box["ref"])
         if revise:
             # The revise re-dispatch carries the human's gate feedback + the artifact under review
@@ -890,7 +944,8 @@ def _native_runner(
                 # The oracle/implement stages leave a markdown *record* in the feature folder linking
                 # their real outputs at their real repo paths. For a phased
                 # implement this runs on the collecting thread AFTER all phases completed, one record
-                # in deterministic order.
+                # in deterministic order. The implement record is the engine-generated changelog.md
+                # (grouped by phase, requirement-traced); the top-level CHANGELOG.md is untouched.
                 scopes = {ph.index: ph.file_scope for ph in phase_list}
                 if step == "implement":
                     # the record links the full produced change set
@@ -905,6 +960,10 @@ def _native_runner(
                     linked=linked,
                     phases=result.phases or None,
                     phase_scopes=scopes,
+                    phase_requirements={ph.index: phases.requirement_ids(ph) for ph in phase_list},
+                    work_kinds=wk.kinds,
+                    report=_implement_report(s, result.transcript) if step == "implement" else "",
+                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
                 )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)
@@ -923,11 +982,27 @@ def _native_runner(
             stage_payload: dict[str, Any] = {"kind": "stage", "step": step, "stage": stage}
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
+            if result.tokens is not None:
+                # Additive advisory field (never in the verdict): the stage's agent-reported
+                # token usage; absent when the backend does not report usage.
+                stage_payload["tokens"] = result.tokens
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
             if progress_reporter is not None:
                 # The stage-complete trigger, BEFORE the post-stage commit below,
                 # so the committed progress.md already shows this stage ✓ done.
-                _progress_safe(lambda: progress_reporter.stage_completed(step, stage))
+                if result.phases:
+                    _progress_safe(
+                        lambda: progress_reporter.phase_tokens(
+                            {
+                                int(ph["phase"]): int(ph["tokens"])
+                                for ph in result.phases
+                                if ph.get("tokens") is not None
+                            }
+                        )
+                    )
+                _progress_safe(
+                    lambda: progress_reporter.stage_completed(step, stage, tokens=result.tokens)
+                )
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (superseding the earlier
             # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
@@ -990,6 +1065,10 @@ def _native_runner(
                     # The accepted artifact's path rides in the signed stage entry, so the committed
                     # artifact trail is reconstructable from the ledger alone.
                     payload["artifacts"] = result.artifact_paths
+                if result.tokens is not None:
+                    # The same additive advisory token field as the stage entry — never a
+                    # verdict input.
+                    payload["tokens"] = result.tokens
                 ledger.append("run", payload, sk, spec_id=spec_id)
         if result.ok and feature_dir is not None and completion.is_producing(step):
             # The deterministic completion gate: the stage's declared markdown must
@@ -1593,7 +1672,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
         if git_on and feature_dir is not None:
             # Rebind the run's progress file to the recorded workspace: the
-            # resumed segment's triggers keep updating specs/<NNN>-<slug>/progress.md.
+            # resumed segment's triggers keep updating specs-src/<NNN>-<slug>/progress.md.
             progress_box["reporter"] = progress.Reporter(
                 feature_dir,
                 spec_id=spec_id,
@@ -1672,8 +1751,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
                 return EXIT_SETUP
         # Bind the run's feature folder: an explicit --spec names it; otherwise a
-        # LIVE run auto-allocates specs/<NNN>-<slug>/ deterministically from the intent. --dry-run and
-        # the simulator dispatch nothing and write no artifacts, so they allocate nothing.
+        # LIVE run auto-allocates specs-src/<NNN>-<slug>/ deterministically from the intent.
+        # --dry-run and the simulator dispatch nothing and write no artifacts, so they allocate
+        # nothing.
         if getattr(args, "spec", None):
             spec_arg = Path(args.spec)
             feature_dir = workspace.feature_dir_of(spec_arg) if spec_arg.exists() else None
@@ -1681,10 +1761,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             try:
                 feature_dir = workspace.allocate_feature_dir(s.root, args.intent or "")
             except FileExistsError:
-                target = workspace.feature_folder_name(s.root / "specs", args.intent or "")
+                target = workspace.feature_folder_name(
+                    s.root / workspace.SPECS_DIR, args.intent or ""
+                )
                 print(
-                    f"cannot start `3pwr run` — the feature folder specs/{target} is already "
-                    "allocated (another run?); no folder is ever overwritten",
+                    f"cannot start `3pwr run` — the feature folder {workspace.SPECS_DIR}/{target} "
+                    "is already allocated (another run?); no folder is ever overwritten",
                     file=sys.stderr,
                 )
                 return EXIT_SETUP
@@ -2134,7 +2216,7 @@ def _register_git(sub: SubParsers, common: AddCommon) -> None:
     gits.add_argument("--spec-id", dest="spec_id", required=True)
     gits.add_argument(
         "--feature",
-        help="the run's feature folder (specs/<NNN>-<slug>); default: the ledger's recorded binding",
+        help="the run's feature folder (specs-src/<NNN>-<slug>); default: the ledger's recorded binding",
     )
     gits.set_defaults(func=cmd_git_start)
 
@@ -2178,7 +2260,7 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
     rnp.add_argument(
         "--spec",
         default=None,
-        help="spec.md the native verify stage gates against (default: the newest under specs/)",
+        help="spec.md the native verify stage gates against (default: the newest under specs-src/)",
     )
     rnp.add_argument(
         "--tier",

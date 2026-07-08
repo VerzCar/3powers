@@ -1,4 +1,5 @@
-"""Structural oracle independence — Phase A/B, ledger-anchored (3PWR-FR-020/021/022/062).
+"""Structural oracle independence — Phase A/B, ledger-anchored (3PWR-FR-020/021/022/062) — plus
+the Tests Specification (plan 033 Track F): the validated, implementation-agnostic ``oracle.md``.
 
 Pure predicates are pinned with hand-built ledger entries (ordering proven by ``seq``, never git
 time); the CLI wiring — seal/record/verify and the High-risk ``advance`` gate — is driven end to
@@ -11,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from threepowers import oracle
+from threepowers import completion, oracle, prompts, scaffold
 from threepowers.cli import main
 
 ROLES = {"roles": {"coder": {"model_family": "openai"}, "oracle": {"model_family": "anthropic"}}}
@@ -337,3 +338,148 @@ def test_advisory_touch_is_flagged_but_not_blocking(project, capsys):
     capsys.readouterr()  # drain
     assert main(["--root", str(root), "status", "--spec-id", "ORAC"]) == 0
     assert "advisory (not a blocker)" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- Track F: oracle.md (plan 033)
+ORACLE_MD_OK = """# Tests Specification — 030-demo
+
+## Coverage Summary
+
+| Requirements in spec | Covered here | Open questions |
+|---|---|---|
+| 2 | 2 | 0 |
+
+## Acceptance Tests
+
+### Test for DEMO-FR-001
+
+- **Source AC:** spec §DEMO-FR-001
+- **Type:** acceptance
+- **Criterion (Given / When / Then):** Given a valid input / When submitted / Then it is accepted
+- **Notes for executor:** must not assume any storage layout or entry-point naming.
+
+### Test for DEMO-NFR-001
+
+- **Source AC:** spec §DEMO-NFR-001
+- **Type:** performance
+- **Metric / Threshold / Boundary:** p95 latency ≤ 200 ms at 100 requests per second
+- **Measurement protocol:** measured over 5 minutes against the reference dataset.
+"""
+
+
+def test_validate_oracle_spec_passes_a_clean_specification():
+    """Track F (plan 033): a per-requirement, path-free Tests Specification — Given/When/Then per
+    criterion, metric/protocol for the NFR — yields no findings."""
+    assert completion.validate_oracle_spec(ORACLE_MD_OK, ["DEMO-FR-001", "DEMO-NFR-001"]) == []
+
+
+def test_validate_oracle_spec_flags_missing_id_and_leaks():
+    """Track F (plan 033): a missing requirement id, a leaked file path, and a named test
+    framework are each flagged — the Tests Specification must stay implementation-agnostic."""
+    text = ORACLE_MD_OK + "\nSee src/service.py and reuse the pytest fixtures in tests/unit/.\n"
+    findings = completion.validate_oracle_spec(text, ["DEMO-FR-001", "DEMO-NFR-001", "DEMO-FR-002"])
+    assert any("does not name requirement DEMO-FR-002" in f for f in findings)
+    assert any("leaks a file path" in f and "src/service.py" in f for f in findings)
+    assert any("names a test framework: pytest" in f for f in findings)
+
+
+def test_absent_oracle_md_yields_the_visible_stub(tmp_path):
+    """Track F (plan 033): when the oracle agent authored no oracle.md, the engine writes a
+    structural stub from the spec's criteria — one section per requirement id, marked
+    "not authored", keyed by the feature-folder id, and path-free."""
+    f = tmp_path / "specs-src" / "030-demo"
+    f.mkdir(parents=True)
+    (f / "spec.md").write_text(
+        "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: shall work.\n- **DEMO-NFR-001**: ≤ 200 ms.\n",
+        encoding="utf-8",
+    )
+    rel = completion.write_record(
+        tmp_path, f, "oracle", spec_id="030", linked=["tests/oracle/030-demo/test_x.py"]
+    )
+    assert rel == "specs-src/030-demo/oracle.md"
+    text = (f / "oracle.md").read_text(encoding="utf-8")
+    assert completion.ORACLE_STUB_MARKER in text  # visibly a stub, never silently passed
+    assert "Tests Specification — 030-demo" in text  # keyed by the folder id
+    for rid in ("DEMO-FR-001", "DEMO-NFR-001"):
+        assert f"### Test for {rid} — not authored" in text
+    assert "tests/oracle/030-demo/test_x.py" not in text  # path-free (the ledger holds the paths)
+    # byte-deterministic given the same inputs
+    _, criteria = oracle.extract_criteria(f / "spec.md")
+    assert completion.render_oracle_stub("030-demo", criteria) == text
+
+
+def test_authored_oracle_md_is_validated_and_left_in_place(tmp_path):
+    """Track F (plan 033): an agent-authored oracle.md is validated — a leaked path or missing id
+    is flagged through on_finding — and left in place byte-for-byte, never overwritten."""
+    f = tmp_path / "specs-src" / "030-demo"
+    f.mkdir(parents=True)
+    (f / "spec.md").write_text(
+        "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: shall work.\n- **DEMO-FR-002**: shall also.\n",
+        encoding="utf-8",
+    )
+    authored = ORACLE_MD_OK + "\nImplemented in src/service.py.\n"  # covers FR-001, leaks a path
+    (f / "oracle.md").write_text(authored, encoding="utf-8")
+    findings: list[str] = []
+    rel = completion.write_record(
+        tmp_path, f, "oracle", spec_id="030", linked=[], on_finding=findings.append
+    )
+    assert rel == "specs-src/030-demo/oracle.md"
+    assert (f / "oracle.md").read_text(encoding="utf-8") == authored  # left in place
+    assert any("does not name requirement DEMO-FR-002" in x for x in findings)
+    assert any("leaks a file path" in x and "src/service.py" in x for x in findings)
+
+
+def _oracle_template_texts() -> list[str]:
+    """Both shipped oracle.agent.md copies — the engine scaffold plus, when present, this repo's
+    own .3powers copy (absent in a packaged engine)."""
+    texts = [
+        (scaffold.SCAFFOLD_DIR / "templates" / "agents" / "oracle.agent.md").read_text(
+            encoding="utf-8"
+        )
+    ]
+    repo_copy = Path(__file__).resolve().parents[2] / ".3powers" / "templates" / "agents"
+    if (repo_copy / "oracle.agent.md").is_file():
+        texts.append((repo_copy / "oracle.agent.md").read_text(encoding="utf-8"))
+    return texts
+
+
+def test_oracle_template_carries_the_tests_specification_instruction():
+    """Track F (plan 033): the merged oracle.agent.md instructs — in order — loading the sealed
+    bundle, the hard stop on unmeasurable criteria ("Open Questions for the Legislature", routed
+    to clarify, no invented thresholds), authoring the implementation-agnostic oracle.md (type
+    marker, property invariant, NFR metric/threshold/protocol, executor notes, mutation flag,
+    Coverage Summary), then the runnable tests under tests/oracle/<NNN>-<slug>/; thresholds come
+    from the constitution + risk-tiers config; no substrate residue survives."""
+    for text in _oracle_template_texts():
+        for token in (
+            "Open Questions for the Legislature",
+            "STOP",
+            "clarify",
+            "Invent no thresholds",
+            "acceptance | property | performance",
+            "Property invariant",
+            "Metric / Threshold / Boundary",
+            "Measurement protocol",
+            "Notes for executor",
+            "High-risk mutation flag",
+            "Coverage Summary",
+            "tests/oracle/<NNN>-<slug>/",
+            ".3powers/memory/constitution.md",
+            ".3powers/config/risk-tiers.yaml",
+        ):
+            assert token in text, f"oracle.agent.md lost the merged instruction {token!r}"
+        for residue in (".specify", "$ARGUMENTS", "tests.md", "<spec-id>"):
+            assert residue not in text, f"oracle.agent.md carries residue {residue!r}"
+
+
+def test_oracle_isolation_rules_are_preserved():
+    """Track F (plan 033): the isolation rules survive the merge — the template and the built-in
+    oracle instruction both author only from the sealed spec and forbid reading the
+    implementation/plan/tasks/contracts."""
+    for text in _oracle_template_texts():
+        assert "MUST NOT read the implementation" in text
+        assert "sealed spec" in text
+    body = prompts.stage_prompt_body("oracle")
+    assert "MUST NOT read the implementation" in body
+    assert "sealed spec bundle" in body
+    assert "oracle.md" in body  # the Tests Specification is authored first, from the spec alone

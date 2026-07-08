@@ -51,7 +51,7 @@ def _writer(spec_id="RUN", seen: list | None = None):
         if seen is not None:
             seen.append(prompt)
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
+        d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         if "STAGE: Specify" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             body = f"# Spec\n**Spec ID**: {spec_id}\n"
@@ -218,7 +218,7 @@ def test_gate_pause_presents_three_actions_with_commands_and_artifact(run_repo, 
     assert "3pwr run --resume --spec-id RUN --approver <you>" in out  # approve
     assert "3pwr abort --spec-id RUN" in out  # reject (stops — the existing path)
     assert '--revise "<feedback>"' in out  # revise-with-message
-    assert "specs/001-steer-the-run/spec.md" in out  # the artifact to review
+    assert "specs-src/001-steer-the-run/spec.md" in out  # the artifact to review
 
 
 def test_revise_reruns_the_paused_stage_and_returns_to_the_same_gate(run_repo, monkeypatch, capsys):
@@ -228,14 +228,14 @@ def test_revise_reruns_the_paused_stage_and_returns_to_the_same_gate(run_repo, m
     seen: list[str] = []
     monkeypatch.setattr(runner, "dispatch_agent", _writer(seen=seen))
     assert _run(run_repo, "steer the run") == EXIT_PAUSED
-    spec_file = run_repo / "specs" / "001-steer-the-run" / "spec.md"
+    spec_file = run_repo / "specs-src" / "001-steer-the-run" / "spec.md"
     assert "REVISED" not in spec_file.read_text(encoding="utf-8")
     rc = _run(run_repo, "--resume", "--revise", "leave out point 5")
     assert rc == EXIT_PAUSED  # back at the gate, not advanced past it
     prompt = seen[-1]
     assert "REVISION REQUESTED" in prompt and "leave out point 5" in prompt
     assert "steer the run" in prompt  # the ORIGINAL intent rode along
-    assert "specs/001-steer-the-run/spec.md" in prompt  # the current artifact is named
+    assert "specs-src/001-steer-the-run/spec.md" in prompt  # the current artifact is named
     assert "REVISED" in spec_file.read_text(encoding="utf-8")  # a revised artifact was produced
     st = _state(run_repo)
     assert st["pending_gate"] == "review-spec"  # the same gate awaits the human
@@ -272,7 +272,7 @@ def test_empty_feedback_and_revise_outside_a_gate_are_rejected(run_repo, capsys)
     assert "not paused at a human gate" in capsys.readouterr().err
     # paused, but whitespace-only feedback
     assert _run(run_repo, "steer the run") == EXIT_PAUSED
-    spec_file = run_repo / "specs" / "001-steer-the-run" / "spec.md"
+    spec_file = run_repo / "specs-src" / "001-steer-the-run" / "spec.md"
     before = spec_file.read_text(encoding="utf-8")
     capsys.readouterr()
     assert _run(run_repo, "--resume", "--revise", "   ") == EXIT_USAGE
@@ -367,7 +367,7 @@ def test_gate_pause_notifies_enabled_channel_with_actionable_message(run_repo, m
     assert sent and sent[0][0] == "https://hooks.example/T00/B00"
     text = sent[0][1]["text"]
     assert "RUN" in text and "review-spec" in text and "spec approval" in text
-    assert "specs/001-steer-the-run/spec.md" in text
+    assert "specs-src/001-steer-the-run/spec.md" in text
     assert "3pwr run --resume --spec-id RUN --approver <you>" in text
     assert "3pwr abort --spec-id RUN" in text and "--revise" in text
 

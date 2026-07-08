@@ -42,7 +42,7 @@ def _spec_writer(spec_id="RUN"):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
+        d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         if "STAGE: Specify" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")

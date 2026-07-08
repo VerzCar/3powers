@@ -64,6 +64,9 @@ class DispatchResult:
     model: str = ""
     # The persisted transcript path for this attempt, when one was written.
     transcript: str = ""
+    # The agent-reported token usage for this attempt (manifest-declared extraction);
+    # None when the backend does not report usage. Strictly advisory — never enters the verdict.
+    tokens: Optional[int] = None
 
 
 @dataclass
@@ -96,6 +99,9 @@ class StageResult:
     warnings: list[str] = field(default_factory=list)
     # Per-phase results when the stage ran as context-sized phases, artifact order.
     phases: list[dict] = field(default_factory=list)
+    # The agent-reported token usage for the stage (summed over phases when phased);
+    # None when the backend does not report usage. Advisory — never enters the verdict.
+    tokens: Optional[int] = None
 
     def as_dict(self) -> dict:
         d = {
@@ -118,6 +124,10 @@ class StageResult:
             d["warnings"] = self.warnings
         if self.phases:
             d["phases"] = self.phases
+        if self.tokens is not None:
+            # Additive-only: the token field joins the payload only when the backend reported
+            # usage, so every prior key stays present and prior parsers keep working.
+            d["tokens"] = self.tokens
         return d
 
 
@@ -341,14 +351,20 @@ class CliAgentRunner:
                 rel = str(path.relative_to(self.settings.root))
             except ValueError:
                 rel = str(path)
+        # Advisory usage capture: the manifest's `usage` hint extracts the agent-reported token
+        # count from the attempt's output; an unreporting backend reads as None. Never enters
+        # the verdict — it rides only the additive result/ledger/progress fields.
+        tokens = agents.extract_usage(self.manifest, f"{out}\n{err}")
         if rc != 0:
             detail = (err.strip() or out.strip() or f"agent exited {rc}")[:400]
             if self.transcripts is not None:
                 # The excerpt rides in messages and the failure ledger record — redact it like the
                 # transcript itself; nothing persisted may carry a credential.
                 detail = self.transcripts.redact_text(detail)
-            return DispatchResult(False, detail=detail, model=self.model, transcript=rel)
-        return DispatchResult(True, detail=step, model=self.model, transcript=rel)
+            return DispatchResult(
+                False, detail=detail, model=self.model, transcript=rel, tokens=tokens
+            )
+        return DispatchResult(True, detail=step, model=self.model, transcript=rel, tokens=tokens)
 
 
 # --------------------------------------------------------------------------- retry / artifact policy (pure)
@@ -409,6 +425,7 @@ def run_stage(
             outcome="dispatch_failed",
             detail=result.detail,
             transcript=result.transcript,
+            tokens=result.tokens,
         )
     resolved = result.model or model
     if verify_artifact is not None:
@@ -425,6 +442,7 @@ def run_stage(
                 outcome="artifact_missing",
                 detail=f"stage '{step}' produced no expected artifact — {check.message}",
                 transcript=result.transcript,
+                tokens=result.tokens,
             )
         return StageResult(
             step=step,
@@ -438,6 +456,7 @@ def run_stage(
             artifact=check.summary,
             transcript=result.transcript,
             artifact_paths=list(check.matched),  # recorded with the ledger entry
+            tokens=result.tokens,
         )
     return StageResult(
         step=step,
@@ -449,6 +468,7 @@ def run_stage(
         duration_s=clock() - t0,
         outcome="ok",
         transcript=result.transcript,
+        tokens=result.tokens,
     )
 
 

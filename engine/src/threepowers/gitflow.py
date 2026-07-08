@@ -55,7 +55,8 @@ ENGINE_STATE_PREFIX = ".3powers/"
 # The engine-written run progress file inside a feature workspace. A paused or
 # failed run legitimately leaves it updated after its last stage commit, so — like the ledger — it
 # is engine-owned state the clean-start guard never treats as a developer's unrelated work.
-_PROGRESS_FILE = re.compile(r"^specs/[^/]+/progress\.md$")
+# Matches the canonical base (specs-src/) and the legacy one (specs/) — legacy runs stay resumable.
+_PROGRESS_FILE = re.compile(r"^specs(-src)?/[^/]+/progress\.md$")
 
 # Bound for the agent-written description folded into a commit subject.
 _MESSAGE_MAX_LEN = 200

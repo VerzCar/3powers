@@ -40,7 +40,7 @@ _STAGE_PROMPTS: dict[str, str] = {
         "risk tier (Cosmetic|Standard|High-risk), and explicit non-goals BEFORE any requirement. Write "
         "each requirement as '<SPECID>-FR-###: the system shall …' with a measurable Acceptance line. Do "
         "NOT put implementation detail (named stack, schema, vendor) in the spec. Write the spec to "
-        "specs/<feature>/spec.md — FLAT in the run's feature folder, no spec/ or artifacts/ subfolder — "
+        "specs-src/<feature>/spec.md — FLAT in the run's feature folder, no spec/ or artifacts/ subfolder — "
         "that file is the artifact this stage must produce."
     ),
     "clarify": (
@@ -50,10 +50,10 @@ _STAGE_PROMPTS: dict[str, str] = {
     ),
     "plan": (
         "STAGE: Plan. From the approved spec, produce the implementation plan and write it to "
-        "specs/<feature>/plan.md — FLAT in the run's feature folder — that file is the artifact this "
+        "specs-src/<feature>/plan.md — FLAT in the run's feature folder — that file is the artifact this "
         "stage must produce. "
-        "Required sections: Summary (primary requirement + approach); Judicial Plan (the spec's risk "
-        "tier, the gates it drives, the role → model-family table); Design (the files to change and the "
+        "Required sections: Summary (primary requirement + approach); Risk tier & gates (the spec's "
+        "risk tier and the gates it drives); Design (the files to change and the "
         "approach per requirement); Test layers (unit/integration/e2e as the tier demands); and Phases. "
         "Decompose the work into small ORDERED PHASES, each sized so one fresh agent session — the "
         "approved spec + the constitution/rules + the phase's tasks + the files in its scope — fits "
@@ -65,8 +65,8 @@ _STAGE_PROMPTS: dict[str, str] = {
     ),
     "tasks": (
         "STAGE: Tasks. Break the plan into ordered tasks grouped into phases and write them to "
-        "specs/<feature>/tasks.md — FLAT in the run's feature folder — that file is the artifact this "
-        "stage must produce. "
+        "specs-src/<feature>/implementation-plan.md — FLAT in the run's feature folder — that file is "
+        "the artifact this stage must produce. "
         "Required sections: one '## Phase N: <name>' section per phase, in execution order, each "
         "carrying a '**File scope**:' line (every file the phase may touch), a '**Depends on**:' line "
         "('none' when independent), an '**Estimated context**:' line (~4 bytes/token over the spec + "
@@ -77,14 +77,21 @@ _STAGE_PROMPTS: dict[str, str] = {
         "declaring its file scope; editing outside a task's declared file scope is a signal to stop and "
         "re-spec. Split any phase whose estimate exceeds the budget. Mark independent phases with "
         "disjoint file scopes '[P]' in the heading (or '**Parallel**: yes') so the executive can "
-        "dispatch them to parallel subagent sessions."
+        "dispatch them to parallel subagent sessions. Every phase's tasks include running the coding "
+        "gates (format, lint, types, tests + diff-coverage) over the phase's file scope and fixing "
+        "failures before the phase is done; the LAST phase is always a dedicated Verification phase "
+        "depending on all prior phases whose goal is a fully green build."
     ),
     "oracle": (
-        "STAGE: Oracle (Phase A — judiciary). Author oracle tests SOLELY from the spec's acceptance "
-        "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from the "
-        "sealed spec bundle. Each oracle test names the requirement id it verifies. Write the oracle tests "
-        "under tests/oracle/<spec-id>/ (or ./oracle-tests/ in a sanitized worktree) — those tests are the "
-        "artifact this stage must produce."
+        "STAGE: Oracle (Phase A — judiciary). Author the oracle SOLELY from the spec's acceptance "
+        "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from "
+        "the sealed spec bundle. FIRST author the implementation-agnostic Tests Specification "
+        "oracle.md — one section per requirement id with a Given/When/Then criterion; no file paths, "
+        "test frameworks, or source paths may appear in it — flat in the run's feature folder. THEN "
+        "write the runnable oracle tests, each named for the requirement id it verifies, under the "
+        "destination the engine names in this prompt's context blocks — tests/oracle/<NNN>-<slug>/, "
+        "keyed by the run's feature-folder id (or ./oracle-tests/ in a sanitized worktree) — those "
+        "test files are the artifact this stage must produce."
     ),
     "implement": (
         "STAGE: Implement. Make the code satisfy the spec and pass the oracle tests, staying within each "

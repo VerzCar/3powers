@@ -24,7 +24,7 @@ You need [`uv`](https://docs.astral.sh/uv/) and `git`. Install `3pwr` from a clo
 
 ```bash
 git clone https://github.com/VerzCar/3powers && uv tool install ./3powers/engine
-3pwr --version        # prints the installed version (e.g. `3pwr 0.1.0`)
+3pwr --version        # prints the installed engine version
 ```
 
 ### Step 2 — Initialize your repository
@@ -275,7 +275,7 @@ A passing verdict, a human sign-off recorded *after* it, then a clean advance:
 ```bash
 # a green verdict (Cosmetic tier = the deterministic floor only)
 3pwr gate run --path engine --adapter python \
-              --spec specs/002-engine-trust-spine/spec.md --tier Cosmetic
+              --spec specs-src/002-engine-trust-spine/spec.md --tier Cosmetic
 ```
 ```
 verdict PASS  spec=3PWR tier=Cosmetic adapter=python
@@ -317,7 +317,7 @@ This run includes **mutation testing** scoped to the four trust-spine modules:
 
 ```bash
 (cd engine && uv run python -m threepowers.cli --root .. gate run --path . --adapter python \
-   --spec ../specs/002-engine-trust-spine/spec.md --tier High-risk --mutation --no-ledger \
+   --spec ../specs-src/002-engine-trust-spine/spec.md --tier High-risk --mutation --no-ledger \
    --paths src/threepowers/canonical.py src/threepowers/keys.py \
            src/threepowers/ledger.py src/threepowers/verify.py)
 ```

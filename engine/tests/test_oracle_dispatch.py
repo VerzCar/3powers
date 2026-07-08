@@ -45,7 +45,7 @@ def test_is_excluded_and_isolation_violations():
         {"path": "engine/src/threepowers/oracle.py", "hash": "h"},
         {"path": "plan.md", "hash": "h"},
         {"path": "tasks.md", "hash": "h"},
-        {"path": "specs/x/contracts/api.yaml", "hash": "h"},
+        {"path": "specs-src/x/contracts/api.yaml", "hash": "h"},
         {"path": "tests/thing.test.py", "hash": "h"},
         {"path": "ORACLE_BUNDLE.json", "hash": "h"},
         {"path": "spec.md", "hash": "h"},
@@ -55,7 +55,7 @@ def test_is_excluded_and_isolation_violations():
     assert "src/impl.py" in v
     assert "engine/src/threepowers/oracle.py" in v
     assert "plan.md" in v and "tasks.md" in v
-    assert "specs/x/contracts/api.yaml" in v  # anything under a contracts/ dir
+    assert "specs-src/x/contracts/api.yaml" in v  # anything under a contracts/ dir
     assert "tests/thing.test.py" not in v  # a test file is not implementation
     assert "ORACLE_BUNDLE.json" not in v and "spec.md" not in v and "README.md" not in v
 
@@ -493,3 +493,140 @@ def test_cli_high_risk_advance_requires_dispatch_when_policy_on(dispatch_project
     assert _gate_cli(root, proj) == 0
     assert main(["--root", str(root), "signoff", "--approver", "carlo", "--spec-id", "ORAC"]) == 0
     assert main(["--root", str(root), "advance", "--stage", "ship", "--spec-id", "ORAC"]) == 1
+
+
+# --------------------------------------------------------------------------- Track E: one folder-id key
+def test_independence_coverage_counts_namespaced_ids_under_a_folder_key(tmp_path):
+    """Track E (plan 033): a seal stored under the run's numeric folder key ("030") still proves
+    per-criterion coverage for its DEMO-FR-* criteria — the requirement namespace comes from the
+    sealed requirement ids, never from the storage key."""
+    otest = tmp_path / "oracle_demo.py"
+    otest.write_text("# covers DEMO-FR-001\n", encoding="utf-8")
+    entries = [
+        {
+            "seq": 0,
+            "type": "oracle",
+            "spec_id": "030",
+            "payload": {"kind": "seal", "bundle_hash": "h", "requirement_ids": ["DEMO-FR-001"]},
+        },
+        {
+            "seq": 1,
+            "type": "oracle",
+            "spec_id": "030",
+            "payload": {
+                "kind": "record",
+                "bundle_hash": "h",
+                "model_family": "anthropic",
+                "model": "anthropic/m",
+                "test_paths": [],
+                "advisory_findings": [],
+            },
+        },
+    ]
+    ind = oracle.independence(entries, ROLES, "030", repo_root=tmp_path, test_roots=[otest])
+    assert ind.ok, ind.reasons
+    assert ind.covered == ["DEMO-FR-001"]
+
+
+FEATURE_ROLES_YAML = """
+roles:
+  coder: { model_family: openai }
+  oracle: { model_family: anthropic }
+"""
+
+
+@pytest.fixture()
+def feature_repo(tmp_path, monkeypatch):
+    """A repo whose spec lives in a run feature workspace (specs-src/030-demo/) — the oracle
+    commands default their key to the <NNN>-<slug> folder id."""
+    root = tmp_path / "feature-repo"
+    tp = root / ".3powers"
+    (tp / "config").mkdir(parents=True)
+    (tp / "config" / "roles.yaml").write_text(FEATURE_ROLES_YAML, encoding="utf-8")
+    fdir = root / "specs-src" / "030-demo"
+    fdir.mkdir(parents=True)
+    (fdir / "spec.md").write_text(
+        "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: The system shall work.\n", encoding="utf-8"
+    )
+    otest = root / "authored_oracle_demo.py"
+    otest.write_text("# oracle covers DEMO-FR-001\n", encoding="utf-8")
+    keyfile = tmp_path / "signer.key"
+    monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
+    assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
+    _init_repo(root)
+    return root, fdir, otest
+
+
+def test_cli_oracle_key_defaults_to_the_feature_folder_id(feature_repo):
+    """Track E (plan 033): inside a run/feature context, seal/record/verify default their key to
+    the <NNN>-<slug> feature-folder id — one id threads seal ↔ record ↔ verify — and coverage
+    counts the DEMO-FR-* references under that folder key end to end."""
+    root, _fdir, otest = feature_repo
+    assert main(["--root", str(root), "oracle", "seal"]) == 0  # no --spec-id: the folder id keys
+    assert (root / ".3powers" / "oracle" / "030-demo" / "sealed.json").is_file()
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "oracle",
+                "record",
+                "--model",
+                "anthropic/claude",
+                "--tests",
+                str(otest),
+            ]
+        )
+        == 0
+    )
+    entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
+    keys = [e["spec_id"] for e in entries if e.get("type") == "oracle"]
+    assert keys == ["030-demo", "030-demo"]  # seal + record share the folder-id key
+    seal = oracle.active_seal(entries, "030-demo")
+    assert seal["payload"]["requirement_ids"] == ["DEMO-FR-001"]  # the namespace stays DEMO
+    assert main(["--root", str(root), "oracle", "verify"]) == 0  # green from the single id
+    # back-compat: an explicit --spec-id keyed under another token still records and verifies
+    assert main(["--root", str(root), "oracle", "verify", "--spec-id", "030-demo"]) == 0
+
+
+def test_cli_dispatch_collects_under_the_folder_id(feature_repo):
+    """Track E (plan 033): `oracle dispatch --dry-run` in a feature context defaults its key to
+    the folder id, collects the authored tests under tests/oracle/<NNN>-<slug>/, and records +
+    attests under that same id — `oracle verify --require-dispatch` is green from the single id."""
+    root, _fdir, otest = feature_repo
+    assert main(["--root", str(root), "oracle", "seal"]) == 0
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "oracle",
+            "dispatch",
+            "--integration",
+            "claude",
+            "--dry-run",
+            "--tests",
+            str(otest),
+        ]
+    )
+    assert rc == 0
+    assert (root / "tests" / "oracle" / "030-demo" / otest.name).is_file()
+    entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
+    rec = oracle.authoring_record(entries, "030-demo")
+    assert rec is not None
+    assert rec["payload"]["test_paths"] == [f"tests/oracle/030-demo/{otest.name}"]
+    assert oracle.active_dispatch(entries, "030-demo") is not None
+    assert (
+        main(["--root", str(root), "oracle", "verify", "--require-dispatch"]) == 0
+    )  # seal ↔ record ↔ dispatch resolve from the one folder-id key
+
+
+def test_cli_oracle_key_error_when_unresolvable(tmp_path, monkeypatch):
+    """Track E (plan 033): with no feature workspace and no --spec-id, a keyed oracle command is a
+    usage error naming the fix — never a silently mis-keyed record."""
+    root = tmp_path / "bare-repo"
+    (root / ".3powers").mkdir(parents=True)
+    keyfile = tmp_path / "signer.key"
+    monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
+    assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
+    rc = main(["--root", str(root), "oracle", "verify"])
+    assert rc == 2  # usage: pass --spec-id <NNN>-<slug>
