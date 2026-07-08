@@ -12,7 +12,9 @@ claim-by-claim read of README against STATUS) remains the documented human revie
 
 from __future__ import annotations
 
+import ast
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -375,11 +377,21 @@ def _hygiene_violations(text: str) -> list[str]:
     return tokens
 
 
+def _hygiene_failure_message(rel: str, lineno: int, token: str) -> str:
+    """One actionable failure line: file, line, matched token, and the one-line rule."""
+    return (
+        f"{rel}:{lineno}: {token!r} — internal requirement IDs never appear in "
+        "end-user-readable text (AGENTS.md, 'Open-source readiness'; use DEMO-FR-### "
+        "or bare FR-### for format teaching)"
+    )
+
+
 def test_public_text_carries_no_internal_requirement_ids():
-    """PUBTXT-FR-006 PUBTXT-FR-007: no namespaced internal requirement ID or epic reference on any
-    end-user-readable surface — docs/ (minus STATUS.md), the root public files, and the whole
-    engine source tree including scaffold assets. Bare FR-###/NFR-### and the DEMO-/placeholder
-    namespaces are allowed (format teaching). Rule: AGENTS.md, "Open-source readiness"."""
+    """PUBTXT-FR-001 PUBTXT-FR-002 PUBTXT-FR-003: no namespaced internal requirement ID or epic
+    reference on any end-user-readable surface — docs/ (minus STATUS.md), the root public files,
+    and the whole engine source tree (docstrings, comments, and the scaffold assets `3pwr init`
+    ships) included. Bare FR-###/NFR-### and the DEMO-/placeholder namespaces are allowed (format
+    teaching). Rule: AGENTS.md, "Open-source readiness"."""
     failures: list[str] = []
     for path in _hygiene_surfaces():
         try:
@@ -388,12 +400,8 @@ def test_public_text_carries_no_internal_requirement_ids():
             continue
         for lineno, line in enumerate(lines, 1):
             for token in _hygiene_violations(line):
-                rel = path.relative_to(REPO)
-                failures.append(
-                    f"{rel}:{lineno}: {token!r} — internal requirement IDs never appear in "
-                    "end-user-readable text (AGENTS.md, 'Open-source readiness'; use DEMO-FR-### "
-                    "or bare FR-### for format teaching)"
-                )
+                rel = str(path.relative_to(REPO))
+                failures.append(_hygiene_failure_message(rel, lineno, token))
     assert not failures, "\n".join(failures)
 
 
@@ -404,3 +412,81 @@ def test_scaffolded_format_teaching_uses_the_reserved_namespace():
     assert _hygiene_violations("cross-check the chain (HARDN-FR-005)") == ["HARDN-FR-005"]
     assert _hygiene_violations("delivered in (epic A3)") == ["(epic A3)"]
     assert not _hygiene_violations("write FR-001, FR-002 for your own requirements")
+
+
+def test_engine_source_modules_keep_their_docstrings():
+    """PUBTXT-FR-002: citations were rewritten, never resolved by deleting documentation — every
+    module under engine/src/threepowers/ still carries a module docstring. (The citation-free
+    half of the requirement is the surface scan above.)"""
+    modules = [p for p in ENGINE_SRC.rglob("*.py") if p.is_file() and "__pycache__" not in p.parts]
+    assert modules, "engine source tree is empty — wrong repo root?"
+    undocumented = [
+        str(p.relative_to(REPO))
+        for p in modules
+        if not ast.get_docstring(ast.parse(p.read_text(encoding="utf-8")))
+    ]
+    assert not undocumented, f"modules without a docstring: {undocumented}"
+
+
+def test_hygiene_convention_is_written_down_in_the_agent_guides():
+    """PUBTXT-FR-005: AGENTS.md carries the convention (internal IDs never in end-user-readable
+    text; DEMO- is the reserved teaching namespace) and CLAUDE.md mirrors it."""
+    agents = _read(AGENTS)
+    assert "Open-source readiness" in agents
+    assert "Internal requirement IDs stay out of end-user-readable text" in agents
+    assert "DEMO-FR-###" in agents
+    claude = _read(CLAUDE)
+    assert "Open-source readiness" in claude
+    assert "DEMO-FR-###" in claude
+
+
+def test_hygiene_allowlist_is_frozen_and_failures_are_actionable():
+    """PUBTXT-FR-006: the allowlist is a frozen, deliberate set (DEMO + the placeholder
+    namespace), and a violation's failure message names file, line, matched token, and the
+    one-line rule."""
+    assert isinstance(_ALLOWED_NAMESPACES, frozenset)
+    assert _ALLOWED_NAMESPACES == {"DEMO", "SPECID"}
+    msg = _hygiene_failure_message("docs/example.md", 7, "HARDN-FR-005")
+    assert "docs/example.md:7" in msg  # file and line
+    assert "HARDN-FR-005" in msg  # the matched token
+    assert "AGENTS.md" in msg and "end-user-readable text" in msg  # the rule, actionably
+    assert "DEMO-FR-###" in msg  # the sanctioned alternative
+
+
+def test_no_disposable_scanner_ships():
+    """PUBTXT-FR-007: the temporary inventory scanner is gone — its regex and surface list live
+    only inside this permanent test module."""
+    assert not list((REPO / "plan").rglob("scan_public_ids.py")), (
+        "the disposable scanner must not ship; the enforcement lives in this test"
+    )
+    # The permanent home of the pattern and surfaces is this module.
+    assert _NAMESPACED_ID.pattern and callable(_hygiene_surfaces)
+
+
+def test_hygiene_scan_is_file_based_and_offline(tmp_path):
+    """PUBTXT-NFR-001: the hygiene checks run inside the ordinary engine test suite on plain
+    file reads — no network, no subprocess — and detect a seeded violation from a bare file."""
+    seeded = tmp_path / "leaky.md"
+    seeded.write_text("traces to HARDN-FR-005 (epic A3)", encoding="utf-8")
+    assert _hygiene_violations(seeded.read_text(encoding="utf-8")) == [
+        "HARDN-FR-005",
+        "(epic A3)",
+    ]
+    surfaces = _hygiene_surfaces()
+    assert surfaces and all(p.is_absolute() and REPO in p.parents for p in surfaces)
+
+
+def test_mutation_scope_is_pinned_to_the_trust_spine():
+    """PUBTXT-NFR-002: the hygiene work left the mutation-testing scope untouched —
+    [tool.mutmut] only_mutate still names exactly the six trust-spine modules."""
+    cfg = tomllib.loads((REPO / "engine" / "pyproject.toml").read_text(encoding="utf-8"))
+    mutmut = cfg["tool"]["mutmut"]
+    assert mutmut["source_paths"] == ["src/threepowers"]
+    assert sorted(mutmut["only_mutate"]) == [
+        "src/threepowers/anchor.py",
+        "src/threepowers/canonical.py",
+        "src/threepowers/keys.py",
+        "src/threepowers/ledger.py",
+        "src/threepowers/speclock.py",
+        "src/threepowers/verify.py",
+    ]

@@ -46,23 +46,29 @@ in the repository.
   start, abort), `supply.py` (provenance, deploy-gate, residual), `brownfield.py` (characterize,
   eval, deps-check, ready).
 - **CLIPKG-FR-002**: Each command module MUST own its `cmd_*` functions and private helpers and
-  MUST register its own subparsers via a `register(sub, common)` hook that calls
+  MUST register its own subparsers via per-command registrar hooks with the `(sub, common)`
+  signature (the `_register_*` functions) that bind every leaf subcommand to its handler with
   `set_defaults(func=…)`; help text lives in the module that owns the implementation.
-- **CLIPKG-FR-003**: `cli/__init__.py` MUST assemble the parser as a loop over the command modules
-  in the pre-split registration order, preserving the `3pwr --help` command order byte-for-byte,
-  and MUST re-export the public surface (`main`, `build_parser`, and every name that
-  `engine/tests/` imports from `threepowers.cli`).
-- **CLIPKG-FR-004**: The split MUST be a pure refactor: per-command `--help` output captured
-  before the split is byte-identical after it; exit codes and `--json` payloads are unchanged;
-  the unmodified test suite passes.
+- **CLIPKG-FR-003**: `cli/__init__.py` MUST assemble the parser as a loop over an ordered
+  registrar table that fixes the subcommand registration order (the pre-split `3pwr --help`
+  command order), so the help output's command order equals the table's order, and MUST
+  re-export the public surface (`main`, `build_parser`, the exit-code constants, and every name
+  that `engine/tests/` imports from `threepowers.cli`).
+- **CLIPKG-FR-004**: The split MUST be a pure refactor presenting one uniform command surface:
+  every subcommand resolves to a `cmd_*` handler in its owning module via `set_defaults(func=…)`,
+  `--help` composes from the modules' registrars and names every subcommand, the exit-code
+  constants keep their documented values (0 ok, 1 fail, 2 usage, 3 paused, 4 setup), `--json`
+  payloads are unchanged, and the unmodified test suite passes. (One-time validation: per-command
+  `--help` output captured before the split diffed byte-identical after it.)
 - **CLIPKG-FR-005**: `cli.py` MUST be deleted in the same commit that lands the package, and
   `engine/pyproject.toml` MUST NOT change (`threepowers.cli:main` keeps resolving).
 
 ### Non-Functional Requirements
 
-- **CLIPKG-NFR-001**: `ruff check`, `mypy src`, and the full pytest suite stay green across the
-  new package boundaries; any type looseness mypy newly reveals is fixed minimally, not
-  refactored.
+- **CLIPKG-NFR-001**: The package MUST import cleanly with no circular imports — every submodule
+  is importable on its own — and `ruff check`, `mypy src`, and the full pytest suite stay green
+  across the new package boundaries; any type looseness mypy newly reveals is fixed minimally,
+  not refactored.
 
 ## Success Criteria *(mandatory)*
 
