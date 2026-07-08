@@ -12,10 +12,10 @@
 [![Self-applied](https://img.shields.io/badge/self--applied-gates%20its%20own%20code-brightgreen.svg)](docs/STATUS.md)
 
 <p align="center">
-  <img src="docs/assets/3powers-hero.png" alt="The spec is the law. Agents execute. An independent judiciary decides." width="100%" />
+  <img src="docs/assets/3powers-hero.svg" alt="A bare agent harness is one branch that grades its own work. 3Powers wraps it in the separation of powers, legislative, executive, judicial, on a signed ledger you can verify offline." width="100%" />
 </p>
 
-**3Powers is a framework for building software with high autonomy in agentic mode, built for teams that need to trust agent output at enterprise scale.** Agents do the building. An *independent* judiciary, made of an [oracle](docs/glossary.md#oracle) that never saw the code, a deterministic gate suite, and a signed, tamper-evident ledger, proves that what shipped matches the spec you approved. You appear at exactly two moments: **approving the spec, and the final sign-off.** Everything in between runs without prompting you, driven by 3Powers' own native executive and your coding-agent integration and judged locally by `3pwr`, with no CI/CD platform required and no lock-in to any model family, language, or LLM provider. Every [verdict](docs/glossary.md#verdict) and sign-off is hash-chained and Ed25519-signed in a ledger you can verify offline. "The agents said it passed" becomes "here is the signed, independent proof."
+**3Powers is a harness with a judiciary, built for teams that need to trust agent output at enterprise scale.** It drives your coding agents through the whole lifecycle in autonomous mode, then does the one thing a bare harness never does, it refuses to take their word for it. Agents do the building. An *independent* judiciary, made of an [oracle](docs/glossary.md#oracle) that never saw the code, a deterministic gate suite, and a signed, tamper-evident ledger, proves that what shipped matches the spec you approved. You appear at exactly two moments: **approving the spec, and the final sign-off.** Everything in between runs without prompting you, driven by 3Powers' own native executive and your coding-agent integration and judged locally by `3pwr`, with no CI/CD platform required and no lock-in to any model family, language, or LLM provider. Every [verdict](docs/glossary.md#verdict) and sign-off is hash-chained and Ed25519-signed in a ledger you can verify offline. "The agents said it passed" becomes "here is the signed, independent proof."
 
 3Powers is the working implementation of the [*AI-First SDD Playbook*](https://verzcar.github.io/3powers/the_AI-First_SDD_Playbook_v1_0.html): the playbook defines the laws, 3Powers enforces them mechanically.
 
@@ -143,7 +143,7 @@ Full guides live in **[`docs/`](docs/)**:
 - **[Threat Model](docs/threat-model.md)**: what the ledger proves, against whom, under which assumptions.
 - **[Brownfield Adoption](docs/brownfield.md)**: bring 3Powers to an existing codebase.
 - **[STATUS](docs/STATUS.md)**: implementation status, validated against the spec (the single home of status).
-- **[AI-First SDD Playbook](https://verzcar.github.io/3powers/the_AI-First_SDD_Playbook_v1_0.html)**: the field manual behind the framework. The playbook explains the what and the why; 3Powers is the how, enforced.
+- **[AI-First SDD Playbook](https://verzcar.github.io/3powers/the_AI-First_SDD_Playbook_v1_0.html)**: the field manual behind the harness. The playbook explains the what and the why; 3Powers is the how, enforced.
 
 To contribute, see **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, platform support), **[GOVERNANCE.md](GOVERNANCE.md)**, and the **[Code of Conduct](CODE_OF_CONDUCT.md)**. To report a vulnerability, see **[SECURITY.md](SECURITY.md)**. The repo map lives in [STATUS](docs/STATUS.md).
 

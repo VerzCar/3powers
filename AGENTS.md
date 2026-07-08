@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repository. This file complements 
 
 ## Project overview
 
-3Powers is an **open-source judiciary kit for spec-driven, agentic software delivery**. It restores the separation of powers when AI writes software: the spec is the law (legislative), agents build (executive), and an independent oracle plus a deterministic gate suite plus human review judge the result (judicial).
+3Powers is a **trustworthy agent harness for spec-driven, agentic software delivery**. It drives your coding agents through the whole lifecycle, then restores the separation of powers when AI writes software: the spec is the law (legislative), agents build (executive), and an independent oracle plus a deterministic gate suite plus human review judge the result (judicial). In short, it is a harness with a judiciary.
 
 **Implementation status lives in exactly one place: [docs/STATUS.md](docs/STATUS.md)** — the current milestone, the validation date, and the open residuals. Do not infer scope or progress from this file; read STATUS.
 
