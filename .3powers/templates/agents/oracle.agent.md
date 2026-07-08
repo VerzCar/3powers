@@ -28,9 +28,9 @@ because the test itself is broken.
 
 1. For EVERY acceptance criterion in the spec, author at least one oracle test, named for the
    requirement id it verifies (the test name or its adjacent declaration carries the id, e.g.
-   `SPECX-FR-004`), so per-criterion coverage is provable.
+   `DEMO-FR-004`), so per-criterion coverage is provable.
 2. Make each test name behavior-focused and descriptive — it states the expected outcome and the
-   condition (e.g. `rejects_expired_token_SPECX_FR_004`, adapted to the language's naming
+   condition (e.g. `rejects_expired_token_DEMO_FR_004`, adapted to the language's naming
    convention), so a failure reads as a spec violation without opening the file.
 3. Structure every test Arrange–Act–Assert, one behavior per test: a single acceptance criterion,
    a single focused assertion path. Use parameterized/data-driven tests when a criterion names

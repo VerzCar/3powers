@@ -376,7 +376,7 @@ def test_require_dispatch_is_explained_where_the_config_lives(tmp_path):
     """AGENTX-FR-017: the shipped roles.yaml and the rewritten roles.yaml both explain
     require_dispatch — meaning, default, and when to enable it — and the docs carry it too."""
     shipped = (ENGINE_SRC / "scaffold" / "config" / "roles.yaml").read_text(encoding="utf-8")
-    assert "require_dispatch" in shipped and "3PWR-FR-021" in shipped
+    assert "require_dispatch" in shipped and "read-path-isolation" in shipped
     s = _proj(tmp_path)
     scaffold.set_role_model(s, "oracle", model="anthropic/claude-opus-4-8", integration="claude")
     rewritten = s.roles_path.read_text(encoding="utf-8")

@@ -1,29 +1,29 @@
 # 3Powers role → agent-backend + model binding.
 #
 # Each role is dispatched to a headless coding-agent backend (a manifest in .3powers/agents/) and,
-# optionally, a pinned model. Roles are bound to model *families* for the diversity check
-# (3PWR-FR-044/022): the judiciary (oracle) SHOULD resolve to a different family than the coder.
+# optionally, a pinned model. Roles are bound to model *families* for the diversity check:
+# the judiciary (oracle) SHOULD resolve to a different family than the coder.
 # The native executive (`3pwr run`) drives whichever backend `integration` names — no single provider —
 # and record the model actually used via `3pwr oracle record`.
 #
 # Diversity is RECOMMENDED, not forced. If you have only one model family (e.g. Claude Code only), you
 # are not walled off: the engine warns, and you proceed by recording a signed, reversible deviation —
-# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"` (3PWR-FR-057).
+# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`.
 #
-# `diversity_level` (default `family`) sets how "diverse enough" is judged (3PWR-FR-022):
+# `diversity_level` (default `family`) sets how "diverse enough" is judged:
 #   family — the oracle and coder must be different model *families*.
 #   model  — a different *model* in one family qualifies (e.g. opus vs sonnet). Set `coder.model` too.
 #
-# `oracle.require_dispatch` (default false) is the High-risk policy for 3PWR-FR-021: when true, a
-# High-risk `advance` requires an isolated *headless* dispatch attestation (`3pwr oracle dispatch`).
+# `oracle.require_dispatch` (default false) is the High-risk read-path-isolation policy: when true, a
+# High-risk `advance` requires an isolated *headless* oracle dispatch attestation (`3pwr oracle dispatch`).
 #
 # `integration` names the agent backend (a manifest under .3powers/agents/, e.g. claude, codex, copilot,
 # opencode, aider). `model`/`label` are additive: a family-only file still loads and gates as before.
 version: 1
 diversity_enforced: true
-diversity_level: family                     # family | model (3PWR-FR-022)
+diversity_level: family                     # family | model
 
-# Agent backends a LIVE `3pwr run` can dispatch HEADLESSLY (no interactive IDE) — EXEC-FR-015/NFR-003.
+# Agent backends a LIVE `3pwr run` can dispatch HEADLESSLY (no interactive IDE).
 # Data, not code: edit it to match the agent CLIs you have installed. `3pwr run --dry-run` needs none.
 headless_integrations: [claude, codex, copilot, opencode, aider, cursor-agent, qwen, auggie]
 
@@ -38,7 +38,7 @@ roles:
     integration: claude
     label: Claude Opus 4.8
     require_dispatch: false
-  # residual review (3PWR-FR-036):
+  # residual review:
   reviewer:
     model_family: google
     model: google/gemini-2.5-pro

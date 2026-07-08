@@ -1,13 +1,12 @@
-# Agent backend manifest — Claude Code, headless (EXEC-FR-002/003/004).
+# Agent backend manifest — Claude Code, headless.
 #
 # Declarative, like a language adapter: the native executive builds the invocation from these
-# fields alone, so adding an agent is "add a manifest" with no engine change (EXEC-NFR-003).
-# The engine makes no model call itself — the dispatched `claude` process does (EXEC-NFR-001).
+# fields alone, so adding an agent is "add a manifest" with no engine change.
+# The engine makes no model call itself — the dispatched `claude` process does.
 # Point it at an enterprise gateway via the environment (ANTHROPIC_BASE_URL, CLAUDE_CODE_USE_BEDROCK,
-# CLAUDE_CODE_USE_VERTEX, HTTPS_PROXY, …) — the engine passes the environment through untouched
-# (EXEC-FR-012).
+# CLAUDE_CODE_USE_VERTEX, HTTPS_PROXY, …) — the engine passes the environment through untouched.
 agent: claude
-family: anthropic            # model family for the diversity precheck (3PWR-FR-022)
+family: anthropic            # model family for the diversity precheck
 headless: true              # dispatchable with no interactive IDE
 command: claude
 base_args: ["--permission-mode", "acceptEdits"]

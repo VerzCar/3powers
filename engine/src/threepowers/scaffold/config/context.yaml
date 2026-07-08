@@ -1,10 +1,10 @@
-# Context budget for phase sizing (PHASE-FR-007) — ADVISORY ONLY.
+# Context budget for phase sizing — ADVISORY ONLY.
 #
 # The plan/tasks stages decompose work into phases, each sized so one fresh agent session
 # (spec + rules + phase tasks + files in scope) fits inside this budget. A phase whose
-# deterministic estimate (~4 bytes/token over the reload set's bytes — PHASE-FR-008) exceeds
+# deterministic estimate (~4 bytes/token over the reload set's bytes) exceeds
 # the budget gets a warning advising a split; the run always proceeds — no gate, verdict, or
-# advance decision ever depends on this file (PHASE-FR-009, PHASE-NFR-002).
+# advance decision ever depends on this file.
 version: 1
 
 # The default budget in tokens when no per-model entry matches. ~110k is a practical fill

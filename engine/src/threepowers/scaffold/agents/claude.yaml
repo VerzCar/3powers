@@ -1,7 +1,7 @@
-# Agent backend manifest — Claude Code, headless (EXEC-FR-004). Seeded by `3pwr init`.
-# The engine makes no model call itself; the dispatched `claude` process does (EXEC-NFR-001). Point it at
+# Agent backend manifest — Claude Code, headless. Seeded by `3pwr init`.
+# The engine makes no model call itself; the dispatched `claude` process does. Point it at
 # an enterprise gateway via env (ANTHROPIC_BASE_URL, CLAUDE_CODE_USE_BEDROCK/_VERTEX, HTTPS_PROXY) — the
-# engine passes the environment through untouched (EXEC-FR-012).
+# engine passes the environment through untouched.
 agent: claude
 family: anthropic
 headless: true

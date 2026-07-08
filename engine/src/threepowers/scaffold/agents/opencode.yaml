@@ -1,4 +1,4 @@
-# Agent backend manifest — OpenCode, headless (EXEC-FR-004). Seeded by `3pwr init`.
+# Agent backend manifest — OpenCode, headless. Seeded by `3pwr init`.
 # Provider-agnostic; the model family is whatever OpenCode is configured for (set roles.<role>.model
 # for the diversity precheck). `opencode run "<prompt>"` non-interactive.
 agent: opencode

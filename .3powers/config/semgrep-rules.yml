@@ -1,7 +1,7 @@
-# Local, offline SAST ruleset for the 3Powers `sast` gate (3PWR-FR-026, §8).
+# Local, offline SAST ruleset for the 3Powers `sast` gate.
 # Deliberately small and generic — a starting set, not exhaustive. `--config auto`
 # is avoided because it needs network/login; a committed ruleset keeps SAST
-# deterministic and offline (3PWR-NFR-004). Teams extend this per project.
+# deterministic and offline. Teams extend this per project.
 rules:
   - id: dangerous-eval
     languages: [python, javascript, typescript]

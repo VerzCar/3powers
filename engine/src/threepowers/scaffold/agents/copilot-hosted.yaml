@@ -1,20 +1,20 @@
-# Agent backend manifest — async HOSTED backend (RUNLIVE-FR-008), GitHub Copilot coding agent shape.
+# Agent backend manifest — async HOSTED backend, GitHub Copilot coding agent shape.
 #
 # For enterprises whose only programmatic entry to their agent runtime is an ASYNCHRONOUS, HOSTED run
 # (a REST call that starts an Actions run and opens a pull request) rather than a local headless CLI.
 # The native executive drives it through the same dispatch contract as a CLI agent: it TRIGGERS the hosted
 # run, POLLS to completion, and COLLECTS the produced branch/PR into the working tree — then the same
-# in-process deterministic gate suite judges the result identically to a local dispatch (RUNLIVE-NFR-003).
+# in-process deterministic gate suite judges the result identically to a local dispatch.
 #
-# Provider-neutral by construction (RUNLIVE-NFR-005): the three steps are ordinary commands with
+# Provider-neutral by construction: the three steps are ordinary commands with
 # {placeholder} substitution — no vendor code lives in the engine. Credentials are inherited from the
-# environment (e.g. GITHUB_TOKEN / `gh auth`) and are NEVER read, logged, or stored by the engine
-# (RUNLIVE-FR-009); point `gh` at your entitlement via the environment.
+# environment (e.g. GITHUB_TOKEN / `gh auth`) and are NEVER read, logged, or stored by the engine;
+# point `gh` at your entitlement via the environment.
 #
 # NOTE: the endpoints below are ILLUSTRATIVE — adapt the api paths / fields to your Copilot coding-agent
 # deployment. Placeholders: {prompt} {model} {step} {stage} {run_id}.
 agent: copilot-hosted
-family: openai              # the diversity precheck family (3PWR-FR-022); set to your hosted model's family
+family: openai              # the diversity precheck family; set to your hosted model's family
 headless: true
 mode: async-hosted         # selects the hosted backend instead of a local CLI
 

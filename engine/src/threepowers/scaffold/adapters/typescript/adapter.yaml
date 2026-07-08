@@ -9,10 +9,10 @@ detect: ["package.json", "tsconfig.json"]
 test_roots: ["tests", "src"]
 property_test_lib: fast-check
 
-# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# Toolchain 3Powers drives: a gate's `requires:` names one of these; when the tool
 # is absent the gate can't run, and the engine turns the raw `npx --no-install` error into an
 # actionable hint — "<tool> is not installed — run: <install>". `install` is the fix command; `probe`
-# is an optional version check. Editable data, like the rest of the adapter (3PWR-NFR-007).
+# is an optional version check. Editable data, like the rest of the adapter.
 toolchain:
   biome:
     install: "npm i -D @biomejs/biome"
@@ -56,9 +56,9 @@ gates:
     report_path: "reports/mutation/mutation.json"   # Stryker JSON report for scoring
     tier_min: "High-risk"
 
-  # Optional design oracles (3PWR-FR-009) — run ONLY when work-kind inference tags a change `design`
-  # (3PWR-FR-058). These are illustrative TS wirings; when the tool isn't installed (or the project
-  # doesn't define the script) the gate is quarantined, never silently passed (3PWR-NFR-015).
+  # Optional design oracles — run ONLY when work-kind inference tags a change `design`.
+  # These are illustrative TS wirings; when the tool isn't installed (or the project
+  # doesn't define the script) the gate is quarantined, never silently passed.
   visual_regression:
     cmd: "npx --no-install playwright test --grep @visual"
     parser: playwright
@@ -72,9 +72,9 @@ gates:
     cmd: "npx --no-install pact-verifier"
     parser: pact
 
-# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# Anti-gaming conformance patterns: a requirement ID traces only when bound
 # to a test declaration title (describe/it/test), and every requirement-bound test needs >=1
-# assertion. Absent patterns degrade to a visible quarantine (3PWR-NFR-015).
+# assertion. Absent patterns degrade to a visible quarantine.
 conformance:
   test_declarations:
     - '\b(?:describe|it|test)(?:\.\w+)?\s*\('

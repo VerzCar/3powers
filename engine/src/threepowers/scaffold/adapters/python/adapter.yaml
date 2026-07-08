@@ -1,16 +1,16 @@
-# Python reference adapter — completed in plan 002.
+# Python reference adapter.
 #
-# This is the adapter that lets 3Powers gate its OWN engine code (self-application,
-# 3PWR-A6 / 3PWR-NFR-006). Commands are prefixed with `uv run` so each tool executes
+# This is the adapter that lets 3Powers gate its OWN engine code (self-application).
+# Commands are prefixed with `uv run` so each tool executes
 # inside the target project's own environment (the equivalent of `npx` for Node).
 language: python
 detect: ["pyproject.toml"]
 test_roots: ["tests", "src"]
 property_test_lib: hypothesis
 
-# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# Toolchain 3Powers drives: a gate's `requires:` names one of these; when the tool
 # is missing from the target's uv env the gate can't run, and the engine surfaces an actionable hint —
-# "<tool> is not installed — run: <install>". Editable data (3PWR-NFR-007).
+# "<tool> is not installed — run: <install>". Editable data.
 toolchain:
   ruff:
     install: "uv add --dev ruff"
@@ -54,10 +54,10 @@ gates:
     requires: mutmut
     tier_min: "High-risk"
 
-# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# Anti-gaming conformance patterns: a requirement ID traces only when bound
 # to a test declaration (the test's name/declaration line or its adjacent docstring), and every
 # requirement-bound test needs >=1 assertion. Absent patterns degrade to a visible quarantine,
-# never a failure or a silent pass (3PWR-NFR-015).
+# never a failure or a silent pass.
 conformance:
   test_declarations:
     - '^\s*(?:async\s+)?def\s+test_\w+'

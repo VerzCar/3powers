@@ -1,7 +1,7 @@
-# Agent backend manifest — Aider, headless (EXEC-FR-004).
+# Agent backend manifest — Aider, headless.
 # Git-disciplined; `aider --message "<prompt>"` runs one non-interactive turn. Works against any
 # OpenAI-compatible API, so it slots cleanly behind an enterprise gateway (OPENAI_BASE_URL, etc.) —
-# the engine passes the environment through (EXEC-FR-012). 3Powers records provenance/commits itself,
+# the engine passes the environment through. 3Powers records provenance/commits itself,
 # so auto-commit is disabled here.
 agent: aider
 family: ""                  # any OpenAI-compatible model; set roles.<role>.model for diversity

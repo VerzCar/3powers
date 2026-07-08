@@ -6,12 +6,12 @@ description: "Task list template for feature implementation — context-sized ph
 # Tasks: [FEATURE NAME]
 
 **Input**: `specs/[###-feature-name]/artifacts/plan.md` (required) and
-`specs/[###-feature-name]/spec.md` (flat in the feature folder — SRCX-FR-001; legacy split features keep `spec/spec.md`)
+`specs/[###-feature-name]/spec.md` (flat in the feature folder; legacy split features keep `spec/spec.md`)
 
 **Output**: This file, committed to `specs/[###-feature-name]/artifacts/tasks.md` — the Tasks stage's
-artifact. A tasks artifact that was not written to the feature workspace fails the stage (PHASE-FR-002).
+artifact. A tasks artifact that was not written to the feature workspace fails the stage.
 
-**Organization**: Tasks are grouped into ORDERED PHASES (PHASE-FR-004/006). Each phase is a
+**Organization**: Tasks are grouped into ORDERED PHASES. Each phase is a
 self-contained, delegable unit sized so one **fresh agent session** — the approved spec + the
 constitution/rules + the phase's tasks + the files in its scope — fits comfortably inside the
 configured context budget (`.3powers/config/context.yaml`, default ~110k tokens; estimate ~4 bytes
@@ -21,10 +21,10 @@ A phase whose estimate exceeds the budget gets an advisory warning — split it.
 
 ## Task format: `- [ ] T### [REQ-ID] Description (files: …)`
 
-- **[REQ-ID]**: The requirement ID this task traces to — e.g. `[SPECID]-FR-001` (3PWR-FR-016). Every
+- **[REQ-ID]**: The requirement ID this task traces to — e.g. `[SPECID]-FR-001`. Every
   task traces to exactly ONE requirement; the spec-conformance gate later checks the reverse too.
 - **(files: …)**: The task's **declared file scope** — exact paths. Editing outside this scope is a
-  signal to stop and re-spec, not to proceed (3PWR-FR-017).
+  signal to stop and re-spec, not to proceed.
 
 ## Phase format
 
@@ -35,7 +35,7 @@ Each `## Phase N: <name>` section carries, in this order:
 - `**Estimated context**:` the phase's estimated context size vs the budget.
 - `**Parallel**: yes` (or `[P]` in the heading) ONLY for a phase with no dependency whose file scope
   is **disjoint** from its siblings' — the executive may dispatch such phases to parallel subagent
-  sessions (PHASE-FR-011). Overlapping scopes run sequentially regardless of the marker.
+  sessions. Overlapping scopes run sequentially regardless of the marker.
 - A **Handoff** block naming what a fresh session must reload — the session starts cold; nothing
   outside the handoff can be assumed.
 
@@ -89,9 +89,8 @@ tasks below, and the file scope above.
 
 - Phases execute in artifact order; a phase declaring `**Depends on**:` waits for the named phase(s).
 - Phases marked parallel with **disjoint** file scopes and no dependency may be dispatched
-  concurrently to subagent sessions; results are recorded in deterministic artifact order
-  (PHASE-FR-011/012).
-- An oversize phase proceeds with a warning (advisory, never blocking — PHASE-FR-009); an
+  concurrently to subagent sessions; results are recorded in deterministic artifact order.
+- An oversize phase proceeds with a warning (advisory, never blocking); an
   irreducible one (a single task over budget) is called out as such.
 
 ## Notes
