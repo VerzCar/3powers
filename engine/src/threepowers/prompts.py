@@ -23,8 +23,19 @@ the implementation.
 
 from __future__ import annotations
 
+import string
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional
+
+# The engine's bundled default templates — the second resolution tier. A plain path constant
+# (not an import of the scaffold module) so prompts stays import-cycle-free.
+_BUNDLED_TEMPLATES_DIR = Path(__file__).resolve().parent / "scaffold" / "templates" / "agents"
+
+# The closed variable vocabulary a template body may reference via ``$NAME``. Substitution fills
+# every one of these (empty when the caller supplies no value); names outside this set are left
+# verbatim so template text stays predictable.
+_VARS = ("STEP", "GATE", "ARTIFACT", "FEATURE_FOLDER", "ORACLE_DESTINATION", "FEEDBACK")
 
 # A short standing preamble prepended to every stage prompt.
 _PREAMBLE = (
@@ -179,6 +190,49 @@ def stage_template_body(templates_dir: Optional[Path], step: str) -> str:
         return ""
 
 
+def bundled_template_body(filename: str) -> str:
+    """The instruction body of the engine's bundled default template ``filename``, or ``""``.
+
+    Reads the template shipped inside the package (the second resolution tier, after the
+    repo-local copy) and strips its metadata header. ``""`` — file absent or unreadable — means
+    "fall through to the next tier"; never raises. Pure and deterministic given the installed
+    package bytes."""
+    try:
+        return template_body((_BUNDLED_TEMPLATES_DIR / filename).read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+
+
+def substitute(body: str, variables: Optional[Mapping[str, str]] = None) -> str:
+    """Fill a template body's ``$NAME`` placeholders from the closed vocabulary.
+
+    Semantics (``string.Template.safe_substitute``): ``$$`` renders a literal ``$``; a defined
+    variable (one of the closed vocabulary) left unfilled renders empty; an unknown ``$x`` is
+    left verbatim; malformed ``$`` sequences never raise."""
+    filled: dict[str, str] = {name: "" for name in _VARS}
+    if variables:
+        filled.update(variables)
+    return string.Template(body).safe_substitute(filled)
+
+
+def fragment_body(filename: str, templates_dir: Optional[Path]) -> str:
+    """The body of a prompt fragment (``role: fragment`` template), repo-local first.
+
+    Precedence: the repo-local copy at ``templates_dir / filename`` when it yields a non-empty
+    body (absent, empty, or unreadable is skipped without error), else the bundled default.
+    Fragments have no generic tier — an unknown fragment resolves to ``""``."""
+    if templates_dir is not None:
+        path = templates_dir / filename
+        try:
+            if path.is_file():
+                body = template_body(path.read_text(encoding="utf-8"))
+                if body:
+                    return body
+        except OSError:
+            pass
+    return bundled_template_body(filename)
+
+
 def stage_prompt_body(step: str) -> str:
     """The engine-owned instruction body for a lifecycle step (generic fallback for unknown steps)."""
     return _STAGE_PROMPTS.get(step) or _GENERIC.format(step=step)
@@ -187,9 +241,14 @@ def stage_prompt_body(step: str) -> str:
 def resolve_body(step: str, templates_dir: Optional[Path] = None) -> str:
     """The instruction body the executive dispatches for ``step``.
 
-    The repo-local stage template wins when it yields a non-empty body; otherwise the engine's
-    built-in instruction for the step applies unchanged."""
-    return stage_template_body(templates_dir, step) or stage_prompt_body(step)
+    Three-tier fallback, first non-empty wins: the repo-local stage template, the engine's
+    bundled default template, then the generic fragment with ``$STEP`` filled with the step
+    name. Deterministic and fully offline at every tier."""
+    return (
+        stage_template_body(templates_dir, step)
+        or bundled_template_body(template_name(step))
+        or substitute(fragment_body("generic.agent.md", templates_dir), {"STEP": step})
+    )
 
 
 def assemble(

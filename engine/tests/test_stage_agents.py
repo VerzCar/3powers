@@ -36,6 +36,9 @@ STAGES = (
 # Substrate machinery no shipped template may carry (AGENTX-FR-002).
 FORBIDDEN = (".specify/", "$ARGUMENTS", "handoffs:", "extensions.yml", "before_specify")
 
+# The bundled prompt fragments — reusable blocks, never dispatched as stages (no stage: key).
+FRAGMENTS = ("preamble", "generic", "commit-note", "revise")
+
 
 def _init(root, *extra, key=None):
     argv = ["--root", str(root), "init", "--yes"]
@@ -143,7 +146,10 @@ def test_repo_local_template_body_wins_and_fallback_is_builtin(tmp_path):
     # unreadable (a directory at the template path) → built-in, no crash
     (tdir / "implement.agent.md").mkdir()
     assert prompts.stage_template_body(tdir, "implement") == ""
-    assert prompts.resolve_body("implement", tdir) == prompts.stage_prompt_body("implement")
+    # the three-tier chain answers the bundled default when the repo-local copy is unreadable:
+    assert prompts.resolve_body("implement", tdir) == prompts.bundled_template_body(
+        "implement.agent.md"
+    )
 
 
 def test_template_resolution_is_deterministic_and_changes_only_the_body(tmp_path):
@@ -250,6 +256,31 @@ def test_implement_template_mandates_subagents_for_parallel_tasks():
         assert "MUST be executed via your own sub-agents" in text, base
         assert "one sub-agent per" in text, base
         assert "already dispatched by the engine as separate fresh sessions" in text, base
+
+
+# --------------------------------------------------------------------------- fragments
+def test_bundled_fragments_declare_role_and_carry_clean_bodies():
+    """Each bundled prompt fragment opens with a metadata header declaring role: fragment and no
+    stage binding, and ships a non-empty body free of substrate machinery."""
+    for name in FRAGMENTS:
+        text = (BUNDLED / f"{name}.agent.md").read_text(encoding="utf-8")
+        fm = _front_matter(text)
+        assert fm.get("role") == "fragment", f"{name} must declare role: fragment"
+        assert "stage" not in fm, f"{name} is a fragment, never a dispatched stage"
+        body = prompts.template_body(text)
+        assert body, f"{name} fragment has no body"
+        for token in FORBIDDEN:
+            assert token not in text, f"{name} carries substrate machinery {token!r}"
+
+
+def test_unseeded_repo_resolves_the_full_bundled_body_per_stage():
+    """With no repo-local templates dir, resolve_body answers each dispatched stage's full
+    bundled template body — the three-tier chain never degrades a shipped stage to the generic
+    fragment."""
+    for step in STAGES:
+        bundled = prompts.bundled_template_body(prompts.template_name(step))
+        assert bundled, f"{step} ships no bundled body"
+        assert prompts.resolve_body(step, None) == bundled
 
 
 # --------------------------------------------------------------------------- AGENTX-FR-009 / NFR-003 (seeding)
@@ -581,7 +612,8 @@ def test_init_reports_seeded_templates_and_stays_promptless(tmp_path, capsys):
     assert _init(root, "--language", "python", "--json", key=tmp_path / "k.key") == 0
     payload = json.loads(capsys.readouterr().out)
     seeded = payload["stage_templates"]
-    assert set(seeded) == {prompts.template_name(s) for s in STAGES}
+    expected = {prompts.template_name(s) for s in STAGES} | {f"{f}.agent.md" for f in FRAGMENTS}
+    assert set(seeded) == expected
     assert all(v == "created" for v in seeded.values())
 
 
