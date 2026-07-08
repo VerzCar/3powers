@@ -34,9 +34,9 @@ channel exists.
 
 ## Output destination
 
-Write the discovery note to the destination the engine has given — the FEATURE FOLDER (or
-explicit destination path) named in this prompt's run-context blocks. If the engine has given no
-destination, default to `specs-src/<feature>/discovery.md`.
+Write the discovery note as `discovery.md` FLAT into the engine-given feature folder
+`$FEATURE_FOLDER` — when the engine names none there, the feature folder under `specs-src/`
+allocated for this run.
 
 ## Output — the discovery note
 

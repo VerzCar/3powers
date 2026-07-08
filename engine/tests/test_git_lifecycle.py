@@ -52,7 +52,7 @@ def _writer(spec_id="RUN", skip=(), commit_line=True):
 
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         step = ""
         if "# Specify agent" in prompt and "specify" not in skip:

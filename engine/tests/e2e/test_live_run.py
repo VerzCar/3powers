@@ -101,7 +101,7 @@ def test_deterministic_run_invokes_only_the_injectable_agent_seam(tmp_path, monk
         from pathlib import Path
 
         if argv and "# Specify agent" in argv[-1]:
-            m = re.search(r"FEATURE FOLDER: (\S+)", argv[-1])
+            m = re.search(r"feature folder\s+`([^`\s]+)`", argv[-1])
             d = Path(kw["cwd"]) / (m.group(1) if m else "specs/LIVE")
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: LIVE\n", encoding="utf-8")

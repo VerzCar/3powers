@@ -53,7 +53,7 @@ def _writer():
     def fake(argv, **kw):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
         if "# Specify agent" in prompt:
@@ -215,32 +215,45 @@ def test_stage_commit_bundles_the_ledger_file(run_repo):
 # --------------------------------------------------------------------------- A2. oracle destination (RUNID-FR-006)
 def test_oracle_instructions_target_the_feature_folder_id():
     """RUNID-FR-006 (as re-keyed by plan 033 Track E): the oracle stage instruction — engine
-    built-in and the scaffolded repo template — names tests/oracle/<NNN>-<slug>/ (the run's
-    feature-folder id) as the destination; the retired <spec-id> placeholder is gone."""
+    built-in and the scaffolded repo template — takes its test destination from the
+    $ORACLE_DESTINATION variable (under tests/oracle/, keyed by the run's feature-folder id);
+    the retired <spec-id> and <NNN>-<slug> placeholders are gone."""
     body = prompts.resolve_body("oracle", None)
-    assert "tests/oracle/<NNN>-<slug>/" in body
-    assert "<spec-id>" not in body
+    assert "$ORACLE_DESTINATION" in body
+    assert "<spec-id>" not in body and "<NNN>-<slug>" not in body
     template = scaffold.SCAFFOLD_DIR / "templates" / "agents" / "oracle.agent.md"
     text = template.read_text(encoding="utf-8")
-    assert "tests/oracle/<NNN>-<slug>/" in text
-    assert "<spec-id>" not in text
+    assert "$ORACLE_DESTINATION" in text
+    assert "<spec-id>" not in text and "<NNN>-<slug>" not in text
 
 
 def test_run_oracle_stage_prompt_names_the_concrete_destination(tmp_path):
-    """Track E (plan 033): the assembled oracle-stage prompt on the run path names the concrete
-    keyed destination tests/oracle/<NNN>-<slug>/ — computed from the run's bound feature folder —
-    and ships no placeholder token to the agent."""
-    from threepowers.cli.run import _oracle_destination_context
+    """Track E (plan 033): the assembled oracle-stage prompt on the run path substitutes the
+    concrete keyed destination tests/oracle/<NNN>-<slug>/ and the run's feature folder — both
+    computed from the run's bound feature folder — into the template body, and ships no
+    placeholder token to the agent."""
+    from threepowers.cli.run import _feature_folder_value, _oracle_destination_value
     from threepowers.config import Settings
 
     root = tmp_path / "repo"
     fdir = root / "specs-src" / "030-add-x"
     fdir.mkdir(parents=True)
-    ctx = _oracle_destination_context(Settings(root=root), fdir)
-    assert "tests/oracle/030-add-x/" in ctx
-    assert "specs-src/030-add-x/" in ctx  # oracle.md lands flat in the feature folder
-    assembled = prompts.assemble("oracle", intent="add x", spec_text="S", context=ctx)
+    s = Settings(root=root)
+    assert _oracle_destination_value(fdir) == "tests/oracle/030-add-x/"
+    assert _feature_folder_value(s, fdir) == "specs-src/030-add-x"
+    assembled = prompts.assemble(
+        "oracle",
+        intent="add x",
+        spec_text="S",
+        variables={
+            "FEATURE_FOLDER": _feature_folder_value(s, fdir),
+            "ORACLE_DESTINATION": _oracle_destination_value(fdir),
+        },
+    )
     assert "tests/oracle/030-add-x/" in assembled
-    assert "<spec-id>" not in assembled
-    # a run without a bound folder injects nothing rather than a placeholder
-    assert _oracle_destination_context(Settings(root=root), None) == ""
+    assert "specs-src/030-add-x" in assembled  # oracle.md lands flat in the feature folder
+    for token in ("<spec-id>", "<NNN>-<slug>", "<feature>", "$ORACLE_DESTINATION"):
+        assert token not in assembled
+    # a run without a bound folder substitutes nothing rather than a placeholder
+    assert _oracle_destination_value(None) == ""
+    assert _feature_folder_value(s, None) == ""

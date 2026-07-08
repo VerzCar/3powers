@@ -636,6 +636,7 @@ def _dispatch_phased(
     ledger: Ledger,
     sk,
     spec_id: str,
+    variables: Optional[dict[str, str]] = None,
 ) -> runnermod.StageResult:
     """Run the implement stage phase by phase.
 
@@ -673,7 +674,12 @@ def _dispatch_phased(
         file_scope = "\n".join(ph.file_scope)
         res, attempts = runnermod.dispatch_with_retry(
             lambda: backend.dispatch(
-                step, stage, spec_text=spec_text, context=ctx, file_scope=file_scope
+                step,
+                stage,
+                spec_text=spec_text,
+                context=ctx,
+                file_scope=file_scope,
+                variables=variables,
             ),
             retries=retries,
         )
@@ -728,46 +734,32 @@ def _dispatch_phased(
     return _result(True, "ok", artifact=check.summary, paths=list(check.matched))
 
 
-def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
-    """The deterministic prompt line naming the run's feature folder.
+def _feature_folder_value(s: Settings, feature_dir: Optional[Path]) -> str:
+    """The run's feature folder as a repo-relative POSIX path — the ``$FEATURE_FOLDER`` value.
 
-    Injected into the agent-authored markdown stages (specify/clarify/plan/tasks) so the agent writes
-    the stage's artifact FLAT into the allocated folder — the same location the workspace computes and
-    the completion gate asserts."""
+    Substituted into the stage template's instruction body so the agent writes the stage's
+    markdown artifact FLAT into the allocated folder — the same location the workspace computes
+    and the completion gate asserts. ``""`` when the run has no bound folder: an unfilled
+    variable renders empty and the template's default-destination sentence applies."""
     if feature_dir is None:
         return ""
     try:
-        rel = feature_dir.relative_to(s.root).as_posix()
+        return feature_dir.relative_to(s.root).as_posix()
     except ValueError:
-        rel = feature_dir.as_posix()
-    return (
-        f"FEATURE FOLDER: {rel} — the run's allocated feature workspace. Write this stage's markdown "
-        f"artifact FLAT into this folder (spec.md for Specify; implementation-plan.md for Tasks; "
-        f"<step>.md otherwise); create no spec/ or artifacts/ subfolder."
-    )
+        return feature_dir.as_posix()
 
 
-def _oracle_destination_context(s: Settings, feature_dir: Optional[Path]) -> str:
-    """The deterministic destination block for the run's oracle-stage prompt.
+def _oracle_destination_value(feature_dir: Optional[Path]) -> str:
+    """The run's keyed oracle-test destination — the ``$ORACLE_DESTINATION`` value.
 
     Keys the run's oracle by its feature-folder id (mirroring how ``oracle dispatch`` re-keys the
-    collected files): the runnable oracle tests go under ``tests/oracle/<NNN>-<slug>/`` and the
-    implementation-agnostic Tests Specification ``oracle.md`` lies flat in the feature folder —
-    one concrete id shared by the ledger records, the seal/record commands, and the folder the
-    user browses, so which oracle belongs to which spec is self-evident. No placeholder ever
-    reaches the agent on the run path; a run without a bound folder injects nothing."""
+    collected files): the runnable oracle tests go under ``tests/oracle/<id>/`` — one concrete id
+    shared by the ledger records, the seal/record commands, and the folder the user browses, so
+    which oracle belongs to which spec is self-evident. No placeholder ever reaches the agent on
+    the run path; ``""`` when the run has no bound folder."""
     if feature_dir is None:
         return ""
-    fid = feature_dir.name
-    try:
-        rel = feature_dir.relative_to(s.root).as_posix()
-    except ValueError:
-        rel = feature_dir.as_posix()
-    return (
-        f"ORACLE DESTINATION: write the runnable oracle test files under tests/oracle/{fid}/ — "
-        f"the run's feature-folder id keys the oracle. Write the implementation-agnostic Tests "
-        f"Specification oracle.md FLAT into {rel}/ before authoring the test files."
-    )
+    return f"tests/oracle/{feature_dir.name}/"
 
 
 def _progress_safe(update: Callable[[], Any]) -> None:
@@ -890,20 +882,20 @@ def _native_runner(
                     )
             return check
 
-        # Assemble the stage's context: the approved spec text (post-approval stages), the run's
-        # feature folder (the agent-authored markdown stages), and the prior stage's
-        # accepted artifact reference — no stage rediscovers its inputs.
+        # Assemble the stage's context — the approved spec text (post-approval stages) and the
+        # prior stage's accepted artifact reference — plus the template variables carrying the
+        # run's concrete destinations: the feature folder (the agent-authored markdown stages)
+        # and the keyed oracle destination. Substituted into the instruction body, so the
+        # template itself names where the artifact lands — no separate context line, and no
+        # placeholder token ever reaches the agent.
         spec_path = _resolve_run_spec(s, args, feature_dir)
         spec_text = _dispatch_spec_text(s, step, spec_path)
-        ctx_parts = []
-        if step in ("specify", "clarify", "plan", "tasks"):
-            ctx_parts.append(_feature_folder_context(s, feature_dir))
+        variables: dict[str, str] = {}
+        if step in ("specify", "clarify", "plan", "tasks", "oracle"):
+            variables["FEATURE_FOLDER"] = _feature_folder_value(s, feature_dir)
         if step == "oracle":
-            # The concrete keyed destination (tests/oracle/<NNN>-<slug>/) replaces any
-            # placeholder: the oracle agent receives the folder id the run's ledger and
-            # records already use, never a token to fill in.
-            ctx_parts.append(_oracle_destination_context(s, feature_dir))
-        ctx_parts.append(prior_box["ref"])
+            variables["ORACLE_DESTINATION"] = _oracle_destination_value(feature_dir)
+        ctx_parts = [prior_box["ref"]]
         if revise:
             # The revise re-dispatch carries the human's gate feedback + the artifact under review
             # — assembled deterministically upstream.
@@ -928,12 +920,15 @@ def _native_runner(
                 ledger=ledger,
                 sk=sk,
                 spec_id=spec_id,
+                variables=variables,
             )
         else:
             result = runnermod.run_stage(
                 step,
                 stage,
-                attempt=lambda: backend.dispatch(step, stage, spec_text=spec_text, context=context),
+                attempt=lambda: backend.dispatch(
+                    step, stage, spec_text=spec_text, context=context, variables=variables
+                ),
                 retries=retries,
                 verify_artifact=verify,
                 agent=agent_name,

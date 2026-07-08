@@ -399,7 +399,7 @@ def _git_init(root: Path) -> None:
 def _feature_dir_of_prompt(prompt: str, cwd: Path, spec_id: str) -> Path:
     import re
 
-    m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+    m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
     return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 
@@ -427,7 +427,7 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
         elif "# Oracle agent" in prompt and "oracle" not in skip:
             import re
 
-            m = re.search(r"ORACLE DESTINATION: [^\n]*?tests/oracle/([^<\s/]+)/", prompt)
+            m = re.search(r"tests/oracle/([^`<\s/]+)/", prompt)
             t = cwd / "tests" / "oracle" / (m.group(1) if m else spec_id)
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")

@@ -297,7 +297,7 @@ def _artifact_writer(spec_id="RUN"):
 
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
@@ -560,7 +560,7 @@ def _writer_no_implement():
 
         p = argv[-1] if argv else ""
         cwd = Path(kw["cwd"])
-        m = re.search(r"FEATURE FOLDER: (\S+)", p)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", p)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
         # plan/tasks carry hard contracts too (PHASE-FR-002) — write them flat so the run reaches Build
         if "# Plan agent" in p:

@@ -299,12 +299,15 @@ class CliAgentRunner:
         spec_text: Optional[str] = None,
         context: str = "",
         file_scope: str = "",
+        variables: Optional[dict[str, str]] = None,
     ) -> DispatchResult:
         """Run one fresh headless session for ``step``.
 
         The optional per-dispatch blocks let the orchestrator inject the approved spec text, the
         prior stage's artifact reference, and — for a build phase — that phase's tasks and declared
-        file scope, so no stage depends on the agent rediscovering its inputs. Each
+        file scope, so no stage depends on the agent rediscovering its inputs. ``variables`` fills
+        the template body's closed ``$NAME`` vocabulary (e.g. the run's concrete feature folder
+        and oracle destination) — template-sourced pieces only, never the context blocks. Each
         call is a new agent process: no conversation state is carried between dispatches."""
         prompt = prompts.assemble(
             step,
@@ -316,6 +319,7 @@ class CliAgentRunner:
             # unreadable falls back through the bundled default to the generic fragment. Only the
             # body changes — the context blocks and their order stay fixed.
             templates_dir=self.settings.stage_templates_dir,
+            variables=variables,
         )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
         # Persist this attempt's output to the run's transcript location: teed even

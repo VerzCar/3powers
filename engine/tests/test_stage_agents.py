@@ -169,8 +169,9 @@ def test_template_resolution_is_deterministic_and_changes_only_the_body(tmp_path
     )
     assert a == b
     builtin = prompts.assemble("plan", intent="i", spec_text="S", context="C", file_scope="F")
-    # the surrounding context blocks are byte-identical — only the body differs:
-    default_body = prompts.resolve_body("plan", None)
+    # the surrounding context blocks are byte-identical — only the body differs
+    # (assemble substitutes the variable vocabulary into template-sourced bodies):
+    default_body = prompts.substitute(prompts.resolve_body("plan", None))
     assert a.split("BODY X", 1)[1] == builtin.split(default_body, 1)[1]
     assert a.split("BODY X", 1)[0] == builtin.split(default_body, 1)[0]
 

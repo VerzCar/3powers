@@ -329,7 +329,7 @@ def _writer(fail_specify: bool = False):
         prompt = argv[-1] if argv else ""
         if fail_specify and "# Specify agent" in prompt:
             return (1, "", "agent exploded")
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
         if "# Specify agent" in prompt:

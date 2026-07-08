@@ -110,6 +110,32 @@ def test_untrusted_dollar_in_context_blocks_survives_verbatim():
     assert "do $GATE things" in out
 
 
+def test_cli_dispatch_substitutes_feature_folder_variable(tmp_path):
+    """A dispatch-supplied FEATURE_FOLDER value is substituted into the assembled prompt's
+    template body: the write stage's instruction names the real folder, and no unfilled
+    variable or placeholder token survives in the prompt the agent receives."""
+    from threepowers.config import Settings
+    from threepowers.runner import CliAgentRunner
+
+    seen: list[str] = []
+
+    def fake_dispatch(argv, **kw):
+        seen.append(argv[-1])
+        return (0, "", "")
+
+    r = CliAgentRunner(
+        Settings(root=tmp_path),
+        {"command": "agent", "prompt_flag": "-p"},
+        intent="add x",
+        dispatcher=fake_dispatch,
+    )
+    r.dispatch("specify", "Spec", variables={"FEATURE_FOLDER": "specs-src/001-x"})
+    prompt = seen[0]
+    assert "feature folder `specs-src/001-x`" in prompt
+    assert "$FEATURE_FOLDER" not in prompt
+    assert "<feature>" not in prompt and "<NNN>-<slug>" not in prompt
+
+
 def test_cli_and_hosted_dispatch_assemble_identical_prompts(tmp_path):
     """The CLI runner and the hosted runner dispatch the byte-identical assembled prompt for the
     same inputs — one assembly path, two transports."""

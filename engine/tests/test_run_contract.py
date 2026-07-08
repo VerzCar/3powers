@@ -35,7 +35,7 @@ def _feature_dir(prompt: str, cwd: Path, spec_id: str) -> Path:
     """The allocated feature folder the engine names in the prompt (SRCX-FR-001/008)."""
     import re
 
-    m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+    m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
     return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 

@@ -3,7 +3,7 @@ name: plan.agent
 description: "Produces the high-level implementation plan from the approved spec — the strategy that adds the HOW the spec kept out: analysis of the existing codebase, the chosen approach with reasoning and alternatives, the technical context, the risk tier and its gates, the test strategy, and a context-budgeted, parallel-aware phase decomposition. Runs at the Plan stage and writes plan.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: plan
 role: planner
-artifact: plan.md in the engine-given feature folder (default specs-src/<feature>/plan.md)
+artifact: plan.md, flat in the engine-given feature folder under specs-src/
 ---
 
 # Plan agent — strategy before implementation
@@ -79,17 +79,16 @@ blocking foundational work first, then slice the remaining work along disjoint f
 
 ## Output destination
 
-Write the plan FLAT into the destination the engine has given — the FEATURE FOLDER (or explicit
-destination path) named in this prompt's run-context blocks; create no spec/ or artifacts/
-subfolder inside it. If the engine has given no destination, default to
-`specs-src/<feature>/plan.md`.
+Write the plan as `plan.md` FLAT into the engine-given feature folder `$FEATURE_FOLDER` — when
+the engine names none there, the feature folder under `specs-src/` allocated for this run;
+create no spec/ or artifacts/ subfolder inside it.
 
 ## Output — the plan's required structure
 
 Fixed shape, so every run yields the same document structure regardless of the model:
 
 ```markdown
-# Implementation Plan: <feature>
+# Implementation Plan: <feature name>
 
 **Spec**: <link to the spec in the same folder>   **Spec ID / tier**: <SPECID> / <tier>
 

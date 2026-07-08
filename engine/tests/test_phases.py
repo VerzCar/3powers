@@ -129,14 +129,14 @@ def test_plan_tasks_prompts_name_artifact_sections_and_rules():
     """PHASE-FR-004: the plan/tasks prompt bodies name the artifact path, the required sections, the
     phase-decomposition rules, and the context-sizing heuristic — at specify/oracle depth."""
     plan = prompts.resolve_body("plan", None)
-    assert "specs-src/<feature>/plan.md" in plan
+    assert "plan.md" in plan and "$FEATURE_FOLDER" in plan
     assert "Required sections" in plan and "Phases" in plan
     assert "file scope" in plan and "[P]" in plan
     # markdown wraps lines, so compare on whitespace-normalized text
     plan_flat = " ".join(plan.split())
     assert "110k tokens" in plan_flat and "4 bytes per token" in plan_flat
     tasks = prompts.resolve_body("tasks", None)
-    assert "specs-src/<feature>/implementation-plan.md" in tasks
+    assert "implementation-plan.md" in tasks and "$FEATURE_FOLDER" in tasks
     assert "## Phase N" in tasks and "**File scope**" in tasks and "**Depends on**" in tasks
     assert "HANDOFF" in tasks and "Estimated context" in tasks
     assert "exactly ONE requirement id" in tasks
@@ -501,7 +501,7 @@ def phased_project(tmp_path, monkeypatch):
         prompt = argv[-1] if argv else ""
         with seen_lock:
             prompts_seen.append(prompt)
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
         if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
@@ -694,7 +694,7 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
         rc = orig(argv, **kw)
         prompt = argv[-1] if argv else ""
         if "# Implementation-plan agent" in prompt:
-            m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+            m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
             d = Path(kw["cwd"]) / (m.group(1) if m else "specs-src/RUN")
             (d / "implementation-plan.md").write_text(
                 "# Tasks\n- [ ] T001 [RUN-FR-001] everything\n", encoding="utf-8"

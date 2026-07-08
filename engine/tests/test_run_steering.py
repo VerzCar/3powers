@@ -50,7 +50,7 @@ def _writer(spec_id="RUN", seen: list | None = None):
         prompt = argv[-1] if argv else ""
         if seen is not None:
             seen.append(prompt)
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
