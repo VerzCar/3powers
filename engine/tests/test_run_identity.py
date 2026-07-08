@@ -213,13 +213,34 @@ def test_stage_commit_bundles_the_ledger_file(run_repo):
 
 
 # --------------------------------------------------------------------------- A2. oracle destination (RUNID-FR-006)
-def test_oracle_instructions_target_the_spec_id_folder():
-    """RUNID-FR-006: the oracle stage instruction — engine built-in and the scaffolded repo
-    template — names tests/oracle/<spec-id>/ as the destination, never a slug-based folder."""
+def test_oracle_instructions_target_the_feature_folder_id():
+    """RUNID-FR-006 (as re-keyed by plan 033 Track E): the oracle stage instruction — engine
+    built-in and the scaffolded repo template — names tests/oracle/<NNN>-<slug>/ (the run's
+    feature-folder id) as the destination; the retired <spec-id> placeholder is gone."""
     body = prompts.stage_prompt_body("oracle")
-    assert "tests/oracle/<spec-id>/" in body
-    assert "slug" not in body.lower()
+    assert "tests/oracle/<NNN>-<slug>/" in body
+    assert "<spec-id>" not in body
     template = scaffold.SCAFFOLD_DIR / "templates" / "agents" / "oracle.agent.md"
     text = template.read_text(encoding="utf-8")
-    assert "tests/oracle/<spec-id>/" in text
-    assert "<slug>" not in text and "{slug}" not in text
+    assert "tests/oracle/<NNN>-<slug>/" in text
+    assert "<spec-id>" not in text
+
+
+def test_run_oracle_stage_prompt_names_the_concrete_destination(tmp_path):
+    """Track E (plan 033): the assembled oracle-stage prompt on the run path names the concrete
+    keyed destination tests/oracle/<NNN>-<slug>/ — computed from the run's bound feature folder —
+    and ships no placeholder token to the agent."""
+    from threepowers.cli.run import _oracle_destination_context
+    from threepowers.config import Settings
+
+    root = tmp_path / "repo"
+    fdir = root / "specs-src" / "030-add-x"
+    fdir.mkdir(parents=True)
+    ctx = _oracle_destination_context(Settings(root=root), fdir)
+    assert "tests/oracle/030-add-x/" in ctx
+    assert "specs-src/030-add-x/" in ctx  # oracle.md lands flat in the feature folder
+    assembled = prompts.assemble("oracle", intent="add x", spec_text="S", context=ctx)
+    assert "tests/oracle/030-add-x/" in assembled
+    assert "<spec-id>" not in assembled
+    # a run without a bound folder injects nothing rather than a placeholder
+    assert _oracle_destination_context(Settings(root=root), None) == ""

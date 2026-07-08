@@ -3,12 +3,18 @@
 Two run-workspace concerns live here, both pure given injected inputs:
 
 * **Stage records**: the two producing stages whose real outputs live elsewhere in
-  the repository — ``oracle`` (authored test files) and ``implement`` (code changes) — each leave a
-  short markdown *record* in the run's feature folder that links those outputs at their real paths.
-  The record never relocates or duplicates them; a multi-phase implement yields exactly one
-  ``changelog.md`` enumerating every phase in deterministic artifact order (the legacy record name
-  ``implement.md`` stays read-resolvable; the top-level project ``CHANGELOG.md`` is hand-maintained
-  and never touched by a run).
+  the repository — ``oracle`` (the authored Tests Specification + test files) and ``implement``
+  (code changes) — each leave a markdown record in the run's feature folder. The implement record
+  is an engine-generated ``changelog.md`` linking the changed files at their real paths (the
+  legacy record name ``implement.md`` stays read-resolvable; the top-level project
+  ``CHANGELOG.md`` is hand-maintained and never touched by a run). The oracle record is the
+  **implementation-agnostic** ``oracle.md`` Tests Specification: when the oracle agent authored
+  it, the engine *validates* it (every spec requirement id named; no leaked file path or test
+  framework token) and leaves it in place; when it is absent, the engine writes a structural stub
+  from the spec's acceptance criteria with every section marked "not authored" so the gap stays
+  visible. ``oracle.md`` itself stays path-free — the machine record of the actual oracle test
+  paths lives in the signed ledger entries (the run/stage artifacts and the ``oracle record``
+  ``test_paths``), never in the document.
 
 * **The completion gate**: a producing stage is *done* only when BOTH its declared
   markdown artifact exists on disk in the feature folder AND a matching signed ``run``/``stage`` (or
@@ -25,10 +31,12 @@ to or signs the ledger — no new entry type, no signing change.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
+from .oracle import extract_criteria
 from .orchestrate import LIFECYCLE_STEPS
 from .workspace import PRODUCING_STEPS, find_artifact, stage_artifact_path
 
@@ -152,19 +160,118 @@ def resume_entry_index(
 
 
 # --------------------------------------------------------------------------- stage records
-def render_oracle_record(spec_id: str, linked: Sequence[str]) -> str:
-    """The ``oracle.md`` record — links the authored oracle tests at their real repo paths."""
+# The sentinel line marking an engine-written oracle.md stub. Its presence means "not authored":
+# a re-run regenerates the stub; its absence means the oracle agent authored the document, which
+# is validated and left in place, never overwritten.
+ORACLE_STUB_MARKER = "> Engine-generated structural stub"
+
+# The Tests Specification must stay implementation-agnostic: a leaked repository path or a named
+# test framework means the author bound the law to one implementation. Heuristics, surfaced as
+# advisory findings — never a gate.
+_ORACLE_PATH_PREFIX_RE = re.compile(
+    r"(?:^|[\s`\"'(\[])"
+    r"((?:\./|\.\./|src/|tests?/|lib/|app/|pkg/|cmd/|internal/|specs(?:-src)?/|oracle-tests/)"
+    r"[\w./-]*)"
+)
+_ORACLE_FILE_EXT_RE = re.compile(
+    r"(?:^|[\s`\"'(\[])"
+    r"([\w./-]*[\w-]\.(?:py|ts|tsx|js|jsx|mjs|cjs|go|rs|java|rb|kt|swift|php|c|cc|cpp|h|hpp"
+    r"|cs|sql|sh|ya?ml|toml|ini|cfg|lock))\b"
+)
+_ORACLE_FRAMEWORK_TOKENS = (
+    "pytest",
+    "unittest",
+    "hypothesis",
+    "jest",
+    "vitest",
+    "mocha",
+    "jasmine",
+    "cypress",
+    "playwright",
+    "selenium",
+    "junit",
+    "testng",
+    "rspec",
+    "minitest",
+    "xunit",
+    "nunit",
+    "testify",
+)
+
+
+def validate_oracle_spec(text: str, requirement_ids: Sequence[str]) -> list[str]:
+    """Validate an agent-authored ``oracle.md`` Tests Specification — pure, deterministic.
+
+    Two checks: coverage — the document names every requirement id declared by the spec — and
+    implementation-agnosticism — no leaked file path (a slashed repository path or a source-file
+    name) and no named test framework appears anywhere in the document. Returns the sorted,
+    actionable findings; an empty list means the document holds as law. The findings are advisory
+    surface for review, never a verdict input."""
+    findings = [
+        f"oracle.md does not name requirement {rid}"
+        for rid in sorted(set(requirement_ids))
+        if rid not in text
+    ]
+    leaked: set[str] = set()
+    for rx in (_ORACLE_PATH_PREFIX_RE, _ORACLE_FILE_EXT_RE):
+        leaked.update(m.group(1) for m in rx.finditer(text))
+    findings += [f"oracle.md leaks a file path: {tok}" for tok in sorted(leaked)]
+    lower = text.lower()
+    findings += [
+        f"oracle.md names a test framework: {tok}"
+        for tok in _ORACLE_FRAMEWORK_TOKENS
+        if re.search(rf"\b{re.escape(tok)}\b", lower)
+    ]
+    return findings
+
+
+def render_oracle_stub(key: str, criteria: Mapping[str, str]) -> str:
+    """The structural ``oracle.md`` stub when the oracle agent authored none — byte-deterministic.
+
+    One section per spec requirement id, carrying the criterion line from the sealed law and
+    marked "not authored", so every gap is visible — never silently passed. ``key`` is the run's
+    storage key (the ``<NNN>-<slug>`` feature-folder id). Path-free by construction: the machine
+    record of the actual oracle test paths lives in the signed ledger entries."""
     lines = [
-        f"# Oracle record — {spec_id}",
+        f"# Tests Specification — {key}",
         "",
-        "Phase-A oracle tests authored from the spec's acceptance criteria. The tests live at their",
-        "real repository paths (linked below) — this record neither relocates nor duplicates them.",
+        ORACLE_STUB_MARKER + " — the oracle agent authored no Tests Specification for this run.",
+        "> Derived from the approved spec's acceptance criteria only. Each section below is marked",
+        '> "not authored" so the gap stays visible until the judiciary authors it.',
         "",
-        "## Authored oracle tests",
+        "## Coverage Summary",
+        "",
+        f"- Requirements in spec: {len(criteria)}",
+        "- Authored here: 0 (structural stub)",
+        "",
+        "## Acceptance Tests",
         "",
     ]
-    lines += [f"- {p}" for p in sorted(set(linked))] or ["- (none linked)"]
+    for rid in sorted(criteria):
+        lines += [
+            f"### Test for {rid} — not authored",
+            "",
+            f"- **Source AC:** {criteria[rid]}",
+            "- **Criterion (Given / When / Then):** not authored",
+            "",
+        ]
+    if not criteria:
+        lines += ["(the spec declares no requirement ids)", ""]
     return "\n".join(lines) + "\n"
+
+
+def _spec_criteria(feature_dir: Path) -> dict[str, str]:
+    """The feature spec's ``requirement_id → acceptance-criterion line`` map, or ``{}``.
+
+    Read-tolerant: a feature without a resolvable spec, or an unreadable one, yields an empty
+    map — the oracle record then degrades to an empty stub rather than failing the stage."""
+    spec = find_artifact(feature_dir, "specify")
+    if spec is None:
+        return {}
+    try:
+        return extract_criteria(spec)[1]
+    except (OSError, UnicodeDecodeError):
+        return {}
 
 
 def _changelog_section(work_kinds: Sequence[str]) -> str:
@@ -271,16 +378,41 @@ def write_record(
     phase_requirements: Mapping[int, Sequence[str]] | None = None,
     work_kinds: Sequence[str] = (),
     report: str = "",
+    on_finding: Callable[[str], None] | None = None,
 ) -> str:
-    """Write the ``oracle.md`` / ``changelog.md`` record flat into the feature folder.
+    """Write (or validate) the ``oracle.md`` / ``changelog.md`` record flat in the feature folder.
 
     Returns the record's repo-relative POSIX path — the caller adds it to the stage's artifact paths
     so the signed ``run``/``stage`` entry records it and the completion gate can hold. For a
     phased implement the caller invokes this from the collecting thread AFTER all phases complete,
     in deterministic order. The implement record's legacy name (``implement.md``) is never written;
-    it stays read-resolvable through :func:`threepowers.workspace.find_artifact`."""
+    it stays read-resolvable through :func:`threepowers.workspace.find_artifact`.
+
+    The oracle step validates rather than authors: an agent-written ``oracle.md`` (no stub marker)
+    is checked against the spec's requirement ids and the path/framework leak heuristics — each
+    finding goes to ``on_finding`` (advisory, never a blocker) — and the authored file is left in
+    place byte-for-byte. An absent (or engine-stubbed) ``oracle.md`` is (re)written as the
+    structural stub keyed by the feature-folder id. ``linked`` — the actual oracle test paths —
+    is recorded by the caller's signed ledger entry only, keeping ``oracle.md`` path-free."""
+    target = stage_artifact_path(feature_dir, step)
     if step == "oracle":
-        text = render_oracle_record(spec_id, linked)
+        criteria = _spec_criteria(feature_dir)
+        existing = ""
+        if target.is_file():
+            try:
+                existing = target.read_text(encoding="utf-8")
+            except OSError:
+                existing = ""
+        if existing and ORACLE_STUB_MARKER not in existing:
+            # Agent-authored Tests Specification: validate, flag, leave in place.
+            if on_finding is not None:
+                for finding in validate_oracle_spec(existing, sorted(criteria)):
+                    on_finding(finding)
+            try:
+                return target.relative_to(root).as_posix()
+            except ValueError:
+                return target.as_posix()
+        text = render_oracle_stub(feature_dir.name, criteria)
     else:
         text = render_changelog(
             spec_id,
@@ -291,7 +423,6 @@ def write_record(
             work_kinds=work_kinds,
             report=report,
         )
-    target = stage_artifact_path(feature_dir, step)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     try:

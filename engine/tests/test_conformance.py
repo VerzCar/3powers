@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from threepowers.conformance import extract_spec, referenced_ids, run_conformance
+from threepowers.conformance import (
+    extract_spec,
+    referenced_ids,
+    requirement_namespaces,
+    run_conformance,
+)
 from threepowers.verdict import STATUS_FAIL, STATUS_PASS
 
 SPEC = """# Feature Specification: Validation Utils
@@ -73,3 +78,19 @@ def test_layers_are_recorded(tmp_path):
         (d / f"v.{layer}.test.ts").write_text('it("VUTIL-FR-001", ()=>{});', encoding="utf-8")
     refs = referenced_ids([tmp_path / "tests"], "VUTIL")
     assert refs["VUTIL-FR-001"] == {"unit", "integration", "e2e"}
+
+
+def test_referenced_ids_filter_is_the_namespace_not_the_storage_key(tmp_path):
+    """Track E decoupling (plan 033): ``referenced_ids`` filters by the requirement NAMESPACE (the
+    spec document's Spec ID, e.g. DEMO) — never by a storage/record key like a run's numeric
+    folder id — and ``requirement_namespaces`` translates a stored requirement set back into that
+    filter, so coverage counts DEMO-FR-* references for a run keyed by "030"."""
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "t.test.py").write_text("# covers DEMO-FR-001\n", encoding="utf-8")
+    assert referenced_ids([tests], "DEMO") == {"DEMO-FR-001": {"unit"}}
+    assert referenced_ids([tests], "030") == {}  # a storage key is not a namespace
+    assert referenced_ids([tests], set()) == {"DEMO-FR-001": {"unit"}}  # empty → no filter
+    assert referenced_ids([tests], {"DEMO", "OTHER"}) == {"DEMO-FR-001": {"unit"}}
+    assert requirement_namespaces({"DEMO-FR-001", "DEMO-NFR-002"}) == {"DEMO"}
+    assert requirement_namespaces(set()) == set()

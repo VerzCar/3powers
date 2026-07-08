@@ -18,6 +18,7 @@ from .. import (
     deviations,
     keys,
     oracle,
+    workspace,
 )
 from ..config import model_diversity_ok
 from ..ledger import Ledger
@@ -34,7 +35,42 @@ from ._common import (
 )
 
 if TYPE_CHECKING:
+    from ..config import Settings
     from ._common import AddCommon, SubParsers
+
+
+def _feature_key(s: Settings, spec: Optional[str]) -> str:
+    """The run/feature-context oracle key: the ``<NNN>-<slug>`` feature-folder name, or ``""``.
+
+    Resolves the governing spec (an explicit path, else the newest feature spec) and, when it
+    lives in a feature workspace folder (under ``specs-src/`` or the legacy ``specs/``), yields
+    that folder's name — the one id the run's ledger records, the oracle test destination
+    ``tests/oracle/<NNN>-<slug>/``, and the ``oracle.md`` record all share. A spec outside a
+    feature workspace yields ``""`` so the caller falls back to its own default (the spec
+    document's Spec ID, or an explicit ``--spec-id``). Deterministic and offline."""
+    try:
+        spec_path = _resolve_spec(s, spec)
+    except FileNotFoundError:
+        return ""
+    fdir = workspace.feature_dir_of(spec_path)
+    if fdir.parent.name in (workspace.SPECS_DIR, workspace.LEGACY_SPECS_DIR):
+        return fdir.name
+    return ""
+
+
+def _require_oracle_key(s: Settings, args: argparse.Namespace) -> str:
+    """The oracle key a keyed subcommand runs under: ``--spec-id``, else the feature-folder id.
+
+    An explicit ``--spec-id`` always wins unchanged (old records keyed by other tokens keep
+    verifying); otherwise the run/feature context supplies the ``<NNN>-<slug>`` folder name.
+    Returns ``""`` when neither resolves — the caller reports the usage error."""
+    return str(args.spec_id or "") or _feature_key(s, None)
+
+
+_KEY_ERROR = (
+    "error: could not resolve the oracle key from a feature workspace — pass "
+    "--spec-id <NNN>-<slug> (the run's feature-folder name)"
+)
 
 
 def cmd_roles_check(args: argparse.Namespace) -> int:
@@ -86,8 +122,12 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
     """Seal a spec-only oracle bundle the judiciary authors from."""
     s = _settings(args.root)
     spec_path = _resolve_spec(s, args.spec)
-    spec_id, criteria = oracle.extract_criteria(spec_path)
-    spec_id = args.spec_id or spec_id
+    doc_spec_id, criteria = oracle.extract_criteria(spec_path)
+    # The seal's storage key: an explicit --spec-id wins; a spec inside a feature workspace keys
+    # by its <NNN>-<slug> folder name (the same id the run's ledger and the oracle test
+    # destination use); otherwise the spec document's own Spec ID is the fallback. The sealed
+    # requirement ids keep their document namespace regardless of the key.
+    spec_id = args.spec_id or _feature_key(s, args.spec) or doc_spec_id
     if not spec_id:
         print("error: could not determine the spec id; pass --spec-id", file=sys.stderr)
         return EXIT_USAGE
@@ -141,6 +181,10 @@ def cmd_oracle_seal(args: argparse.Namespace) -> int:
 def cmd_oracle_record(args: argparse.Namespace) -> int:
     """Record oracle authoring; refuse the coder's model family."""
     s = _settings(args.root)
+    args.spec_id = _require_oracle_key(s, args)
+    if not args.spec_id:
+        print(_KEY_ERROR, file=sys.stderr)
+        return EXIT_USAGE
     entries = Ledger(s.ledger_path).entries()
     seal = oracle.active_seal(entries, args.spec_id)
     if seal is None:
@@ -275,6 +319,10 @@ def cmd_oracle_record(args: argparse.Namespace) -> int:
 def cmd_oracle_verify(args: argparse.Namespace) -> int:
     """Verify oracle independence structurally, from the ledger."""
     s = _settings(args.root)
+    args.spec_id = _require_oracle_key(s, args)
+    if not args.spec_id:
+        print(_KEY_ERROR, file=sys.stderr)
+        return EXIT_USAGE
     entries = Ledger(s.ledger_path).entries()
     rec = oracle.authoring_record(entries, args.spec_id)
     if args.tests:
@@ -345,6 +393,10 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
     Dispatch is Phase-A provisioning, recorded in the ledger — it never enters the deterministic
     gate verdict. The blocking isolation check binds at ``advance`` (High-risk)."""
     s = _settings(args.root)
+    args.spec_id = _require_oracle_key(s, args)
+    if not args.spec_id:
+        print(_KEY_ERROR, file=sys.stderr)
+        return EXIT_USAGE
     ledger = Ledger(s.ledger_path)
     seal = oracle.active_seal(ledger.entries(), args.spec_id)
     if seal is None:
@@ -465,6 +517,9 @@ def cmd_oracle_dispatch(args: argparse.Namespace) -> int:
             dispatched_model = res.model or model
 
         # Collect authored oracle tests (from the worktree, or --tests for --dry-run / manual).
+        # The destination is keyed by the oracle key — inside a run/feature context the
+        # <NNN>-<slug> feature-folder id — so the collected files, the record, and the run's
+        # ledger entries all resolve under one id.
         dest_root = s.root / "tests" / "oracle" / args.spec_id
         if args.tests:
             sources = [Path(t).resolve() for t in args.tests]
@@ -613,20 +668,27 @@ def _register_oracle(sub: SubParsers, common: AddCommon) -> None:
         help="oracle independence: seal / record / dispatch / verify",
     )
     osub = orp.add_subparsers(dest="oracle_cmd", required=True)
+    # One key threads seal → record → dispatch → verify: the run's <NNN>-<slug> feature-folder
+    # name, defaulted from the feature workspace so the oracle files, records, and the run's
+    # ledger all resolve under the id the user browses; an explicit --spec-id always wins.
+    key_help = (
+        "the oracle key — the run's <NNN>-<slug> feature-folder name "
+        "(default: resolved from the feature workspace)"
+    )
     osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle"))
     osl.add_argument("--spec", help="path to the governing spec.md")
-    osl.add_argument("--spec-id", dest="spec_id")
+    osl.add_argument("--spec-id", dest="spec_id", help=key_help)
     osl.set_defaults(func=cmd_oracle_seal)
     orc = common(
         osub.add_parser("record", help="record oracle authoring; refuse the coder's model family")
     )
-    orc.add_argument("--spec-id", dest="spec_id", required=True)
+    orc.add_argument("--spec-id", dest="spec_id", help=key_help)
     orc.add_argument("--model", required=True, help="oracle model as <family/model>")
     orc.add_argument("--tests", nargs="+", required=True, help="oracle test file(s)")
     orc.add_argument("--base", help="git ref for the touched-implementation advisory scan")
     orc.set_defaults(func=cmd_oracle_record)
     ovf = common(osub.add_parser("verify", help="verify oracle independence"))
-    ovf.add_argument("--spec-id", dest="spec_id", required=True)
+    ovf.add_argument("--spec-id", dest="spec_id", help=key_help)
     ovf.add_argument("--tests", nargs="*", help="oracle test roots (default: from the record)")
     ovf.add_argument(
         "--require-dispatch",
@@ -638,7 +700,7 @@ def _register_oracle(sub: SubParsers, common: AddCommon) -> None:
     odp = common(
         osub.add_parser("dispatch", help="author the oracle headlessly, read-path isolated")
     )
-    odp.add_argument("--spec-id", dest="spec_id", required=True)
+    odp.add_argument("--spec-id", dest="spec_id", help=key_help)
     odp.add_argument(
         "--integration",
         default="claude",

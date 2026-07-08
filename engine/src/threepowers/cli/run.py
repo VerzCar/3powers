@@ -735,6 +735,29 @@ def _feature_folder_context(s: Settings, feature_dir: Optional[Path]) -> str:
     )
 
 
+def _oracle_destination_context(s: Settings, feature_dir: Optional[Path]) -> str:
+    """The deterministic destination block for the run's oracle-stage prompt.
+
+    Keys the run's oracle by its feature-folder id (mirroring how ``oracle dispatch`` re-keys the
+    collected files): the runnable oracle tests go under ``tests/oracle/<NNN>-<slug>/`` and the
+    implementation-agnostic Tests Specification ``oracle.md`` lies flat in the feature folder —
+    one concrete id shared by the ledger records, the seal/record commands, and the folder the
+    user browses, so which oracle belongs to which spec is self-evident. No placeholder ever
+    reaches the agent on the run path; a run without a bound folder injects nothing."""
+    if feature_dir is None:
+        return ""
+    fid = feature_dir.name
+    try:
+        rel = feature_dir.relative_to(s.root).as_posix()
+    except ValueError:
+        rel = feature_dir.as_posix()
+    return (
+        f"ORACLE DESTINATION: write the runnable oracle test files under tests/oracle/{fid}/ — "
+        f"the run's feature-folder id keys the oracle. Write the implementation-agnostic Tests "
+        f"Specification oracle.md FLAT into {rel}/ before authoring the test files."
+    )
+
+
 def _progress_safe(update: Callable[[], Any]) -> None:
     """Run one progress-file update, degrading any error to a stderr warning.
 
@@ -863,6 +886,11 @@ def _native_runner(
         ctx_parts = []
         if step in ("specify", "clarify", "plan", "tasks"):
             ctx_parts.append(_feature_folder_context(s, feature_dir))
+        if step == "oracle":
+            # The concrete keyed destination (tests/oracle/<NNN>-<slug>/) replaces any
+            # placeholder: the oracle agent receives the folder id the run's ledger and
+            # records already use, never a token to fill in.
+            ctx_parts.append(_oracle_destination_context(s, feature_dir))
         ctx_parts.append(prior_box["ref"])
         if revise:
             # The revise re-dispatch carries the human's gate feedback + the artifact under review
@@ -923,6 +951,7 @@ def _native_runner(
                     phase_requirements={ph.index: phases.requirement_ids(ph) for ph in phase_list},
                     work_kinds=wk.kinds,
                     report=_implement_report(s, result.transcript) if step == "implement" else "",
+                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
                 )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)

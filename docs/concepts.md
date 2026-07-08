@@ -40,7 +40,13 @@ change.** The model that wrote the code does not get to write the answer key.
 ## Oracle independence (the heart of it)
 
 The oracle is the **answer key**: acceptance tests authored *from the spec's acceptance criteria alone*.
-Two rules make it independent (constitution, Principle III):
+The judiciary produces two artifacts. First the **Tests Specification** — the run's `oracle.md`, an
+implementation-agnostic document with one section per requirement id stating the measurable
+Given/When/Then criterion (never a file path, framework, or source path; the engine validates that).
+Then the **runnable oracle tests** implementing it, named by the requirement id they verify and written
+to `tests/oracle/<NNN>-<slug>/` — keyed by the run's feature-folder id, the same single id under which
+the sealed bundle, the authoring record, and the run's ledger entries resolve, so which oracle belongs
+to which spec is self-evident. Two rules make it independent (constitution, Principle III):
 
 1. **Different mind.** The oracle is pinned to a **different model family** than the coder. The engine
    refuses to proceed when they match (`3pwr roles-check`).

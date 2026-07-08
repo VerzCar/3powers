@@ -83,11 +83,15 @@ _STAGE_PROMPTS: dict[str, str] = {
         "depending on all prior phases whose goal is a fully green build."
     ),
     "oracle": (
-        "STAGE: Oracle (Phase A — judiciary). Author oracle tests SOLELY from the spec's acceptance "
-        "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from the "
-        "sealed spec bundle. Each oracle test names the requirement id it verifies. Write the oracle tests "
-        "under tests/oracle/<spec-id>/ (or ./oracle-tests/ in a sanitized worktree) — those tests are the "
-        "artifact this stage must produce."
+        "STAGE: Oracle (Phase A — judiciary). Author the oracle SOLELY from the spec's acceptance "
+        "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from "
+        "the sealed spec bundle. FIRST author the implementation-agnostic Tests Specification "
+        "oracle.md — one section per requirement id with a Given/When/Then criterion; no file paths, "
+        "test frameworks, or source paths may appear in it — flat in the run's feature folder. THEN "
+        "write the runnable oracle tests, each named for the requirement id it verifies, under the "
+        "destination the engine names in this prompt's context blocks — tests/oracle/<NNN>-<slug>/, "
+        "keyed by the run's feature-folder id (or ./oracle-tests/ in a sanitized worktree) — those "
+        "test files are the artifact this stage must produce."
     ),
     "implement": (
         "STAGE: Implement. Make the code satisfy the spec and pass the oracle tests, staying within each "

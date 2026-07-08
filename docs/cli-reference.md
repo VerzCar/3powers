@@ -316,13 +316,24 @@ sealed, spec-only bundle, and independence is proven from the signed ledger. The
 `advance` under **risk-tier scoping** (High-risk); detection that the author *touched/read* the
 implementation is an **advisory** flag surfaced for review, never a blocker.
 
+**One key threads everything.** Every keyed `oracle` subcommand takes `--spec-id` — the oracle
+**storage key**, by convention the run's `<NNN>-<slug>` feature-folder name. When you omit it inside
+a repository whose spec lives in a feature workspace (`specs-src/<NNN>-<slug>/spec.md`), the key
+defaults to that folder name, so the sealed bundle, the authoring record, the dispatch attestation,
+the collected test destination `tests/oracle/<NNN>-<slug>/`, and the run's own ledger records all
+resolve under the one id you browse in `specs-src/`. The key is decoupled from the requirement
+namespace: a spec whose requirements are `DEMO-FR-*` keeps that namespace in the sealed criteria and
+in coverage, whatever the storage key. Records keyed by older tokens keep verifying — pass the
+original `--spec-id` explicitly.
+
 ### `oracle seal` — seal a spec-only bundle
 Extracts the acceptance criteria (requirement IDs + text — no impl/plan/tasks/contracts) to
 `.3powers/oracle/<spec-id>/sealed.json`, hashed with a re-seal-stable content hash, and records a signed
 `oracle` seal entry.
-- `--spec SPEC` · `--spec-id SPEC_ID`.
+- `--spec SPEC` · `--spec-id SPEC_ID` (default: the spec's `<NNN>-<slug>` feature-folder name, else
+  the spec document's own Spec ID).
 ```bash
-3pwr oracle seal --spec specs-src/<NNN>-<slug>/spec.md --spec-id VUTIL
+3pwr oracle seal --spec specs-src/<NNN>-<slug>/spec.md   # keys by the folder id
 ```
 
 ### `oracle record` — record oracle authoring
@@ -330,34 +341,40 @@ Records the authoring event, bound to the sealed bundle: the model actually used
 (hashed), and any advisory peek/touch findings. **Refuses** when the oracle's model family equals the
 coder's, checking the model actually recorded (oracle model diversity — a different model family than the
 coder).
-- `--spec-id SPEC_ID` (required) · `--model FAMILY/MODEL` (required) · `--tests PATHS…` (required) ·
-  `--base BASE` (git ref for the touched-implementation advisory scan).
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--model FAMILY/MODEL`
+  (required) · `--tests PATHS…` (required) · `--base BASE` (git ref for the touched-implementation
+  advisory scan).
 ```bash
-3pwr oracle record --spec-id VUTIL --model anthropic/claude-opus \
-                   --tests e2e/typescript-orders/project/tests/unit/lineItem.test.ts
+3pwr oracle record --model anthropic/claude-opus \
+                   --tests tests/oracle/<NNN>-<slug>/lineItem.test.ts
 ```
 
 ### `oracle verify` — verify independence from the ledger
 Checks seal-binding, model-family diversity, Phase-A-before-B ordering (by ledger seq, not git time), and
-one oracle test per criterion; prints advisory findings too. With `--require-dispatch`, also confirms the
-oracle was authored via a read-path-isolated headless dispatch. Exit `1` if the structural check fails.
-- `--spec-id SPEC_ID` (required) · `--tests [ROOTS …]` (default: the recorded oracle test paths) ·
-  `--require-dispatch` (also require an isolated dispatch attestation).
+one oracle test per criterion; prints advisory findings too. Coverage counts references in the spec's own
+requirement namespace (e.g. `DEMO-FR-*`), whatever the storage key. With `--require-dispatch`, also
+confirms the oracle was authored via a read-path-isolated headless dispatch. Exit `1` if the structural
+check fails.
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--tests [ROOTS …]`
+  (default: the recorded oracle test paths) · `--require-dispatch` (also require an isolated dispatch
+  attestation).
 ```bash
-3pwr oracle verify --spec-id VUTIL
+3pwr oracle verify   # inside a feature workspace: seal ↔ record ↔ verdict from the one folder id
 ```
 
 ### `oracle dispatch` — author the oracle headlessly, read-path isolated
 Authors the oracle **headlessly** via the native executive runner, under a non-coder integration inside a
 **sanitized git worktree** where the implementation, plan, tasks, and contracts are physically absent —
-attested by a worktree manifest hash recorded in the ledger. This is the physical read-path isolation
-behind oracle sealing; it never enters the deterministic verdict.
-- `--spec-id SPEC_ID` (required) · `--integration INTEGRATION` (the headless CLI, e.g. `claude`) ·
-  `--model FAMILY/MODEL` (override the resolved oracle model) · `--workflow WORKFLOW` · `--base BASE`
-  (clean git ref for the worktree, default `HEAD`) · `--tests [PATHS …]` · `--dry-run` (build + attest
-  isolation offline, no model call) · `--keep-worktree` (leave the sanitized worktree in place).
+attested by a worktree manifest hash recorded in the ledger. The authored tests are collected under
+`tests/oracle/<spec-id>/` (with the defaulted key: `tests/oracle/<NNN>-<slug>/`). This is the physical
+read-path isolation behind oracle sealing; it never enters the deterministic verdict.
+- `--spec-id SPEC_ID` (default: the `<NNN>-<slug>` feature-folder name) · `--integration INTEGRATION`
+  (the headless CLI, e.g. `claude`) · `--model FAMILY/MODEL` (override the resolved oracle model) ·
+  `--workflow WORKFLOW` · `--base BASE` (clean git ref for the worktree, default `HEAD`) ·
+  `--tests [PATHS …]` · `--dry-run` (build + attest isolation offline, no model call) ·
+  `--keep-worktree` (leave the sanitized worktree in place).
 ```bash
-3pwr oracle dispatch --spec-id VUTIL --integration claude
+3pwr oracle dispatch --integration claude
 ```
 
 ---
@@ -438,10 +455,15 @@ ledger, so a run is resumable and its state is always visible (`--status` / `3pw
 allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
 from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
 alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`,
-`implementation-plan.md`, plus the `oracle.md`/`changelog.md` records linking the real test/code
-outputs at their real repo paths (the run's `changelog.md` is engine-generated — grouped by phase
-and traced to requirement ids — and never touches the project's top-level `CHANGELOG.md`; features
-written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
+`implementation-plan.md`, plus two records: **`oracle.md`**, the implementation-agnostic Tests
+Specification the oracle agent authors from the sealed spec (one section per requirement id with its
+Given/When/Then criterion; the engine validates it names every requirement and leaks no file path or
+test framework, and writes a visible structural stub when it is absent — the machine record of the
+actual oracle test paths lives in the signed ledger entries, and the runnable tests land under
+`tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, the run's
+engine-generated change record — grouped by phase and traced to requirement ids, linking the real
+code outputs at their real repo paths — which never touches the project's top-level `CHANGELOG.md`
+(features written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a

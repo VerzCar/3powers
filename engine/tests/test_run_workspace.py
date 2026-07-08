@@ -94,19 +94,26 @@ def test_producing_steps_declare_exactly_five_markdowns():
 
 # --------------------------------------------------------------------------- records (SRCX-FR-005/006)
 def test_records_link_real_outputs_without_moving_them(tmp_path):
-    """SRCX-FR-005: oracle.md/changelog.md link the real outputs at their existing repo paths —
-    a superset of the contract-matched / produced set — and relocate nothing."""
+    """SRCX-FR-005: changelog.md links the real outputs at their existing repo paths and relocates
+    nothing; the oracle record is the path-free Tests Specification keyed by the folder id — the
+    authored test files stay at their real paths and their machine record lives in the signed
+    ledger entries, never inside oracle.md (CON-005)."""
     f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
-    tests_dir = tmp_path / "tests" / "oracle" / "X"
+    (f / "spec.md").write_text(
+        "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: The system shall work.\n", encoding="utf-8"
+    )
+    tests_dir = tmp_path / "tests" / "oracle" / "017-x"
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_o.py").write_text("def test_o(): ...\n", encoding="utf-8")
     rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="X", linked=["tests/oracle/X/test_o.py"]
+        tmp_path, f, "oracle", spec_id="X", linked=["tests/oracle/017-x/test_o.py"]
     )
     assert rel == "specs-src/017-x/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
-    assert "tests/oracle/X/test_o.py" in text  # links ⊇ contract-matched paths
+    assert "Tests Specification — 017-x" in text  # keyed by the feature-folder id
+    assert "tests/oracle/017-x/test_o.py" not in text  # path-free: no test path leaks in
+    assert "DEMO-FR-001" in text and "not authored" in text  # the visible structural stub
     assert (tests_dir / "test_o.py").is_file()  # the real output was not moved
     assert not (f / "test_o.py").exists()  # ...nor copied into the feature folder
     rel2 = completion.write_record(
@@ -418,7 +425,10 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
                 encoding="utf-8",
             )
         elif "STAGE: Oracle" in prompt and "oracle" not in skip:
-            t = cwd / "tests" / "oracle" / spec_id
+            import re
+
+            m = re.search(r"ORACLE DESTINATION: [^\n]*?tests/oracle/([^<\s/]+)/", prompt)
+            t = cwd / "tests" / "oracle" / (m.group(1) if m else spec_id)
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         elif "STAGE: Implement" in prompt and "implement" not in skip:
@@ -514,10 +524,14 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
     assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()  # SRCX-FR-001
     for name in ("review-spec.md", "verify.md", "signoff.md", "advance.md", "clarify.md"):
         assert not (fdir / name).exists(), name  # SRCX-FR-007: ledger-only stages
-    # the records link the real outputs at their real repo paths (SRCX-FR-005)
-    assert "tests/oracle/RUN/test_oracle.py" in (fdir / "oracle.md").read_text(encoding="utf-8")
+    # the changelog links the real outputs at their real repo paths (SRCX-FR-005); the oracle
+    # tests land under the run's keyed destination tests/oracle/<NNN>-<slug>/ and oracle.md is
+    # the path-free Tests Specification keyed by the same folder id (CON-005)
+    oracle_md = (fdir / "oracle.md").read_text(encoding="utf-8")
+    assert "Tests Specification — 001-add-x" in oracle_md
+    assert "tests/oracle/" not in oracle_md  # path-free: the machine record lives in the ledger
     assert "src/impl.py" in (fdir / "changelog.md").read_text(encoding="utf-8")
-    assert (run_repo / "tests" / "oracle" / "RUN" / "test_oracle.py").is_file()  # not relocated
+    assert (run_repo / "tests" / "oracle" / "001-add-x" / "test_oracle.py").is_file()
     # the top-level project CHANGELOG.md is untouched by a run
     changelog_after = (
         (run_repo / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -528,6 +542,9 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
 
     entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
     recorded = completion.recorded_stage_artifacts(entries, "RUN")
+    # the machine record of the actual oracle test paths lives in the signed stage entry —
+    # keyed by the run's folder id — so oracle.md can stay path-free
+    assert "tests/oracle/001-add-x/test_oracle.py" in recorded["oracle"]
     for step in workspace.PRODUCING_STEPS:  # SRCX-SC-002: every markdown named in a signed entry
         rel = f"specs-src/001-add-x/{workspace.step_filename(step)}"
         assert rel in recorded[step], (step, recorded)
