@@ -182,7 +182,7 @@ def test_spec_text_injected_only_after_spec_approval(tmp_path):
     spec.write_text("APPROVED TEXT\n", encoding="utf-8")
     for step in ("plan", "tasks", "oracle", "implement"):
         assert "APPROVED TEXT" in _dispatch_spec_text(s, step, spec), step
-    for step in ("specify", "clarify"):
+    for step in ("discovery", "specify", "clarify"):
         assert _dispatch_spec_text(s, step, spec) == "", step
 
 

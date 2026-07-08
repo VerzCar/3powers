@@ -76,7 +76,9 @@ class StageResult:
     Carries everything ``--json`` reports per dispatched stage: the agent + resolved model, the number of
     attempts, the wall-clock duration, a short artifact summary, and the outcome. ``ok`` drives the state
     machine; ``outcome`` classifies a failure for an actionable message:
-    ``"ok"`` | ``"dispatch_failed"`` | ``"artifact_missing"``.
+    ``"ok"`` | ``"dispatch_failed"`` | ``"artifact_missing"``. The additive ``"skipped"`` value
+    (with ``ok=True``) marks a stage the run deliberately did not dispatch — a discovery
+    short-circuited by the work-kind gate — with nothing written and no ledger stage entry.
     """
 
     step: str

@@ -800,6 +800,9 @@ def _native_runner(
     producing stage, and run the gate suite in-process at Verify."""
     intent = args.intent or ""
     wk = workkind.classify(intent)
+    # The resolved --discovery/--no-discovery override (None = decide by work-kind); getattr
+    # tolerates namespaces built by callers that never registered the flag.
+    discovery_override: Optional[bool] = getattr(args, "discovery", None)
     tier = args.tier or wk.suggested_tier or s.default_tier()
     timeout = _dispatch_timeout(s, args)
     retries = _dispatch_retries(s, args)
@@ -841,6 +844,21 @@ def _native_runner(
     prior_box: dict[str, str] = {"ref": ""}
 
     def dispatch(step: str, stage: str) -> runnermod.StageResult:
+        # Discovery runs only when the work warrants it: feature/design kinds, or the explicit
+        # --discovery/--no-discovery override. The skip is a short-circuit BEFORE the pre-stage
+        # git hook, the dispatch, the artifact verify, the ledger recording, and the stage commit
+        # — nothing is written, no run/stage entry is appended, and the prior-context handoff
+        # (prior_box) stays untouched, so the walk proceeds straight to Specify.
+        if step == "discovery" and not workkind.discovery_enabled(
+            wk.kinds, override=discovery_override
+        ):
+            return runnermod.StageResult(
+                step=step,
+                stage=stage,
+                ok=True,
+                outcome="skipped",
+                detail="discovery skipped (work-kind)",
+            )
         # The mandatory PRE-STAGE git hook: every stage of a live run happens on the
         # run's dedicated branch — strayed mid-run (e.g. the user switched away), it switches back
         # before dispatching; a switch git refuses is a named failure, never forced.
@@ -1581,6 +1599,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         if args.dry_run:
             return
         for step, _stage in orchestrate.segment_actions_from(start_index):
+            if step == "discovery" and not workkind.discovery_enabled(
+                workkind.classify(args.intent or "").kinds,
+                override=getattr(args, "discovery", None),
+            ):
+                # A discovery the dispatch closure will short-circuit is never announced as a
+                # dispatch: no provenance entry for a stage that will not run.
+                continue
             is_oracle = step == "oracle"
             ledger.append(
                 "run",
@@ -2332,6 +2357,14 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         dest="no_input",
         action="store_true",
         help="never prompt; stop at gates and print the resume command",
+    )
+    rnp.add_argument(
+        "--discovery",
+        dest="discovery",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="force (--discovery) or skip (--no-discovery) the Discovery stage "
+        "(default: run it for feature/design work, skip it otherwise)",
     )
     rnp.add_argument("--approver", help="human approver recorded at gate sign-offs")
     rnp.add_argument("--note", help="note recorded with the gate sign-off")

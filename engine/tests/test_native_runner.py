@@ -544,6 +544,135 @@ def test_cli_json_emits_a_per_stage_result(native_project, capsys):
     assert spec_stage["attempts"] == 1 and "spec.md" in spec_stage["artifact"]
 
 
+# --------------------------------------------------------------------------- discovery work-kind gate (plan 034 phase 5)
+def _discovery_ledger_entries(root: Path) -> tuple[list[dict], list[dict]]:
+    """The run's discovery ledger entries: (stage completions, dispatch provenance)."""
+    from threepowers.ledger import Ledger
+
+    entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
+    runs = [e.get("payload", {}) for e in entries if e.get("type") == "run"]
+    stage = [p for p in runs if p.get("kind") == "stage" and p.get("step") == "discovery"]
+    dispatch = [p for p in runs if p.get("kind") == "dispatch" and p.get("stage") == "discovery"]
+    return stage, dispatch
+
+
+def test_run_parser_resolves_discovery_override():
+    """Plan 034 phase 5: --discovery/--no-discovery resolve to an Optional[bool], default None."""
+    import threepowers.cli as climod
+
+    p = climod.build_parser()
+    assert p.parse_args(["run", "add x"]).discovery is None
+    assert p.parse_args(["run", "add x", "--discovery"]).discovery is True
+    assert p.parse_args(["run", "add x", "--no-discovery"]).discovery is False
+
+
+def test_run_help_lists_the_discovery_flags(capsys):
+    """Plan 034 phase 5: `3pwr run --help` lists both flag forms."""
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    out = capsys.readouterr().out
+    assert "--discovery" in out and "--no-discovery" in out
+
+
+def test_defect_intent_skips_discovery_and_proceeds_to_specify(native_project, monkeypatch, capsys):
+    """Plan 034 phase 5: a defect-kind intent short-circuits Discovery — outcome 'skipped' in the
+    parseable --json stages list, nothing written, no run/stage or dispatch discovery ledger entry
+    — and the walk proceeds straight to Specify with the prior-context handoff untouched."""
+    import json as _json
+
+    prompts_seen: list[str] = []
+    inner = _artifact_writer()
+
+    def recording(argv, **kw):
+        prompts_seen.append(argv[-1] if argv else "")
+        return inner(argv, **kw)
+
+    monkeypatch.setattr(runner, "dispatch_agent", recording)
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "fix the crash bug",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"  # the walk reached Specify and its gate
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "skipped"
+    assert "specify" in [st["step"] for st in obj["stages"]]
+    assert not list(native_project.glob("specs-src/**/discovery.md"))  # nothing written
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage == [] and dispatch == []  # no ledger trace of a stage that never ran
+    # prior_box untouched: the specify prompt (the FIRST dispatched) carries no discovery handoff
+    assert "# Specify agent" in prompts_seen[0]
+    assert "discovery.md" not in prompts_seen[0]
+    # The verdict/gate --json path never consumes StageResult, so the new outcome value
+    # cannot perturb its bytes (light source-level guard).
+    import inspect
+
+    from threepowers import verdict as verdictmod
+
+    assert "StageResult" not in inspect.getsource(verdictmod)
+
+
+def test_no_discovery_flag_skips_for_a_feature_intent(native_project, capsys):
+    """Plan 034 phase 5: --no-discovery overrides the work-kind gate — a feature intent skips."""
+    import json as _json
+
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "add x",
+            "--no-discovery",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "skipped"
+    assert not list(native_project.glob("specs-src/**/discovery.md"))
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage == [] and dispatch == []
+
+
+def test_discovery_flag_forces_dispatch_for_a_defect_intent(native_project, capsys):
+    """Plan 034 phase 5: --discovery overrides the work-kind gate — a defect intent dispatches
+    Discovery, its note lands and is recorded like any producing stage."""
+    import json as _json
+
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "fix the crash bug",
+            "--discovery",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "ok"
+    assert list(native_project.glob("specs-src/**/discovery.md"))  # the note landed
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage and dispatch  # recorded like any dispatched producing stage
+
+
 # --------------------------------------------------------------------------- per-stage artifact contract (RUNLIVE-FR-001/002)
 def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monkeypatch, capsys):
     """RUNLIVE-FR-002/SC-001: a Specify agent that writes no spec stops the run with a named artifact
