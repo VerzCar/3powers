@@ -1,20 +1,20 @@
-"""The asynchronous hosted agent backend — dispatch a role's stage to a *hosted* agent run (RUNLIVE-FR-008).
+"""The asynchronous hosted agent backend — dispatch a role's stage to a *hosted* agent run.
 
-Some enterprises expose their agent runtime only as an **asynchronous, hosted** run — the GitHub Copilot
-coding agent is the motivating case: a REST call kicks off an Actions run that opens a pull request; there
-is no local headless CLI to invoke. This backend satisfies the same agent-runner contract as
-:class:`threepowers.runner.CliAgentRunner` — a ``dispatch(step, stage) -> DispatchResult`` — by *triggering*
-the hosted run, *polling* it to completion, and *collecting* the produced changes (a branch or pull request)
-into the working tree, so the very same in-process deterministic gate suite then judges the result
-identically to a locally-dispatched stage (RUNLIVE-NFR-003).
+Some enterprises expose their agent runtime only as an **asynchronous, hosted** run — the GitHub
+Copilot coding agent is the motivating case: a REST call kicks off an Actions run that opens a pull
+request; there is no local headless CLI to invoke. This backend satisfies the same agent-runner
+contract as :class:`threepowers.runner.CliAgentRunner` — a ``dispatch(step, stage) ->
+DispatchResult`` — by *triggering* the hosted run, *polling* it to completion, and *collecting* the
+produced changes (a branch or pull request) into the working tree, so the very same in-process
+deterministic gate suite then judges the result identically to a locally-dispatched stage.
 
-It is **provider-neutral** (RUNLIVE-NFR-005): the trigger/poll/collect steps are *manifest-declared
+It is **provider-neutral**: the trigger/poll/collect steps are *manifest-declared
 commands* with ``{placeholder}`` substitution, so a Copilot shop wires them to ``gh api`` / ``gh pr
 checkout`` with **no vendor code in the engine**. Credentials are inherited through the child process
-environment and are never interpreted, logged, or stored by the engine (RUNLIVE-FR-009). The engine issues
-no model/agent API call itself — the hosted run does (RUNLIVE-NFR-001). All timing seams (the command
-runner, the sleep, the clock) are injectable, so the whole trigger→poll→collect flow is unit-tested with a
-fake and no network (RUNLIVE-NFR-002).
+environment and are never interpreted, logged, or stored by the engine. The engine issues
+no model/agent API call itself — the hosted run does. All timing seams (the command
+runner, the sleep, the clock) are injectable, so the whole trigger→poll→collect flow is unit-tested
+with a fake and no network.
 """
 
 from __future__ import annotations
@@ -36,11 +36,11 @@ CommandRunner = Callable[[list[str], Path], tuple[int, str, str]]
 
 
 def run_hosted_command(argv: list[str], cwd: Path) -> tuple[int, str, str]:
-    """Run one manifest-declared hosted command (no shell), inheriting the environment (RUNLIVE-FR-009).
+    """Run one manifest-declared hosted command (no shell), inheriting the environment.
 
-    Module-level so tests monkeypatch it — the engine issues no model call itself (RUNLIVE-NFR-001). The
-    full environment is inherited so the org's credentials/config reach the child unread; the engine never
-    interprets or logs a secret."""
+    Module-level so tests monkeypatch it — the engine issues no model call itself. The
+    full environment is inherited so the org's credentials/config reach the child unread; the engine
+    never interprets or logs a secret."""
     try:
         # argv comes only from a committed manifest (no shell), so there is no injection surface.
         proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, check=False)
@@ -71,7 +71,7 @@ class _Default(dict):
 
 
 class HostedAgentRunner:
-    """Drive one stage through a hosted, asynchronous agent run (RUNLIVE-FR-008).
+    """Drive one stage through a hosted, asynchronous agent run.
 
     The manifest declares (all optional except ``trigger_command``):
 
@@ -143,17 +143,17 @@ class HostedAgentRunner:
         context: str = "",
         file_scope: str = "",
     ) -> DispatchResult:
-        """Trigger → poll → collect one stage; a failed/timed-out hosted run is a dispatch failure naming the
-        stage (RUNLIVE-FR-008), never a gate verdict. No credential is read or logged (RUNLIVE-FR-009).
-        The per-dispatch prompt blocks mirror :meth:`CliAgentRunner.dispatch` so a hosted stage is judged
-        and contextualized identically to a local one (RUNLIVE-NFR-003, PHASE-FR-005)."""
+        """Trigger → poll → collect one stage; a failed/timed-out hosted run is a dispatch failure
+        naming the stage, never a gate verdict. No credential is read or logged.
+        The per-dispatch prompt blocks mirror :meth:`CliAgentRunner.dispatch` so a hosted stage is
+        judged and contextualized identically to a local one."""
         prompt = prompts.assemble(
             step,
             intent=self.intent,
             spec_text=self.spec_text if spec_text is None else spec_text,
             context=context,
             file_scope=file_scope,
-            # The same repo-local stage-template resolution as the local runner (AGENTX-FR-005).
+            # The same repo-local stage-template resolution as the local runner.
             body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
         )
         mapping = {

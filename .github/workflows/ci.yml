@@ -1,12 +1,12 @@
-# CI for this repository's own contributions (OSSRD-FR-004).
+# CI for this repository's own contributions.
 #
 # 3Powers itself needs no CI to be trusted — verdicts, the signed ledger, and enforcement all hold
-# locally and offline (3PWR-NFR-004; assumption A4: CI may re-validate, never gatekeep the framework's
+# locally and offline (CI may re-validate, never gatekeep the framework's
 # users). This workflow gates *contributions to this repo*: every pull request to `main` must keep the
 # engine linting, type-checking, testing green, and the committed ledger verifying.
 #
 # The steps mirror the documented local commands exactly (CONTRIBUTING.md — "Development setup").
-# Budget: the whole job must finish well within 10 minutes on the hosted runners (OSSRD-NFR-002).
+# Budget: the whole job must finish well within 10 minutes on the hosted runners.
 
 name: CI
 
@@ -23,7 +23,7 @@ jobs:
   engine:
     name: engine — lint · types · tests · ledger verify
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # OSSRD-NFR-002: never the reason contributors bypass checks
+    timeout-minutes: 10 # never the reason contributors bypass checks
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +51,7 @@ jobs:
 
       # Offline ledger verification: recomputes the hash chain + Ed25519 signatures from the committed
       # .3powers/ledger.jsonl and .3powers/keys/*.pub alone. Needs no private key — a keyless CI runner
-      # passes the custody preflight by construction (HARDN-FR-002).
+      # passes the custody preflight by construction.
       - name: Verify the signed ledger (offline)
         working-directory: engine
         run: uv run python -m threepowers.cli --root .. verify

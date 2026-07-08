@@ -1,12 +1,12 @@
-"""Task scope discipline (3PWR-FR-016/017).
+"""Task scope discipline.
 
 Two executive boundaries, checked deterministically:
 
-* **FR-016** — every task traces to a requirement: each task line in ``tasks.md`` must
-  carry a spec-namespaced requirement ID.
-* **FR-017** — a task declares the files it will touch (``(files: …)``); a change that
-  edits files outside the union of declared scopes is flagged, because an out-of-scope
-  edit is a signal to stop and re-spec, not to proceed.
+* **Traceability** — every task traces to a requirement: each task line in ``tasks.md``
+  must carry a spec-namespaced requirement ID.
+* **Declared file scope** — a task declares the files it will touch (``(files: …)``); a
+  change that edits files outside the union of declared scopes is flagged, because an
+  out-of-scope edit is a signal to stop and re-spec, not to proceed.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def scope_check(
         if not _TASK_RE.search(line):
             continue
         if not any(True for _ in _iter_req_ids(line)):
-            tasks_without_req.append(line.strip()[:80])  # FR-016
+            tasks_without_req.append(line.strip()[:80])  # a task with no requirement trace
         m = _FILES_RE.search(line)
         if m:
             for f in m.group(1).split(","):

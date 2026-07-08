@@ -1,6 +1,6 @@
 # Threat model — what the 3Powers trust spine proves, against whom, under which assumptions
 
-This document is the versioned, in-repo answer to "what does the ledger prove?" (HARDN-FR-001).
+This document is the versioned, in-repo answer to "what does the ledger prove?".
 It states precisely what each trust-spine mechanism guarantees, which tamper classes
 `3pwr verify` detects, which it **cannot** detect, and the custody assumptions everything rests
 on. It exists so an enterprise security review can answer these questions from the repository
@@ -34,7 +34,7 @@ are claims by the signer), or that the signing machine was uncompromised.
 | **Sequence gap** — entries dropped or renumbered | `seq` is required to be dense and monotonic from 0 |
 | **Payload edit** — any field of a recorded entry changed | recomputed `entry_hash` over the canonical core mismatches the stored one |
 | **Signature mismatch** — an entry forged without the signing key | Ed25519 verification against the committed public key(s) fails |
-| **Key swap** — `.3powers/keys/ledger.pub` replaced without authority | the committed key does not descend from the genesis key through signed `key_rotation` entries (HARDN-FR-004) |
+| **Key swap** — `.3powers/keys/ledger.pub` replaced without authority | the committed key does not descend from the genesis key through signed `key_rotation` entries |
 
 ## What `verify` cannot detect
 
@@ -54,10 +54,10 @@ are claims by the signer), or that the signing machine was uncompromised.
 The custody boundary the whole spine rests on: **executive agents must never be able to resolve
 a signing key.** The private key is resolved from (in order) `$THREEPOWERS_SIGNING_KEY_FILE`,
 `$THREEPOWERS_SIGNING_KEY`, or `~/.config/3powers/<repo>.key` — always **outside** the
-repository working tree (3PWR-NFR-005). An agent operating inside the repo must find no key
+repository working tree. An agent operating inside the repo must find no key
 material there to read, and nothing in-repo may point it at one.
 
-Enforced hygiene (HARDN-FR-002/003):
+Enforced hygiene:
 
 - `3pwr keygen` **refuses** to create a private key inside the working tree;
 - `3pwr verify` runs a custody preflight and fails with a `key_custody` finding when a resolved
@@ -69,13 +69,13 @@ Enforced hygiene (HARDN-FR-002/003):
 There is no deviation path for a custody violation — the remedy is to fix custody (move the key
 outside the tree, `chmod 600` it, rotate if it may have leaked), not to accept it.
 
-**Key continuity (HARDN-FR-004).** Replacing the signer is legitimate only through a signed
+**Key continuity.** Replacing the signer is legitimate only through a signed
 `key_rotation` ledger entry: authored by the *outgoing* key, carrying the successor public key.
 `verify` walks these rotations and fails when the committed public key does not descend from
 the genesis key — turning the "swap the committed pubkey in an unremarkable git diff" attack
 into a named finding.
 
-**External / hardware-backed signing (HARDN-FR-006).** Where an external signer is configured
+**External / hardware-backed signing.** Where an external signer is configured
 (`$THREEPOWERS_SIGNER_CMD`), the engine delegates signing to a process boundary: the private
 seed is never present in a file or environment variable readable by the engine. Verification is
 unchanged — standard Ed25519 signatures against the committed public key. A misconfigured
@@ -83,7 +83,7 @@ external signer fails loudly; it never silently falls back to a software key.
 
 ## Anchoring
 
-Anchoring (opt-in, HARDN-FR-005) records the current ledger head — sequence number and entry
+Anchoring (opt-in) records the current ledger head — sequence number and entry
 hash — with an **external witness** the key holder does not control unilaterally. The reference
 witness is a signed git ref/tag (`3powers/anchor/<seq>`), pushed to a remote. `3pwr verify
 --anchored` cross-checks the local chain against the latest anchor and fails when the ledger
@@ -115,7 +115,7 @@ evidence classes, and they are **not equal**:
   integration inside a sanitized worktree, and records the integration + worktree manifest hash
   in the ledger. When a dispatch exists, the engine cross-checks the self-reported model family
   against the dispatched integration and treats a contradiction as a blocking independence
-  failure at a High-risk `advance` (HARDN-FR-007).
+  failure at a High-risk `advance`.
 
 Even a dispatch attestation is not end-to-end cryptographic proof of *which* model produced the
 text; it is a deterministic, local record of which integration was invoked, in which isolation.
@@ -123,8 +123,8 @@ text; it is a deterministic, local record of which integration was invoked, in w
 ## Conformance and gate-gaming residuals
 
 The spec-conformance gate binds requirement IDs to test declarations and requires at least one
-assertion per requirement-bound test (HARDN-FR-008/009); the gate-gaming detector flags newly
-added assertion-free requirement-referencing tests for mandatory human review (HARDN-FR-010).
+assertion per requirement-bound test; the gate-gaming detector flags newly
+added assertion-free requirement-referencing tests for mandatory human review.
 These checks are deterministic and cannot judge whether an assertion is *meaningful* — that
-remains the job of mutation testing (always at High-risk; opt-in diff-scoped at lower tiers,
-HARDN-FR-011) and human review.
+remains the job of mutation testing (always at High-risk; opt-in diff-scoped at lower tiers)
+and human review.

@@ -1,11 +1,11 @@
-"""Design oracles — how *design* work is judged, beyond the code gates (3PWR-FR-009).
+"""Design oracles — how *design* work is judged, beyond the code gates.
 
-When work-kind inference (3PWR-FR-058) tags a change ``design``, the engine unions a set of
+When work-kind inference tags a change ``design``, the engine unions a set of
 **design-oracle gates** onto the tier's gate set. Which oracles apply is a config catalog
 (``.3powers/config/design-oracles.yaml``); the *tool* for each is **adapter-supplied**, keeping the
-core language-agnostic (3PWR-NFR-007). A selected oracle the adapter doesn't declare — or whose tool
+core language-agnostic. A selected oracle the adapter doesn't declare — or whose tool
 isn't installed — is **quarantined** (reported ``skip`` with a surfaced finding), never silently
-passed (3PWR-NFR-015).
+passed.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from .verdict import STATUS_FAIL, STATUS_PASS, STATUS_SKIP, GateResult
 DESIGN_GATES = ("contract_check", "component_contract", "a11y_scan", "visual_regression")
 
 # Built-in catalog used when the repo ships no design-oracles.yaml, so a design change always surfaces
-# every oracle dimension (quarantined if unwired) rather than silently passing (3PWR-NFR-015).
+# every oracle dimension (quarantined if unwired) rather than silently passing.
 _DEFAULT_ORACLES: dict[str, dict[str, Any]] = {
     "structural": {"gate": "contract_check"},
     "component_contract": {"gate": "component_contract"},

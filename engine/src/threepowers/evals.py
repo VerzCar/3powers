@@ -1,4 +1,4 @@
-"""Prompt/constitution evaluation harness (3PWR-FR-050).
+"""Prompt/constitution evaluation harness.
 
 The constitution, the ``/3pwr.*`` commands, and the role config are versioned software.
 This runs an eval set of content assertions over them and **fails on any regression**, so

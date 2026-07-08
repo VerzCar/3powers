@@ -1,22 +1,22 @@
-"""Context-sized phases — parse, estimate, schedule, and dispatch a phased tasks artifact (PHASE spec 013).
+"""Context-sized phases — parse, estimate, schedule, and dispatch a phased tasks artifact.
 
 The tasks artifact decomposes work into ordered **phases**, each a self-contained delegable unit sized so
 one fresh agent session (spec + rules + phase tasks + files in scope) fits inside the configured context
-budget (delivers 3PWR-FR-060/061 at the engine level). This module owns the deterministic mechanics:
+budget. This module owns the deterministic mechanics:
 
-* :func:`parse_phases` reads the phase structure from the tasks artifact's text (PHASE-FR-010);
+* :func:`parse_phases` reads the phase structure from the tasks artifact's text;
 * :func:`estimate_tokens` / :func:`phase_reload_bytes` compute a deterministic context-size estimate from
-  artifact **bytes** — no provider tokenizer, no network (PHASE-FR-008);
-* :func:`oversize_warning` words the strictly-advisory over-budget warning (PHASE-FR-009) — the budget
-  never fails a stage or gate (PHASE-NFR-002);
+  artifact **bytes** — no provider tokenizer, no network;
+* :func:`oversize_warning` words the strictly-advisory over-budget warning — the budget
+  never fails a stage or gate;
 * :func:`schedule` batches phases for parallel subagent dispatch **only** when they are marked parallel,
-  declare no dependency, and have disjoint declared file scopes (PHASE-FR-011);
+  declare no dependency, and have disjoint declared file scopes;
 * :func:`run_phases` executes the schedule — one fresh session per phase, concurrent inside a batch — and
-  returns results in deterministic artifact order (PHASE-FR-010/012).
+  returns results in deterministic artifact order.
 
 Everything is a pure function of its inputs (identical artifacts and config produce identical estimates,
-schedules, and orderings on any machine — PHASE-NFR-001); the ledger is never touched here, so parallel
-completion cannot corrupt the trust spine (PHASE-NFR-003 — the caller appends results *after* collection,
+schedules, and orderings on any machine); the ledger is never touched here, so parallel
+completion cannot corrupt the trust spine (the caller appends results *after* collection,
 from one thread).
 """
 
@@ -28,18 +28,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-# The deterministic bytes→tokens heuristic (PHASE-FR-008): ~4 bytes per token is a practical estimate
+# The deterministic bytes→tokens heuristic: ~4 bytes per token is a practical estimate
 # for source and prose; exactness is a non-goal — this is an indicator, not a meter.
 BYTES_PER_TOKEN = 4
 
-# The shipped default context budget in tokens (PHASE-FR-007): a practical fill indicator for today's
+# The shipped default context budget in tokens: a practical fill indicator for today's
 # common context windows at which model performance is still dependable. Advisory, per-model-configurable.
 DEFAULT_BUDGET_TOKENS = 110_000
 
 
 @dataclass(frozen=True)
 class Phase:
-    """One phase parsed from the tasks artifact — a self-contained delegable unit (PHASE-FR-010).
+    """One phase parsed from the tasks artifact — a self-contained delegable unit.
 
     ``index`` is the 1-based artifact-order position (the deterministic tie-breaker everywhere);
     ``file_scope`` is the phase's declared scope (its own line plus every task's ``(files: …)``),
@@ -56,7 +56,7 @@ class Phase:
 
 @dataclass
 class PhaseResult:
-    """The outcome of executing one phase (PHASE-FR-012)."""
+    """The outcome of executing one phase."""
 
     index: int
     name: str
@@ -80,7 +80,7 @@ def _split_paths(raw: str) -> list[str]:
 
 
 def parse_phases(text: str) -> list[Phase]:
-    """Parse the ordered phases out of a tasks artifact's text (PHASE-FR-010) — pure and deterministic.
+    """Parse the ordered phases out of a tasks artifact's text — pure and deterministic.
 
     A phase starts at a ``## Phase N: <name>`` heading. Inside it, ``**File scope**:`` and each task's
     ``(files: …)`` build the declared scope; ``**Depends on**:`` (anything but "none"/"-") declares a
@@ -150,7 +150,7 @@ def parse_phases(text: str) -> list[Phase]:
     return phases
 
 
-# --------------------------------------------------------------------------- context-size estimation (PHASE-FR-008)
+# --------------------------------------------------------------------------- context-size estimation
 def estimate_tokens(total_bytes: int) -> int:
     """The deterministic bytes→tokens estimate (ceiling division) — same bytes, same estimate, any machine."""
     n = max(0, int(total_bytes))
@@ -172,7 +172,7 @@ def phase_reload_bytes(
     constitution_path: Optional[Path] = None,
     prompt_text: str = "",
 ) -> int:
-    """The byte size of a phase's reload set (PHASE-FR-008): the specification, the constitution/rules,
+    """The byte size of a phase's reload set: the specification, the constitution/rules,
     the phase's tasks and prompt, and the files in its declared scope. Files absent from the tree count
     zero (they are to be created); no network or tokenizer is involved."""
     total = len(phase.body.encode("utf-8")) + len(prompt_text.encode("utf-8"))
@@ -193,7 +193,7 @@ def phase_estimate(
     constitution_path: Optional[Path] = None,
     prompt_text: str = "",
 ) -> int:
-    """The phase's estimated context size in tokens (PHASE-FR-008) — deterministic given the reload set."""
+    """The phase's estimated context size in tokens — deterministic given the reload set."""
     return estimate_tokens(
         phase_reload_bytes(
             root,
@@ -206,11 +206,11 @@ def phase_estimate(
 
 
 def oversize_warning(phase: Phase, estimate: int, budget: int) -> Optional[str]:
-    """The advisory over-budget warning (PHASE-FR-009), or ``None`` when the phase fits.
+    """The advisory over-budget warning, or ``None`` when the phase fits.
 
     Names the phase, its estimate, and the budget, and instructs splitting; an irreducible phase (a
     single task already over budget) is told so. Advisory only — the caller never fails a stage or a
-    gate on it (PHASE-NFR-002)."""
+    gate on it."""
     if estimate <= budget:
         return None
     advice = (
@@ -224,7 +224,7 @@ def oversize_warning(phase: Phase, estimate: int, budget: int) -> Optional[str]:
     )
 
 
-# --------------------------------------------------------------------------- scheduling (PHASE-FR-011)
+# --------------------------------------------------------------------------- scheduling
 def scope_overlap(a: Phase, b: Phase) -> list[str]:
     """The declared file paths two phases share (sorted) — the disjointness check's evidence."""
     return sorted(set(a.file_scope) & set(b.file_scope))
@@ -233,17 +233,17 @@ def scope_overlap(a: Phase, b: Phase) -> list[str]:
 def _parallel_eligible(phase: Phase) -> bool:
     # A phase joins a concurrent batch only when it is marked parallel, declares no dependency, and
     # declares a non-empty file scope — an undeclared scope could touch anything, so it never runs
-    # concurrently (the conservative reading of PHASE-FR-011's property).
+    # concurrently (the conservative reading of the parallel-dispatch rule).
     return phase.parallel and not phase.depends_on and bool(phase.file_scope)
 
 
 def schedule(phases: list[Phase]) -> tuple[list[list[Phase]], list[str]]:
-    """Batch phases for dispatch (PHASE-FR-011): each batch runs concurrently, batches run in order.
+    """Batch phases for dispatch: each batch runs concurrently, batches run in order.
 
     Consecutive phases join one batch only when every member is parallel-marked, dependency-free, and
     pairwise disjoint in declared file scope; any other phase runs alone, in artifact order. Returns the
     batches plus human-readable notes for each pair that was serialized *despite* parallel markers (the
-    reported overlap). Pure and deterministic (PHASE-NFR-001): two phases end up in the same batch only
+    reported overlap). Pure and deterministic: two phases end up in the same batch only
     if their declared file-scope sets do not intersect."""
     batches: list[list[Phase]] = []
     notes: list[str] = []
@@ -268,10 +268,10 @@ def schedule(phases: list[Phase]) -> tuple[list[list[Phase]], list[str]]:
     return batches, notes
 
 
-# --------------------------------------------------------------------------- execution (PHASE-FR-010/012)
+# --------------------------------------------------------------------------- execution
 @dataclass
 class PhaseRun:
-    """The full result of running a phased implement stage (PHASE-FR-012)."""
+    """The full result of running a phased implement stage."""
 
     results: list[PhaseResult] = field(default_factory=list)  # deterministic artifact order
     ok: bool = True
@@ -282,7 +282,7 @@ class PhaseRun:
 
     @property
     def failure_detail(self) -> str:
-        """An actionable message naming the failing phase(s) (3PWR-FR-034, PHASE-FR-012)."""
+        """An actionable message naming the failing phase(s)."""
         parts = []
         for r in self.failed:
             why = f": {r.detail}" if r.detail else ""
@@ -296,13 +296,13 @@ def run_phases(
     *,
     max_workers: int = 4,
 ) -> PhaseRun:
-    """Execute the schedule: each batch's phases run concurrently, batches sequentially (PHASE-FR-010/011).
+    """Execute the schedule: each batch's phases run concurrently, batches sequentially.
 
     ``run_one`` dispatches one phase as a fresh headless session and returns ``(ok, detail)``. Results are
     collected and ordered by phase index, so reruns of the same outcome set record the same order however
-    the threads interleave (PHASE-FR-012, PHASE-NFR-001/003). After a batch containing a failure, later
+    the threads interleave. After a batch containing a failure, later
     phases are **not dispatched and not reported as passed** — each is recorded as an explicit failed
-    "skipped" result, so a partially-implemented stage can never read as green (PHASE-FR-012)."""
+    "skipped" result, so a partially-implemented stage can never read as green."""
     run = PhaseRun()
     failed = False
     for batch in batches:
@@ -329,12 +329,12 @@ def run_phases(
 
 
 def completed_phases_summary(phase_list: list[Phase], current_index: int) -> str:
-    """The one-line "phases already completed" summary for the phase prompt (PHASEPR-FR-004).
+    """The one-line "phases already completed" summary for the phase prompt.
 
     Names every phase preceding ``current_index`` in artifact order — e.g.
     ``Phase 1 (HeaderComponent styles), Phase 2 (ButtonComponent)`` — so a fresh session never
     redoes earlier work; returns ``"none"`` for the first phase (nothing is invented). A pure,
-    deterministic function of the parsed phase list and the index (PHASEPR-NFR-001)."""
+    deterministic function of the parsed phase list and the index."""
     done = [p for p in phase_list if p.index < current_index]
     if not done:
         return "none"
@@ -349,16 +349,15 @@ def handoff_context(
     spec_id: str = "",
     completed_summary: str = "none",
 ) -> str:
-    """The per-phase handoff block a fresh session's prompt reloads (PHASE-FR-010).
+    """The per-phase handoff block a fresh session's prompt reloads.
 
-    Carries the PHASE INSTRUCTION contract (PHASEPR-FR-001/002/003): scope limited to the declared
+    Carries the PHASE INSTRUCTION contract: scope limited to the declared
     phase's tasks and file scope, ``[P]`` tasks dispatched concurrently via subagents, completion
     markers (``[x]`` done / ``[!]`` + reason) written back to tasks.md, no operator questions —
-    plus the completed-phases summary (PHASEPR-FR-004), the phase's tasks, and the
+    plus the completed-phases summary, the phase's tasks, and the
     constitution/rules text. The approved spec and the file scope travel in their own prompt blocks
     (:func:`threepowers.prompts.assemble`), so the whole handoff set is reloaded with no carried
-    conversation state (3PWR-FR-061). Deterministic given the inputs (PHASE-NFR-001,
-    PHASEPR-NFR-001)."""
+    conversation state. Deterministic given the inputs."""
     run_label = f" for run {spec_id}" if spec_id else ""
     parts = [
         "═══════════════════ PHASE INSTRUCTION ════════════════════════",

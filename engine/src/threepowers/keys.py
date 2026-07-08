@@ -1,9 +1,8 @@
 """Ed25519 signer / verifier identity for the trust spine.
 
 The **signer identity is independent of the executive agents**: the private key is
-never stored in the repository and never appears in the ledger (3PWR-FR-039,
-3PWR-NFR-005). Only the *public* key is committed (``.3powers/keys/ledger.pub``) so
-that ``verify`` is fully local and offline (3PWR-NFR-004).
+never stored in the repository and never appears in the ledger. Only the *public* key
+is committed (``.3powers/keys/ledger.pub``) so that ``verify`` is fully local and offline.
 
 Key custody (private key) is resolved, in order:
   1. ``$THREEPOWERS_SIGNING_KEY_FILE`` — path to a private-key file;
@@ -55,7 +54,7 @@ def key_id_of(raw_public: bytes) -> str:
 
 @runtime_checkable
 class Signer(Protocol):
-    """Anything that can sign ledger bytes: a software key or an external signer (HARDN-FR-006)."""
+    """Anything that can sign ledger bytes: a software key or an external signer."""
 
     @property
     def key_id(self) -> str: ...
@@ -64,7 +63,7 @@ class Signer(Protocol):
 
 
 class ExternalSignerError(ValueError):
-    """A configured external signer failed — loudly, never falling back (HARDN-FR-006)."""
+    """A configured external signer failed — loudly, never falling back."""
 
 
 @dataclass
@@ -145,7 +144,7 @@ def load_public(path: Path) -> VerifyKey:
 
 @dataclass
 class CommandSigner:
-    """Delegate signing to an external process boundary (HARDN-FR-006).
+    """Delegate signing to an external process boundary.
 
     The command receives the canonical bytes to sign on **stdin** and must print the
     base64 Ed25519 signature on **stdout**. The private-key material lives wherever the
@@ -166,32 +165,32 @@ class CommandSigner:
         # argv-style, never a shell (a signer needing pipes/expansion wraps them in a script).
         argv = shlex.split(self.cmd)
         if not argv:
-            raise ExternalSignerError("external signer command is empty (HARDN-FR-006)")
+            raise ExternalSignerError("external signer command is empty")
         try:
             res = subprocess.run(argv, input=data, capture_output=True, timeout=120)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ExternalSignerError(
                 f"external signer could not run ({self.cmd!r}): {exc} — refusing to fall "
-                "back to a software key (HARDN-FR-006)"
+                "back to a software key"
             ) from exc
         if res.returncode != 0:
             err = res.stderr.decode(errors="replace").strip()
             raise ExternalSignerError(
                 f"external signer exited {res.returncode}: {err or 'no diagnostics'} — "
-                "refusing to fall back to a software key (HARDN-FR-006)"
+                "refusing to fall back to a software key"
             )
         try:
             sig = base64.b64decode(res.stdout.strip(), validate=True)
         except (ValueError, TypeError) as exc:
             raise ExternalSignerError(
                 "external signer output is not base64 — expected the Ed25519 signature "
-                "of stdin on stdout (HARDN-FR-006)"
+                "of stdin on stdout"
             ) from exc
         if len(sig) != 64 or not self.public.verify(sig, data):
             raise ExternalSignerError(
                 "external signer produced a signature that does not verify against the "
                 f"committed public key {self.public.key_id} — misconfigured signer or "
-                "wrong key (HARDN-FR-006)"
+                "wrong key"
             )
         return sig
 
@@ -205,7 +204,7 @@ def _command_signer(cmd: str, pub_path: Path, env_name: str) -> CommandSigner:
     if not pub_path.exists():
         raise ExternalSignerError(
             f"${env_name} is set but no committed public key exists at {pub_path} — "
-            "install the external signer's public key there first (HARDN-FR-006)"
+            "install the external signer's public key there first"
         )
     return CommandSigner(cmd=cmd, public=load_public(pub_path))
 
@@ -216,7 +215,7 @@ def default_private_path(repo_root: Path) -> Path:
 
 
 def default_oracle_private_path(repo_root: Path) -> Path:
-    """The distinct judiciary (oracle) signer's default path — also OUTSIDE the repo (3PWR-NFR-005)."""
+    """The distinct judiciary (oracle) signer's default path — also OUTSIDE the repo."""
     base = Path(os.path.expanduser("~")) / ".config" / "3powers"
     return base / (repo_root.name + ".oracle.key")
 
@@ -235,7 +234,7 @@ def _resolve(file_env: str, seed_env: str, default_path: Path) -> Optional[Signi
 
 
 def inside_working_tree(repo_root: Path, path: Path) -> bool:
-    """True iff ``path`` resolves inside the repository working tree (HARDN-FR-002)."""
+    """True iff ``path`` resolves inside the repository working tree."""
     try:
         path.resolve().relative_to(repo_root.resolve())
         return True
@@ -252,7 +251,7 @@ def _mode_too_open(path: Path) -> bool:
 
 
 def custody_findings(repo_root: Path) -> list[str]:
-    """Deterministic key-custody preflight (HARDN-FR-002).
+    """Deterministic key-custody preflight.
 
     Reports a ``key_custody`` finding when a resolved private-key file lives inside the
     repository working tree, or when its permissions are broader than owner-only. A
@@ -275,7 +274,7 @@ def custody_findings(repo_root: Path) -> list[str]:
             findings.append(
                 f"key_custody: private key at {label} resolves INSIDE the working tree — "
                 "an executive agent with repo access can read it; move it outside the "
-                "repository (3PWR-NFR-005)"
+                "repository"
             )
         if path.exists() and _mode_too_open(path):
             findings.append(
@@ -286,12 +285,12 @@ def custody_findings(repo_root: Path) -> list[str]:
 
 
 def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
-    """Load the private signing key from outside the repository (3PWR-NFR-005).
+    """Load the private signing key from outside the repository.
 
     ``role="oracle"`` prefers a distinct judiciary identity
     (``$THREEPOWERS_ORACLE_SIGNING_KEY_FILE`` / ``$THREEPOWERS_ORACLE_SIGNING_KEY`` /
     ``~/.config/3powers/<repo>.oracle.key``), **falling back to the primary signer** when unset — so
-    a distinct oracle key is optional and fully backward-compatible (3PWR-FR-039)."""
+    a distinct oracle key is optional and fully backward-compatible."""
     if role == "oracle":
         sk = _resolve(
             "THREEPOWERS_ORACLE_SIGNING_KEY_FILE",
@@ -310,7 +309,7 @@ def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
         return sk
     raise FileNotFoundError(
         "No signing key found. Run `3pwr keygen` or set $THREEPOWERS_SIGNING_KEY_FILE. "
-        "The private key must live OUTSIDE the repository (3PWR-NFR-005)."
+        "The private key must live OUTSIDE the repository."
     )
 
 
@@ -319,7 +318,7 @@ def resolve_signer(repo_root: Path, role: str = "ledger") -> Signer:
 
     Where ``$THREEPOWERS_SIGNER_CMD`` (or ``$THREEPOWERS_ORACLE_SIGNER_CMD`` for the
     judiciary identity) is set, signing is delegated to that process boundary and the
-    private seed is never readable by the engine (HARDN-FR-006). A configured-but-broken
+    private seed is never readable by the engine. A configured-but-broken
     external signer raises — it never silently falls back to a software key. With no
     external configuration the existing software-key custody chain applies unchanged.
     """

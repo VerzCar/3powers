@@ -1,4 +1,4 @@
-"""Third-party dependency compatibility (3PWR-FR-048, 3PWR-NFR-014).
+"""Third-party dependency compatibility.
 
 3Powers drives headless agent backends, per-language adapter toolchains, and supply-chain scanners.
 A new upstream release of any of these can change behaviour, so the **supported** versions are an
@@ -8,8 +8,8 @@ probeable), or `unknown` (installed, no range declared). A per-component policy 
 `block` fails the check, `warn` surfaces it, `ignore` skips.
 
 This is a **preflight** check, never a verdict gate: installed-tool versions are environment-dependent,
-so keeping them out of the verdict preserves determinism (3PWR-NFR-001) — the same reason the oracle's
-peek/touch signal is advisory. An absent tool is reported, like the scanner quarantine (3PWR-NFR-015),
+so keeping them out of the verdict preserves determinism — the same reason the oracle's
+peek/touch signal is advisory. An absent tool is reported, like the scanner quarantine,
 never silently passed.
 """
 

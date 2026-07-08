@@ -1,13 +1,13 @@
-"""Onboarding scaffold — bundled baseline config + reference adapters (ONBRD-FR-001/003/008).
+"""Onboarding scaffold — bundled baseline config + reference adapters.
 
 The engine ships a canonical ``.3powers/`` starter set as package data under ``scaffold/`` so
-``3pwr init`` can make an *existing or new* project gate-ready with no network access
-(ONBRD-NFR-002). Nothing here writes a private key into the repository (ONBRD-NFR-001):
+``3pwr init`` can make an *existing or new* project gate-ready with no network access.
+Nothing here writes a private key into the repository:
 ``create_signer`` always writes the private key to a path the caller has already checked is
 OUTSIDE the working tree, and only the public key is committed.
 
-Seeding never clobbers hand-edited files (ONBRD-FR-008) and is therefore idempotent: re-running
-converges to the same on-disk state (ONBRD-FR-009).
+Seeding never clobbers hand-edited files and is therefore idempotent: re-running
+converges to the same on-disk state.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ _SOURCE_DIRS = ("src", "app", "lib", "pkg", "cmd", "internal")
 
 
 def bundled_languages() -> list[str]:
-    """The languages the engine can scaffold — one per bundled adapter manifest (ONBRD-FR-003)."""
+    """The languages the engine can scaffold — one per bundled adapter manifest."""
     if not _ADAPTERS_DIR.is_dir():
         return []
     return sorted(
@@ -58,7 +58,7 @@ def _detect_globs(lang: str) -> list[str]:
 
 
 def detect_language(target: Path) -> Optional[str]:
-    """The bundled language whose detect files ALL exist under ``target`` (ONBRD-FR-010).
+    """The bundled language whose detect files ALL exist under ``target``.
 
     Mirrors ``adapters.detect_adapter`` so onboarding's suggested default matches what the gate
     engine will later auto-detect. ``None`` when nothing matches."""
@@ -70,7 +70,7 @@ def detect_language(target: Path) -> Optional[str]:
 
 
 def has_source(target: Path) -> bool:
-    """Brownfield heuristic — does ``target`` already hold a project? (ONBRD-FR-010)
+    """Brownfield heuristic — does ``target`` already hold a project?
 
     True if a recognised stack marker is present, or a conventional source directory has content.
     The trust spine and VCS metadata are ignored, so an otherwise-empty repo reads as greenfield."""
@@ -93,7 +93,7 @@ def _copy_if_missing(src: Path, dst: Path) -> str:
 
 
 def seed_config(settings: Settings) -> dict[str, str]:
-    """Copy the baseline config into ``.3powers/config/``, never clobbering (ONBRD-FR-008)."""
+    """Copy the baseline config into ``.3powers/config/``, never clobbering."""
     out: dict[str, str] = {}
     for src in sorted(_CONFIG_DIR.glob("*")):
         if src.is_file():
@@ -102,7 +102,7 @@ def seed_config(settings: Settings) -> dict[str, str]:
 
 
 def materialize_adapter(settings: Settings, lang: str) -> str:
-    """Make the selected adapter available under ``.3powers/adapters/<lang>/`` (ONBRD-FR-008)."""
+    """Make the selected adapter available under ``.3powers/adapters/<lang>/``."""
     src = _ADAPTERS_DIR / lang / "adapter.yaml"
     if not src.exists():
         raise LookupError(
@@ -120,14 +120,14 @@ _AGENTS_SCAFFOLD_DIR = SCAFFOLD_DIR / "agents"
 
 
 def bundled_agents() -> list[str]:
-    """The agent backends the engine can seed — one per bundled manifest (EXEC-FR-004)."""
+    """The agent backends the engine can seed — one per bundled manifest."""
     if not _AGENTS_SCAFFOLD_DIR.is_dir():
         return []
     return sorted(p.stem for p in _AGENTS_SCAFFOLD_DIR.glob("*.yaml"))
 
 
 def seed_agents(settings: Settings) -> dict[str, str]:
-    """Copy the bundled agent-backend manifests into ``.3powers/agents/`` (EXEC-FR-004), never clobbering.
+    """Copy the bundled agent-backend manifests into ``.3powers/agents/``, never clobbering.
 
     The native executive drives whichever headless coding agent a role points at; seeding the reference
     manifests makes a fresh project runnable with `3pwr run` and no Spec Kit."""
@@ -148,18 +148,18 @@ _TEMPLATES_SCAFFOLD_DIR = SCAFFOLD_DIR / "templates" / "agents"
 
 
 def bundled_stage_templates() -> list[str]:
-    """The per-stage agent templates the engine ships — one per dispatched stage (AGENTX-FR-001)."""
+    """The per-stage agent templates the engine ships — one per dispatched stage."""
     if not _TEMPLATES_SCAFFOLD_DIR.is_dir():
         return []
     return sorted(p.name for p in _TEMPLATES_SCAFFOLD_DIR.glob("*.agent.md"))
 
 
 def seed_stage_templates(settings: Settings) -> dict[str, str]:
-    """Copy the bundled stage agent templates into ``.3powers/templates/agents/`` (AGENTX-FR-009).
+    """Copy the bundled stage agent templates into ``.3powers/templates/agents/``.
 
-    Non-clobbering and idempotent (ONBRD-FR-008/009): a hand-edited template is never overwritten,
+    Non-clobbering and idempotent: a hand-edited template is never overwritten,
     and re-running converges to the same on-disk state. Each template is the editable instruction
-    body the executive dispatches for that stage (AGENTX-FR-005)."""
+    body the executive dispatches for that stage."""
     out: dict[str, str] = {}
     if not _TEMPLATES_SCAFFOLD_DIR.is_dir():
         return out
@@ -171,18 +171,18 @@ def seed_stage_templates(settings: Settings) -> dict[str, str]:
 def write_onboarding(
     settings: Settings, *, auto_mode: bool, tier: str = "Standard", auto_commit: bool = True
 ) -> None:
-    """Record the autonomy defaults (advisory; ONBRD-FR-005 / INITX-FR-001/006).
+    """Record the autonomy defaults (advisory).
 
     Advisory only: ``auto_mode`` selects the default ``3pwr run`` mode when ``--mode`` is omitted,
     ``tier`` is the tier a *new* spec starts at, and ``auto_commit`` toggles per-stage auto-commit.
-    None ever weakens a gate or suppresses a mandatory human gate (ONBRD-NFR-004 / INITX-NFR-002)."""
+    None ever weakens a gate or suppresses a mandatory human gate."""
     path = settings.onboarding_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "# 3Powers onboarding preferences.\n"
         "# Advisory only: `auto_mode` selects the default `3pwr run` mode when --mode is omitted,\n"
         "# `tier` is the tier a new spec starts at, and `auto_commit` toggles per-stage auto-commit.\n"
-        "# None suppresses a mandatory human gate or weakens a threshold (ONBRD-NFR-004 / INITX-NFR-002).\n"
+        "# None suppresses a mandatory human gate or weakens a threshold.\n"
         "version: 1\n"
         "defaults:\n"
         f"  auto_mode: {str(bool(auto_mode)).lower()}\n"
@@ -192,7 +192,7 @@ def write_onboarding(
     )
 
 
-# The explanatory header rewritten role files keep (AGENTX-FR-017): `require_dispatch` and the
+# The explanatory header rewritten role files keep: `require_dispatch` and the
 # diversity stance stay explained WHERE THE CONFIG LIVES, even after yaml.safe_dump drops the
 # scaffold template's comments. Deterministic bytes — the same write always yields the same file.
 _ROLES_HEADER = (
@@ -201,26 +201,25 @@ _ROLES_HEADER = (
     "# Each role block: model_family, model, integration (an agent backend under\n"
     "# .3powers/agents/), label (a human-friendly name).\n"
     "#\n"
-    "# oracle.require_dispatch (default false) is the High-risk read-path-isolation policy\n"
-    "# (3PWR-FR-021, epic A3): when true, a High-risk `advance` refuses unless an ISOLATED\n"
+    "# oracle.require_dispatch (default false) is the High-risk read-path-isolation policy:\n"
+    "# when true, a High-risk `advance` refuses unless an ISOLATED\n"
     "# HEADLESS-DISPATCH attestation (`3pwr oracle dispatch`) proves the oracle was authored with\n"
     "# the implementation/plan/tasks/contracts physically absent from its worktree. Leave it false\n"
     "# while authoring the oracle in-IDE; enable it once the project adopts headless oracle\n"
     "# authoring at High-risk.\n"
     "#\n"
-    "# Model diversity (oracle/reviewer vs coder) is RECOMMENDED, never forced (3PWR-FR-022): a\n"
+    "# Model diversity (oracle/reviewer vs coder) is RECOMMENDED, never forced: a\n"
     "# same-family setup proceeds under a signed, reversible deviation \u2014\n"
-    '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`\n'
-    "# (3PWR-FR-057).\n"
+    '# `3pwr deviation --gate model_diversity --approver <you> --note "single-model dev"`.\n'
     "#\n"
-    '# `diversity_level` (default `family`) is how "diverse enough" is judged (3PWR-FR-022):\n'
+    '# `diversity_level` (default `family`) is how "diverse enough" is judged:\n'
     "#   family \u2014 the oracle and coder must be different model *families*.\n"
     "#   model  \u2014 a different *model* in one family qualifies (e.g. opus vs sonnet).\n"
     "# One BYOK integration (e.g. copilot) can serve several families: pick a coder model in one\n"
     "# family and an oracle model in another and `family` diversity holds with a single CLI.\n"
     "#\n"
-    "# `headless_integrations` lists the agent-backend CLIs a LIVE `3pwr run` may dispatch headlessly\n"
-    "# (EXEC-FR-015/NFR-003) \u2014 set by `3pwr init`'s multi-select to the CLIs you have installed.\n"
+    "# `headless_integrations` lists the agent-backend CLIs a LIVE `3pwr run` may dispatch\n"
+    "# headlessly \u2014 set by `3pwr init`'s multi-select to the CLIs you have installed.\n"
 )
 
 
@@ -234,14 +233,14 @@ def set_role_model(
     model_family: str = "",
     require_dispatch: Optional[bool] = None,
 ) -> None:
-    """Record a role's concrete model + integration in ``roles.yaml`` (INITX-FR-002/003, AGENTX-FR-012).
+    """Record a role's concrete model + integration in ``roles.yaml``.
 
     Merges into the existing roles configuration (seeding it first if absent), preserving every
-    other role and unrelated field (AGENTX-NFR-003). ``model_family`` wins when given (a catalog
-    entry's family — AGENTX-FR-015); otherwise the family is derived from the model id where it
-    encodes one. For the oracle role, ``require_dispatch`` is always present in the written block
-    (AGENTX-FR-012): an explicit value wins, an existing value is preserved, else the documented
-    default ``false``. The rewritten file keeps an explanatory header (AGENTX-FR-017)."""
+    other role and unrelated field. ``model_family`` wins when given (a catalog
+    entry's family); otherwise the family is derived from the model id where it
+    encodes one. For the oracle role, ``require_dispatch`` is always present in the written block:
+    an explicit value wins, an existing value is preserved, else the documented
+    default ``false``. The rewritten file keeps an explanatory header."""
     from .catalog import derive_family
 
     data = _load_roles_doc(settings)
@@ -273,7 +272,7 @@ def _load_roles_doc(settings: Settings) -> dict[str, Any]:
 
 
 def _save_roles_doc(settings: Settings, data: dict[str, Any]) -> None:
-    """Write roles.yaml with the explanatory header, preserving field order (AGENTX-FR-017)."""
+    """Write roles.yaml with the explanatory header, preserving field order."""
     path = settings.roles_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -283,10 +282,10 @@ def _save_roles_doc(settings: Settings, data: dict[str, Any]) -> None:
 
 
 def set_headless_integrations(settings: Settings, names: list[str]) -> None:
-    """Record which agent-backend CLIs a live ``3pwr run`` may dispatch (EXEC-FR-015/NFR-003).
+    """Record which agent-backend CLIs a live ``3pwr run`` may dispatch.
 
     Written to ``roles.yaml`` ``headless_integrations`` (deduped, first-seen order), preserving every
-    other field. An empty selection is a no-op — it never wipes the seeded default (AGENTX-NFR-003)."""
+    other field. An empty selection is a no-op — it never wipes the seeded default."""
     cleaned: list[str] = []
     for n in names:
         v = str(n).strip()
@@ -300,7 +299,7 @@ def set_headless_integrations(settings: Settings, names: list[str]) -> None:
 
 
 def set_diversity_level(settings: Settings, level: str) -> None:
-    """Record how model diversity is judged — ``family`` or ``model`` (3PWR-FR-022).
+    """Record how model diversity is judged — ``family`` or ``model``.
 
     An unrecognized value is ignored (the file keeps its current, valid level)."""
     lvl = str(level or "").strip().lower()
@@ -312,23 +311,23 @@ def set_diversity_level(settings: Settings, level: str) -> None:
 
 
 # Notifications config keeps its own short header: yaml.safe_dump drops the scaffold template's
-# comments on the first rewrite, and the secret-safety rule (STEER-NFR-002) is worth keeping WHERE
+# comments on the first rewrite, and the secret-safety rule is worth keeping WHERE
 # THE CONFIG LIVES.
 _NOTIFY_HEADER = (
-    "# 3Powers run notifications (STEER-FR-010). `3pwr run` fires on gate pauses, failures, and\n"
+    "# 3Powers run notifications. `3pwr run` fires on gate pauses, failures, and\n"
     "# completion. Channels: slack | teams | email | desktop.\n"
-    "# SECRETS ARE NEVER STORED HERE (STEER-NFR-002): a slack/teams block names an env var\n"
+    "# SECRETS ARE NEVER STORED HERE: a slack/teams block names an env var\n"
     "# (`webhook_env`) holding the webhook URL; email reads its password from `password_env`.\n"
     "# Export those before `3pwr run`. An empty `channels:` list means notifications are off.\n"
 )
 
 
 def set_notification_channel(settings: Settings, channel: dict[str, Any]) -> None:
-    """Record one run-notification channel in ``notifications.yaml`` (STEER-FR-010).
+    """Record one run-notification channel in ``notifications.yaml``.
 
     Replaces any existing block of the same ``type`` (idempotent re-init), else appends — so a
     second `3pwr init` reconfiguring the same channel never duplicates it. Never writes a secret
-    value: slack/teams carry ``webhook_env`` and email ``password_env`` (STEER-NFR-002)."""
+    value: slack/teams carry ``webhook_env`` and email ``password_env``."""
     ctype = str(channel.get("type") or "").strip()
     if not ctype:
         return
@@ -351,8 +350,8 @@ def set_notification_channel(settings: Settings, channel: dict[str, Any]) -> Non
 
 
 def is_outside_repo(path: Path, root: Path) -> bool:
-    """True iff ``path`` resolves OUTSIDE the repository working tree (ONBRD-NFR-001 / SC-003)."""
-    from .keys import inside_working_tree  # single custody source of truth (HARDN-FR-002)
+    """True iff ``path`` resolves OUTSIDE the repository working tree."""
+    from .keys import inside_working_tree  # single custody source of truth
 
     return not inside_working_tree(root, path.expanduser())
 
@@ -361,7 +360,7 @@ def is_outside_repo(path: Path, root: Path) -> bool:
 
 
 def seed_agents_md(root: Path) -> str:
-    """Write a 3Powers-flavoured AGENTS.md starter if the repo has none (ONBRD-FR-016).
+    """Write a 3Powers-flavoured AGENTS.md starter if the repo has none.
 
     Returns ``'created'`` (a starter was written) or ``'kept'`` (an AGENTS.md already exists — left
     untouched; the caller recommends updating it). The starter names ``3pwr`` as the main command."""
@@ -369,7 +368,7 @@ def seed_agents_md(root: Path) -> str:
 
 
 def constitution_path(root: Path) -> Path:
-    # 3Powers-owned path (DOCX-FR-004; relocated out of the former Spec-Kit tree).
+    # 3Powers-owned path (relocated out of the former Spec-Kit tree).
     return root / ".3powers" / "memory" / "constitution.md"
 
 
@@ -385,8 +384,8 @@ def is_threepowers_constitution(root: Path) -> bool:
 def constitution_is_placeholder(root: Path) -> bool:
     """True iff the constitution is an unfilled template (contains ``[PROJECT_NAME]`` etc.).
 
-    A scaffolded-but-unedited constitution is not a *real* one, so a ``force`` overlay may replace it
-    (ONBRD-FR-015) — a user-authored one is left alone."""
+    A scaffolded-but-unedited constitution is not a *real* one, so a ``force`` overlay may replace
+    it — a user-authored one is left alone."""
     path = constitution_path(root)
     if not path.exists():
         return False
@@ -395,7 +394,7 @@ def constitution_is_placeholder(root: Path) -> bool:
 
 
 def seed_constitution(root: Path, *, force: bool = False) -> str:
-    """Lay the 3Powers constitution at ``.3powers/memory/constitution.md`` (ONBRD-FR-015, DOCX-FR-005).
+    """Lay the 3Powers constitution at ``.3powers/memory/constitution.md``.
 
     Offline and local. By default it writes only when the constitution is absent, never overwriting an
     existing one. With ``force=True`` it also replaces an unfilled *placeholder* constitution — but still
@@ -411,10 +410,10 @@ def seed_constitution(root: Path, *, force: bool = False) -> str:
 
 
 def detect_ci(root: Path) -> bool:
-    """True iff a recognized CI/CD configuration is present (INITX-FR-010).
+    """True iff a recognized CI/CD configuration is present.
 
     Platform-agnostic: a non-empty GitHub Actions workflows directory, or any known CI config file.
-    It asserts *presence* only — never that the pipeline is complete or correct (INITX-FR-010)."""
+    It asserts *presence* only — never that the pipeline is complete or correct."""
     wf = root / ".github" / "workflows"
     if wf.is_dir() and any(p.is_file() and p.suffix in (".yml", ".yaml") for p in wf.iterdir()):
         return True
@@ -445,7 +444,7 @@ _AGENTS_STARTER_TOKENS = (
 
 
 def agents_md_is_starter(root: Path) -> bool:
-    """True iff AGENTS.md exists and is still the unfilled 3Powers starter (INITX-FR-011).
+    """True iff AGENTS.md exists and is still the unfilled 3Powers starter.
 
     The starter carries bracketed placeholders; any remaining one means it is an unfinished TODO. A
     filled-in or user-authored file has none of them."""
@@ -457,9 +456,9 @@ def agents_md_is_starter(root: Path) -> bool:
 
 
 def readiness(root: Path) -> dict[str, object]:
-    """A checklist of what a project needs to run the full agentic workflow (ONBRD-FR-015/016).
+    """A checklist of what a project needs to run the full agentic workflow.
 
-    Extended for INITX-FR-009/010/011 with CI/CD presence and whether AGENTS.md is still an unfilled
+    Includes CI/CD presence and whether AGENTS.md is still an unfilled
     starter (a TODO). Model-diversity readiness is computed by the caller (it needs config)."""
     return {
         "agents_md": (root / "AGENTS.md").exists(),
@@ -472,7 +471,7 @@ def readiness(root: Path) -> dict[str, object]:
 def create_signer(
     out: Path, pub: Path, *, force: bool = False
 ) -> tuple[Optional[keys.SigningKey], str]:
-    """Create the Ed25519 signer, refusing to overwrite an existing key unless forced (ONBRD-FR-007).
+    """Create the Ed25519 signer, refusing to overwrite an existing key unless forced.
 
     Returns ``(key, status)`` with status ``'created'`` (a fresh key was written) or ``'kept'`` (an
     existing key was left intact). The private key is written with owner-only permissions

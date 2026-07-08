@@ -1,15 +1,15 @@
-"""Agent backends — the provider-agnostic executive plugin contract (EXEC-FR-002/003, 3PWR-FR-046).
+"""Agent backends — the provider-agnostic executive plugin contract.
 
 An *agent backend* is a headless coding-agent (Claude Code, an OpenAI Codex-class CLI, the GitHub Copilot
 CLI, OpenCode, Aider, …) described by a **declarative manifest** (``.3powers/agents/<name>.yaml``). The
 native executive (:mod:`threepowers.runner`) builds the agent invocation from the manifest alone, so adding
-an agent is "add a manifest" — no change to the engine core (EXEC-NFR-003). This mirrors the language
+an agent is "add a manifest" — no change to the engine core. This mirrors the language
 *adapter* contract in :mod:`threepowers.adapters`.
 
-The engine itself never calls a model API (EXEC-NFR-001, amended 3PWR A3): it constructs an invocation for
+The engine itself never calls a model API: it constructs an invocation for
 an external agent process and lets that process do the model work. Enterprise model access (an internal
 proxy, a cloud model service, or an OpenAI-compatible gateway) is inherited by pointing the agent at it via
-the environment; the engine passes the environment through and interprets no credential (EXEC-FR-012).
+the environment; the engine passes the environment through and interprets no credential.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from .config import Settings
 
 # Manifest fields (all optional except ``command``):
 #   agent        display name (defaults to the file stem)
-#   family       model family for the diversity precheck (3PWR-FR-022); '' when it depends on the model
+#   family       model family for the diversity precheck; '' when it depends on the model
 #   headless     bool — dispatchable with no interactive IDE (default True)
 #   command      the executable to invoke (required)
 #   base_args    list[str] — fixed arguments before the model/prompt
@@ -65,11 +65,11 @@ def is_headless(manifest: dict[str, Any]) -> bool:
 def build_command(
     manifest: dict[str, Any], prompt: str, *, model: str = ""
 ) -> tuple[list[str], Optional[str]]:
-    """Build the agent invocation from a manifest (EXEC-FR-003).
+    """Build the agent invocation from a manifest.
 
     Returns ``(argv, stdin)``: ``argv`` is the full argument vector (no shell), and ``stdin`` is the prompt
     text when the manifest passes the prompt via stdin, else ``None``. Deterministic given its inputs — the
-    same (manifest, prompt, model) always yields the same invocation (supports EXEC-FR-005's property).
+    same (manifest, prompt, model) always yields the same invocation.
 
     Raises ``ValueError`` if the manifest declares no ``command``.
     """

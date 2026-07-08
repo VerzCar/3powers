@@ -24,10 +24,10 @@ def test_drive_auto_stops_only_at_mandatory_gates():
     r = orchestrate.SimulatedRunner()
     r1 = orchestrate.drive(r, "auto", events.append)
     assert (
-        r1.status == "paused_at_gate" and r1.gate == "review-spec" and r1.gate_fr == "3PWR-FR-006"
+        r1.status == "paused_at_gate" and r1.gate == "review-spec" and r1.gate_fr == "spec approval"
     )
     r2 = orchestrate.drive(r, "auto", events.append, resuming=True)
-    assert r2.status == "paused_at_gate" and r2.gate == "signoff" and r2.gate_fr == "3PWR-FR-037"
+    assert r2.status == "paused_at_gate" and r2.gate == "signoff" and r2.gate_fr == "sign-off"
     # review-plan + review-verify were auto-approved between the two mandatory gates.
     auto = [e.step for e in events if e.kind == "gate-auto"]
     assert "review-plan" in auto and "review-verify" in auto

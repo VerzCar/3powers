@@ -1,4 +1,4 @@
-"""Per-integration model/label catalog for the role setup (AGENTX-FR-015/016).
+"""Per-integration model/label catalog for the role setup.
 
 The catalog is *editable data, not code*: ``.3powers/config/models.yaml`` maps each supported
 headless integration to its selectable models — each entry carrying the model id, its model
@@ -7,7 +7,7 @@ setup`` read it to present per-role model choices and to fill ``model_family``/`
 consistently. A model absent from the catalog (a new or BYOK model) stays selectable via free-form
 entry, its family derived where the value encodes it.
 
-Everything here is deterministic and fully offline (AGENTX-NFR-001): the same file bytes always
+Everything here is deterministic and fully offline: the same file bytes always
 yield the same catalog, a missing or malformed repo file falls back to the shipped scaffold copy,
 and no network or model call is made anywhere.
 """
@@ -21,7 +21,7 @@ import yaml
 
 from .config import Settings
 
-# The bundled fallback — the same file `3pwr init` seeds into .3powers/config/ (AGENTX-FR-015).
+# The bundled fallback — the same file `3pwr init` seeds into .3powers/config/.
 _BUNDLED = Path(__file__).resolve().parent / "scaffold" / "config" / "models.yaml"
 
 # Leading-token → family heuristics for free-form entries whose id does not carry a
@@ -51,11 +51,11 @@ def _parse(text: str) -> dict[str, Any]:
 
 
 def load_catalog(settings: Optional[Settings] = None) -> dict[str, Any]:
-    """The resolved model catalog (AGENTX-FR-015).
+    """The resolved model catalog.
 
     The repo-local ``.3powers/config/models.yaml`` wins when present and well-formed; otherwise the
     shipped scaffold copy applies, so the catalog never fails a setup (a malformed file degrades to
-    the shipped defaults plus free-form entry — AGENTX-FR-016)."""
+    the shipped defaults plus free-form entry)."""
     for path in ([settings.models_catalog_path] if settings is not None else []) + [_BUNDLED]:
         try:
             if path.exists():
@@ -68,7 +68,7 @@ def load_catalog(settings: Optional[Settings] = None) -> dict[str, Any]:
 
 
 def integrations(catalog: dict[str, Any]) -> list[str]:
-    """The integrations the catalog knows, in file order (AGENTX-FR-015)."""
+    """The integrations the catalog knows, in file order."""
     intg = catalog.get("integrations")
     return [str(k) for k in intg.keys()] if isinstance(intg, dict) else []
 
@@ -105,7 +105,7 @@ def entry_for(catalog: dict[str, Any], integration: str, model: str) -> Optional
 
 
 def default_for(catalog: dict[str, Any], integration: str) -> Optional[dict[str, str]]:
-    """The documented default model entry for ``integration`` (AGENTX-FR-012), or ``None``.
+    """The documented default model entry for ``integration``, or ``None``.
 
     The block's ``default:`` id is resolved through :func:`entry_for` when listed; an unlisted
     default still yields a usable entry with a derived family."""
@@ -122,7 +122,7 @@ def default_for(catalog: dict[str, Any], integration: str) -> Optional[dict[str,
 
 
 def derive_family(model: str) -> str:
-    """Best-effort model *family* from a model id (AGENTX-FR-012 property; pure, offline).
+    """Best-effort model *family* from a model id (pure, offline).
 
     A ``<family>/<model>`` id yields its prefix; a bare id is mapped by its leading token
     (``claude-…`` → anthropic, ``gpt-…`` → openai, …); anything else yields ``""`` (unknown)."""

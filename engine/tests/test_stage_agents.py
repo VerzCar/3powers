@@ -376,12 +376,12 @@ def test_require_dispatch_is_explained_where_the_config_lives(tmp_path):
     """AGENTX-FR-017: the shipped roles.yaml and the rewritten roles.yaml both explain
     require_dispatch — meaning, default, and when to enable it — and the docs carry it too."""
     shipped = (ENGINE_SRC / "scaffold" / "config" / "roles.yaml").read_text(encoding="utf-8")
-    assert "require_dispatch" in shipped and "3PWR-FR-021" in shipped
+    assert "require_dispatch" in shipped and "read-path-isolation" in shipped
     s = _proj(tmp_path)
     scaffold.set_role_model(s, "oracle", model="anthropic/claude-opus-4-8", integration="claude")
     rewritten = s.roles_path.read_text(encoding="utf-8")
     assert "require_dispatch" in rewritten
-    assert "default false" in rewritten and "3PWR-FR-021" in rewritten
+    assert "default false" in rewritten
     assert "oracle dispatch" in rewritten  # what it enforces
     docs = (REPO / "docs" / "cli-reference.md").read_text(encoding="utf-8")
     assert "require_dispatch" in docs
@@ -411,7 +411,7 @@ def test_same_family_judiciary_warns_and_names_the_deviation_path(tmp_path, caps
     )
     assert rc == 0  # recommended, never forced
     err = capsys.readouterr().err
-    assert "anthropic" in err and "3PWR-FR-022" in err
+    assert "anthropic" in err and "model diversity is recommended" in err
     assert "3pwr deviation --gate model_diversity" in err
 
 

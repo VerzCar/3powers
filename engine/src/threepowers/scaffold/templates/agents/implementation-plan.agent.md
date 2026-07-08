@@ -69,7 +69,7 @@ Each task is one checklist line:
 ```
 
 - `T###` — a sequential task id (T001, T002, …).
-- `[REQ-ID]` — exactly ONE requirement id the task traces to (e.g. `SPECX-FR-003`); every task
+- `[REQ-ID]` — exactly ONE requirement id the task traces to (e.g. `DEMO-FR-003`); every task
   has one, every requirement is covered by at least one task.
 - `(files: …)` — the task's own file scope, always explicit and exact.
 
@@ -101,8 +101,8 @@ Fixed shape, so every run yields the same document structure regardless of the m
 **Estimated context**: ~<N>k tokens (budget ~110k)
 **Handoff**: the approved spec, the constitution/rules, this phase's tasks below, and the file scope above.
 
-- [ ] T001 [SPECX-FR-001] <exact, atomic step> (files: src/one.py, tests/test_one.py)
-- [ ] T002 [SPECX-FR-002] <exact, atomic step> (files: src/two.py)
+- [ ] T001 [DEMO-FR-001] <exact, atomic step> (files: src/one.py, tests/test_one.py)
+- [ ] T002 [DEMO-FR-002] <exact, atomic step> (files: src/two.py)
 
 **Checkpoint**: <what is demonstrably working when this phase completes>
 
@@ -113,7 +113,7 @@ Fixed shape, so every run yields the same document structure regardless of the m
 **Parallel**: yes
 **Handoff**: the approved spec, the constitution/rules, this phase's tasks below, and the file scope above.
 
-- [ ] T003 [SPECX-FR-003] <exact, atomic step> (files: src/other/three.py)
+- [ ] T003 [DEMO-FR-003] <exact, atomic step> (files: src/other/three.py)
 
 **Checkpoint**: <User Story 1 independently verifiable>
 

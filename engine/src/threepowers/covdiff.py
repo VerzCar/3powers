@@ -1,6 +1,6 @@
-"""Diff coverage — measure coverage on *changed* lines only (3PWR-FR-029).
+"""Diff coverage — measure coverage on *changed* lines only.
 
-This lives in the language-agnostic core (3PWR-FR-028): adapters merely emit a
+This lives in the language-agnostic core: adapters merely emit a
 standard LCOV report; the core intersects it with the lines a change touched. We use
 LCOV because every reference adapter's coverage tool can produce it (Vitest/v8,
 coverage.py, JaCoCo, …), so the same core code serves all languages.
@@ -81,7 +81,7 @@ def diff_coverage(
     When ``changed`` is empty (no resolvable base) we fall back to all measured lines
     so the metric is still meaningful on a fresh tree. When ``allow`` is given (a set
     of absolute file paths), only those files are measured — this scopes coverage to a
-    capability area's files at its tier (spec §4) or to a brownfield diff (3PWR-FR-051).
+    capability area's files at its tier or to a brownfield diff.
     """
     covered = 0
     total = 0

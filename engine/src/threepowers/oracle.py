@@ -1,29 +1,29 @@
 """Structural oracle independence — Phase A/B, anchored in the signed ledger.
 
-The oracle is the answer key the coder never authored (3PWR-FR-020, §7). This module makes
+The oracle is the answer key the coder never authored. This module makes
 that independence **structural and traceable** rather than merely procedural:
 
 * ``seal`` extracts a spec-only bundle — requirement IDs and their acceptance-criterion text,
   with **no** implementation, plan, tasks, or contracts — and records its content hash in the
-  ledger. The judiciary authors the oracle *from this bundle* (3PWR-FR-020).
+  ledger. The judiciary authors the oracle *from this bundle*.
 * ``record`` captures the authoring event: the bundle hash authored against, the model family
   that actually authored, the oracle test files and their content hashes, and (via the ledger)
   the signer identity. It refuses when the oracle resolves to the coder's model family
-  (3PWR-FR-022, on the *actual* model — not just the declared config).
-* ``dispatch`` (3PWR-A3) authors the oracle *headlessly* under a non-coder agent backend (dispatched
-  natively by the engine) inside a **sanitized git worktree** from which the implementation, plan, tasks,
-  and contracts are physically **absent** — the full letter of 3PWR-FR-021. It attests the isolation
+  (judged on the *actual* model — not just the declared config).
+* ``dispatch`` authors the oracle *headlessly* under a non-coder agent backend (dispatched
+  natively by the engine) inside a **sanitized git worktree** from which the implementation, plan,
+  tasks, and contracts are physically **absent**. It attests the isolation
   with a worktree manifest hash recorded in the ledger, and records the actual agent + model.
 * ``independence`` proves, from the ledger's monotonic signed ``seq`` (never from spoofable git
-  timestamps), that Phase A preceded Phase B (3PWR-FR-062), the oracle was bound to the active
-  seal (3PWR-FR-020/021), the families diverge (3PWR-FR-022), and every acceptance criterion has
-  an oracle test (3PWR-FR-023). When a dispatch attestation is present (or required by the tier
-  policy) it also proves **physical read-path isolation** (3PWR-FR-021). These bind at ``advance``
-  at the High-risk tier (spec §4).
+  timestamps), that Phase A preceded Phase B, the oracle was bound to the active
+  seal, the families diverge, and every acceptance criterion has
+  an oracle test. When a dispatch attestation is present (or required by the tier
+  policy) it also proves **physical read-path isolation**. These bind at ``advance``
+  at the High-risk tier.
 
 The worktree makes read-path isolation *physical*, not merely policy: the dispatched agent's cwd
-does not contain the implementation. The 008 peek/touch signals remain **advisory, non-blocking**
-(that heuristic is input-dependent and must not perturb the deterministic verdict, 3PWR-NFR-001);
+does not contain the implementation. The advisory peek/touch signals remain **advisory,
+non-blocking** (that heuristic is input-dependent and must not perturb the deterministic verdict);
 network egress from the dispatched agent is out of scope here (read-path isolation only).
 """
 
@@ -44,12 +44,12 @@ from .conformance import _TEST_GLOBS, _iter_req_ids, extract_spec, referenced_id
 ORACLE_ENTRY = "oracle"
 
 
-# --------------------------------------------------------------------------- sealed bundle (FR-020)
+# --------------------------------------------------------------------------- sealed bundle
 def extract_criteria(spec_path: Path) -> tuple[str, dict[str, str]]:
     """Return ``(spec_id, {requirement_id: acceptance-criterion text})`` from a spec.
 
     The criterion text is the spec line that declares the requirement — the only content the
-    judiciary is meant to author against (3PWR-FR-020). Reuses the conformance spec parser so
+    judiciary is meant to author against. Reuses the conformance spec parser so
     the same requirement-ID grammar governs everywhere.
     """
     spec_id, ids = extract_spec(spec_path)
@@ -63,7 +63,7 @@ def extract_criteria(spec_path: Path) -> tuple[str, dict[str, str]]:
 
 def bundle_hash(spec_id: str, source: str, criteria: dict[str, str]) -> str:
     """Content hash of the sealed bundle — deliberately excludes any timestamp so that
-    re-sealing an unchanged spec yields an identical hash (deterministic binding, 3PWR-FR-020)."""
+    re-sealing an unchanged spec yields an identical hash (deterministic binding)."""
     return canonical.hash_payload(
         {
             "spec_id": spec_id,
@@ -95,7 +95,7 @@ def seal_payload(spec_id: str, source: str, criteria: dict[str, str]) -> dict:
     }
 
 
-# --------------------------------------------------------------------------- authoring record (FR-022/062)
+# --------------------------------------------------------------------------- authoring record
 def family_of(model: str) -> str:
     """The model *family* — the part before the first ``/`` in ``<family>/<model>``."""
     return model.split("/", 1)[0].strip() if model else ""
@@ -106,7 +106,7 @@ def coder_family(roles: dict) -> str:
 
 
 def diverse(coder: str, oracle: str, level: str) -> bool:
-    """True iff ``coder`` and ``oracle`` are diverse enough at ``level`` (3PWR-FR-022).
+    """True iff ``coder`` and ``oracle`` are diverse enough at ``level``.
 
     ``level='family'`` (the recommended posture): different model *families* (the part before ``/``).
     ``level='model'``: a different *model* qualifies (e.g. ``anthropic/opus`` vs ``anthropic/sonnet``),
@@ -137,9 +137,7 @@ def record_payload(
         "test_hashes": {p: test_hashes[p] for p in sorted(test_hashes)},
         "advisory_findings": advisory,
     }
-    if (
-        diversity_deviation is not None
-    ):  # same-family authoring sanctioned by a signed deviation (FR-057)
+    if diversity_deviation is not None:  # same-family authoring sanctioned by a signed deviation
         payload["diversity_deviation"] = diversity_deviation
     return payload
 
@@ -179,7 +177,7 @@ def _latest_impl_verdict(entries: list[dict], spec_id: str) -> Optional[dict]:
 
 # --------------------------------------------------------------------------- advisory scanners (pure, non-blocking)
 # Source-file extensions used to guess "an implementation file was touched". Advisory only, so a
-# coarse guess is fine — this never blocks (3PWR-FR-021 is enforced structurally, not here).
+# coarse guess is fine — this never blocks (read-path isolation is enforced structurally, not here).
 _SOURCE_EXT = (
     ".py",
     ".ts",
@@ -211,7 +209,7 @@ def looks_like_impl(path: str) -> bool:
 
 
 def scan_touched_impl(changed: set[str], oracle_paths: set[str]) -> list[str]:
-    """Advisory: implementation files the oracle author also modified (3PWR-FR-021, non-blocking)."""
+    """Advisory: implementation files the oracle author also modified (non-blocking)."""
     hits = sorted(f for f in changed if looks_like_impl(f) and f not in oracle_paths)
     return [f"oracle author also modified implementation file: {f}" for f in hits]
 
@@ -265,14 +263,14 @@ def independence(
 ) -> Independence:
     """Prove oracle independence from the ledger + roles + the recorded oracle tests.
 
-    Structural (blocking) facts: an active seal exists; the authoring record is bound to it
-    (FR-020/021); the recorded oracle is diverse from the coder at ``diversity_level`` (FR-022); the
-    record precedes the implementation verdict by ledger ``seq`` (FR-062); every sealed acceptance
-    criterion has an oracle test (FR-023). When a dispatch attestation is present — or when
+    Structural (blocking) facts: an active seal exists; the authoring record is bound to it;
+    the recorded oracle is diverse from the coder at ``diversity_level``; the
+    record precedes the implementation verdict by ledger ``seq``; every sealed acceptance
+    criterion has an oracle test. When a dispatch attestation is present — or when
     ``require_dispatch`` is set (the High-risk tier policy) — physical read-path isolation is also
-    proven (FR-021/A3). A same-family/same-model finding is blocking **unless** ``diversity_relaxed``
-    (a signed ``model_diversity`` deviation, FR-057), in which case it is advisory — never a silent
-    drop. Advisory findings never enter ``reasons`` (3PWR-NFR-001).
+    proven. A same-family/same-model finding is blocking **unless** ``diversity_relaxed``
+    (a signed ``model_diversity`` deviation), in which case it is advisory — never a silent
+    drop. Advisory findings never enter ``reasons``.
     """
     reasons: list[str] = []
     covered: list[str] = []
@@ -295,14 +293,14 @@ def independence(
         rp = rec["payload"]
         model_family = rp.get("model_family")
 
-        # seal-binding (FR-020/021): the oracle was authored against the active spec-only bundle.
+        # seal-binding: the oracle was authored against the active spec-only bundle.
         if rp.get("bundle_hash") != seal_hash:
             reasons.append(
                 "oracle authored against a stale/mismatched bundle — re-seal or re-record"
             )
 
-        # diversity on the ACTUAL model used, at the configured granularity (FR-022). A same
-        # family/model is blocking unless a signed model_diversity deviation relaxes it (FR-057).
+        # diversity on the ACTUAL model used, at the configured granularity. A same
+        # family/model is blocking unless a signed model_diversity deviation relaxes it.
         oracle_model = rp.get("model") or ""
         if not model_family:
             reasons.append("oracle authoring record has no model family")
@@ -320,7 +318,7 @@ def independence(
             else:
                 reasons.append(msg)
 
-        # ordering (FR-062): Phase A must precede Phase B, proven by ledger seq (not git time).
+        # ordering: Phase A must precede Phase B, proven by ledger seq (not git time).
         impl = _latest_impl_verdict(entries, spec_id)
         if impl is not None and rec.get("seq", -1) >= impl.get("seq", 0):
             reasons.append(
@@ -328,7 +326,7 @@ def independence(
                 "Phase A must precede Phase B"
             )
 
-        # coverage (FR-023): each sealed acceptance criterion has ≥1 oracle test.
+        # coverage: each sealed acceptance criterion has ≥1 oracle test.
         req_ids = set(seal["payload"].get("requirement_ids", []))
         refs = referenced_ids(test_roots, spec_id) if test_roots else {}
         covered = sorted(req_ids & set(refs))
@@ -336,9 +334,9 @@ def independence(
         if missing:
             reasons.append(f"acceptance criteria without an oracle test: {', '.join(missing)}")
 
-    # physical read-path isolation via headless dispatch (3PWR-FR-021, A3). Advisory→blocking when a
-    # dispatch attestation exists, or when the tier policy requires one (require_dispatch). Every fact
-    # is ledger-derived, so this stays deterministic (3PWR-NFR-001).
+    # physical read-path isolation via headless dispatch. Advisory→blocking when a
+    # dispatch attestation exists, or when the tier policy requires one (require_dispatch). Every
+    # fact is ledger-derived, so this stays deterministic.
     disp = active_dispatch(entries, spec_id)
     dispatch_ok: Optional[bool] = None
     isolation_method: Optional[str] = None
@@ -376,7 +374,7 @@ def independence(
                 reasons.append(msg)
                 dispatch_ok = False
 
-        # model attestation (HARDN-FR-007): the self-reported record model must not contradict
+        # model attestation: the self-reported record model must not contradict
         # the ledger-attested dispatch. Deterministic cross-check at family granularity; an
         # integration with an unknown family ('', e.g. copilot's in-IDE picker) cannot contradict.
         attested = integration_family(dp.get("integration") or "") or (disp_family or "")
@@ -389,7 +387,7 @@ def independence(
             dispatch_ok = False
     elif rec is not None and model_family:
         # No dispatch attestation exists: say so honestly — the claim is self-reported and
-        # nothing binds it to the process that ran (HARDN-FR-007). Advisory, never blocking.
+        # nothing binds it to the process that ran. Advisory, never blocking.
         advisory.append(
             f"oracle model claim '{rec['payload'].get('model')}' is self-reported — "
             "no dispatch attestation binds it to the process that authored the oracle"
@@ -407,14 +405,14 @@ def independence(
     )
 
 
-# --------------------------------------------------------------------------- headless dispatch (FR-021/012/013, A3)
+# --------------------------------------------------------------------------- headless dispatch
 def active_dispatch(entries: list[dict], spec_id: str) -> Optional[dict]:
     """The latest isolated-dispatch attestation for the spec, if any."""
     recs = _oracle_entries(entries, spec_id, "dispatch")
     return recs[-1] if recs else None
 
 
-# Best-effort model *family* for an agent-backend key — the fast-fail FR-022 precheck only.
+# Best-effort model *family* for an agent-backend key — the fast-fail diversity precheck only.
 # The authoritative family is the resolved model recorded post-dispatch; "" means "unknown, skip".
 INTEGRATION_FAMILY = {
     "claude": "anthropic",
@@ -450,19 +448,19 @@ def parse_dispatched_model(stdout: str) -> Optional[str]:
     return None
 
 
-# What the oracle author must never see — FR-021's exact scope: "the implementation, the plan,
-# contracts, or source code". Named planning/design docs + any non-test source file + contracts/.
+# What the oracle author must never see: the implementation, the plan, contracts, and
+# source code. Named planning/design docs + any non-test source file + contracts/.
 _EXCLUDED_BASENAMES = ("plan.md", "tasks.md", "research.md", "data-model.md")
 
 
 def _is_excluded_path(rel: str) -> bool:
-    """True iff a repo-relative path is implementation / plan / contracts / source (3PWR-FR-021)."""
+    """True iff a repo-relative path is implementation / plan / contracts / source."""
     parts = rel.split("/")
     if parts[-1] in _EXCLUDED_BASENAMES:
         return True
     if "contracts" in parts[:-1]:  # any directory named `contracts` on the path
         return True
-    return looks_like_impl(rel)  # a source-code file that is not a test (reuses the 008 predicate)
+    return looks_like_impl(rel)  # a source-code file that is not a test (the advisory predicate)
 
 
 @dataclass
@@ -478,7 +476,7 @@ class WorktreeInfo:
 
 def worktree_manifest(root: Path) -> list[dict]:
     """Sorted ``[{"path": rel, "hash": sha256}]`` of every file under ``root`` (excluding ``.git``).
-    Deterministic — the evidence the implementation was absent at authoring time (3PWR-FR-021)."""
+    Deterministic — the evidence the implementation was absent at authoring time."""
     items: list[dict] = []
     for p in sorted(root.rglob("*")):
         rel_parts = p.relative_to(root).parts
@@ -497,7 +495,7 @@ def manifest_hash(manifest: list[dict]) -> str:
 
 
 def isolation_violations(manifest: list[dict]) -> list[str]:
-    """Excluded (implementation/plan/contracts/source) paths still present — must be empty (FR-021)."""
+    """Excluded (implementation/plan/contracts/source) paths still present — must be empty."""
     return sorted(m["path"] for m in manifest if _is_excluded_path(m["path"]))
 
 
@@ -527,7 +525,7 @@ def build_sanitized_worktree(
     *,
     base_ref: Optional[str] = None,
 ) -> WorktreeInfo:
-    """Create an ephemeral git worktree pruned of implementation/plan/contracts/source (3PWR-FR-021).
+    """Create an ephemeral git worktree pruned of implementation/plan/contracts/source.
 
     The dispatched oracle runs with ``cwd=worktree_dir``; it cannot read the implementation because it
     is not on disk there. The sealed bundle is copied in (it may be uncommitted) as
@@ -540,7 +538,7 @@ def build_sanitized_worktree(
     rc, err = _git_worktree(repo_root, ["add", "--detach", "--force", str(worktree_dir), ref])
     if rc != 0:
         raise RuntimeError(f"git worktree add failed: {err.strip() or rc}")
-    # Prune the implementation / plan / contracts / source (3PWR-FR-021).
+    # Prune the implementation / plan / contracts / source.
     for p in sorted(worktree_dir.rglob("*")):
         rel_parts = p.relative_to(worktree_dir).parts
         if p.is_dir() or ".git" in rel_parts:
@@ -556,7 +554,7 @@ def build_sanitized_worktree(
 
 
 def dispatch_payload(bound_bundle_hash: str, integration: str, model: str, isolation: dict) -> dict:
-    """The ledger attestation for an isolated headless oracle dispatch (3PWR-FR-021/012/013, A3)."""
+    """The ledger attestation for an isolated headless oracle dispatch."""
     return {
         "kind": "dispatch",
         "bundle_hash": bound_bundle_hash,

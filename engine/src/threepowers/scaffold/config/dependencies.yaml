@@ -1,4 +1,4 @@
-# Supported third-party versions 3Powers is known-good against (3PWR-FR-048, 3PWR-NFR-014).
+# Supported third-party versions 3Powers is known-good against.
 #
 # `3pwr deps-check` probes the INSTALLED versions and reports drift from the supported range.
 # Policy per component:
@@ -6,8 +6,8 @@
 #   block  — fail deps-check on drift/absence
 #   ignore — never blocks (still shown)
 # This is a PREFLIGHT check, never a verdict gate: installed versions are environment-dependent,
-# so keeping them out of the verdict preserves determinism (3PWR-NFR-001). Absent tools are
-# reported (like the scanner quarantine, 3PWR-NFR-015), never silently passed. Pin to a stable
+# so keeping them out of the verdict preserves determinism. Absent tools are
+# reported (like the scanner quarantine), never silently passed. Pin to a stable
 # version that works with 3Powers; when an upstream release drifts, this flags it for adaptation.
 #
 # Exact transitive pins still live in the lockfiles (engine/uv.lock,
@@ -32,7 +32,7 @@ components:
     on_drift: warn
 
   # Supply-chain scanners (language-agnostic core gates; the gate engine quarantines them if
-  # absent — 3PWR-NFR-015 — so these stay `warn` here).
+  # absent — so these stay `warn` here).
   # betterleaks is the preferred secret scanner (maintained Gitleaks successor, same `dir` CLI +
   # JSON schema); gitleaks is the fallback. The gate uses whichever is on PATH, betterleaks first.
   - name: betterleaks
@@ -77,7 +77,7 @@ components:
   # (Biome 1.9, TypeScript 5.6, Vitest 2.1, Stryker 8.6). `node` above covers its runtime; per-tool
   # probes are project-local (run via `npx` inside the sample) and omitted here to avoid false misses.
 
-  # Go reference adapter toolchain (plan 015). `go` covers format/lint/types/tests; `gcov2lcov`
+  # Go reference adapter toolchain. `go` covers format/lint/types/tests; `gcov2lcov`
   # converts the coverprofile to LCOV for diff-coverage; golangci-lint / go-mutesting are optional.
   # All `warn` — a Go project only needs these when it runs the Go adapter (else the gates just fail
   # like any other absent adapter tool). Cross-platform of the shell-guarded gofmt check is residual.

@@ -1,4 +1,4 @@
-# Agent backend manifest — Aider, headless (EXEC-FR-004). Seeded by `3pwr init`.
+# Agent backend manifest — Aider, headless. Seeded by `3pwr init`.
 # Any OpenAI-compatible API, so it slots behind an enterprise gateway (OPENAI_BASE_URL). 3Powers records
 # provenance/commits itself, so auto-commit is disabled. `aider --message "<prompt>"` runs one turn.
 agent: aider

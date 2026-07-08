@@ -1,7 +1,7 @@
-# Agent backend manifest — OpenAI Codex CLI, headless (EXEC-FR-004).
+# Agent backend manifest — OpenAI Codex CLI, headless.
 # Apache-2.0 coding agent; `codex exec` runs non-interactively. Route model access through the org's
 # OpenAI / Azure OpenAI entitlement or an OpenAI-compatible gateway via OPENAI_BASE_URL / OPENAI_API_KEY
-# (the engine passes the environment through — EXEC-FR-012).
+# (the engine passes the environment through).
 agent: codex
 family: openai
 headless: true

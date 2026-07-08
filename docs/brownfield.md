@@ -72,13 +72,13 @@ current behavior with characterization tests that serve as its oracle. The modul
 never executed at generation time — so this is safe on untrusted legacy code:
 
 ```bash
-3pwr characterize --module src/legacy/money.py     # one file …
+3pwr characterize --module src/legacy/demo.py      # one file …
 3pwr characterize --module src/legacy               # … or a whole directory (walked; tests skipped)
 ```
 ```
-characterized money.py → spec MONEY (3 symbol(s), 3 requirement(s))
-  spec:  specs/001-money-characterization/spec.md
-  tests: src/legacy/characterization/test_money_characterization.py
+characterized demo.py → spec DEMO (3 symbol(s), 3 requirement(s))
+  spec:  specs/001-demo-characterization/spec.md
+  tests: src/legacy/characterization/test_demo_characterization.py
 ```
 
 `--module` takes a single source file **or a directory** — a directory is walked for source files
@@ -88,8 +88,8 @@ It writes two artifacts. A **spec stub** with one reconstructed requirement per 
 tier, and a non-goals section that's honest about what it is:
 
 ```markdown
-# Characterization Specification: src/money.py
-**Spec ID**: MONEY
+# Characterization Specification: src/demo.py
+**Spec ID**: DEMO
 **Risk Tier**: Standard
 **Status**: Reconstructed
 
@@ -98,9 +98,9 @@ tier, and a non-goals section that's honest about what it is:
   as an oracle so the code can be safely changed later.
 
 ### Functional Requirements
-- **MONEY-FR-001**: The system shall preserve the observed behavior of `canonical_bytes` in `src/money.py`…
-- **MONEY-FR-002**: The system shall preserve the observed behavior of `sha256_hex` …
-- **MONEY-FR-003**: The system shall preserve the observed behavior of `hash_payload` …
+- **DEMO-FR-001**: The system shall preserve the observed behavior of `canonical_bytes` in `src/demo.py`…
+- **DEMO-FR-002**: The system shall preserve the observed behavior of `sha256_hex` …
+- **DEMO-FR-003**: The system shall preserve the observed behavior of `hash_payload` …
 ```
 
 …and a **runnable characterization test** that references each reconstructed requirement ID (so
@@ -112,7 +112,7 @@ tier, and a non-goals section that's honest about what it is:
 
 The generated tests pin the public *surface* (the symbols exist and are callable). Your next step is to
 strengthen them into **golden masters**: call each symbol with representative inputs and assert today's
-return value. Now any change that alters behavior is caught — you can refactor `money.py` with a safety net.
+return value. Now any change that alters behavior is caught — you can refactor `demo.py` with a safety net.
 
 > When the module re-enters the legislature for real work, replace the reconstructed placeholders with
 > genuine EARS intent (the stub says so in its non-goals).

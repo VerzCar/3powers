@@ -10,6 +10,19 @@ release is **v0.5.0**, matching the latest released milestone below.
 
 ## [Unreleased] — v1.0 (in progress): lifecycle & ecosystem
 
+### Changed
+
+- **Public text hygiene.** All end-user-readable text — CLI help and messages, engine source
+  docstrings and comments, `docs/` prose, and the scaffold assets `3pwr init` ships — no longer
+  cites 3Powers' internal requirement IDs, epic letters, or plan/spec numbers; every citation was
+  rewritten as the plain-English rationale it stood for. Format teaching keeps bare `FR-###` and
+  uses the reserved `DEMO-` example namespace. The rule is written down (AGENTS.md) and enforced
+  by a permanent test, so a fresh `3pwr init` always ships clean.
+- **CLI package layout.** The engine's single `cli.py` module became the `threepowers/cli/`
+  package — one module per command group, each owning its handlers and registering its own
+  subparsers. A pure refactor: identical commands, help text, exit codes, and `--json` payloads;
+  the `3pwr` entry point is unchanged.
+
 ### Added
 
 - **Run steering (STEER).** Three operator seams around `3pwr run` closed. *File-based intent*:
@@ -30,7 +43,7 @@ release is **v0.5.0**, matching the latest released milestone below.
   pins the eight-stage tracker (done/current/upcoming marks, active step, running / paused-at-gate /
   failed states with gate guidance) above a reserved ANSI scroll region agent stdout streams into —
   no new dependency, no alternate screen; off-TTY / `--json` / `NO_COLOR` / dumb terminals keep the
-  plain streamed log escape-free, and teardown always restores the terminal, on Ctrl-C too. (plan 029)
+  plain streamed log escape-free, and teardown always restores the terminal, on Ctrl-C too.
 
 - **Git-integrated run lifecycle (GITX).** Git handling is now a mandatory pre/post-stage hook on every
   live run and the manual `/3pwr.*` drive: a working git repository is a run precondition (reported by
@@ -46,7 +59,7 @@ release is **v0.5.0**, matching the latest released milestone below.
   the signed, revocable `git_clean_start`/`git_stage_commit`/`git_run_branch` deviations. New:
   `3pwr git start` (manual-drive branch establishment), git-aware `advance` boundary checks,
   `.3powers/config/git.yaml` (branch prefix / base / 3pwr author, tolerant defaults), and the run
-  branch + committed stages surfaced by both status commands. (plan 028)
+  branch + committed stages surfaced by both status commands.
 
 - **Open-source launch readiness (OSSRD).** A CI workflow gates every pull request to `main` (engine
   lint, types, tests, and offline ledger verification, as required checks); a
@@ -57,7 +70,7 @@ release is **v0.5.0**, matching the latest released milestone below.
   scoped to the oracle leg; the autonomous path's Spec Kit + coding-agent dependency is stated up front),
   the Spec Kit pin is sourced to upstream `github/spec-kit` everywhere it appears, prerequisites are
   split hard / per-path / optional, gate names match the engine's canonical identifiers across all docs,
-  and implementation status lives only in STATUS. (plan 018)
+  and implementation status lives only in STATUS.
 - **Trust-spine hardening (HARDN).** A versioned [`docs/threat-model.md`](docs/threat-model.md) states what
   the ledger proves, against whom, under which assumptions. Key custody is enforced (`keygen`/`rotate-key`
   refuse in-repo keys; `verify` fails a `key_custody` violation; the secret gate's core `ed25519-priv` check
@@ -70,47 +83,47 @@ release is **v0.5.0**, matching the latest released milestone below.
   dispatch the claim is labelled self-reported). The `spec_conformance` gate now requires requirement IDs
   **bound to test declarations** (`untraced_requirement` for comment-only mentions) with ≥1 assertion per
   bound test (`weak_test`), `gate_gaming` flags newly added assertion-free requirement-referencing tests,
-  and a per-tier `diff_mutation` knob runs mutation over changed files. (plan 017)
+  and a per-tier `diff_mutation` knob runs mutation over changed files.
 - **Spec-lock (SLOCK): the `spec_integrity` gate.** A Spec-stage `3pwr signoff` now seals the approved document's
   raw-bytes SHA-256 inside the signed ledger entry; a new `spec_integrity` gate (cheapest-first, before any
   test, at every tier) and `advance` fail a spec silently modified after approval (`spec_modified`), unless
   a fresh Spec-stage sign-off supersedes it or a signed `spec_integrity` deviation covers it. The read-only
   `3pwr spec diff` reports the mismatch with a textual diff when the sign-off commit is known. Tampering
-  with the recorded hash is caught by the existing `verify` — no new trust primitive. (plan 016)
+  with the recorded hash is caught by the existing `verify` — no new trust primitive.
 - **Work-kind-shaped gates.** `3pwr classify` infers the kind of change (defect, design, feature, …) and a
   suggested risk tier, and the gate suite adapts. A **defect** fix must ship a failing regression test; a
   **design** change is judged by design oracles (visual-regression, accessibility, and contract checks),
-  which are quarantined — surfaced as skipped — when a tool isn't wired up. (plan 015)
+  which are quarantined — surfaced as skipped — when a tool isn't wired up.
 - **Go language adapter** — a third reference adapter alongside TypeScript and Python, proving the adapter
-  contract is language-agnostic. (plan 015)
+  contract is language-agnostic.
 - **One-command lifecycle** — `3pwr run` drives all eight stages with a live tracker, stopping only at the
-  two human gates (spec approval, sign-off) in `auto` mode. (plan 013)
+  two human gates (spec approval, sign-off) in `auto` mode.
 - **Observe & feedback loop** — `3pwr observe signal | coverage | log-action | verify-actions`: route a
   production signal to a new requirement, report which NFRs have a live check, and keep a tamper-evident,
-  attributable agent-action log. (plan 010)
+  attributable agent-action log.
 - **Headless, read-path-isolated oracle authoring** — `3pwr oracle dispatch` authors the oracle inside a
-  sanitized Git worktree where the implementation is physically absent, attested in the ledger. (plan 011)
+  sanitized Git worktree where the implementation is physically absent, attested in the ledger.
 - **Structural oracle independence** — `3pwr oracle seal | record | verify`: a spec-only sealed bundle, a
   recorded authoring model that must differ from the coder's, and ledger-proven independence enforced at
-  the High-risk tier. (plan 008)
+  the High-risk tier.
 - **Emergency & deviation paths** — `3pwr emergency` and `3pwr deviation`: signed, reversible, time-bound
-  exceptions that are always recorded and never silently weaken a gate. (plan 007)
+  exceptions that are always recorded and never silently weaken a gate.
 - **Brownfield adoption** — report-only runs, diff-scoped gating, and `3pwr characterize` to reconstruct a
-  spec and pin a legacy module's current behavior. (plan 006)
+  spec and pin a legacy module's current behavior.
 - **Portability tooling** — `3pwr deps-check` (drift against supported versions, including Spec Kit) and a
-  provider-agnostic Spec Kit extension. (plan 009)
+  provider-agnostic Spec Kit extension.
 - Root `LICENSE` (Apache-2.0) and this open-source documentation set (README, CONTRIBUTING, SECURITY,
   GOVERNANCE, Code of Conduct, per-component READMEs).
 
 ### Changed
 
 - The secret gate now prefers **betterleaks** (a maintained Gitleaks successor), falling back to gitleaks,
-  and quarantines when neither is present. (plan 014)
+  and quarantines when neither is present.
 - Model diversity is now **recommend-not-force**: a same-family oracle proceeds under a signed, reversible
-  exception rather than being blocked outright, so single-model users are never walled off. (plan 012)
-- Per-tier required test layers (unit / integration / e2e) are enforced as a per-change union. (plan 014)
+  exception rather than being blocked outright, so single-model users are never walled off.
+- Per-tier required test layers (unit / integration / e2e) are enforced as a per-change union.
 - **Self-application at High-risk:** the trust-spine modules pass their own High-risk bar (≥95%
-  diff-coverage plus mutation), so 3Powers is genuinely built with 3Powers at the strictest tier. (plan 006)
+  diff-coverage plus mutation), so 3Powers is genuinely built with 3Powers at the strictest tier.
 
 ## [0.5.0] — Full judiciary
 

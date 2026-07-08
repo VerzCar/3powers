@@ -1,11 +1,11 @@
-# Design oracles (3PWR-FR-009) — how *design* work is judged, beyond the code gates.
+# Design oracles — how *design* work is judged, beyond the code gates.
 #
-# When work-kind inference (3PWR-FR-058) tags a change `design`, the gate engine unions these
-# oracle gates onto the tier's gate set (it never removes a tier gate — 3PWR-FR-032). Each oracle's
-# *tool* is ADAPTER-supplied, keeping the core language-agnostic (3PWR-NFR-007): a language declares
+# When work-kind inference tags a change `design`, the gate engine unions these
+# oracle gates onto the tier's gate set (it never removes a tier gate). Each oracle's
+# *tool* is ADAPTER-supplied, keeping the core language-agnostic: a language declares
 # a command for the gate in its adapter manifest. A selected oracle the adapter doesn't declare — or
 # whose tool isn't installed — is QUARANTINED (reported as skipped with a surfaced finding), never
-# silently passed (3PWR-NFR-015). Trim this catalog to change which oracles a design change must face
+# silently passed. Trim this catalog to change which oracles a design change must face
 # (single source of truth, like the risk-tier table). If this file is absent the engine falls back to
 # the built-in default (all four dimensions), so design work never silently escapes its oracles.
 version: 1

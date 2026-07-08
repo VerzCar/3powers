@@ -1,8 +1,8 @@
-# Go reference adapter (plan 015) — the third language, proving the adapter contract is truly
-# language-agnostic (3PWR-FR-027 / 3PWR-NFR-007): adding a language is "add a manifest", no core change.
+# Go reference adapter — the third language, proving the adapter contract is truly
+# language-agnostic: adding a language is "add a manifest", no core change.
 #
 # Most gates run with just the base Go toolchain (`go`). Diff-coverage reuses the core's LCOV path
-# (3PWR-FR-029) unchanged — `go test` writes a Go coverprofile, so the tests gate converts it to LCOV
+# unchanged — `go test` writes a Go coverprofile, so the tests gate converts it to LCOV
 # with `gcov2lcov` in a shell pipeline (opt-in `shell: true`; see the adapter CONTRACT). golangci-lint
 # and go-mutesting are optional richer tools. Exact flags to confirm against an installed toolchain.
 language: go
@@ -10,7 +10,7 @@ detect: ["go.mod"]
 test_roots: ["."]
 property_test_lib: rapid
 
-# Toolchain 3Powers drives (3PWR-FR-034/048): a gate's `requires:` names one of these; when the tool
+# Toolchain 3Powers drives: a gate's `requires:` names one of these; when the tool
 # is absent the gate can't run, and the engine surfaces an actionable hint. `go` covers
 # format/lint/types; the tests gate also needs `gcov2lcov` (to emit LCOV), mutation `go-mutesting`.
 toolchain:
@@ -42,7 +42,7 @@ gates:
     parser: gobuild
     requires: go
   tests:
-    # Emit LCOV so the core's diff-coverage (3PWR-FR-029) works unchanged across languages.
+    # Emit LCOV so the core's diff-coverage works unchanged across languages.
     cmd: "go test -covermode=atomic -coverprofile=cover.out ./... && gcov2lcov -infile cover.out -outfile coverage/lcov.info"
     shell: true
     parser: gotest
@@ -55,9 +55,9 @@ gates:
     requires: go-mutesting
     tier_min: "High-risk"
 
-# Anti-gaming conformance patterns (HARDN-FR-008/009): a requirement ID traces only when bound
+# Anti-gaming conformance patterns: a requirement ID traces only when bound
 # to a test declaration (func TestX / t.Run title), and every requirement-bound test needs >=1
-# assertion. Absent patterns degrade to a visible quarantine (3PWR-NFR-015).
+# assertion. Absent patterns degrade to a visible quarantine.
 conformance:
   test_declarations:
     - '^\s*func\s+Test\w+'

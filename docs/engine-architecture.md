@@ -9,7 +9,7 @@ mandatory CI. Read [Concepts](concepts.md) first for the *why*; this page is the
 
 | Module | Responsibility |
 |---|---|
-| `cli.py` | argparse entry point; one `cmd_*` per subcommand. See [CLI Reference](cli-reference.md). |
+| `cli/` | the argparse entry point as a package — one module per command group (`keys`, `bootstrap`, `gate`, `trust`, `exceptions`, `oracle`, `observe`, `run`, `supply`, `brownfield`), each owning its `cmd_*` handlers and registering its own subparsers; `cli/__init__.py` assembles the parser and exports `main`. See [CLI Reference](cli-reference.md). |
 | `gates.py` | the gate **orchestrator** — runs the suite cheapest-first, assembles the verdict |
 | `characterize.py` | brownfield: reconstruct a spec + characterization tests from a legacy module |
 | `conformance.py` | the `spec_conformance` trace, two-way requirement↔task coverage, the defect regression gate |
@@ -106,9 +106,9 @@ capability); `--base` sets the diff base.
 ### `spec_conformance` — every requirement has a test
 
 [`conformance.py`](../engine/src/threepowers/conformance.py). A deterministic, language-agnostic trace:
-read the requirement IDs declared in the spec (e.g. `VUTIL-FR-001`), scan the test roots for files that
+read the requirement IDs declared in the spec (e.g. `DEMO-FR-001`), scan the test roots for files that
 *mention* each ID, and fail naming any requirement with no linked test. Tests reference a requirement
-simply by including its ID in a name or string — `describe("VUTIL-FR-001: rejects empty input", …)`. It
+simply by including its ID in a name or string — `describe("DEMO-FR-001: rejects empty input", …)`. It
 accounts for the unit / integration / e2e layers (each tier declares the layers a change must exercise)
 and the same module powers two-way requirement↔task coverage (`coverage-check`).
 
@@ -205,7 +205,7 @@ tamper-**evidence**, not tamper-**proofing**: evasion is *detectable*, not *impo
 
 ### Enforcement, provenance, reversibility
 
-- **`advance`** (in `cli.py`) is the local enforcement gate: it refuses unless the ledger verifies, the
+- **`advance`** (in the `cli/` package's trust module) is the local enforcement gate: it refuses unless the ledger verifies, the
   latest *enforced* verdict is green, and a human sign-off exists at/after that verdict. Report-only
   verdicts are advisory and never satisfy an advance.
 - **`deviation` / `emergency`** ([`deviations.py`](../engine/src/threepowers/deviations.py)) bend the

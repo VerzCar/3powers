@@ -18,7 +18,7 @@ from threepowers.cli import build_parser, main
 
 REPO = Path(__file__).resolve().parents[2]
 ENGINE_SRC = REPO / "engine" / "src" / "threepowers"
-_MARKERS = [REPO / "README.md", REPO / "docs" / "STATUS.md", ENGINE_SRC / "cli.py"]
+_MARKERS = [REPO / "README.md", REPO / "docs" / "STATUS.md", ENGINE_SRC / "cli" / "__init__.py"]
 
 pytestmark = pytest.mark.skipif(
     not all(p.exists() for p in _MARKERS),

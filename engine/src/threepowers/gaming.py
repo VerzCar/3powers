@@ -1,10 +1,10 @@
-"""Gate-gaming detection — a language-agnostic core gate (3PWR-FR-035).
+"""Gate-gaming detection — a language-agnostic core gate.
 
 Scans a change's diff for the moves that make a red gate look green: inline lint
 disables, type suppressions, coverage pragmas, deleted assertions — and newly added
-**assertion-free tests that reference requirement IDs** (HARDN-FR-010), the move that
+**assertion-free tests that reference requirement IDs**, the move that
 games the conformance trace. A hit is a **fail surfaced for mandatory human review** —
-never a silent pass. Accepting a legitimate suppression is a *deviation* (FR-057),
+never a silent pass. Accepting a legitimate suppression is a *deviation*,
 recorded explicitly, not absorbed here.
 """
 
@@ -28,7 +28,7 @@ _SUPPRESSIONS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(pragma:\s*no cover|istanbul[ ]ignore|c8[ ]ignore)"), "coverage pragma"),
 ]
 # Assertions whose REMOVAL weakens a test — and whose ABSENCE from a newly added
-# requirement-referencing test is a gaming signal (HARDN-FR-010). Language-agnostic union.
+# requirement-referencing test is a gaming signal. Language-agnostic union.
 _ASSERT = re.compile(
     r"\b(assert|expect|\.toBe|\.toEqual|self\.assert|pytest\.raises"
     r"|t\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)|require\.\w+)\b"
@@ -100,7 +100,7 @@ def _scan_diff(diff: str) -> list[str]:
 
 
 def _weak_added_tests(file: str, added: list[str]) -> list[str]:
-    """Newly added assertion-free tests that reference a requirement ID (HARDN-FR-010).
+    """Newly added assertion-free tests that reference a requirement ID.
 
     Works over the *added* lines only, with the declaration pattern chosen by the file's
     language: a block runs from a test declaration to the next one; a block whose opening
@@ -141,7 +141,7 @@ def _scan_untracked(repo_root: Path, target: Path) -> list[str]:
             for rx, label in _SUPPRESSIONS:
                 if rx.search(ln):
                     findings.append(f"{label} in {rel} (untracked): {ln.strip()[:80]}")
-        # An untracked file is all added lines — same weak-test scan (HARDN-FR-010).
+        # An untracked file is all added lines — same weak-test scan.
         findings += _weak_added_tests(f"{rel} (untracked)", text.splitlines())
     return findings
 

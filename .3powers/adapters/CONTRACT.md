@@ -17,7 +17,7 @@ detect: ["<file>", ...]            # files whose presence selects this adapter
 test_roots: ["<dir>", ...]         # where spec-conformance scans for requirement IDs
 property_test_lib: <string>        # property-based testing library
 
-toolchain:                         # optional: the tools this adapter's gates drive (3PWR-FR-034/048)
+toolchain:                         # optional: the tools this adapter's gates drive
   <tool>: { install: "<fix cmd>", probe: "<version cmd>" }   # e.g. biome: { install: "npm i -D @biomejs/biome" }
 
 gates:
@@ -83,9 +83,9 @@ language-specific gates come from the adapter.
   captures stdout/stderr tails as actionable findings.
 * **Coverage is LCOV.** Every adapter's test command must emit LCOV so the core's
   diff-coverage works identically across languages.
-* **Tests reference requirement IDs by declaration binding** (HARDN-FR-008): an ID traces a
+* **Tests reference requirement IDs by declaration binding**: an ID traces a
   requirement only when it appears in a **test declaration** — the test's name/title line (e.g.
-  `describe("VUTIL-FR-001 …")`) or the docstring adjacent to the declaration (e.g. a Python
+  `describe("DEMO-FR-001 …")`) or the docstring adjacent to the declaration (e.g. a Python
   `def test_x():` docstring). A mention in a body comment does **not** trace. The adapter declares
   its patterns under a `conformance:` block:
 
@@ -93,13 +93,13 @@ language-specific gates come from the adapter.
   conformance:
     test_declarations:      # regexes that open a test block (name/declaration line)
       - '^\s*(?:async\s+)?def\s+test_\w+'
-    assertion_patterns:     # ≥1 must match inside every requirement-bound test (HARDN-FR-009)
+    assertion_patterns:     # ≥1 must match inside every requirement-bound test
       - '\bassert\b'
   ```
 
   An adapter that declares **no** `test_declarations` degrades to the legacy mention-based trace
   with a visible quarantine finding; one that declares no `assertion_patterns` skips the weak-test
-  check with a visible quarantine finding — never a failure, never a silent pass (3PWR-NFR-015).
+  check with a visible quarantine finding — never a failure, never a silent pass.
 * **`shell: true` opts a gate into a shell.** A gate command normally runs argv-style;
   set `shell: true` on the gate to allow shell features like a pipe or `$(…)` (e.g. Go
   converts its coverprofile to LCOV with a `go test … && gcov2lcov …` pipeline).

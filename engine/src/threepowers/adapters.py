@@ -1,10 +1,9 @@
-"""Language adapters — the polyglot plugin contract (3PWR-FR-027, 3PWR-NFR-007).
+"""Language adapters — the polyglot plugin contract.
 
 An adapter is a *declarative manifest* (``.3powers/adapters/<lang>/adapter.yaml``)
 that maps each gate to a tool invocation and the standard format of its output.
-Adding a language is therefore "add a manifest" — no change to the gate-engine core
-(3PWR-NFR-007). The core never assumes a language beyond what the adapter declares
-(3PWR-FR-045).
+Adding a language is therefore "add a manifest" — no change to the gate-engine core.
+The core never assumes a language beyond what the adapter declares.
 """
 
 from __future__ import annotations
@@ -38,13 +37,13 @@ class CmdResult:
         return lines[-n:]
 
 
-# The only gates a fix command may run for (GATECFG-FR-006): a fix mutates source to satisfy a
+# The only gates a fix command may run for: a fix mutates source to satisfy a
 # style check — types/tests/mutation must never be "fixed" into passing. Enforced at configuration
 # assembly (a stray fix_cmd is discarded) AND at execution (gates.py refuses to run one).
 AUTOFIX_GATES = frozenset({"format", "lint"})
 
-# Where the per-project gate overrides live (GATECFG-FR-001) — committed team configuration,
-# versioned with the rest of .3powers/config/, seeded by `3pwr init` (GATECFG-FR-002).
+# Where the per-project gate overrides live — committed team configuration,
+# versioned with the rest of .3powers/config/, seeded by `3pwr init`.
 GATE_OVERRIDES_NAME = "gates.yaml"
 
 
@@ -57,7 +56,7 @@ def _read_manifest(settings: Settings, name: str) -> dict[str, Any]:
 
 
 def load_gate_overrides(settings: Settings) -> dict[str, dict[str, Any]]:
-    """The per-gate overrides from ``.3powers/config/gates.yaml`` (GATECFG-FR-001).
+    """The per-gate overrides from ``.3powers/config/gates.yaml``.
 
     Returns ``{gate: {key: value}}``; ``{}`` when the file is absent, empty, or fully commented.
     Non-mapping gate blocks are ignored — the file overrides gate KEYS, nothing else."""
@@ -77,10 +76,10 @@ def merge_gate_overrides(
 ) -> list[str]:
     """Deep-merge ``overrides`` into the manifest's ``gates:`` blocks; returns the overridden gates.
 
-    One ``dict.update()`` pass per gate block (GATECFG-FR-001): only keys present in the override
+    One ``dict.update()`` pass per gate block: only keys present in the override
     replace the adapter's; absent gates/keys keep the adapter values. A ``fix_cmd`` on a
-    non-fixable gate is discarded, never merged (GATECFG-FR-006). Overrides replace TOOLS, never
-    gates — the risk tier alone decides which gates run (GATECFG-NFR-001)."""
+    non-fixable gate is discarded, never merged. Overrides replace TOOLS, never
+    gates — the risk tier alone decides which gates run."""
     if not overrides:
         return []
     gates = manifest.setdefault("gates", {})
@@ -99,7 +98,7 @@ def merge_gate_overrides(
 
 
 def _strip_invalid_fix_cmds(manifest: dict[str, Any]) -> None:
-    """Discard any ``fix_cmd`` declared on a non-fixable gate (GATECFG-FR-006).
+    """Discard any ``fix_cmd`` declared on a non-fixable gate.
 
     The schema admits a fix command for the format/lint gates only — types, tests, and mutation
     must never be "fixed" into passing, whichever file tried to configure one."""
@@ -109,7 +108,7 @@ def _strip_invalid_fix_cmds(manifest: dict[str, Any]) -> None:
 
 
 def load_adapter(settings: Settings, name: str) -> dict[str, Any]:
-    """The adapter manifest with the project's ``gates.yaml`` overrides merged in (GATECFG-FR-001)."""
+    """The adapter manifest with the project's ``gates.yaml`` overrides merged in."""
     manifest = _read_manifest(settings, name)
     merge_gate_overrides(manifest, load_gate_overrides(settings))
     _strip_invalid_fix_cmds(manifest)
@@ -177,7 +176,7 @@ def wants_shell(spec: dict[str, Any]) -> bool:
 
 
 def toolchain(manifest: dict[str, Any]) -> dict[str, Any]:
-    """The adapter's declared toolchain map (tool → {install, probe}), or ``{}`` (3PWR-FR-034)."""
+    """The adapter's declared toolchain map (tool → {install, probe}), or ``{}``."""
     tc = manifest.get("toolchain")
     return tc if isinstance(tc, dict) else {}
 
@@ -199,7 +198,7 @@ def install_hint(manifest: dict[str, Any], tool: str) -> Optional[str]:
 
 
 def probe_tool(manifest: dict[str, Any], tool: str, cwd: Path, timeout: int = 120) -> bool:
-    """Whether ``tool`` answers the probe its toolchain entry declares (GDIAG-FR-004).
+    """Whether ``tool`` answers the probe its toolchain entry declares.
 
     Runs the adapter's declarative ``probe:`` command (e.g. a ``--version`` check) in ``cwd`` —
     the target project, so project-local shims (``npx``, ``uv run``) resolve as the gates would.
@@ -217,7 +216,7 @@ def probe_tool(manifest: dict[str, Any], tool: str, cwd: Path, timeout: int = 12
 # --------------------------------------------------------------------------- native-tooling detection
 @dataclass(frozen=True)
 class DetectRule:
-    """One declarative auto-detection probe (GATECFG-FR-004): data, never core logic (3PWR-NFR-007).
+    """One declarative auto-detection probe: data, never core logic.
 
     ``globs`` match files directly under the target; ``contains`` (optional) additionally requires
     the matched file's text to contain the marker (e.g. ``[tool.pyright]`` in pyproject.toml).
@@ -230,9 +229,9 @@ class DetectRule:
     contains: str = ""
 
 
-# Fixed first-match order per gate (GATECFG-FR-004). The rules are pure data: adding a detectable
+# Fixed first-match order per gate. The rules are pure data: adding a detectable
 # tool is "add a rule", no gate-engine change. Every fix command sits on a fixable gate only
-# (GATECFG-FR-006 holds by construction).
+# (it holds by construction).
 DETECT_RULES: tuple[DetectRule, ...] = (
     DetectRule(
         gate="format",
@@ -349,11 +348,11 @@ def _rule_matches(rule: DetectRule, target: Path) -> bool:
 def detect_native_tools(
     target: Path, skip: set[str] | None = None
 ) -> dict[str, tuple[str, dict[str, str]]]:
-    """Probe ``target`` for project-native gate tooling (GATECFG-FR-004).
+    """Probe ``target`` for project-native gate tooling.
 
     Returns ``{gate: (tool, gate_spec)}`` — the FIRST matching rule per gate wins, in the
     declared table order. Gates in ``skip`` (those ``gates.yaml`` overrides) are never probed:
-    the explicit team configuration outranks detection (GATECFG-FR-003). Deterministic given the
+    the explicit team configuration outranks detection. Deterministic given the
     tree; reads files, runs nothing."""
     skip = skip or set()
     found: dict[str, tuple[str, dict[str, str]]] = {}
@@ -367,12 +366,12 @@ def detect_native_tools(
 
 @dataclass
 class EffectiveGates:
-    """The assembled gate configuration for one run (GATECFG-FR-003).
+    """The assembled gate configuration for one run.
 
     ``manifest`` is the adapter manifest with ``gates.yaml`` overrides and auto-detection applied,
     in that precedence; ``sources`` tags each gate with where its configuration came from
     (``adapter`` | ``gates.yaml`` | ``auto-detected``); ``detected`` names each auto-detected
-    gate's tool, for the one startup line (GATECFG-FR-005)."""
+    gate's tool, for the one startup line."""
 
     manifest: dict[str, Any]
     sources: dict[str, str]
@@ -382,10 +381,10 @@ class EffectiveGates:
 def effective_gates(settings: Settings, name: str, target: Path) -> EffectiveGates:
     """Assemble the effective per-gate configuration: adapter < auto-detection < ``gates.yaml``.
 
-    Detection runs only for gates ``gates.yaml`` leaves alone (GATECFG-FR-003/004). A detected
+    Detection runs only for gates ``gates.yaml`` leaves alone. A detected
     tool the adapter already configures for that gate keeps the adapter's richer command
     (coverage settings, shell guards, ``requires:``) — detection confirms, never degrades.
-    Configuration replaces tools, never gates (GATECFG-NFR-001)."""
+    Configuration replaces tools, never gates."""
     manifest = _read_manifest(settings, name)
     overridden = set(merge_gate_overrides(manifest, load_gate_overrides(settings)))
     gates: dict[str, Any] = manifest.setdefault("gates", {})

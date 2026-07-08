@@ -1,11 +1,11 @@
-"""Run preflight — verify the prerequisites for a LIVE **native** ``3pwr run`` before dispatching any stage
-(EXEC-FR-015).
+"""Run preflight — verify the prerequisites for a LIVE **native** ``3pwr run`` before dispatching
+any stage.
 
-Honest diagnostics: a run that cannot start names the missing prerequisite and the exact fix, and always
-names the fully-offline ``--dry-run`` alternative — it is never mislabeled "gates red" (EXEC-FR-016).
-Provider-, model-, and agent-agnostic: the set of headless-capable agent backends is configuration-driven
-and no vendor name is embedded in run logic (EXEC-NFR-003). This module only *reads* configuration and the
-environment; it dispatches nothing.
+Honest diagnostics: a run that cannot start names the missing prerequisite and the exact fix, and
+always names the fully-offline ``--dry-run`` alternative — it is never mislabeled "gates red".
+Provider-, model-, and agent-agnostic: the set of headless-capable agent backends is
+configuration-driven and no vendor name is embedded in run logic. This module only *reads*
+configuration and the environment; it dispatches nothing.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from .config import Settings
 from .oracle import diverse, family_of
 
 # Agent backends that can be dispatched headlessly (no interactive IDE). Config overrides this
-# (roles.yaml `headless_integrations`) so the accepted set is data, not code (EXEC-NFR-003).
+# (roles.yaml `headless_integrations`) so the accepted set is data, not code.
 DEFAULT_HEADLESS: tuple[str, ...] = (
     "claude",
     "codex",
@@ -37,7 +37,7 @@ DEFAULT_HEADLESS: tuple[str, ...] = (
 # give a clearer message; the authoritative test is membership in the headless set.
 IDE_ONLY: tuple[str, ...] = ("windsurf", "kilocode", "roo")
 
-# The always-available offline paths named in every preflight-failure message (EXEC-FR-016).
+# The always-available offline paths named in every preflight-failure message.
 OFFLINE_ALTERNATIVES: tuple[str, ...] = (
     'run fully offline (no dispatch): 3pwr run "<intent>" --dry-run',
     "or drive stages individually: 3pwr oracle → 3pwr gate run → 3pwr signoff → 3pwr advance",
@@ -46,9 +46,9 @@ OFFLINE_ALTERNATIVES: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class Prereq:
-    """One run prerequisite and, when unmet, the exact next step to resolve it (RUNX-FR-009).
+    """One run prerequisite and, when unmet, the exact next step to resolve it.
 
-    ``label`` is the honest status detail for a MET prerequisite (AUTOX-FR-004): it states exactly what
+    ``label`` is the honest status detail for a MET prerequisite: it states exactly what
     was probed and what was not — e.g. an agent CLI is "present; authentication not verified" because
     authentication cannot be checked offline. No readiness line ever overstates what was checked."""
 
@@ -59,7 +59,7 @@ class Prereq:
 
 
 def headless_set(settings: Settings) -> set[str]:
-    """The configured headless-capable integrations, else the built-in default (RUNX-NFR-005)."""
+    """The configured headless-capable integrations, else the built-in default."""
     configured = settings.load_roles().get("headless_integrations")
     if isinstance(configured, list) and configured:
         return {str(x).strip() for x in configured if str(x).strip()}
@@ -85,8 +85,8 @@ def _role_id(settings: Settings, role: str) -> str:
 
 
 def diversity_ok(settings: Settings, entries: list[dict], spec_id: str | None) -> bool:
-    """True iff the oracle resolves to a family different from the coder, OR a signed model-diversity
-    deviation is active (RUNX-FR-006 / 3PWR-FR-022 via FR-057)."""
+    """True iff the oracle resolves to a family different from the coder, OR a signed
+    model-diversity deviation is active."""
     if diverse(
         _role_id(settings, "coder"), _role_id(settings, "oracle"), settings.diversity_level()
     ):
@@ -101,8 +101,8 @@ def _agent_prereq(
     headless: set[str],
     command_present: Callable[[str], bool],
 ) -> Prereq:
-    """Whether one role's agent backend is dispatchable: configured, has a manifest, is headless, and its
-    CLI is present. Native counterpart to the coder/oracle checks in :func:`check` (EXEC-FR-015)."""
+    """Whether one role's agent backend is dispatchable: configured, has a manifest, is headless,
+    and its CLI is present. Native counterpart to the coder/oracle checks in :func:`check`."""
     if not agent:
         return Prereq(
             label,
@@ -124,7 +124,7 @@ def _agent_prereq(
     cmd = agents.agent_command(manifest)
     if not command_present(cmd):
         return Prereq(label, False, f"install/enable the '{cmd}' CLI for agent '{agent}'")
-    # The honest offline caveat (AUTOX-FR-004): PATH presence is probeable; provider authentication
+    # The honest offline caveat: PATH presence is probeable; provider authentication
     # is not — say so rather than overstating what was checked.
     return Prereq(
         label,
@@ -142,9 +142,9 @@ def check_native(
     spec_id: str | None,
     command_present: Callable[[str], bool] | None = None,
 ) -> list[Prereq]:
-    """Verify the prerequisites for a LIVE **native** run (EXEC-FR-015): a headless coder agent and a
-    different-family oracle agent — no Spec Kit CLI and no workflow descriptor. Pure given its inputs;
-    ``command_present`` defaults to a PATH probe."""
+    """Verify the prerequisites for a LIVE **native** run: a headless coder agent and a
+    different-family oracle agent — no Spec Kit CLI and no workflow descriptor. Pure given its
+    inputs; ``command_present`` defaults to a PATH probe."""
     if command_present is None:
         command_present = lambda cmd: shutil.which(cmd) is not None  # noqa: E731
     headless = headless_set(settings)
@@ -168,32 +168,30 @@ def check_native(
 
 
 def _git_on_path(cmd: str) -> bool:
-    """The default PATH probe for :func:`git_prereq` (injected in tests — EXEC-NFR-004)."""
+    """The default PATH probe for :func:`git_prereq` (injected in tests)."""
     return shutil.which(cmd) is not None
 
 
 def git_prereq(root: Path, command_present: Callable[[str], bool] | None = None) -> Prereq:
-    """A working git repository — a PRECONDITION for starting a run (GITX-FR-002).
+    """A working git repository — a PRECONDITION for starting a run.
 
     Git on PATH and ``root`` inside a work tree (a ``.git`` directory — or file, for a linked
     worktree — on the path upward). A pure function of the repository/environment state: offline,
-    deterministic, no subprocess needed for the work-tree test (GITX-NFR-001)."""
+    deterministic, no subprocess needed for the work-tree test."""
     name = "working git repository"
     if command_present is None:
         command_present = _git_on_path
     if not command_present("git"):
-        return Prereq(name, False, "install git — a run requires version control (GITX-FR-002)")
+        return Prereq(name, False, "install git — a run requires version control")
     for candidate in [root.resolve(), *root.resolve().parents]:
         if (candidate / ".git").exists():
             return Prereq(name, True, label="git present; repository detected")
-    return Prereq(
-        name, False, "run `git init` — the target is not inside a git repository (GITX-FR-002)"
-    )
+    return Prereq(name, False, "run `git init` — the target is not inside a git repository")
 
 
 def signer_prereq(root: Path) -> Prereq:
     """A resolvable, USABLE signer — an environment-supplied key is validated (exists / readable /
-    well-formed), never trusted silently (AUTOX-FR-001)."""
+    well-formed), never trusted silently."""
     name = "resolvable signing key"
     env_file = os.environ.get("THREEPOWERS_SIGNING_KEY_FILE")
     env_seed = os.environ.get("THREEPOWERS_SIGNING_KEY")
@@ -240,11 +238,11 @@ def check_auto(
     command_present: Callable[[str], bool] | None = None,
 ) -> list[Prereq]:
     """Every prerequisite a live ``3pwr run --mode auto`` enforces before dispatching, as ONE shared
-    check set (AUTOX-FR-002): ``3pwr init``'s readiness, the standalone ``3pwr ready``, and the run's
+    check set: ``3pwr init``'s readiness, the standalone ``3pwr ready``, and the run's
     own preflight all consume this list, so their verdicts cannot drift — one source of checks.
 
-    Ordered so the unmet items' fixes read as executable next steps in dependency order
-    (AUTOX-FR-005): signing key → working git repository (GITX-FR-002) → coder agent (roles + CLI)
+    Ordered so the unmet items' fixes read as executable next steps in dependency order:
+    signing key → working git repository → coder agent (roles + CLI)
     → different-family oracle agent."""
     return [
         signer_prereq(settings.root),
@@ -265,10 +263,11 @@ def unmet(prqs: list[Prereq]) -> list[Prereq]:
 
 
 def provenance_payload(stage: str, integration: str, model: str) -> dict[str, str]:
-    """The additive executive-dispatch provenance recorded per dispatched stage (RUNX-FR-007).
+    """The additive executive-dispatch provenance recorded per dispatched stage.
 
-    Names the stage, the dispatching integration, and the resolved model — bound into the same signed,
-    hash-chained ledger as the run's verdict, so altering one is detectable by ``3pwr verify`` (NFR-002)."""
+    Names the stage, the dispatching integration, and the resolved model — bound into the same
+    signed, hash-chained ledger as the run's verdict, so altering one is detectable by
+    ``3pwr verify``."""
     return {
         "kind": "dispatch",
         "stage": stage,

@@ -1,14 +1,14 @@
-"""The orchestration front-end — drive the whole lifecycle as one loop (3PWR-FR-011, §6).
+"""The orchestration front-end — drive the whole lifecycle as one loop.
 
 `3pwr run` walks the lifecycle, streaming progress, and — in ``auto`` mode — auto-continues past the
-intermediate review gates while **always** stopping at the two spec-mandated human gates: ``review-spec``
-(a human approves the spec, 3PWR-FR-006) and ``signoff`` (a human signs off on the evidence + residual,
-3PWR-FR-037). ``commit`` mode stops at every gate.
+intermediate review gates while **always** stopping at the two mandatory human gates: ``review-spec``
+(a human approves the spec) and ``signoff`` (a human signs off on the evidence + residual).
+``commit`` mode stops at every gate.
 
 The mode/gate/progress logic (``drive``) is pure given a *runner*. The live runner is the native
-:class:`threepowers.runner.NativeRunner` (EXEC-FR-001) — it dispatches each stage to a headless agent
+:class:`threepowers.runner.NativeRunner` — it dispatches each stage to a headless agent
 directly and runs the gate suite in-process; a ``SimulatedRunner`` drives ``--dry-run`` and the tests.
-Orchestration never enters the deterministic verdict (3PWR-NFR-001).
+Orchestration never enters the deterministic verdict.
 """
 
 from __future__ import annotations
@@ -28,10 +28,11 @@ from . import frame, style
 from .lifecycle import STAGES, canonical_stage
 from .verdict import GateResult
 
-# The two human gates the spec makes mandatory — auto mode NEVER skips these (spec §1).
+# The two human gates the spec makes mandatory — auto mode NEVER skips these.
+# The values are the human-readable labels rendered at a gate pause and recorded in run state.
 MANDATORY_GATES: dict[str, str] = {
-    "review-spec": "3PWR-FR-006",  # a human approves the spec before implementation begins
-    "signoff": "3PWR-FR-037",  # a human signs off on evidence + residual before advance
+    "review-spec": "spec approval",  # a human approves the spec before implementation begins
+    "signoff": "sign-off",  # a human signs off on evidence + residual before advance
 }
 
 # The lifecycle steps, in order, mapped to their stage — the native executive walks these directly.
@@ -61,7 +62,7 @@ class Event:
     stage: str = ""
     detail: str = ""
     # Optional structured payload an emitter attaches for a richer rendering — a gate-red event
-    # carries the failed verdict dict + the run's resolved spec id (GDIAG-FR-001/006). Rendering
+    # carries the failed verdict dict + the run's resolved spec id. Rendering
     # degrades to the plain one-liner when absent, so every existing emitter stays valid.
     data: dict[str, Any] = field(default_factory=dict)
 
@@ -77,9 +78,7 @@ class Outcome:
     outcome: str = (
         ""  # a finer failure class: gate_red | verdict_error | dispatch_failed | artifact_missing
     )
-    detail: str = (
-        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
-    )
+    detail: str = ""  # a human-readable failure detail (e.g. the missing-artifact message)
     events: list[Event] = field(default_factory=list)
 
 
@@ -89,27 +88,23 @@ class RunResult:
 
     status: str  # paused_at_gate | done | failed | aborted
     gate: str = ""
-    gate_fr: str = ""  # the FR id when the pause is a mandatory gate
+    gate_fr: str = ""  # the gate's human-readable label when the pause is a mandatory gate
     stage: str = ""
     verdict: str = (
         ""  # the deterministic-gate verdict when status == failed: "fail" = a real gate-red,
     )
-    # "" = a dispatch/execution failure (not a gate verdict) — the honest-diagnostics split (RUNX-FR-010/011)
-    outcome: str = (
-        ""  # a finer failure class (RUNLIVE): dispatch_failed | artifact_missing | verdict_error
-    )
-    detail: str = (
-        ""  # a human-readable failure detail (e.g. the missing-artifact message, RUNLIVE-FR-002)
-    )
+    # "" = a dispatch/execution failure (not a gate verdict) — the honest-diagnostics split
+    outcome: str = ""  # a finer failure class: dispatch_failed | artifact_missing | verdict_error
+    detail: str = ""  # a human-readable failure detail (e.g. the missing-artifact message)
 
     @property
     def is_gate_red(self) -> bool:
-        """True only when a failure carries a real deterministic-gate ``fail`` verdict (RUNX-FR-010)."""
+        """True only when a failure carries a real deterministic-gate ``fail`` verdict."""
         return self.status == "failed" and self.verdict == "fail"
 
     @property
     def is_artifact_missing(self) -> bool:
-        """True when the failure was a stage producing no declared artifact (RUNLIVE-FR-002)."""
+        """True when the failure was a stage producing no declared artifact."""
         return self.status == "failed" and self.outcome == "artifact_missing"
 
 
@@ -139,7 +134,7 @@ def step_index(step: str) -> int:
 
 
 def last_checkpoint_step(entries: list[dict], spec_id: str) -> str:
-    """The last action step committed as a checkpoint for ``spec_id`` (RUNLIVE-FR-010), else ''.
+    """The last action step committed as a checkpoint for ``spec_id``, else ''.
 
     Read from the signed ledger's ``run``/``checkpoint`` entries, so a resume knows which stages already
     have a committed artifact and must not be re-dispatched — reconstructed offline from the repo alone."""
@@ -154,10 +149,10 @@ def last_checkpoint_step(entries: list[dict], spec_id: str) -> str:
 
 
 def last_completed_step(entries: list[dict], spec_id: str) -> str:
-    """The last action step recorded COMPLETE for ``spec_id``, else '' (AUTOX-FR-010).
+    """The last action step recorded COMPLETE for ``spec_id``, else ''.
 
     Completion is read from the signed ledger's ``run`` entries — a committed ``checkpoint``
-    (RUNLIVE-FR-010) or the lightweight ``stage`` completion record written at stage success even with
+    or the lightweight ``stage`` completion record written at stage success even with
     auto-commit off — so a resume knows which stages must not be re-dispatched regardless of the
     auto-commit setting, reconstructed offline from the repo alone."""
     step = ""
@@ -171,9 +166,10 @@ def last_completed_step(entries: list[dict], spec_id: str) -> str:
 
 
 def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = "") -> int:
-    """Where a ``--resume`` should re-enter the lifecycle (RUNLIVE-FR-010, AUTOX-FR-010).
+    """Where a ``--resume`` should re-enter the lifecycle.
 
-    The later of: the step after the last approved human ``pending_gate`` (the EXEC behavior) and the
+    The later of: the step after the last approved human ``pending_gate`` (the native executive's
+    established behavior) and the
     step after the last recorded completion — a committed checkpoint or a ``run``/``stage`` record, so
     a failed ``--no-auto-commit`` run resumes too (given an intact working tree). Taking the max means
     a mid-segment failure resumes from the next *uncompleted* stage without re-dispatching a completed
@@ -187,14 +183,14 @@ def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = ""
 
 def segment_actions(resume_from: str = "") -> list[tuple[str, str]]:
     """The executive/judiciary action steps dispatched in the segment after ``resume_from`` — up to (not
-    including) the next gate. Used to record one per-stage dispatch provenance entry (RUNX-FR-007), so a
+    including) the next gate. Used to record one per-stage dispatch provenance entry, so a
     fresh run records only the stages before the first human gate and a resume records only the next
-    segment (no already-completed stage is re-recorded, mirroring RUNX-FR-004)."""
+    segment (no already-completed stage is re-recorded)."""
     return segment_actions_from(resume_index(resume_from) if resume_from else 0)
 
 
 def segment_actions_from(start_index: int) -> list[tuple[str, str]]:
-    """The action steps from ``start_index`` up to (not including) the next gate (RUNX-FR-007, RUNLIVE-FR-010).
+    """The action steps from ``start_index`` up to (not including) the next gate.
 
     Taking an explicit start index lets a resume that skipped committed checkpoints record provenance only
     for the stages it will actually dispatch — never a completed one."""
@@ -217,7 +213,7 @@ def drive(
     or aborts. ``resuming`` means we are continuing past a gate the human just approved."""
     outcome = runner.resume("approve") if resuming else runner.run()
     # A live-delivering runner (NativeRunner with on_progress) has already surfaced each event the
-    # moment it happened (STEER-FR-013) — replaying the batched history here would report it twice.
+    # moment it happened — replaying the batched history here would report it twice.
     live = bool(getattr(runner, "delivers_live_events", False))
     while True:
         if not live:
@@ -238,7 +234,7 @@ def drive(
             outcome = runner.resume("approve")
             continue
         # The failed event carries the finer outcome class in ``step`` so the log can word it precisely
-        # (gate-red vs a dispatch/artifact failure — RUNLIVE-FR-002, RUNX-FR-010/011).
+        # (gate-red vs a dispatch/artifact failure).
         on_event(
             Event(outcome.status, outcome.outcome, outcome.stage, outcome.detail or outcome.verdict)
         )
@@ -294,7 +290,7 @@ class SimulatedRunner:
 # --------------------------------------------------------------------------- progress rendering (pure)
 _MARK = {"done": "✓", "current": "▶", "todo": "·"}
 _MARK_ASCII = {"done": "v", "current": ">", "todo": "."}
-# Event glyphs, with an ASCII fallback for a stream that cannot encode the Unicode marks (CLIUX-NFR-004).
+# Event glyphs, with an ASCII fallback for a stream that cannot encode the Unicode marks.
 _GLYPHS = {
     "step": "▶",
     "pass": "✓",
@@ -323,7 +319,7 @@ def render_tracker(reached_stage: str, st: style.Styler | None = None) -> str:
     """A one-line stage tracker: stages up to ``reached_stage`` are ✓, the reached one ▶, the rest ·.
 
     With a color-enabled ``st`` each cell is colored — done green, current bold-cyan, upcoming dim —
-    so the same "you are here" view reads consistently live and in ``--status`` (CLIUX-FR-008/012).
+    so the same "you are here" view reads consistently live and in ``--status``.
     With no styler (the default) it is the plain glyph+name text, byte-for-byte as before."""
     st = st or style.Styler()
     m = _MARK_ASCII if st.ascii_only else _MARK
@@ -341,7 +337,7 @@ def render_tracker(reached_stage: str, st: style.Styler | None = None) -> str:
 
 
 def _first_actionable(gate: dict[str, Any]) -> str:
-    """The first non-empty findings line of a failed gate — the line the user acts on (GDIAG-FR-001).
+    """The first non-empty findings line of a failed gate — the line the user acts on.
 
     Missing-tool findings already lead with the install fix; adapter failures lead with the tool's
     first diagnostic. Empty when the gate carried no findings."""
@@ -353,7 +349,7 @@ def _first_actionable(gate: dict[str, Any]) -> str:
 
 
 def _gate_red_summary(ev: Event, st: style.Styler, g: dict[str, str]) -> str:
-    """The structured gates-failed summary for a gate-red event (GDIAG-FR-001/006).
+    """The structured gates-failed summary for a gate-red event.
 
     Renders one row per failed gate — ``name · tool`` plus its first actionable error line — from
     the verdict dict the emitter attached under ``ev.data['verdict']``, then the filled-in
@@ -384,10 +380,10 @@ def _gate_red_summary(ev: Event, st: style.Styler, g: dict[str, str]) -> str:
 
 
 def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
-    """Human-readable one-liner for a streamed event (CLIUX-FR-009).
+    """Human-readable one-liner for a streamed event.
 
     With a color-enabled ``st`` the glyph and key words are colored — a running step, a green/red
-    verdict, a prominent paused gate, a red failure — distinct at a glance (CLIUX-FR-009). With no
+    verdict, a prominent paused gate, a red failure — distinct at a glance. With no
     styler the plain text is unchanged, byte-for-byte."""
     st = st or style.Styler()
     g = _glyphs(st)
@@ -404,7 +400,7 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
         return f"  {st.warn(g['pause'])} {ev.stage:<8} {ev.step}{st.warn(tag)}: awaiting your commitment"
     if ev.kind == "failed":
         # "gates red" is emitted ONLY for a real deterministic-gate verdict; a dispatch/artifact
-        # failure is reported distinctly and names the stage reached (RUNX-FR-010/011, RUNLIVE-FR-002).
+        # failure is reported distinctly and names the stage reached.
         if ev.step == "gate_red" or ev.detail == "fail":
             summary = _gate_red_summary(ev, st, g)
             if summary:
@@ -416,7 +412,7 @@ def format_event(ev: Event, mode: str, st: style.Styler | None = None) -> str:
         if ev.step == "artifact_missing":
             return f"  {st.err(g['fail'])} artifact missing{where} — {ev.detail}"
         if ev.step in ("artifact_absent", "artifact_unrecorded"):
-            # The SRCX completion gate blocked the stage (SRCX-FR-014/015) — named, actionable.
+            # The run-workspace completion gate blocked the stage — named, actionable.
             return f"  {st.err(g['fail'])} stage completion failed{where} — {ev.detail}"
         extra = f": {ev.detail}" if ev.detail else ""
         return (
@@ -438,7 +434,7 @@ def tracker_frame(reached_stage: str, ev: Event, st: style.Styler | None = None)
     """One rendered progress frame (pure, testable): the stage tracker + the current activity line.
 
     On a TTY this is the persistent, colored "you are here" header — the full stage strip re-rendered
-    with the running step alongside it (CLIUX-FR-008/009)."""
+    with the running step alongside it."""
     return f"{render_tracker(reached_stage, st)}   {format_event(ev, '', st).strip()}"
 
 
@@ -446,14 +442,13 @@ class Tracker:
     """The progress view for ``3pwr run``. On a capable TTY it anchors a **persistent
     live bar** at the bottom of the terminal — the eight stages with done/current/upcoming marks, the
     active step, and a heartbeat spinner with the elapsed time — while the event log and the
-    dispatched agent's stdout print ABOVE it into ordinary, fully scrollable history (STEER-FR-012/013,
-    advancing CLIUX-FR-008/009's single in-place line). Off a TTY (pipe / ``--json``), under
-    ``NO_COLOR``, or on a terminal that cannot support the bar, it degrades to the plain streamed
-    ``format_event`` log with no ``\\r`` in-place redraws and no ANSI/control codes (STEER-FR-015,
-    CLIUX-FR-011). The bar is rendered by ``rich`` behind the frame API (TRIX-FR-003/004; the
-    machine contracts are unchanged).
+    dispatched agent's stdout print ABOVE it into ordinary, fully scrollable history. Off a TTY
+    (pipe / ``--json``), under ``NO_COLOR``, or on a terminal that cannot support the bar, it
+    degrades to the plain streamed ``format_event`` log with no ``\\r`` in-place redraws and no
+    ANSI/control codes. The bar is rendered by ``rich`` behind the frame API; the machine
+    contracts are unchanged.
     Color is tied to the TTY: the off-TTY log is always plain, even under
-    ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes (CLIUX-FR-011)."""
+    ``THREEPOWERS_FORCE_COLOR``, so a captured/piped run never carries escapes."""
 
     def __init__(
         self,
@@ -471,10 +466,10 @@ class Tracker:
         self._tty = bool(getattr(stream, "isatty", lambda: False)()) if tty is None else tty
         # Color only on the live TTY view. The off-TTY log is ALWAYS plain — a disabled
         # styler wins even over a passed-in enabled one (e.g. color_mode: always) so a piped/captured
-        # run never carries escapes (CLIUX-FR-011).
+        # run never carries escapes.
         self._st = (st if st is not None else style.styler(stream)) if self._tty else style.Styler()
         self._reached = "Discovery"
-        # The live bar (STEER-FR-012) — only when the terminal can carry it (STEER-FR-015);
+        # The live bar — only when the terminal can carry it;
         # ``frame_view`` lets tests inject one deterministically.
         self._frame = (
             frame_view
@@ -483,17 +478,17 @@ class Tracker:
         )
 
     def close(self) -> None:
-        """Tear the live bar down — last state left on screen, cursor restored (STEER-FR-016).
+        """Tear the live bar down — last state left on screen, cursor restored.
 
         Idempotent, so the exception path (``finally``) and the terminal-event path converge."""
         if self._frame is not None:
             self._frame.close()
 
     def retitle(self, subject: str) -> None:
-        """Adopt the run's resolved identity after construction (RUNID-FR-003).
+        """Adopt the run's resolved identity after construction.
 
         The tracker is built before the run workspace is allocated, so a workspace-derived spec id
-        (the folder's NNN, RUNID-FR-001) arrives late; the live bar's title and its pause/resume
+        (the folder's NNN) arrives late; the live bar's title and its pause/resume
         hints must carry that derived value, never the pre-derivation default."""
         self._subject = subject
         if self._frame is not None:
@@ -501,7 +496,7 @@ class Tracker:
 
     def begin(self) -> None:
         """Open the live bar eagerly — the stage strip and heartbeat are on screen BEFORE the first
-        dispatch produces an event, so the run never looks frozen (STEER-FR-012/013). A no-op off a
+        dispatch produces an event, so the run never looks frozen. A no-op off a
         TTY or on a degraded terminal (the plain log needs no opening)."""
         if self._frame is not None:
             self._frame.open()
@@ -513,7 +508,7 @@ class Tracker:
 
     def emit(self, line: str) -> None:
         """Print one content line into the terminal's ordinary flow — above the live bar when it is
-        open (scrollback keeps the whole conversation, STEER-FR-012), plain otherwise."""
+        open (scrollback keeps the whole conversation), plain otherwise."""
         if self._frame is not None:
             self._frame.emit(line)
         else:
@@ -523,7 +518,7 @@ class Tracker:
     def echo_sink(self) -> "_EchoSink":
         """A ``write``/``flush`` sink the runner's pump threads feed the dispatched agent's streamed
         stdout/stderr into — routed line-by-line through :meth:`emit` so the conversation prints
-        above the live bar in real time instead of clobbering it (STEER-FR-012/013)."""
+        above the live bar in real time instead of clobbering it."""
         return _EchoSink(self)
 
     def on_event(self, ev: Event) -> None:
@@ -531,7 +526,7 @@ class Tracker:
             self._reached = ev.stage
         if self._frame is not None:
             # The event history prints ABOVE the live bar, into ordinary scrollback, while the bar
-            # reflects the current state (STEER-FR-012/013).
+            # reflects the current state.
             self._frame.emit(format_event(ev, self._mode, self._st))
             self._frame.note(
                 kind=ev.kind,
@@ -543,10 +538,10 @@ class Tracker:
             )
             if ev.kind in _TERMINAL_KINDS:
                 # A terminal event finalizes the bar: its last state stays on screen as ordinary
-                # lines so the follow-up guidance prints in normal flow (STEER-FR-016).
+                # lines so the follow-up guidance prints in normal flow.
                 self._frame.close()
             return
-        # The plain streamed event log — off a TTY, and the degraded TTY path (STEER-FR-015):
+        # The plain streamed event log — off a TTY, and the degraded TTY path:
         # no in-place redraws, no pinned region.
         self._stream.write(format_event(ev, self._mode, self._st) + "\n")
         self._stream.flush()
@@ -554,7 +549,7 @@ class Tracker:
 
 class _EchoSink:
     """A line-buffered ``write``/``flush`` adapter routing a dispatched agent's streamed output
-    through the tracker (STEER-FR-012) — above the live bar on a capable TTY, plain otherwise.
+    through the tracker — above the live bar on a capable TTY, plain otherwise.
 
     Fed concurrently by the runner's stdout/stderr pump threads; the frame's lock serializes the
     actual terminal writes. Lines are emitted as they complete; ``flush`` releases a trailing
@@ -576,21 +571,21 @@ class _EchoSink:
             self._tracker.emit(line)
 
 
-# --------------------------------------------------------------------------- gate pipeline (GATEPIPE)
-# Tool-output noise the rendered gate view suppresses unless verbose (GATEPIPE-FR-004).
+# --------------------------------------------------------------------------- gate pipeline view
+# Tool-output noise the rendered gate view suppresses unless verbose.
 # Node.js prints ExperimentalWarning banners on stderr for perfectly healthy runs.
 _NOISE_MARKERS = ("ExperimentalWarning",)
 
-# A failed gate's panel shows at most this many meaningful error lines (GATEPIPE-FR-003).
+# A failed gate's panel shows at most this many meaningful error lines.
 PANEL_MAX_LINES = 30
 
 
 def meaningful_lines(lines: Iterable[str], verbose: bool = False) -> list[str]:
-    """Flatten gate findings into rendered lines, filtering noise unless ``verbose`` (GATEPIPE-FR-004).
+    """Flatten gate findings into rendered lines, filtering noise unless ``verbose``.
 
     Each finding may span multiple lines; blank lines and known tool noise (Node.js
     ``ExperimentalWarning`` banners) are excluded by default and kept under verbose. Rendering
-    only — the machine-readable verdict is never filtered (GATEPIPE-NFR-001)."""
+    only — the machine-readable verdict is never filtered."""
     out: list[str] = []
     for raw in lines:
         for ln in str(raw).splitlines() or [""]:
@@ -607,7 +602,7 @@ def _gate_elapsed(duration_ms: int) -> str:
 
 @dataclass
 class _PipelineRow:
-    """One gate's pipeline row state — running until its finish event lands (GATEPIPE-FR-001)."""
+    """One gate's pipeline row state — running until its finish event lands."""
 
     gate: str
     tool: str = ""
@@ -617,16 +612,16 @@ class _PipelineRow:
 
 
 class GatePipeline:
-    """The per-gate pipeline view of a gate run (GATEPIPE-FR-001/002).
+    """The per-gate pipeline view of a gate run.
 
     Consumes the gate engine's start/finish events (the ``gates.GateObserver`` seam) and renders
     one compact status row per gate — status glyph, ``gate · tool``, elapsed + summary. On a
     capable TTY with color the rows live inside a ``rich`` live region and update in place:
     ``○ gate · tool (running…)`` → ``✓ gate · tool 0.4 s`` / ``✗ gate · tool 1.2 s  2 errors``.
     Off a TTY or under ``NO_COLOR`` it degrades to sequential plain-text rows — one escape-free
-    line per *finished* gate, no in-place updates (GATEPIPE-FR-002). A ``--json`` run never
+    line per *finished* gate, no in-place updates. A ``--json`` run never
     constructs one, so the machine payload stays byte-identical. Presentation only: it never
-    enters the verdict (GATEPIPE-NFR-001)."""
+    enters the verdict."""
 
     def __init__(
         self,
@@ -691,7 +686,7 @@ class GatePipeline:
 
     # ------------------------------------------------------------------ gate events (GateObserver)
     def gate_started(self, gate: str, tool: str) -> None:
-        """Show ``gate`` as running (live mode); plain mode waits for the finish (GATEPIPE-FR-002)."""
+        """Show ``gate`` as running (live mode); plain mode waits for the finish."""
         self._index[gate] = len(self._rows)
         self._rows.append(_PipelineRow(gate=gate, tool=tool))
         self._refresh()
@@ -723,8 +718,8 @@ class GatePipeline:
         if row.status == "running":
             glyph = st.dim("o" if st.ascii_only else "○")
             return glyph, label, st.dim("(running…)" if not st.ascii_only else "(running...)")
-        # A skipped spec_integrity (and every skip) carries the dim info glyph, never ✗
-        # (GATEPIPE-FR-005); pass/fail keep the shared status vocabulary (CLIUX-FR-005).
+        # A skipped spec_integrity (and every skip) carries the dim info glyph, never ✗;
+        # pass/fail keep the shared status vocabulary.
         glyph = st.mark(row.status)
         detail = _gate_elapsed(row.duration_ms)
         if row.status == "fail" and row.errors:
@@ -738,7 +733,7 @@ class GatePipeline:
         return f"  {glyph} {label}  {detail}"
 
     def _table(self) -> Table:
-        """The live region's renderable: one three-column grid row per gate (GATEPIPE-FR-001)."""
+        """The live region's renderable: one three-column grid row per gate."""
         table = Table.grid(padding=(0, 1))
         for row in self._rows:
             glyph, label, detail = self._row_cells(row)
@@ -758,7 +753,7 @@ class GatePipeline:
 
 def _panel_body_lines(gate: Mapping[str, Any], verbose: bool = False) -> list[str]:
     """A failed gate's panel body: meaningful error lines trimmed to :data:`PANEL_MAX_LINES`
-    with a truncation note, then the configured auto-fix hint when present (GATEPIPE-FR-003/004).
+    with a truncation note, then the configured auto-fix hint when present.
 
     Scanner gates (dependency/secret scan) already carry one finding per line — ID plus
     package/file (and a remediation hint when the gate details supply one) — so the generic
@@ -780,7 +775,7 @@ def _render_panel(
     gate: Mapping[str, Any], st: style.Styler, *, verbose: bool, width: Optional[int]
 ) -> str:
     """One failed gate's panel — a rich panel with a dim ``gate · tool`` header on a color TTY,
-    plain indented text otherwise (GATEPIPE-FR-003)."""
+    plain indented text otherwise."""
     name = str(gate.get("gate", "?"))
     tool = str(gate.get("tool") or "").strip() or "?"
     elapsed = _gate_elapsed(int(gate.get("duration_ms") or 0))
@@ -815,7 +810,7 @@ def failure_panels(
     verbose: bool = False,
     width: Optional[int] = None,
 ) -> str:
-    """The post-run failure surface: one panel per FAILED gate of ``verdict`` (GATEPIPE-FR-003).
+    """The post-run failure surface: one panel per FAILED gate of ``verdict``.
 
     Rendered after the live pipeline exits; replaces the former bottom "failures:" block. Takes
     the verdict *dict* (the ``Verdict.to_dict()`` shape the emitters already carry) so run-path

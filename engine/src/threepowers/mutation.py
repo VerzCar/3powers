@@ -1,15 +1,15 @@
-"""Mutation gate — measure the suite's power to catch injected faults (3PWR-FR-031).
+"""Mutation gate — measure the suite's power to catch injected faults.
 
-Mutation testing is the High-risk oracle's teeth (spec §8): a surviving mutant is an
-actionable **missing assertion** (3PWR-FR-034), and the score is checked against the
-tier threshold read from the single risk-tier table (3PWR-FR-032). The mutation tool
-is **adapter-declared** (3PWR-NFR-007) — the core only interprets a *normalized*
-score, so the verdict shape is identical across languages (3PWR-FR-033). The run is
-scoped to changed/high-risk files per invocation (3PWR-FR-031); the full sweep is a
-scheduled concern (3PWR-NFR-002).
+Mutation testing is the High-risk oracle's teeth: a surviving mutant is an
+actionable **missing assertion**, and the score is checked against the
+tier threshold read from the single risk-tier table. The mutation tool
+is **adapter-declared** — the core only interprets a *normalized*
+score, so the verdict shape is identical across languages. The run is
+scoped to changed/high-risk files per invocation; the full sweep is a
+scheduled concern.
 
 When the mutation tool is unavailable the gate is **quarantined** — surfaced as a
-skip with a finding, never silently passed (3PWR-NFR-015).
+skip with a finding, never silently passed.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _mutmut_filters(paths: list[str] | None) -> list[str]:
 
     A mutmut mutant key looks like ``threepowers.canonical.x_func__mutmut_1``; a glob
     of ``*.<stem>.*`` selects every mutant of that module, scoping the run to the
-    requested high-risk files (3PWR-FR-031).
+    requested high-risk files.
     """
     return [f"*.{Path(p).stem}.*" for p in (paths or [])]
 

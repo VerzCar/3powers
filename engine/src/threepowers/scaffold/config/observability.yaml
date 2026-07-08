@@ -1,16 +1,16 @@
-# NFR instrumentation registry (3PWR-FR-054, §13): which non-functional requirements have a LIVE
+# NFR instrumentation registry: which non-functional requirements have a LIVE
 # production check. `3pwr observe coverage --spec <spec.md>` reports which of a spec's NFRs are covered
-# here (§13 acceptance: "a specified NFR has a live check in production"). A `check` describes how the
-# NFR is verified in production — a probe, an SLO monitor, a scheduled job.
+# here (the acceptance bar: "a specified NFR has a live check in production"). A `check` describes how
+# the NFR is verified in production — a probe, an SLO monitor, a scheduled job.
 #
 # The engine is offline (it does not run the target's production system); this registry DECLARES the
 # instrumentation so the coverage gap is visible and lessons can be routed back as new intent.
 version: 1
 
 checks:
-  - nfr: 3PWR-NFR-001
+  - nfr: DEMO-NFR-001
     check: "determinism canary — re-run the gate suite on a fixed input in CI and diff the verdict byte-for-byte"
-  - nfr: 3PWR-NFR-005
+  - nfr: DEMO-NFR-002
     check: "scheduled secret-scan of the published artifacts + repo (the signer's private key must never appear)"
-  - nfr: 3PWR-NFR-010
+  - nfr: DEMO-NFR-003
     check: "offline `3pwr verify` on the released ledger in an air-gapped job (reconstructs the chain with no network)"

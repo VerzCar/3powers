@@ -53,7 +53,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"
 
 The auto run dispatches each lifecycle stage to a **headless coding-agent CLI**. Point the roles at the
 backends you have (manifests live in `.3powers/agents/`), with the oracle on a **different model
-family** than the coder (recommended, 3PWR-FR-022):
+family** than the coder (recommended):
 
 ```yaml
 # .3powers/config/roles.yaml
@@ -86,9 +86,9 @@ agent, different-family oracle) plus a dependency summary, and exits 0 only when
 **What success looks like:** a live stage tracker streams each stage
 (specify → … → implement → verify), and the run stops exactly twice for you:
 
-1. **Spec approval** (3PWR-FR-006) — read the generated spec, then
+1. **Spec approval** — read the generated spec, then
    `3pwr run --resume --spec-id RUN --approver <you>`;
-2. **Sign-off** (3PWR-FR-037) — review the evidence, then resume the same way.
+2. **Sign-off** — review the evidence, then resume the same way.
 
 After the second approval the run completes ("lifecycle complete — advanced to Ship") and exits `0`.
 Progress, verdicts, and any failure are recorded in the signed ledger: check anytime with

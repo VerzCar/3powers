@@ -1,20 +1,20 @@
-"""The git-integrated run lifecycle — mandatory pre/post-stage git hooks (GITX, spec 018).
+"""The git-integrated run lifecycle — mandatory pre/post-stage git hooks.
 
-GITX turns the executive from committing *opportunistically* (RUNLIVE-FR-010's opt-out checkpoint)
-into committing *safely*: every run is isolated to its own **dedicated branch** named from SRCX's
-already-allocated ``<NNN>-<slug>`` run identity (GITX-FR-003 — the identity is consumed, never
-redefined); a run **refuses to start** on a working tree carrying uncommitted changes that are not
-the run's own (GITX-FR-007); each producing stage lands as **exactly one commit** staging only the
-run's produced paths, with an **agent-written message** and — when 3pwr itself commits — a **3pwr
-author identity** applied per-commit (GITX-FR-010/011/012).
+This module turns the executive from committing *opportunistically* (the earlier opt-out
+checkpoint) into committing *safely*: every run is isolated to its own **dedicated branch** named
+from the run workspace's already-allocated ``<NNN>-<slug>`` run identity (the identity is
+consumed, never redefined); a run **refuses to start** on a working tree carrying uncommitted
+changes that are not the run's own; each producing stage lands as **exactly one commit** staging
+only the run's produced paths, with an **agent-written message** and — when 3pwr itself commits —
+a **3pwr author identity** applied per-commit.
 
-Everything here is deterministic, offline path/subprocess logic — no network, no model call
-(GITX-NFR-001). The agent-written commit *message* is the only model-touched output and it is
-captured as commit data, never as a gate or ledger input. Data safety is load-bearing
-(GITX-NFR-003/004): branch switches and commits are **refused, never forced**; the user's git
+Everything here is deterministic, offline path/subprocess logic — no network, no model call.
+The agent-written commit *message* is the only model-touched output and it is
+captured as commit data, never as a gate or ledger input. Data safety is load-bearing:
+branch switches and commits are **refused, never forced**; the user's git
 configuration is never mutated (the 3pwr author rides on per-invocation ``-c`` overrides); no
 history is rewritten and nothing is force-pushed. The discipline is mandatory by default and
-relaxable only via a recorded signed deviation on a named guard (GITX-FR-014, 3PWR-FR-057).
+relaxable only via a recorded signed deviation on a named guard.
 """
 
 from __future__ import annotations
@@ -29,19 +29,19 @@ import yaml
 
 from .runner import _changed_files, _git
 
-# The named guards a signed deviation may relax (GITX-FR-014): each relaxable guard maps to exactly
+# The named guards a signed deviation may relax: each relaxable guard maps to exactly
 # one deviation gate — a relaxation is always a signed, revocable ledger entry, never a flag.
-GATE_CLEAN_START = "git_clean_start"  # the clean-start guard (GITX-FR-007)
-GATE_STAGE_COMMIT = "git_stage_commit"  # the mandatory per-stage commit (GITX-FR-010)
-GATE_RUN_BRANCH = "git_run_branch"  # the branch-isolation guard at stage boundaries (GITX-FR-016)
+GATE_CLEAN_START = "git_clean_start"  # the clean-start guard
+GATE_STAGE_COMMIT = "git_stage_commit"  # the mandatory per-stage commit
+GATE_RUN_BRANCH = "git_run_branch"  # the branch-isolation guard at stage boundaries
 GIT_GUARDS: tuple[str, ...] = (GATE_CLEAN_START, GATE_STAGE_COMMIT, GATE_RUN_BRANCH)
 
 # Failure classes for the run's git hooks — additive values on the existing run/failure record
-# (like SRCX's completion classes), surfaced by `--status` and exiting on the setup path.
+# (like the run workspace's completion classes), surfaced by `--status` and exiting on the setup path.
 CLASS_COMMIT_FAILED = "git_commit_failed"
 CLASS_BRANCH_FAILED = "git_branch_failed"
 
-# The documented `git.yaml` defaults (GITX-FR-015): a missing or malformed file falls back to these.
+# The documented `git.yaml` defaults: a missing or malformed file falls back to these.
 DEFAULT_BRANCH_PREFIX = "3pwr/"
 DEFAULT_BASE_BRANCH = "main"
 DEFAULT_AUTHOR_NAME = "3pwr"
@@ -49,21 +49,20 @@ DEFAULT_AUTHOR_EMAIL = "3pwr@3powers.local"
 
 # Engine-owned state under `.3powers/` — the trust spine's own writes (ledger appends, verdicts,
 # transcripts, seeded config). Never a developer's "unrelated work", so the clean-start guard
-# ignores the whole prefix (GITX-FR-007's property scopes the guard to work outside the run).
+# ignores the whole prefix (the clean-start guard applies only to work outside the run).
 ENGINE_STATE_PREFIX = ".3powers/"
 
-# The engine-written run progress file inside a feature workspace (PROGFILE-FR-001). A paused or
+# The engine-written run progress file inside a feature workspace. A paused or
 # failed run legitimately leaves it updated after its last stage commit, so — like the ledger — it
-# is engine-owned state the clean-start guard never treats as a developer's unrelated work
-# (PROGFILE-NFR-002).
+# is engine-owned state the clean-start guard never treats as a developer's unrelated work.
 _PROGRESS_FILE = re.compile(r"^specs/[^/]+/progress\.md$")
 
-# Bound for the agent-written description folded into a commit subject (GITX-FR-011).
+# Bound for the agent-written description folded into a commit subject.
 _MESSAGE_MAX_LEN = 200
 _COMMIT_LINE = re.compile(r"^\s*COMMIT:\s*(\S.*)$", re.MULTILINE)
 
 
-# --------------------------------------------------------------------------- preferences (GITX-FR-015)
+# --------------------------------------------------------------------------- preferences
 @dataclass(frozen=True)
 class GitPrefs:
     """The resolved git-integration preferences — a pure function of ``git.yaml`` + the defaults."""
@@ -76,11 +75,11 @@ class GitPrefs:
 
 
 def load_prefs(path: Path) -> GitPrefs:
-    """Resolve ``.3powers/config/git.yaml`` tolerantly (GITX-FR-015; mirrors ``ui.yaml``).
+    """Resolve ``.3powers/config/git.yaml`` tolerantly (mirrors ``ui.yaml``).
 
     A missing file yields the shipped defaults; a malformed one yields the defaults with
     ``malformed=True`` so the caller warns exactly once. Deterministic in the file bytes —
-    identical inputs resolve identical branch names and author attribution (GITX-NFR-001)."""
+    identical inputs resolve identical branch names and author attribution."""
     if not path.exists():
         return GitPrefs()
     data: Any = {}
@@ -105,13 +104,13 @@ def load_prefs(path: Path) -> GitPrefs:
     )
 
 
-# --------------------------------------------------------------------------- precondition (GITX-FR-002)
+# --------------------------------------------------------------------------- precondition
 def precondition(cwd: Path) -> str:
     """The named missing-git condition, or ``""`` when a working repository is available.
 
-    A pure function of the environment/repository state (GITX-FR-002's property): git must be on
+    A pure function of the environment/repository state: git must be on
     PATH and ``cwd`` must lie inside a git work tree (a ``.git`` directory — or file, for a linked
-    worktree — on the path upward). No network, no model (GITX-NFR-001)."""
+    worktree — on the path upward). No network, no model."""
     if shutil.which("git") is None:
         return "git is not installed / not on PATH — install git; a run requires version control"
     for candidate in [cwd.resolve(), *cwd.resolve().parents]:
@@ -120,12 +119,13 @@ def precondition(cwd: Path) -> str:
     return f"{cwd} is not inside a git repository — run `git init` first; a run requires version control"
 
 
-# --------------------------------------------------------------------------- branch (GITX-FR-003/004/006)
+# --------------------------------------------------------------------------- branch
 def run_branch_name(prefix: str, run_identity: str) -> str:
-    """The run's dedicated branch name — ``<prefix><NNN>-<slug>`` (GITX-FR-003).
+    """The run's dedicated branch name — ``<prefix><NNN>-<slug>``.
 
-    A deterministic, byte-identical function of the configured prefix and SRCX's run identity
-    (GITX-NFR-001); GITX neither allocates the number nor derives the slug — that is SRCX's."""
+    A deterministic, byte-identical function of the configured prefix and the run workspace's
+    identity; this module neither allocates the number nor derives the slug — the run workspace
+    owns that."""
     return f"{prefix}{run_identity}"
 
 
@@ -148,11 +148,10 @@ def base_tip(cwd: Path, base: str) -> str:
 def ensure_run_branch(cwd: Path, branch: str, base: str) -> str:
     """Create-or-switch to the run's dedicated branch; ``""`` on success, else the error detail.
 
-    An existing branch is re-entered (a resume never creates a second one — GITX-FR-004); a missing
+    An existing branch is re-entered (a resume never creates a second one); a missing
     one is created off the configured base when it resolves, else off the current commit (the
     detached-HEAD / unborn-repo / no-base edge). Never forced: a switch git refuses (it would
-    clobber changes) is surfaced, not overridden (GITX-NFR-003), and no history is rewritten
-    (GITX-NFR-004)."""
+    clobber changes) is surfaced, not overridden, and no history is rewritten."""
     if current_branch(cwd) == branch:
         return ""
     if branch_exists(cwd, branch):
@@ -164,11 +163,11 @@ def ensure_run_branch(cwd: Path, branch: str, base: str) -> str:
 
 
 def branch_from_ledger(entries: Iterable[dict], spec_id: str) -> str:
-    """The run's recorded branch, read back from the signed ``run``/``start`` entry (GITX-FR-005).
+    """The run's recorded branch, read back from the signed ``run``/``start`` entry.
 
     The latest ``start`` entry carrying a ``branch`` wins — recovered offline from the ledger alone,
-    no branch scan and no guessing. ``""`` for a pre-GITX run (the caller derives it from the run's
-    SRCX identity instead — the same deterministic function, GITX-FR-003)."""
+    no branch scan and no guessing. ``""`` for a run predating the git discipline (the caller
+    derives it from the run's workspace identity instead — the same deterministic function)."""
     branch = ""
     for e in entries:
         if e.get("spec_id") != spec_id or e.get("type") != "run":
@@ -179,7 +178,7 @@ def branch_from_ledger(entries: Iterable[dict], spec_id: str) -> str:
     return branch
 
 
-# --------------------------------------------------------------------------- clean start / stop (GITX-FR-007/008)
+# --------------------------------------------------------------------------- clean start / stop
 def uncommitted(cwd: Path) -> list[str]:
     """Repo-relative uncommitted (modified/untracked) paths — engine transcripts already excluded."""
     return _changed_files(cwd)
@@ -188,12 +187,12 @@ def uncommitted(cwd: Path) -> list[str]:
 def unrelated_changes(
     changed: Iterable[str], run_paths: Iterable[str], feature_prefix: str = ""
 ) -> list[str]:
-    """The uncommitted paths NOT produced by the run — the clean-start guard's subjects (GITX-FR-007).
+    """The uncommitted paths NOT produced by the run — the clean-start guard's subjects.
 
-    Pure and deterministic given its inputs (GITX-NFR-001). "Produced by the run" is the run's
+    Pure and deterministic given its inputs. "Produced by the run" is the run's
     recorded produced-path set plus anything inside the run's feature folder; the engine's own
     trust-spine state under ``.3powers/`` (ledger appends, verdicts, transcripts, seeded config)
-    and any feature workspace's engine-written ``progress.md`` (PROGFILE-NFR-002) are never a
+    and any feature workspace's engine-written ``progress.md`` are never a
     developer's unrelated work and are ignored."""
     owned = set(run_paths)
     out: list[str] = []
@@ -209,7 +208,7 @@ def unrelated_changes(
 def recorded_run_paths(entries: Iterable[dict], spec_id: str) -> set[str]:
     """Every path the run's signed ``run``/``stage``-or-``checkpoint`` entries record as produced.
 
-    The offline-recoverable run-produced set (GITX-FR-007's property): a prior stage that crashed
+    The offline-recoverable run-produced set: a prior stage that crashed
     after writing but before committing recorded its artifacts in its ``stage`` entry, so its
     changes are tolerated and swept into the next post-stage commit — only *unrelated* changes
     block."""
@@ -225,17 +224,16 @@ def recorded_run_paths(entries: Iterable[dict], spec_id: str) -> set[str]:
 
 def uncommitted_run_paths(cwd: Path, entries: Iterable[dict], spec_id: str) -> list[str]:
     """The run-produced paths still uncommitted — must be empty after a post-stage commit
-    (GITX-FR-008's property: produced ∩ uncommitted == ∅) and at every stage boundary
-    (GITX-FR-016)."""
+    (produced ∩ uncommitted == ∅) and at every stage boundary."""
     produced = recorded_run_paths(entries, spec_id)
     return sorted(produced & set(_changed_files(cwd)))
 
 
 def clean_start_refusal(unrelated: list[str]) -> str:
-    """The refusal message naming the offending paths and the signed deviation (GITX-FR-007).
+    """The refusal message naming the offending paths and the signed deviation.
 
-    The guard never discards or forces past the changes — they stay byte-identical on disk
-    (GITX-NFR-003); the only way through is the recorded, revocable relaxation (GITX-FR-014)."""
+    The guard never discards or forces past the changes — they stay byte-identical on disk;
+    the only way through is the recorded, revocable relaxation."""
     shown = ", ".join(unrelated[:8]) + (" …" if len(unrelated) > 8 else "")
     return (
         f"cannot start — the working tree has uncommitted changes not produced by this run: {shown}. "
@@ -245,7 +243,7 @@ def clean_start_refusal(unrelated: list[str]) -> str:
     )
 
 
-# --------------------------------------------------------------------------- stage commit (GITX-FR-010/011/012)
+# --------------------------------------------------------------------------- stage commit
 @dataclass(frozen=True)
 class CommitOutcome:
     """One post-stage commit's result: a new commit, a no-op (already committed), or an error."""
@@ -259,7 +257,7 @@ class CommitOutcome:
 
 
 def agent_commit_description(root: Path, transcript_rel: str) -> str:
-    """The agent-written stage description, extracted from the persisted transcript (GITX-FR-011).
+    """The agent-written stage description, extracted from the persisted transcript.
 
     The stage prompt asks the agent to end its output with one ``COMMIT: <description>`` line; the
     LAST such line in the attempt's transcript wins (an agent may echo the instruction earlier).
@@ -282,7 +280,7 @@ def agent_commit_description(root: Path, transcript_rel: str) -> str:
 
 
 def stage_commit_message(spec_id: str, step: str, description: str = "") -> str:
-    """The stage commit's subject (GITX-FR-011's property): ALWAYS carries the stage identifier and
+    """The stage commit's subject: ALWAYS carries the stage identifier and
     the run's spec id; the agent's description is appended when present, and the deterministic
     fallback is the bare ``3pwr(<spec-id>): <step>`` label."""
     base = f"3pwr({spec_id}): {step}"
@@ -297,13 +295,13 @@ def commit_stage(
     author_name: str = DEFAULT_AUTHOR_NAME,
     author_email: str = DEFAULT_AUTHOR_EMAIL,
 ) -> CommitOutcome:
-    """Commit one producing stage's ``paths`` as exactly one commit, authored as 3pwr (GITX-FR-010/012).
+    """Commit one producing stage's ``paths`` as exactly one commit, authored as 3pwr.
 
     Stages only the named produced paths (never a blanket ``add -A`` — unrelated files are never
     swept in). The 3pwr identity rides on per-invocation ``-c user.name/-c user.email`` overrides,
-    so the developer's configured git identity is never mutated (GITX-NFR-004). Paths a human
+    so the developer's configured git identity is never mutated. Paths a human
     already committed by hand stage to an empty index — a no-op, keeping the human's own commit and
-    author (GITX-FR-012). Only an actual git failure is an error; it is surfaced, never forced."""
+    author. Only an actual git failure is an error; it is surfaced, never forced."""
     if not paths:
         return CommitOutcome()
     rc, _, err = _git(cwd, ["add", "--", *paths])
@@ -331,10 +329,10 @@ def commit_stage(
 
 
 def committed_steps(entries: Iterable[dict], spec_id: str) -> list[str]:
-    """The producing steps with a recorded stage commit, in ledger order (GITX-FR-009/013).
+    """The producing steps with a recorded stage commit, in ledger order.
 
-    Derived from the signed ``run``/``checkpoint`` entries alone — deterministic, offline, no model
-    (GITX-NFR-001) — so the status view's per-stage committed indication needs no git scan."""
+    Derived from the signed ``run``/``checkpoint`` entries alone — deterministic, offline, no
+    model — so the status view's per-stage committed indication needs no git scan."""
     steps: list[str] = []
     for e in entries:
         if e.get("spec_id") != spec_id or e.get("type") != "run":

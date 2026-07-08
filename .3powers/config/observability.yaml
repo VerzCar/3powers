@@ -1,7 +1,7 @@
-# NFR instrumentation registry (3PWR-FR-054, §13): which non-functional requirements have a LIVE
+# NFR instrumentation registry: which non-functional requirements have a LIVE
 # production check. `3pwr observe coverage --spec <spec.md>` reports which of a spec's NFRs are covered
-# here (§13 acceptance: "a specified NFR has a live check in production"). A `check` describes how the
-# NFR is verified in production — a probe, an SLO monitor, a scheduled job.
+# here (the acceptance bar: "a specified NFR has a live check in production"). A `check` describes how
+# the NFR is verified in production — a probe, an SLO monitor, a scheduled job.
 #
 # The engine is offline (it does not run the target's production system); this registry DECLARES the
 # instrumentation so the coverage gap is visible and lessons can be routed back as new intent.

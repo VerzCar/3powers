@@ -6,7 +6,7 @@
 (legacy features keep `specs/[###-feature-name]/spec.md`)
 
 **Output**: This file, committed to `specs/[###-feature-name]/artifacts/plan.md` — the Plan stage's
-artifact. A plan that was not written to the feature workspace fails the stage (PHASE-FR-002).
+artifact. A plan that was not written to the feature workspace fails the stage.
 
 ## Summary
 
@@ -16,7 +16,7 @@ artifact. A plan that was not written to the feature workspace fails the stage (
 
 <!--
   Replace with the project's technical details. Keep the spec free of these — implementation
-  detail belongs here, not in the law (3PWR-FR-007).
+  detail belongs here, not in the law.
 -->
 
 **Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
@@ -49,10 +49,10 @@ artifact. A plan that was not written to the feature workspace fails the stage (
 
 ### Risk tier & gates
 
-- **Tier**: [from spec] → thresholds resolved from `.3powers/config/risk-tiers.yaml` (3PWR-FR-032/049).
+- **Tier**: [from spec] → thresholds resolved from `.3powers/config/risk-tiers.yaml`.
 - **Required gates this tier**: [format, lint, types, tests, diff_coverage, spec_conformance, …].
 
-### Role → model-family assignment (3PWR-FR-022/044)
+### Role → model-family assignment
 
 | Role | Model family | Notes |
 |------|--------------|-------|
@@ -60,7 +60,7 @@ artifact. A plan that was not written to the feature workspace fails the stage (
 | oracle | [family B ≠ A] | judiciary; authors Phase-A tests; **must differ from coder** |
 | reviewer | [family C] | residual review |
 
-### Phase-A oracle specification (3PWR-FR-020/062)
+### Phase-A oracle specification
 
 The oracle is authored from the spec's *Acceptance* criteria ONLY, by `/3pwr.oracle`, without reading
 this plan or the implementation. List the oracle test intent per requirement (≥1 per requirement, named
@@ -70,12 +70,12 @@ with its ID; property test where input is parsed/validated/transformed):
 |-------------|--------------------|-----------|
 | [SPECID]-FR-001 | [what the oracle asserts] | [yes/no] |
 
-### Requirement → task coverage (two-way — 3PWR-FR-015)
+### Requirement → task coverage (two-way)
 
 Confirm before tasks: every requirement maps to ≥1 task and every task to a requirement. Flag any spec
-text that is actually implementation detail and route it out of the spec (3PWR-FR-007).
+text that is actually implementation detail and route it out of the spec.
 
-## Phase Decomposition *(mandatory — PHASE-FR-004/006)*
+## Phase Decomposition *(mandatory)*
 
 Split the work into small **ordered phases**, each sized so one *fresh* agent session — the approved
 spec + the constitution/rules + the phase's tasks + the files in its scope — fits comfortably inside
@@ -101,7 +101,7 @@ Rules:
 
 ## Project Structure
 
-### Documentation (this feature — the workspace, PHASE-FR-001)
+### Documentation (this feature — the workspace)
 
 ```text
 specs/[###-feature]/

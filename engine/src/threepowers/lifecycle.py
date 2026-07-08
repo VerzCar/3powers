@@ -1,8 +1,8 @@
-"""The eight-stage lifecycle, derived from the ledger (3PWR-FR-011/019).
+"""The eight-stage lifecycle, derived from the ledger.
 
 Per-spec lifecycle state is *computed from the committed ledger* rather than stored in a
 separate mutable file, so it persists across sessions and reconstructs offline from the
-repository alone (3PWR-FR-019/071) with no second source of truth to drift.
+repository alone with no second source of truth to drift.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-# The eight stages (spec §6 / 3PWR-FR-011).
+# The eight stages of the lifecycle, in order.
 STAGES = ["Discovery", "Spec", "Plan", "Build", "Verify", "Review", "Ship", "Observe"]
 _BY_LOWER = {s.lower(): s for s in STAGES}
 
@@ -39,8 +39,8 @@ class SpecState:
     last_verdict_seq: int = -1
     aborted: bool = False
     last_seq: int = -1
-    pending_gate: str = ""  # a `3pwr run` orchestration paused at this human gate (3PWR-FR-011/019)
-    # The most recent UNRESOLVED run failure (AUTOX-FR-006/007): set by a `run`/`failure` ledger
+    pending_gate: str = ""  # a `3pwr run` orchestration paused at this human gate
+    # The most recent UNRESOLVED run failure: set by a `run`/`failure` ledger
     # record, cleared by any later progress (a stage completing, a gate, a verdict, a sign-off…).
     # The latest failure wins; earlier ones remain in the append-only ledger as history.
     failed_stage: str = ""
@@ -50,12 +50,12 @@ class SpecState:
 
     @property
     def failed(self) -> bool:
-        """True while the most recent run event for this spec is an unresolved failure (AUTOX-FR-007)."""
+        """True while the most recent run event for this spec is an unresolved failure."""
         return bool(self.failed_class)
 
     @property
     def signed_off(self) -> bool:
-        # A sign-off counts only if it is at or after the most recent verdict (3PWR-FR-037).
+        # A sign-off counts only if it is at or after the most recent verdict.
         return self.signed_off_seq >= self.last_verdict_seq and self.signed_off_seq >= 0
 
 
@@ -92,11 +92,11 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
             st.pending_gate = ""  # the human acted on the gate
             clear_failure(st)
         elif etype == "run":
-            # `3pwr run` orchestration records (3PWR-FR-011/019, AUTOX-FR-006/007): start /
-            # paused-at-gate / stage completions / complete — and terminal failures.
+            # `3pwr run` orchestration records: start / paused-at-gate / stage completions /
+            # complete — and terminal failures.
             kind = payload.get("kind")
             if kind == "failure":
-                # A recorded terminal run failure (AUTOX-FR-006). The stage here is the lifecycle
+                # A recorded terminal run failure. The stage here is the lifecycle
                 # stage the failure names; it does not advance progress. Latest failure wins.
                 st.failed_stage = str(payload.get("stage") or "")
                 st.failed_class = str(payload.get("class") or "")
@@ -107,7 +107,7 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
             if stage:
                 st.stage = stage
             st.pending_gate = payload.get("gate", "") if kind == "gate" else ""
-            clear_failure(st)  # any later run progress resolves the recorded failure (AUTOX-FR-007)
+            clear_failure(st)  # any later run progress resolves the recorded failure
         elif etype == "reversal":
             to_stage = canonical_stage(payload.get("to_stage"))
             if to_stage:
@@ -116,6 +116,6 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
         elif etype == "abort":
             st.aborted = True
         elif etype == "observe":
-            # A production signal means the spec reached the Observe stage (§13, 3PWR-FR-054).
+            # A production signal means the spec reached the Observe stage.
             st.stage = "Observe"
     return states

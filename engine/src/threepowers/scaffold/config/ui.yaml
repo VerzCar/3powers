@@ -1,4 +1,4 @@
-# 3Powers CLI output preferences (CLIUX-FR-014/015).
+# 3Powers CLI output preferences.
 #
 # Presentation only: these settings shape *human* output. They NEVER change machine-readable output
 # (`--json`), exit codes, verdict bytes, or the ledger, and they are never a gate input. A missing or

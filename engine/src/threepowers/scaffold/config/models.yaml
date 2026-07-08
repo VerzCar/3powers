@@ -1,4 +1,4 @@
-# 3Powers per-integration model/label catalog (AGENTX-FR-015/016).
+# 3Powers per-integration model/label catalog.
 #
 # Editable DATA, not code: `3pwr init` and `3pwr config roles setup` read this file to offer the
 # per-role model choices for the headless integration you use, and to fill each role's
@@ -23,7 +23,7 @@ integrations:
     models:
       - { model: openai/gpt-5.5-codex, family: openai, label: GPT 5.5 Codex }
       - { model: openai/gpt-5.5, family: openai, label: GPT 5.5 }
-  # Copilot is BYOK — the model, not the backend, decides the family (3PWR-FR-022 precheck).
+  # Copilot is BYOK — the model, not the backend, decides the family (the diversity precheck).
   copilot:
     default: claude-opus-4.8
     models:

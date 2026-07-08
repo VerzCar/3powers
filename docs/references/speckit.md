@@ -74,7 +74,7 @@ Agent command files check `.specify/extensions.yml` for `hooks.before_*` / `hook
 `EXECUTE_COMMAND:` for mandatory hooks. Extensions (`extension.yml` + `commands/`) and presets
 (`preset.yml` + `templates/`) are the catalog-distribution mechanism. **3Powers now ships as a real
 extension** — [`.specify/extensions/3powers/extension.yml`](../../.specify/extensions/3powers/extension.yml)
-(plan 009) — providing the `/3pwr.*` judiciary commands + `after_tasks`/`after_implement` gate hooks,
+— providing the `/3pwr.*` judiciary commands + `after_tasks`/`after_implement` gate hooks,
 **provider-agnostic** (no integration hardcoded; `install` renders per the project's chosen integration).
 The engine also pins the supported Spec Kit range in `.3powers/config/dependencies.yaml` (`3pwr deps-check`).
 
@@ -85,4 +85,4 @@ The engine also pins the supported Spec Kit range in `.3powers/config/dependenci
 | constitution | encodes separation of powers, EARS, oracle independence, the trust spine |
 | spec/plan/tasks templates | spec ID + namespaced IDs, risk tier, non-goals, oracle plan, file-scope |
 | custom `/3pwr.*` commands | the judiciary (Phase-A oracle), `verify`, `signoff`, `advance` |
-| extensions/hooks | the `3powers` extension auto-runs the oracle (`after_tasks`) + gates (`after_implement`); provider-agnostic packaging (plan 009) |
+| extensions/hooks | the `3powers` extension auto-runs the oracle (`after_tasks`) + gates (`after_implement`); provider-agnostic packaging |

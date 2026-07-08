@@ -1,14 +1,14 @@
-"""Spec-integrity (spec-lock) — protect the approved spec against silent mutation (SLOCK).
+"""Spec-integrity (spec-lock) — protect the approved spec against silent mutation.
 
-The spec is the law (3PWR-FR-010). After a human approves it (``signoff --stage spec``,
-3PWR-FR-006) nothing should be able to alter, add, or delete requirements unnoticed. At
+The spec is the law. After a human approves it (``signoff --stage spec``)
+nothing should be able to alter, add, or delete requirements unnoticed. At
 the approval moment the full document's raw-bytes SHA-256 is recorded *inside the signed
-sign-off ledger entry* (SLOCK-FR-001) — so tampering with the recorded hash is caught by
-the existing ``verify`` with no new trust primitive or entry kind (SLOCK-NFR-002).
-Thereafter the ``spec_integrity`` gate (SLOCK-FR-003/004) and ``advance`` (SLOCK-FR-005)
+sign-off ledger entry* — so tampering with the recorded hash is caught by
+the existing ``verify`` with no new trust primitive or entry kind.
+Thereafter the ``spec_integrity`` gate and ``advance``
 re-hash the file and fail on a mismatch; a fresh Spec-stage sign-off supersedes the old
-hash (SLOCK-FR-006). Everything here is deterministic — bytes on disk plus committed
-ledger state, no model call, no network (SLOCK-NFR-001).
+hash. Everything here is deterministic — bytes on disk plus committed
+ledger state, no model call, no network.
 """
 
 from __future__ import annotations
@@ -30,19 +30,19 @@ MISSING_FILE = "missing_file"
 
 
 def spec_file_hash(path: Path) -> str:
-    """Raw-bytes SHA-256 of the full spec document (SLOCK-FR-001).
+    """Raw-bytes SHA-256 of the full spec document.
 
     Byte-for-byte on purpose — no whitespace or formatting normalization: a deliberate
-    edit of any kind is a change and must be re-approved (spec non-goals).
+    edit of any kind is a change and must be re-approved.
     """
     return canonical.sha256_hex(path.read_bytes())
 
 
 def approval_fields(root: Path, spec_path: Path, commit: str = "") -> dict[str, Any]:
-    """The extra payload recorded on a Spec-stage sign-off (SLOCK-FR-001).
+    """The extra payload recorded on a Spec-stage sign-off.
 
     ``spec_path`` is stored root-relative so the check is reproducible from any clone;
-    ``commit`` (when known) lets ``3pwr spec diff`` show a textual diff (SLOCK-FR-007).
+    ``commit`` (when known) lets ``3pwr spec diff`` show a textual diff.
     """
     try:
         rel = str(spec_path.resolve().relative_to(root.resolve()))
@@ -55,12 +55,12 @@ def approval_fields(root: Path, spec_path: Path, commit: str = "") -> dict[str, 
 
 
 def spec_approval(entries: list[dict[str, Any]], spec_id: str) -> Optional[dict[str, Any]]:
-    """The latest Spec-stage sign-off carrying a spec hash for ``spec_id`` (SLOCK-FR-002).
+    """The latest Spec-stage sign-off carrying a spec hash for ``spec_id``.
 
-    Ledger-only — no file I/O. A later approval supersedes an earlier one
-    (SLOCK-FR-006). Sign-offs for other stages, for other specs, or without a
-    ``spec_hash`` (pre-SLOCK entries) never match, so a never-approved spec yields
-    ``None`` and the gate skips rather than blocks (SLOCK-FR-003).
+    Ledger-only — no file I/O. A later approval supersedes an earlier one.
+    Sign-offs for other stages, for other specs, or without a
+    ``spec_hash`` (older entries) never match, so a never-approved spec yields
+    ``None`` and the gate skips rather than blocks.
     """
     result: Optional[dict[str, Any]] = None
     for e in entries:
@@ -103,9 +103,9 @@ def check(
     """Compare the current spec bytes against the recorded approval hash.
 
     The ledger is consulted FIRST: with no approval the file is never read and the
-    check is O(1) (SLOCK-NFR-003). When ``spec_path`` is not given, the path recorded
+    check is O(1). When ``spec_path`` is not given, the path recorded
     at approval (root-relative) locates the document — which is how ``advance``
-    re-executes the check with no ``--spec`` argument (SLOCK-FR-005).
+    re-executes the check with no ``--spec`` argument.
     """
     approval = spec_approval(entries, spec_id)
     if approval is None:
@@ -136,10 +136,10 @@ def resolve_target(root: Path, res: SpecIntegrity) -> Optional[Path]:
 def integrity_gate(
     entries: list[dict[str, Any]], spec_id: str, root: Path, spec_path: Path
 ) -> GateResult:
-    """The ``spec_integrity`` gate (SLOCK-FR-003) — pass / fail(spec_modified) / skip.
+    """The ``spec_integrity`` gate — pass / fail(spec_modified) / skip.
 
     Skips (never blocks) a spec with no recorded approval hash; fails fast — before
-    any test executes (SLOCK-FR-004) — when the document changed after approval.
+    any test executes — when the document changed after approval.
     """
     res = check(entries, spec_id, root, spec_path=spec_path)
     if res.status == NO_APPROVAL:

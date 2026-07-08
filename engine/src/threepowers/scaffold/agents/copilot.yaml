@@ -1,4 +1,4 @@
-# Agent backend manifest — GitHub Copilot CLI, headless (EXEC-FR-004). Seeded by `3pwr init`.
+# Agent backend manifest — GitHub Copilot CLI, headless. Seeded by `3pwr init`.
 # For enterprise Copilot shops: uses the org's Copilot entitlement + Microsoft/GitHub policies. BYOK
 # (OpenAI/Azure/Anthropic keys) via Copilot config. `copilot -p "<prompt>"` non-interactive.
 agent: copilot

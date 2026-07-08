@@ -1,4 +1,4 @@
-"""Opt-in external anchoring of the ledger head (HARDN-FR-005).
+"""Opt-in external anchoring of the ledger head.
 
 Anchoring bounds the one attack tamper-evidence cannot see: a holder of the signing key
 regenerating or truncating the ledger wholesale and re-signing it. ``3pwr anchor`` records
@@ -8,8 +8,8 @@ control unilaterally) and appends a local ``anchor`` receipt. ``3pwr verify --an
 cross-checks the local chain against the latest anchor and fails on divergence.
 
 Strictly opt-in: plain ``verify`` and ``gate run`` never read or write an anchor and make
-no network call (HARDN-NFR-001, 3PWR-NFR-004). Pushing the tag is the only network-capable
-operation, and only under the explicit ``--push`` flag.
+no network call. Pushing the tag is the only network-capable operation, and only under the
+explicit ``--push`` flag.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def head_of(entries: list[dict[str, Any]]) -> Optional[tuple[int, str]]:
 
 
 def anchor_message(seq: int, entry_hash: str) -> str:
-    """The deterministic witness payload recorded in the tag (HARDN-NFR-001)."""
+    """The deterministic witness payload recorded in the tag."""
     return json.dumps({"seq": seq, "entry_hash": entry_hash}, sort_keys=True)
 
 
@@ -71,7 +71,7 @@ def latest_anchor(repo_root: Path) -> Optional[tuple[int, str]]:
     """The highest-sequence local anchor: (seq, entry_hash); None when no anchor tag exists.
 
     Reads local tags only — fetching a remote's tags is the operator's explicit act, so this
-    stays offline (HARDN-NFR-001).
+    stays offline.
     """
     rc, out, _err = _git(repo_root, ["tag", "-l", f"{TAG_PREFIX}*"])
     if rc != 0:
@@ -104,11 +104,11 @@ class AnchorCheck:
 
 
 def check_anchored(entries: list[dict[str, Any]], anchor: Optional[tuple[int, str]]) -> AnchorCheck:
-    """Cross-check the local chain against the latest anchor (HARDN-FR-005, SC-003).
+    """Cross-check the local chain against the latest anchor.
 
     Fails when the ledger was truncated behind the anchor or rewritten at the anchored
     sequence — even by an adversary holding the current signing key. A chain that *extends*
-    the anchored head passes. Pure and deterministic (HARDN-NFR-001).
+    the anchored head passes. Pure and deterministic.
     """
     if anchor is None:
         return AnchorCheck(
