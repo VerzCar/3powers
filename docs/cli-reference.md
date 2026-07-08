@@ -1,7 +1,7 @@
 # CLI Reference — `3pwr`
 
 The complete `3pwr` command surface. Generated from and kept in sync with the engine's argparse
-definitions ([`cli.py`](../engine/src/threepowers/cli.py)). For a guided walkthrough see
+definitions (the [`cli/`](../engine/src/threepowers/cli/) package — one module per command group). For a guided walkthrough see
 [Getting Started](getting-started.md); for what each gate does see [Engine Architecture](engine-architecture.md).
 
 ## Global

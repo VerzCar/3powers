@@ -10,6 +10,19 @@ release is **v0.5.0**, matching the latest released milestone below.
 
 ## [Unreleased] — v1.0 (in progress): lifecycle & ecosystem
 
+### Changed
+
+- **Public text hygiene.** All end-user-readable text — CLI help and messages, engine source
+  docstrings and comments, `docs/` prose, and the scaffold assets `3pwr init` ships — no longer
+  cites 3Powers' internal requirement IDs, epic letters, or plan/spec numbers; every citation was
+  rewritten as the plain-English rationale it stood for. Format teaching keeps bare `FR-###` and
+  uses the reserved `DEMO-` example namespace. The rule is written down (AGENTS.md) and enforced
+  by a permanent test, so a fresh `3pwr init` always ships clean.
+- **CLI package layout.** The engine's single `cli.py` module became the `threepowers/cli/`
+  package — one module per command group, each owning its handlers and registering its own
+  subparsers. A pure refactor: identical commands, help text, exit codes, and `--json` payloads;
+  the `3pwr` entry point is unchanged.
+
 ### Added
 
 - **Run steering (STEER).** Three operator seams around `3pwr run` closed. *File-based intent*:

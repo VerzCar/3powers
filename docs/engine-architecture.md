@@ -9,7 +9,7 @@ mandatory CI. Read [Concepts](concepts.md) first for the *why*; this page is the
 
 | Module | Responsibility |
 |---|---|
-| `cli.py` | argparse entry point; one `cmd_*` per subcommand. See [CLI Reference](cli-reference.md). |
+| `cli/` | the argparse entry point as a package — one module per command group (`keys`, `bootstrap`, `gate`, `trust`, `exceptions`, `oracle`, `observe`, `run`, `supply`, `brownfield`), each owning its `cmd_*` handlers and registering its own subparsers; `cli/__init__.py` assembles the parser and exports `main`. See [CLI Reference](cli-reference.md). |
 | `gates.py` | the gate **orchestrator** — runs the suite cheapest-first, assembles the verdict |
 | `characterize.py` | brownfield: reconstruct a spec + characterization tests from a legacy module |
 | `conformance.py` | the `spec_conformance` trace, two-way requirement↔task coverage, the defect regression gate |
@@ -205,7 +205,7 @@ tamper-**evidence**, not tamper-**proofing**: evasion is *detectable*, not *impo
 
 ### Enforcement, provenance, reversibility
 
-- **`advance`** (in `cli.py`) is the local enforcement gate: it refuses unless the ledger verifies, the
+- **`advance`** (in the `cli/` package's trust module) is the local enforcement gate: it refuses unless the ledger verifies, the
   latest *enforced* verdict is green, and a human sign-off exists at/after that verdict. Report-only
   verdicts are advisory and never satisfy an advance.
 - **`deviation` / `emergency`** ([`deviations.py`](../engine/src/threepowers/deviations.py)) bend the
