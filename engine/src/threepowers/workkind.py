@@ -1,10 +1,10 @@
-"""Work-kind inference (3PWR-FR-058) — shape the tier + oracle strategy, never the sign-off.
+"""Work-kind inference — shape the tier + oracle strategy, never the sign-off.
 
 Free-form intent is classified into work kind(s) and a *suggested risk tier* **deterministically**
-(keyword heuristics — no model call, so it never perturbs the deterministic verdict, 3PWR-NFR-001). A
+(keyword heuristics — no model call, so it never perturbs the deterministic verdict). A
 single intent may resolve to multiple kinds. The inference only *shapes* the run — the human still
-approves the spec (3PWR-FR-006) and signs off on the evidence (3PWR-FR-037). Per-kind gate shaping
-(defect → a regression gate, design → visual/a11y oracles) builds on this in a later plan.
+approves the spec and signs off on the evidence. Per-kind gate shaping
+(defect → a regression gate, design → visual/a11y oracles) builds on this classification.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-# Recognised kinds (spec §5). "feature" is the default when nothing else matches.
+# Recognised kinds. "feature" is the default when nothing else matches.
 KINDS = ("defect", "design", "docs", "refactor", "chore", "feature")
 
 # keyword → kind (word-boundary matched, case-insensitive).
@@ -85,7 +85,7 @@ def _matches(text: str, words: tuple[str, ...]) -> list[str]:
 
 
 def classify(intent: str) -> WorkKind:
-    """Infer work kind(s) + a suggested risk tier from free-form intent (deterministic, 3PWR-FR-058)."""
+    """Infer work kind(s) + a suggested risk tier from free-form intent (deterministic)."""
     text = (intent or "").lower()
     kinds: list[str] = []
     signals: list[str] = []

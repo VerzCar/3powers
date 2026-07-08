@@ -1,7 +1,7 @@
-"""Ledger verification: recompute the hash chain and signatures (3PWR-FR-040).
+"""Ledger verification: recompute the hash chain and signatures.
 
 ``verify`` is the keystone of the trust spine. It is fully local and offline
-(3PWR-NFR-004) and fails on *any* tamper, gap, or break: a mutated payload changes
+and fails on *any* tamper, gap, or break: a mutated payload changes
 the recomputed ``entry_hash``; a reordered/inserted/deleted entry breaks the
 ``prev_hash`` linkage or the ``seq`` sequence; a forged entry fails Ed25519
 verification against the committed public key.
@@ -49,21 +49,21 @@ def verify_ledger(
 ) -> VerifyResult:
     """Recompute the chain and verify each entry's signature against the *active* signer.
 
-    Key continuity (HARDN-FR-004): the active ledger key starts at the genesis key and changes
+    Key continuity: the active ledger key starts at the genesis key and changes
     only through signed ``key_rotation`` entries — each authored by the outgoing key and naming
     its successor. A rotation-free ledger verifies against the committed public key exactly as
-    before (HARDN-NFR-003); with rotations, the committed key must be the last successor, else
+    before; with rotations, the committed key must be the last successor, else
     the swap is an *unrotated key change*, not an unremarkable git diff.
 
     ``extra_pubkey_paths`` lets a repo carry more than one independent signer — e.g. a distinct
-    judiciary (oracle) identity that signs the isolated-dispatch attestation (3PWR-FR-021/039).
-    Absent extra keys are simply skipped, so single-key repos verify unchanged (3PWR-NFR-004)."""
+    judiciary (oracle) identity that signs the isolated-dispatch attestation.
+    Absent extra keys are simply skipped, so single-key repos verify unchanged."""
     res = VerifyResult(ok=True)
     try:
         entries = Ledger(ledger_path).entries()
     except ValueError as exc:
         # A corrupt (non-JSON) ledger line is a tamper/corruption event, not a crash: the
-        # keystone verify fails *closed* with a named, locatable problem (3PWR-FR-040/NFR-011)
+        # keystone verify fails *closed* with a named, locatable problem
         # so callers get ok=False (and the CLI a red EXIT_FAIL verdict), never an exception.
         return VerifyResult(ok=False, problems=[f"ledger corrupted — {exc}"])
     res.entries = len(entries)
@@ -82,7 +82,7 @@ def verify_ledger(
         )
 
     # The genesis key: with rotations recorded, the first rotation carries it; without any,
-    # the committed key IS the genesis key and behavior is unchanged (HARDN-NFR-003).
+    # the committed key IS the genesis key and behavior is unchanged.
     rotations = [e for e in entries if e.get("type") == "key_rotation"]
     active: Optional[VerifyKey] = primary
     if rotations:
@@ -150,7 +150,7 @@ def verify_ledger(
         expected_prev = entry.get("entry_hash", expected_prev)
 
     # 6. Continuity to the committed key: the key the repo *now* trusts must be the final
-    #    successor in the rotation chain (HARDN-FR-004, SC-001).
+    #    successor in the rotation chain.
     if rotations and primary is not None and active is not None and active.raw != primary.raw:
         res.problems.append(
             f"unrotated key change — committed public key {primary.key_id} does not descend "

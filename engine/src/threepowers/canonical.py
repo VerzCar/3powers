@@ -3,8 +3,7 @@
 A single canonical byte representation is the foundation of the hash chain: the
 ledger's integrity depends on every actor computing *exactly* the same bytes for a
 given payload. We therefore serialize with sorted keys, no insignificant
-whitespace, and UTF-8 — deterministic regardless of who or what produced the object
-(supports 3PWR-NFR-001/010).
+whitespace, and UTF-8 — deterministic regardless of who or what produced the object.
 """
 
 from __future__ import annotations

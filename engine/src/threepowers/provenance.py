@@ -1,10 +1,10 @@
-"""Build provenance + SBOM + deploy-gate verification (3PWR-FR-066/067/068).
+"""Build provenance + SBOM + deploy-gate verification.
 
 A signed, verifiable record binding an artifact (by hash) to its source commit, repo,
 producing run, and dependency list (SBOM). It is signed with the **same independent
-Ed25519 identity as the verdict ledger** (3PWR-FR-068) — so provenance is produced and
-verified with no hosted CI/CD pipeline, fully offline (3PWR-NFR-004). The deploy gate
-refuses any artifact whose provenance is missing or fails verification (3PWR-FR-067).
+Ed25519 identity as the verdict ledger** — so provenance is produced and
+verified with no hosted CI/CD pipeline, fully offline. The deploy gate
+refuses any artifact whose provenance is missing or fails verification.
 """
 
 from __future__ import annotations

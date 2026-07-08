@@ -1,9 +1,9 @@
-"""Language-agnostic supply-chain scanners — core gates (3PWR-FR-028).
+"""Language-agnostic supply-chain scanners — core gates.
 
 Secret scanning (betterleaks, falling back to gitleaks) and dependency scanning (osv-scanner)
 live in the core, not in a language adapter, because they do not depend on the project's language.
 When a scanner binary is absent the gate is **quarantined** — reported as ``skip`` with a surfaced
-finding — never silently passed (3PWR-NFR-015).
+finding — never silently passed.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _quarantine(gate: str, tool: str) -> GateResult:
 
 
 def _in_scope(target: Path, file: str, changed: set[str] | None) -> bool:
-    """True if a finding's file is in the changed-file scope (brownfield, 3PWR-FR-051).
+    """True if a finding's file is in the changed-file scope (brownfield).
 
     ``changed`` holds absolute paths; ``file`` is whatever the scanner reported
     (absolute, or relative to ``target``). When ``changed`` is None nothing is scoped.
@@ -44,7 +44,7 @@ def _in_scope(target: Path, file: str, changed: set[str] | None) -> bool:
 # Secret scanners tried in order of preference. betterleaks is the maintained Gitleaks successor;
 # gitleaks is the fallback. Both share the same ``dir`` CLI and JSON schema (File/RuleID/StartLine),
 # so one command + one parser serves both — betterleaks writes ``null`` for an empty report where
-# gitleaks writes ``[]``, handled below. Neither installed → the gate is quarantined (3PWR-NFR-015).
+# gitleaks writes ``[]``, handled below. Neither installed → the gate is quarantined.
 _SECRET_TOOLS = ("betterleaks", "gitleaks")
 
 
@@ -54,7 +54,7 @@ def _secret_tool() -> str | None:
 
 # The engine's own private-key line format: ``ed25519-priv <base64-raw-seed-32>``. A real seed is
 # 44 base64 chars; requiring ≥40 avoids matching the format's *mention* in docs or source literals
-# while catching any actual committed key material (HARDN-FR-003).
+# while catching any actual committed key material.
 _PRIVATE_KEY_RE = re.compile(r"^ed25519-priv\s+[A-Za-z0-9+/=]{40,}\s*$")
 _MAX_CORE_SCAN_BYTES = 1_000_000
 
@@ -74,7 +74,7 @@ def _scan_candidates(target: Path) -> list[Path]:
 
 
 def _core_private_key_findings(target: Path, changed: set[str] | None) -> list[str]:
-    """Core fallback scan for committed ``ed25519-priv`` material (HARDN-FR-003).
+    """Core fallback scan for committed ``ed25519-priv`` material.
 
     Runs with or without an external secret scanner installed — the engine's own key format
     is never quarantined away. Deterministic, local, read-only.
@@ -103,13 +103,13 @@ def _core_private_key_findings(target: Path, changed: set[str] | None) -> list[s
 
 
 def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
-    """Scan the working tree for committed secrets (3PWR-FR-026 §8).
+    """Scan the working tree for committed secrets.
 
     A core check for the engine's own ``ed25519-priv`` key material ALWAYS runs first
-    (HARDN-FR-003) — it needs no external binary and is never quarantined away. For the
+    — it needs no external binary and is never quarantined away. For the
     broader ruleset the gate prefers betterleaks (the maintained Gitleaks successor), falling
     back to gitleaks — both share the ``dir`` CLI and JSON schema. Only the external portion
-    is quarantined when neither binary is installed (3PWR-NFR-015)."""
+    is quarantined when neither binary is installed."""
     core = _core_private_key_findings(target, changed)
     tool = _secret_tool()
     if tool is None:
@@ -158,7 +158,7 @@ def secret_scan(target: Path, changed: set[str] | None = None) -> GateResult:
                     findings=core,
                 )
             return _quarantine("secret_scan", tool)
-        # When diff-scoped, only changed-file findings block (3PWR-FR-051).
+        # When diff-scoped, only changed-file findings block (brownfield).
         in_scope = bool(findings) if changed is not None else (res.returncode == 1 or bool(core))
         status = STATUS_FAIL if in_scope else STATUS_PASS
         return GateResult(
@@ -206,7 +206,7 @@ def dependency_scan(target: Path) -> GateResult:
 
 
 def sast_scan(target: Path, rules_path: Path, changed: set[str] | None = None) -> GateResult:
-    """Static analysis with semgrep against a local, offline ruleset (3PWR-FR-026 §8)."""
+    """Static analysis with semgrep against a local, offline ruleset."""
     if not shutil.which("semgrep") or not rules_path.exists():
         return _quarantine("sast", "semgrep")
     res = run_cmd(f"semgrep scan --quiet --json --config {rules_path} {target}", cwd=target)
@@ -216,7 +216,7 @@ def sast_scan(target: Path, rules_path: Path, changed: set[str] | None = None) -
         for r in json.loads(res.stdout or "{}").get("results") or []:
             raw_count += 1
             if not _in_scope(target, r.get("path", ""), changed):
-                continue  # brownfield: only changed-file findings block (3PWR-FR-051)
+                continue  # brownfield: only changed-file findings block
             line = r.get("start", {}).get("line", "?")
             findings.append(f"{r.get('check_id', 'rule')} at {r.get('path', '?')}:{line}")
             if len(findings) >= 20:

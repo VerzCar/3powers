@@ -1,9 +1,8 @@
 """Ed25519 signer / verifier identity for the trust spine.
 
 The **signer identity is independent of the executive agents**: the private key is
-never stored in the repository and never appears in the ledger (3PWR-FR-039,
-3PWR-NFR-005). Only the *public* key is committed (``.3powers/keys/ledger.pub``) so
-that ``verify`` is fully local and offline (3PWR-NFR-004).
+never stored in the repository and never appears in the ledger. Only the *public* key
+is committed (``.3powers/keys/ledger.pub``) so that ``verify`` is fully local and offline.
 
 Key custody (private key) is resolved, in order:
   1. ``$THREEPOWERS_SIGNING_KEY_FILE`` — path to a private-key file;
@@ -55,7 +54,7 @@ def key_id_of(raw_public: bytes) -> str:
 
 @runtime_checkable
 class Signer(Protocol):
-    """Anything that can sign ledger bytes: a software key or an external signer (HARDN-FR-006)."""
+    """Anything that can sign ledger bytes: a software key or an external signer."""
 
     @property
     def key_id(self) -> str: ...
@@ -64,7 +63,7 @@ class Signer(Protocol):
 
 
 class ExternalSignerError(ValueError):
-    """A configured external signer failed — loudly, never falling back (HARDN-FR-006)."""
+    """A configured external signer failed — loudly, never falling back."""
 
 
 @dataclass
@@ -145,7 +144,7 @@ def load_public(path: Path) -> VerifyKey:
 
 @dataclass
 class CommandSigner:
-    """Delegate signing to an external process boundary (HARDN-FR-006).
+    """Delegate signing to an external process boundary.
 
     The command receives the canonical bytes to sign on **stdin** and must print the
     base64 Ed25519 signature on **stdout**. The private-key material lives wherever the
@@ -216,7 +215,7 @@ def default_private_path(repo_root: Path) -> Path:
 
 
 def default_oracle_private_path(repo_root: Path) -> Path:
-    """The distinct judiciary (oracle) signer's default path — also OUTSIDE the repo (3PWR-NFR-005)."""
+    """The distinct judiciary (oracle) signer's default path — also OUTSIDE the repo."""
     base = Path(os.path.expanduser("~")) / ".config" / "3powers"
     return base / (repo_root.name + ".oracle.key")
 
@@ -235,7 +234,7 @@ def _resolve(file_env: str, seed_env: str, default_path: Path) -> Optional[Signi
 
 
 def inside_working_tree(repo_root: Path, path: Path) -> bool:
-    """True iff ``path`` resolves inside the repository working tree (HARDN-FR-002)."""
+    """True iff ``path`` resolves inside the repository working tree."""
     try:
         path.resolve().relative_to(repo_root.resolve())
         return True
@@ -252,7 +251,7 @@ def _mode_too_open(path: Path) -> bool:
 
 
 def custody_findings(repo_root: Path) -> list[str]:
-    """Deterministic key-custody preflight (HARDN-FR-002).
+    """Deterministic key-custody preflight.
 
     Reports a ``key_custody`` finding when a resolved private-key file lives inside the
     repository working tree, or when its permissions are broader than owner-only. A
@@ -286,12 +285,12 @@ def custody_findings(repo_root: Path) -> list[str]:
 
 
 def resolve_signing_key(repo_root: Path, role: str = "ledger") -> SigningKey:
-    """Load the private signing key from outside the repository (3PWR-NFR-005).
+    """Load the private signing key from outside the repository.
 
     ``role="oracle"`` prefers a distinct judiciary identity
     (``$THREEPOWERS_ORACLE_SIGNING_KEY_FILE`` / ``$THREEPOWERS_ORACLE_SIGNING_KEY`` /
     ``~/.config/3powers/<repo>.oracle.key``), **falling back to the primary signer** when unset — so
-    a distinct oracle key is optional and fully backward-compatible (3PWR-FR-039)."""
+    a distinct oracle key is optional and fully backward-compatible."""
     if role == "oracle":
         sk = _resolve(
             "THREEPOWERS_ORACLE_SIGNING_KEY_FILE",
@@ -319,7 +318,7 @@ def resolve_signer(repo_root: Path, role: str = "ledger") -> Signer:
 
     Where ``$THREEPOWERS_SIGNER_CMD`` (or ``$THREEPOWERS_ORACLE_SIGNER_CMD`` for the
     judiciary identity) is set, signing is delegated to that process boundary and the
-    private seed is never readable by the engine (HARDN-FR-006). A configured-but-broken
+    private seed is never readable by the engine. A configured-but-broken
     external signer raises — it never silently falls back to a software key. With no
     external configuration the existing software-key custody chain applies unchanged.
     """

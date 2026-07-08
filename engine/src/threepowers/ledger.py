@@ -1,4 +1,4 @@
-"""Append-only, hash-chained, signed verdict ledger (3PWR-FR-038/039).
+"""Append-only, hash-chained, signed verdict ledger.
 
 Each line of ``.3powers/ledger.jsonl`` is one entry recording a gate verdict, a
 residual review, a human sign-off, or a stage advance. Entries are chained: every
@@ -7,7 +7,7 @@ chained bytes are the canonical encoding of the entry *core* (everything except 
 hash/signature fields), so the chain and the signatures both bind the same content.
 
 The ledger is committed to the repository, which keeps the whole trust record
-self-contained and offline-reconstructable (3PWR-FR-071, 3PWR-NFR-010).
+self-contained and offline-reconstructable.
 """
 
 from __future__ import annotations
@@ -52,10 +52,10 @@ def core_of(entry: dict) -> dict:
 
 
 def rotation_payload(outgoing: VerifyKey, successor: VerifyKey, reason: str = "") -> dict:
-    """The ``key_rotation`` payload: the outgoing key names its successor (HARDN-FR-004).
+    """The ``key_rotation`` payload: the outgoing key names its successor.
 
     Carrying the *previous* public key too makes every span of the ledger verifiable from
-    the ledger + the committed current key alone — no external state (3PWR-NFR-004/010).
+    the ledger + the committed current key alone — no external state.
     """
     return {
         "previous_public_key": base64.b64encode(outgoing.raw).decode(),
@@ -84,8 +84,8 @@ class Ledger:
             except json.JSONDecodeError as exc:
                 # A line that is not valid JSON is corruption, not a parse quirk to swallow:
                 # fail loud and locatable. `verify_ledger` turns this into a named "ledger
-                # corrupted" problem so the keystone verify fails *closed* rather than raising
-                # (3PWR-FR-040/FR-034/NFR-011); the CLI catch-all covers other callers.
+                # corrupted" problem so the keystone verify fails *closed* rather than raising;
+                # the CLI catch-all covers other callers.
                 raise ValueError(f"malformed ledger entry at line {lineno}: {exc}") from exc
         return out
 
