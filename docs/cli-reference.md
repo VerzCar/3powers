@@ -77,20 +77,20 @@ missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 `init` also seeds one **editable agent template per dispatched stage** into
 `.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
 template is named for its agent, `implementation-plan.agent.md` —, oracle, implement, review,
-characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that
+characterize — named for its agent, `implementation-plan.agent.md`). The executive uses a repo-local template as that
 stage's instruction body when present; an absent, empty, or unreadable template falls back to the
-engine's built-in instruction (AGENTX-FR-005). Seeding is non-clobbering — a hand-edited template is
+engine's built-in instruction. Seeding is non-clobbering — a hand-edited template is
 never overwritten. Declining the recommended defaults interactively also walks the **headless-CLI +
-role→model setup** below (AGENTX-FR-011/012).
+role→model setup** below.
 
 ### `config roles setup` — the headless-CLI + role→model setup, any time
 Binds each configurable role — planner, coder, oracle, reviewer — to a headless integration and a
-model, without reinitializing (AGENTX-FR-014). Interactive by default: pick the integration you have
+model, without reinitializing. Interactive by default: pick the integration you have
 installed (no provider is forced), then pick each role's model from the per-integration catalog in
 `.3powers/config/models.yaml` — editable data with a documented default; a model the catalog does not
-list is accepted free-form (BYOK), its family derived where the id encodes it (AGENTX-FR-015/016).
+list is accepted free-form (BYOK), its family derived where the id encodes it.
 Each role gets a complete `roles.yaml` block — `model_family`, `model`, `integration`, `label` — so
-`3pwr run` needs no manual role editing (AGENTX-FR-012/013). Non-destructive: only the roles you
+`3pwr run` needs no manual role editing. Non-destructive: only the roles you
 reconfigure are rewritten; every other field is preserved.
 - `--integration NAME` — the agent backend to bind roles to (e.g. `claude`, `codex`, `copilot`).
 - `--planner/--coder/--oracle/--reviewer MODEL` — set a role's model directly (catalog id or free-form).
@@ -102,12 +102,12 @@ reconfigure are rewritten; every other field is preserved.
     --planner claude-opus-4.8 --coder gpt-5.5             # scripted
 ```
 **`require_dispatch`** (written on the oracle role, default `false`) is the High-risk read-path-isolation
-policy (3PWR-FR-021, epic A3): when `true`, a High-risk `advance` refuses unless an isolated
+policy: when `true`, a High-risk `advance` refuses unless an isolated
 headless-dispatch attestation (`3pwr oracle dispatch`) proves the oracle was authored with the
 implementation, plan, tasks, and contracts physically absent from its worktree. Leave it `false` while
 authoring the oracle in-IDE; enable it once the project adopts headless oracle authoring at High-risk.
 A judiciary role sharing the coder's model family only ever **warns** — diversity is recommended, never
-forced; proceed with `3pwr deviation --gate model_diversity …` (3PWR-FR-022/057, AGENTX-FR-018).
+forced; proceed with `3pwr deviation --gate model_diversity …`.
 
 ---
 
@@ -516,7 +516,7 @@ line, followed by ready-to-run commands:
 ```
 
 <a id="run-exit-codes"></a>
-**The stable machine contract (AUTOX-FR-009).** Each terminal outcome maps to exactly one documented
+**The stable machine contract.** Each terminal outcome maps to exactly one documented
 (JSON `status`, exit code) pair — a wrapper branches on the exit code alone, or on the `status` string
 under `--json`. This table is a stable interface:
 
@@ -536,14 +536,14 @@ under `--json`. This table is a stable interface:
 | A producing stage's mandatory commit failed | `git_commit_failed` | `4` |
 | The gate suite could not run at Verify | `verdict_error` | `4` |
 
-**Transcripts (AUTOX-FR-008, stable).** Every stage attempt's stdout/stderr — streamed or not — is
+**Transcripts (stable).** Every stage attempt's stdout/stderr — streamed or not — is
 persisted, credential-redacted, to `.3powers/runs/<spec-id>/<NN>-<step>-attempt<K>.log`; every failure
 message and failure ledger record names the transcript path. Failures are also recorded as signed
 `run`/`failure` ledger entries, so `3pwr run --status` and `3pwr status` show
 `failed at <stage> (<class>)` until a later record passes that stage.
 
 ### `git start` — establish the run branch for a manual drive
-Gives the command-by-command `/3pwr.*` drive the same git guarantees as `3pwr run` (GITX-FR-016): checks
+Gives the command-by-command `/3pwr.*` drive the same git guarantees as `3pwr run`: checks
 the git precondition, applies the clean-start guard (unrelated uncommitted changes refuse, naming the
 paths and the `git_clean_start` deviation), creates-or-re-enters the run's dedicated branch, and binds
 the branch to the spec-id in the signed ledger (the same additive `run`/`start` field the orchestrated
@@ -579,7 +579,7 @@ at the `advance` enforcement boundary; gates always run honestly, so the verdict
 Records a signed, reversible gate exception that lets `advance` accept specific red gates, with a reason, a
 human approver, and a way back (an expiry or an explicit revoke). Also the **sanctioned way to accept a
 `gate_gaming` flag**, and the only relaxation of the git run discipline (`git_clean_start`,
-`git_stage_commit`, `git_run_branch` — GITX-FR-014). Human sign-off and provenance are never deviatable.
+`git_stage_commit`, `git_run_branch`). Human sign-off and provenance are never deviatable.
 - `--gate GATE` (repeatable; required unless `--revoke`) · `--approver APPROVER` (required to record) ·
   `--note NOTE` (reason) · `--until ISO8601` (auto-expiry) · `--revoke SEQ` (the way back) · `--spec-id SPEC_ID`
   (scope; default global).
@@ -616,7 +616,7 @@ Records a signed, attributed `observe` ledger entry, appends a `<SPEC>-FB-###` n
 moves the spec to the **Observe** stage.
 - `--spec-id SPEC_ID` (required) · `--kind incident|missed-nfr|usage` (required) · `--nfr NFR_ID` · `--note NOTE` (required).
 ```bash
-3pwr observe signal --spec-id VUTIL --kind incident --nfr VUTIL-NFR-002 --note "p99 latency regressed under load"
+3pwr observe signal --spec-id DEMO --kind incident --nfr DEMO-NFR-002 --note "p99 latency regressed under load"
 ```
 
 ### `observe coverage` — NFR-instrumentation coverage
@@ -716,7 +716,7 @@ that needs adaptation.
 ```
 
 ### `ready` — am I ready for `3pwr run --mode auto`?
-One honest answer, re-runnable any time (AUTOX-FR-003): performs the auto run's own preflight — a
+One honest answer, re-runnable any time: performs the auto run's own preflight — a
 resolvable/usable signing key (an env-supplied key is validated, never trusted silently), a headless
 coder agent with its CLI on PATH, a different-family oracle (or a recorded diversity deviation) — plus
 a dependency summary. **The same shared checks** `3pwr init`'s readiness and the run's refusal use, so

@@ -28,7 +28,7 @@ The rule (constitution, Principle I): **no single model or actor occupies two br
 change.** The model that wrote the code does not get to write the answer key.
 
 - **Legislative — the spec is law.** Requirements live versioned in [`specs/`](../specs/), in
-  [EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `VUTIL-FR-001`. Every spec
+  [EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `DEMO-FR-001`. Every spec
   declares a **risk tier** and an explicit **non-goals** section *before* planning starts. Implementation
   detail (a database, a framework) does **not** belong in a spec and is flagged out.
 - **Executive — agents build.** Agents turn the spec into a plan, tasks, and code. They may write their

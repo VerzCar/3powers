@@ -106,9 +106,9 @@ capability); `--base` sets the diff base.
 ### `spec_conformance` — every requirement has a test
 
 [`conformance.py`](../engine/src/threepowers/conformance.py). A deterministic, language-agnostic trace:
-read the requirement IDs declared in the spec (e.g. `VUTIL-FR-001`), scan the test roots for files that
+read the requirement IDs declared in the spec (e.g. `DEMO-FR-001`), scan the test roots for files that
 *mention* each ID, and fail naming any requirement with no linked test. Tests reference a requirement
-simply by including its ID in a name or string — `describe("VUTIL-FR-001: rejects empty input", …)`. It
+simply by including its ID in a name or string — `describe("DEMO-FR-001: rejects empty input", …)`. It
 accounts for the unit / integration / e2e layers (each tier declares the layers a change must exercise)
 and the same module powers two-way requirement↔task coverage (`coverage-check`).
 

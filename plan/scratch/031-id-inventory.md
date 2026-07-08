@@ -1,38 +1,33 @@
 # Plan 031 — internal-ID inventory (disposable)
 
-Total hits: **336** across 65 files.
+Total hits: **280** across 58 files.
 
 ## Summary by kind
 
 | kind | count |
 |---|---|
 | scaffold-asset | 260 |
-| doc-prose | 64 |
-| format-example | 12 |
+| format-example | 20 |
 
 ## Summary by namespace
 
 | namespace | count |
 |---|---|
-| 3PWR | 170 |
-| (bare/sibling) | 32 |
-| HARDN | 23 |
+| 3PWR | 161 |
 | EXEC | 22 |
 | PHASE | 16 |
-| GITX | 14 |
+| HARDN | 12 |
+| (bare/sibling) | 12 |
+| GITX | 12 |
 | SPECX | 10 |
-| AGENTX | 9 |
+| DEMO | 10 |
 | RUNLIVE | 8 |
-| VUTIL | 7 |
 | STEER | 6 |
 | SPECID | 4 |
-| OSSRD | 3 |
-| MONEY | 3 |
-| AUTOX | 3 |
+| VUTIL | 2 |
+| AGENTX | 2 |
 | CLIUX | 2 |
-| DEMO | 2 |
 | SRCX | 1 |
-| SLIM | 1 |
 
 Engine-source total (sanity check vs raw grep census): **123**
 
@@ -320,129 +315,38 @@ Engine-source total (sanity check vs raw grep census): **123**
 | 93 | scaffold-asset | PHASE-FR-011 | `(PHASE-FR-011/012).` |
 | 94 | scaffold-asset | PHASE-FR-009 | `- An oversize phase proceeds with a warning (advisory, never blocking — PHASE-FR-009); an` |
 
-## .github/workflows/ci.yml (5)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 1 | doc-prose | OSSRD-FR-004 | `# CI for this repository's own contributions (OSSRD-FR-004).` |
-| 4 | doc-prose | 3PWR-NFR-004 | `# locally and offline (3PWR-NFR-004; assumption A4: CI may re-validate, never gatekeep the framework's` |
-| 9 | doc-prose | OSSRD-NFR-002 | `# Budget: the whole job must finish well within 10 minutes on the hosted runners (OSSRD-NFR-002).` |
-| 26 | doc-prose | OSSRD-NFR-002 | `timeout-minutes: 10 # OSSRD-NFR-002: never the reason contributors bypass checks` |
-| 54 | doc-prose | HARDN-FR-002 | `# passes the custody preflight by construction (HARDN-FR-002).` |
-
-## CHANGELOG.md (18)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 33 | doc-prose | (plan 029) | `plain streamed log escape-free, and teardown always restores the terminal, on Ctrl-C too. (plan 029)` |
-| 49 | doc-prose | (plan 028) | `branch + committed stages surfaced by both status commands. (plan 028)` |
-| 60 | doc-prose | (plan 018) | `and implementation status lives only in STATUS. (plan 018)` |
-| 73 | doc-prose | (plan 017) | `and a per-tier `diff_mutation` knob runs mutation over changed files. (plan 017)` |
-| 79 | doc-prose | (plan 016) | `with the recorded hash is caught by the existing `verify` — no new trust primitive. (plan 016)` |
-| 83 | doc-prose | (plan 015) | `which are quarantined — surfaced as skipped — when a tool isn't wired up. (plan 015)` |
-| 85 | doc-prose | (plan 015) | `contract is language-agnostic. (plan 015)` |
-| 87 | doc-prose | (plan 013) | `two human gates (spec approval, sign-off) in `auto` mode. (plan 013)` |
-| 90 | doc-prose | (plan 010) | `attributable agent-action log. (plan 010)` |
-| 92 | doc-prose | (plan 011) | `sanitized Git worktree where the implementation is physically absent, attested in the ledger. (plan 011)` |
-| 95 | doc-prose | (plan 008) | `the High-risk tier. (plan 008)` |
-| 97 | doc-prose | (plan 007) | `exceptions that are always recorded and never silently weaken a gate. (plan 007)` |
-| 99 | doc-prose | (plan 006) | `spec and pin a legacy module's current behavior. (plan 006)` |
-| 101 | doc-prose | (plan 009) | `provider-agnostic Spec Kit extension. (plan 009)` |
-| 108 | doc-prose | (plan 014) | `and quarantines when neither is present. (plan 014)` |
-| 110 | doc-prose | (plan 012) | `exception rather than being blocked outright, so single-model users are never walled off. (plan 012)` |
-| 111 | doc-prose | (plan 014) | `- Per-tier required test layers (unit / integration / e2e) are enforced as a per-change union. (plan 014)` |
-| 113 | doc-prose | (plan 006) | `diff-coverage plus mutation), so 3Powers is genuinely built with 3Powers at the strictest tier. (plan 006)` |
-
 ## CONTRIBUTING.md (1)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
-| 64 | doc-prose | VUTIL-FR-001 | `requirement IDs (e.g. `VUTIL-FR-001`), a declared **risk tier**, and an explicit **non-goals** section.` |
+| 64 | format-example | DEMO-FR-001 | `requirement IDs (e.g. `DEMO-FR-001`), a declared **risk tier**, and an explicit **non-goals** section.` |
 
 ## docs/brownfield.md (3)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
-| 101 | doc-prose | MONEY-FR-001 | `- **MONEY-FR-001**: The system shall preserve the observed behavior of `canonical_bytes` in `src/money.py`…` |
-| 102 | doc-prose | MONEY-FR-002 | `- **MONEY-FR-002**: The system shall preserve the observed behavior of `sha256_hex` …` |
-| 103 | doc-prose | MONEY-FR-003 | `- **MONEY-FR-003**: The system shall preserve the observed behavior of `hash_payload` …` |
+| 101 | format-example | DEMO-FR-001 | `- **DEMO-FR-001**: The system shall preserve the observed behavior of `canonical_bytes` in `src/demo.py`…` |
+| 102 | format-example | DEMO-FR-002 | `- **DEMO-FR-002**: The system shall preserve the observed behavior of `sha256_hex` …` |
+| 103 | format-example | DEMO-FR-003 | `- **DEMO-FR-003**: The system shall preserve the observed behavior of `hash_payload` …` |
 
-## docs/cli-reference.md (15)
+## docs/cli-reference.md (1)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
-| 80 | doc-prose | AGENTX-FR-001 | `characterize — AGENTX-FR-001/009). The executive uses a repo-local template as that` |
-| 82 | doc-prose | AGENTX-FR-005 | `engine's built-in instruction (AGENTX-FR-005). Seeding is non-clobbering — a hand-edited template is` |
-| 84 | doc-prose | AGENTX-FR-011 | `role→model setup** below (AGENTX-FR-011/012).` |
-| 88 | doc-prose | AGENTX-FR-014 | `model, without reinitializing (AGENTX-FR-014). Interactive by default: pick the integration you have` |
-| 91 | doc-prose | AGENTX-FR-015 | `list is accepted free-form (BYOK), its family derived where the id encodes it (AGENTX-FR-015/016).` |
-| 93 | doc-prose | AGENTX-FR-012 | ``3pwr run` needs no manual role editing (AGENTX-FR-012/013). Non-destructive: only the roles you` |
-| 105 | doc-prose | 3PWR-FR-021 | `policy (3PWR-FR-021, epic A3): when `true`, a High-risk `advance` refuses unless an isolated` |
-| 110 | doc-prose | 3PWR-FR-022 | `forced; proceed with `3pwr deviation --gate model_diversity …` (3PWR-FR-022/057, AGENTX-FR-018).` |
-| 110 | doc-prose | AGENTX-FR-018 | `forced; proceed with `3pwr deviation --gate model_diversity …` (3PWR-FR-022/057, AGENTX-FR-018).` |
-| 519 | doc-prose | AUTOX-FR-009 | `**The stable machine contract (AUTOX-FR-009).** Each terminal outcome maps to exactly one documented` |
-| 539 | doc-prose | AUTOX-FR-008 | `**Transcripts (AUTOX-FR-008, stable).** Every stage attempt's stdout/stderr — streamed or not — is` |
-| 546 | doc-prose | GITX-FR-016 | `Gives the command-by-command `/3pwr.*` drive the same git guarantees as `3pwr run` (GITX-FR-016): checks` |
-| 582 | doc-prose | GITX-FR-014 | ``git_stage_commit`, `git_run_branch` — GITX-FR-014). Human sign-off and provenance are never deviatable.` |
-| 619 | doc-prose | VUTIL-NFR-002 | `3pwr observe signal --spec-id VUTIL --kind incident --nfr VUTIL-NFR-002 --note "p99 latency regressed under load"` |
-| 719 | doc-prose | AUTOX-FR-003 | `One honest answer, re-runnable any time (AUTOX-FR-003): performs the auto run's own preflight — a` |
+| 619 | format-example | DEMO-NFR-002 | `3pwr observe signal --spec-id DEMO --kind incident --nfr DEMO-NFR-002 --note "p99 latency regressed under load"` |
 
 ## docs/concepts.md (1)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
-| 31 | doc-prose | VUTIL-FR-001 | `[EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `VUTIL-FR-001`. Every spec` |
+| 31 | format-example | DEMO-FR-001 | `[EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `DEMO-FR-001`. Every spec` |
 
 ## docs/engine-architecture.md (2)
 
 | line | kind | match | excerpt |
 |---|---|---|---|
-| 109 | doc-prose | VUTIL-FR-001 | `read the requirement IDs declared in the spec (e.g. `VUTIL-FR-001`), scan the test roots for files that` |
-| 111 | doc-prose | VUTIL-FR-001 | `simply by including its ID in a name or string — `describe("VUTIL-FR-001: rejects empty input", …)`. It` |
-
-## docs/getting-started.md (3)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 56 | doc-prose | 3PWR-FR-022 | `family** than the coder (recommended, 3PWR-FR-022):` |
-| 89 | doc-prose | 3PWR-FR-006 | `1. **Spec approval** (3PWR-FR-006) — read the generated spec, then` |
-| 91 | doc-prose | 3PWR-FR-037 | `2. **Sign-off** (3PWR-FR-037) — review the evidence, then resume the same way.` |
-
-## docs/migration-remove-speckit.md (2)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 11 | doc-prose | SLIM-NFR-003 | `changed (SLIM-NFR-003).` |
-| 44 | doc-prose | 3PWR-FR-022 | ``coder: { integration: codex }`, `oracle: { integration: claude }` (a different family — 3PWR-FR-022).` |
-
-## docs/references/speckit.md (2)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 77 | doc-prose | (plan 009) | `(plan 009) — providing the `/3pwr.*` judiciary commands + `after_tasks`/`after_implement` gate hooks,` |
-| 88 | doc-prose | (plan 009) | `\| extensions/hooks \| the `3powers` extension auto-runs the oracle (`after_tasks`) + gates (`after_implement`); provider-agnostic packaging (plan 009) \|` |
-
-## docs/threat-model.md (11)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 3 | doc-prose | HARDN-FR-001 | `This document is the versioned, in-repo answer to "what does the ledger prove?" (HARDN-FR-001).` |
-| 37 | doc-prose | HARDN-FR-004 | `\| **Key swap** — `.3powers/keys/ledger.pub` replaced without authority \| the committed key does not descend from the genesis key through signed `key_rotation...` |
-| 57 | doc-prose | 3PWR-NFR-005 | `repository working tree (3PWR-NFR-005). An agent operating inside the repo must find no key` |
-| 60 | doc-prose | HARDN-FR-002 | `Enforced hygiene (HARDN-FR-002/003):` |
-| 72 | doc-prose | HARDN-FR-004 | `**Key continuity (HARDN-FR-004).** Replacing the signer is legitimate only through a signed` |
-| 78 | doc-prose | HARDN-FR-006 | `**External / hardware-backed signing (HARDN-FR-006).** Where an external signer is configured` |
-| 86 | doc-prose | HARDN-FR-005 | `Anchoring (opt-in, HARDN-FR-005) records the current ledger head — sequence number and entry` |
-| 118 | doc-prose | HARDN-FR-007 | `failure at a High-risk `advance` (HARDN-FR-007).` |
-| 126 | doc-prose | HARDN-FR-008 | `assertion per requirement-bound test (HARDN-FR-008/009); the gate-gaming detector flags newly` |
-| 127 | doc-prose | HARDN-FR-010 | `added assertion-free requirement-referencing tests for mandatory human review (HARDN-FR-010).` |
-| 130 | doc-prose | HARDN-FR-011 | `HARDN-FR-011) and human review.` |
-
-## docs/troubleshooting.md (1)
-
-| line | kind | match | excerpt |
-|---|---|---|---|
-| 83 | doc-prose | 3PWR-FR-032 | `never satisfy a gate by weakening it (3PWR-FR-032):` |
+| 109 | format-example | DEMO-FR-001 | `read the requirement IDs declared in the spec (e.g. `DEMO-FR-001`), scan the test roots for files that` |
+| 111 | format-example | DEMO-FR-001 | `simply by including its ID in a name or string — `describe("DEMO-FR-001: rejects empty input", …)`. It` |
 
 ## engine/src/threepowers/conformance.py (2)
 

@@ -80,7 +80,7 @@ the spec and a gate failed. The verdict is recorded in the signed ledger and wri
 `.3powers/verdicts/latest.json`, exactly as a standalone gate run would.
 
 **Fix** — inspect the verdict, fix (or have the agent fix) the failing gate's findings, then resume;
-never satisfy a gate by weakening it (3PWR-FR-032):
+never satisfy a gate by weakening it:
 
 ```bash
 3pwr gate run --spec <spec.md> --tier <tier>     # re-run and read the failing gate

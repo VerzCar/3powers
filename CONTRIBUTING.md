@@ -61,7 +61,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 
 1. **Write or extend a spec.** Requirements live versioned under [`specs/`](specs/), in
    [EARS](https://alistairmavin.com/ears/) form. Each spec has a unique **Spec ID** and namespaced
-   requirement IDs (e.g. `VUTIL-FR-001`), a declared **risk tier**, and an explicit **non-goals** section.
+   requirement IDs (e.g. `DEMO-FR-001`), a declared **risk tier**, and an explicit **non-goals** section.
    Keep implementation detail (a specific database, framework, or library) *out* of the spec.
 2. **Plan and implement** against the spec. Every task, commit, and test should trace to a requirement ID.
 3. **Author the oracle independently.** For anything beyond a cosmetic change, the acceptance tests are

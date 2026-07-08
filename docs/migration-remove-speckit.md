@@ -8,7 +8,7 @@ GitHub Spec Kit is no longer a dependency. This note is for a repository initial
 
 The judiciary is untouched. Your **signed ledger, sealed specs, verdicts, and provenance remain valid and
 verifiable** — `3pwr verify` behaves exactly as before. No gate, threshold, ledger format, or signing
-changed (SLIM-NFR-003).
+changed.
 
 ## What changed
 
@@ -41,7 +41,7 @@ templates (`.3powers/templates/agents/*.agent.md`, AGENTX) — these are engine-
 ## What to do
 
 1. Point each role at an agent backend you have installed, e.g. in `.3powers/config/roles.yaml`:
-   `coder: { integration: codex }`, `oracle: { integration: claude }` (a different family — 3PWR-FR-022).
+   `coder: { integration: codex }`, `oracle: { integration: claude }` (a different family).
 2. Ensure that agent's CLI is on PATH (e.g. `claude`, `codex`, `copilot`). Route model access through your
    own gateway via the environment (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`,
    `HTTPS_PROXY`, …) — the engine passes it through and calls no model itself.
