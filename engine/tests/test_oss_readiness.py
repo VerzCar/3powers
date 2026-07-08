@@ -317,3 +317,90 @@ def test_full_language_matrix_lives_under_docs():
     assert "## Supported languages & tooling matrix" in gs
     assert "| Format | Lint | Types |" in gs.replace("**", "")
     assert "supported-languages--tooling-matrix" in _read(README)
+
+
+# --------------------------------------------------------------- public-text hygiene (PUBTXT)
+#
+# Internal requirement IDs, epic letters, and plan/spec numbers never appear in end-user-readable
+# text — CLI help and messages, engine source docstrings and comments, docs/ prose, or the scaffold
+# assets shipped by `3pwr init`. See AGENTS.md, "Open-source readiness". Format teaching uses the
+# reserved DEMO- example namespace or bare FR-###/NFR-###.
+
+# The namespaced form only: bare FR-###/NFR-### stays legal (it is how scaffold templates teach end
+# users to number their own requirements).
+_NAMESPACED_ID = re.compile(r"\b[A-Z0-9][A-Z0-9]{2,}-(?:FR|NFR)-[0-9]{2,3}\b")
+_EPIC_REF = re.compile(r"\(epic [A-Z][0-9]\)")
+
+# Frozen allowlist (see the AGENTS.md rule): the reserved DEMO- example namespace, plus explicit
+# placeholder namespaces used to teach the ID format. Extending this list is a deliberate,
+# reviewed one-line change.
+_ALLOWED_NAMESPACES = frozenset({"DEMO", "SPECID"})
+
+_TEXT_SUFFIXES = {".py", ".md", ".txt", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".json"}
+
+ENGINE_SRC = REPO / "engine" / "src" / "threepowers"
+DOCS_DIR = REPO / "docs"
+
+
+def _hygiene_surfaces() -> list[Path]:
+    """The end-user-readable surfaces the no-internal-IDs rule scans.
+
+    docs/ minus STATUS.md (the sanctioned traceability document), the root-level public files,
+    and the whole engine source tree including the scaffold assets `3pwr init` ships.
+    engine/tests/ is excluded by construction (requirement-ID declarations live there for the
+    spec-conformance gate).
+    """
+    files: list[Path] = [README, CONTRIBUTING, GOVERNANCE, CHANGELOG]
+    files.extend(
+        p
+        for p in DOCS_DIR.rglob("*")
+        if p.is_file() and p.name != "STATUS.md" and p.suffix in _TEXT_SUFFIXES
+    )
+    files.extend(
+        p
+        for p in ENGINE_SRC.rglob("*")
+        if p.is_file() and p.suffix in _TEXT_SUFFIXES and "__pycache__" not in p.parts
+    )
+    return files
+
+
+def _hygiene_violations(text: str) -> list[str]:
+    """Return the forbidden tokens in one document's text (empty when clean)."""
+    tokens = [
+        m.group(0)
+        for m in _NAMESPACED_ID.finditer(text)
+        if m.group(0).split("-", 1)[0] not in _ALLOWED_NAMESPACES
+    ]
+    tokens.extend(m.group(0) for m in _EPIC_REF.finditer(text))
+    return tokens
+
+
+def test_public_text_carries_no_internal_requirement_ids():
+    """PUBTXT-FR-006 PUBTXT-FR-007: no namespaced internal requirement ID or epic reference on any
+    end-user-readable surface — docs/ (minus STATUS.md), the root public files, and the whole
+    engine source tree including scaffold assets. Bare FR-###/NFR-### and the DEMO-/placeholder
+    namespaces are allowed (format teaching). Rule: AGENTS.md, "Open-source readiness"."""
+    failures: list[str] = []
+    for path in _hygiene_surfaces():
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (UnicodeDecodeError, OSError):  # binary or unreadable: not a text surface
+            continue
+        for lineno, line in enumerate(lines, 1):
+            for token in _hygiene_violations(line):
+                rel = path.relative_to(REPO)
+                failures.append(
+                    f"{rel}:{lineno}: {token!r} — internal requirement IDs never appear in "
+                    "end-user-readable text (AGENTS.md, 'Open-source readiness'; use DEMO-FR-### "
+                    "or bare FR-### for format teaching)"
+                )
+    assert not failures, "\n".join(failures)
+
+
+def test_scaffolded_format_teaching_uses_the_reserved_namespace():
+    """PUBTXT-FR-004: the hygiene scan's own allowlist admits the DEMO- namespace, so scaffold
+    templates and docs can still teach the full namespaced requirement-ID format."""
+    assert not _hygiene_violations("Number requirements DEMO-FR-001, DEMO-FR-002, ...")
+    assert _hygiene_violations("cross-check the chain (HARDN-FR-005)") == ["HARDN-FR-005"]
+    assert _hygiene_violations("delivered in (epic A3)") == ["(epic A3)"]
+    assert not _hygiene_violations("write FR-001, FR-002 for your own requirements")

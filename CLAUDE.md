@@ -103,4 +103,8 @@ Build → Verify → Review → Ship → Observe. Three pillars carry the trust 
   top-level `examples/` folder.
 - **Everything public-facing must be open-source ready** (see [`AGENTS.md`](AGENTS.md)): no internal
   plan/spec/requirement references in `docs/` or CLI help, and every behavior change lands with a
-  matching docs update in the same unit of work.
+  matching docs update in the same unit of work. Internal requirement IDs, epic letters, and
+  plan/spec numbers never appear in end-user-readable text — CLI help and messages, engine source
+  docstrings and comments, `docs/` prose, or scaffold assets — per the convention in
+  [`AGENTS.md`](AGENTS.md) ("Open-source readiness"); format teaching uses `DEMO-FR-###` or bare
+  `FR-###`, enforced by `engine/tests/test_oss_readiness.py`.
