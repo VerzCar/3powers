@@ -43,23 +43,23 @@ def _spec_writer(spec_id="RUN"):
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "STAGE: Specify" in prompt:
+        if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt:
+        elif "# Plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt:
+        elif "# Implementation-plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt:
+        elif "# Oracle agent" in prompt:
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt:
+        elif "# Implement agent" in prompt:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")

@@ -55,27 +55,27 @@ def _writer(spec_id="RUN", skip=(), commit_line=True):
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         step = ""
-        if "STAGE: Specify" in prompt and "specify" not in skip:
+        if "# Specify agent" in prompt and "specify" not in skip:
             step = "specify"
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt and "plan" not in skip:
+        elif "# Plan agent" in prompt and "plan" not in skip:
             step = "plan"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt and "tasks" not in skip:
+        elif "# Implementation-plan agent" in prompt and "tasks" not in skip:
             step = "tasks"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt and "oracle" not in skip:
+        elif "# Oracle agent" in prompt and "oracle" not in skip:
             step = "oracle"
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt and "implement" not in skip:
+        elif "# Implement agent" in prompt and "implement" not in skip:
             step = "implement"
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)

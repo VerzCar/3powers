@@ -313,9 +313,9 @@ class CliAgentRunner:
             context=context,
             file_scope=file_scope,
             # A repo-local stage template supplies the instruction body when present; absent/empty/
-            # unreadable falls back to the built-in instruction. Only the body
-            # changes — the context blocks and their order stay fixed.
-            body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
+            # unreadable falls back through the bundled default to the generic fragment. Only the
+            # body changes — the context blocks and their order stay fixed.
+            templates_dir=self.settings.stage_templates_dir,
         )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
         # Persist this attempt's output to the run's transcript location: teed even

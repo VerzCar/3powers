@@ -8,6 +8,10 @@ resolution is a pure three-tier fallback (repo-local → bundled → generic fra
 
 from __future__ import annotations
 
+import ast
+import re
+from pathlib import Path
+
 from threepowers import prompts
 
 
@@ -86,3 +90,138 @@ def test_resolve_body_unknown_step_falls_through_to_generic_fragment():
     body = prompts.resolve_body("unknown-step", None)
     assert body.startswith("STAGE: unknown-step.")
     assert "$STEP" not in body
+
+
+# --------------------------------------------------------------------------- assembly
+def test_assemble_is_byte_deterministic():
+    """The same inputs always assemble byte-identical prompts — template-file sourcing adds no
+    run-to-run variance."""
+    a = prompts.assemble("implement", intent="add x", spec_text="S", context="C", file_scope="F")
+    b = prompts.assemble("implement", intent="add x", spec_text="S", context="C", file_scope="F")
+    assert a == b
+
+
+def test_untrusted_dollar_in_context_blocks_survives_verbatim():
+    """A literal $ in the run-context blocks (untrusted text) is never substituted — the blocks
+    are appended verbatim, only template-sourced pieces pass through substitution."""
+    spec = "price is $5, keep $STEP and $$ and a lone $ exactly"
+    out = prompts.assemble("plan", intent="do $GATE things", spec_text=spec)
+    assert spec in out
+    assert "do $GATE things" in out
+
+
+def test_cli_and_hosted_dispatch_assemble_identical_prompts(tmp_path):
+    """The CLI runner and the hosted runner dispatch the byte-identical assembled prompt for the
+    same inputs — one assembly path, two transports."""
+    from threepowers.config import Settings
+    from threepowers.hosted import HostedAgentRunner
+    from threepowers.runner import CliAgentRunner
+
+    s = Settings(root=tmp_path)
+    seen_cli: list[str] = []
+
+    def fake_dispatch(argv, **kw):
+        seen_cli.append(argv[-1])
+        return (0, "", "")
+
+    cli = CliAgentRunner(
+        s,
+        {"command": "agent", "prompt_flag": "-p"},
+        intent="add x",
+        spec_text="S",
+        dispatcher=fake_dispatch,
+    )
+    cli.dispatch("implement", "Build", context="C", file_scope="F")
+
+    seen_hosted: list[str] = []
+
+    def fake_run(argv, cwd):
+        if argv[0] == "trigger":
+            seen_hosted.append(argv[-1])
+            return (0, "run-1", "")
+        if argv[0] == "poll":
+            return (0, '{"status": "completed"}', "")
+        return (0, "", "")
+
+    manifest = {
+        "mode": "async-hosted",
+        "trigger_command": ["trigger", "{prompt}"],
+        "poll_command": ["poll", "{run_id}"],
+        "poll_status_field": "status",
+    }
+    hosted_runner = HostedAgentRunner(
+        s,
+        manifest,
+        intent="add x",
+        spec_text="S",
+        command_runner=fake_run,
+        sleep=lambda _s: None,
+    )
+    hosted_runner.dispatch("implement", "Build", context="C", file_scope="F")
+    assert seen_cli and seen_hosted
+    assert seen_cli[-1] == seen_hosted[-1]
+
+
+# --------------------------------------------------------------------------- no inline literals
+_SRC_DIR = Path(prompts.__file__).resolve().parent
+# Names that historically carried inline dispatched-prompt text; reintroducing prose under any
+# matching name fails this guard.
+_FORBIDDEN_NAMES = re.compile(r"PROMPT|PREAMBLE|GENERIC|COMMIT_NOTE|REVISION", re.IGNORECASE)
+# Prose markers unique to the dispatched prompts — they may live only in template files.
+_PROMPT_MARKERS = ("STAGE:", "COMMIT MESSAGE:", "REVISION REQUESTED", "spec is the law")
+
+
+def _docstring_nodes(tree: ast.Module) -> set[int]:
+    """The ids of the Constant nodes that are module/class/function docstrings."""
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                ids.add(id(body[0].value))
+    return ids
+
+
+def test_no_inline_dispatched_prompt_literal_remains_in_source():
+    """Every dispatched-prompt body lives in a template file: the prompts and steering sources
+    carry no multi-line/concatenated prompt literal — no prose assigned to a prompt-ish name
+    (_STAGE_PROMPTS, _PREAMBLE, _GENERIC, _COMMIT_NOTE, REVISION…) and no non-docstring string
+    with dispatched-prompt prose. Reintroducing an inline body fails here."""
+    for module in ("prompts", "steering"):
+        src = (_SRC_DIR / f"{module}.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        doc_ids = _docstring_nodes(tree)
+        for node in ast.walk(tree):
+            value: ast.expr | None = None
+            names: list[str] = []
+            if isinstance(node, ast.Assign):
+                names = [t.id for t in node.targets if isinstance(t, ast.Name)]
+                value = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names = [node.target.id]
+                value = node.value
+            if value is not None and any(_FORBIDDEN_NAMES.search(n) for n in names):
+                prose = [
+                    c.value
+                    for c in ast.walk(value)
+                    if isinstance(c, ast.Constant)
+                    and isinstance(c.value, str)
+                    and len(c.value) >= 40
+                ]
+                assert not prose, f"{module}.py: {names} carries inline prompt text: {prose[:1]}"
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in doc_ids
+            ):
+                for marker in _PROMPT_MARKERS:
+                    assert marker not in node.value, (
+                        f"{module}.py line {node.lineno}: inline dispatched-prompt prose "
+                        f"({marker!r}) — move it into a template file"
+                    )

@@ -155,7 +155,7 @@ class HostedAgentRunner:
             context=context,
             file_scope=file_scope,
             # The same repo-local stage-template resolution as the local runner.
-            body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
+            templates_dir=self.settings.stage_templates_dir,
         )
         mapping = {
             "prompt": prompt,

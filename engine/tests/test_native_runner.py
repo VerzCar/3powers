@@ -299,25 +299,25 @@ def _artifact_writer(spec_id="RUN"):
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "STAGE: Specify" in prompt:
+        if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt:
+        elif "# Plan agent" in prompt:
             # plan/tasks carry hard artifact contracts (PHASE-FR-002) — the fake writes them
             # flat into the run's feature folder (SRCX-FR-001) like a real agent would.
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt:
+        elif "# Implementation-plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt:
+        elif "# Oracle agent" in prompt:
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt:
+        elif "# Implement agent" in prompt:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -563,13 +563,13 @@ def _writer_no_implement():
         m = re.search(r"FEATURE FOLDER: (\S+)", p)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
         # plan/tasks carry hard contracts too (PHASE-FR-002) — write them flat so the run reaches Build
-        if "STAGE: Plan" in p:
+        if "# Plan agent" in p:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in p:
+        elif "# Implementation-plan agent" in p:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text("# Tasks\n- [ ] T001 [RUN-FR-001] x\n", encoding="utf-8")
-        elif "STAGE: Oracle" in p:
+        elif "# Oracle agent" in p:
             t = cwd / "tests" / "oracle" / "RUN"
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
@@ -581,10 +581,17 @@ def _writer_no_implement():
 def _recording_writer(seen):
     def fake(argv, **kw):
         p = argv[-1] if argv else ""
-        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
-            if f"STAGE: {key}" in p:
-                seen.append(key.lower())
-        if "STAGE: Implement" in p:
+        for key, marker in (
+            ("specify", "# Specify agent"),
+            ("clarify", "# Clarify agent"),
+            ("plan", "# Plan agent"),
+            ("tasks", "# Implementation-plan agent"),
+            ("oracle", "# Oracle agent"),
+            ("implement", "# Implement agent"),
+        ):
+            if marker in p:
+                seen.append(key)
+        if "# Implement agent" in p:
             d = Path(kw["cwd"]) / "src"
             d.mkdir(parents=True, exist_ok=True)
             (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")

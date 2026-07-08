@@ -1230,7 +1230,9 @@ def _run_revise(
             run_branch=run_branch,
             git_prefs=git_prefs,
             commit_relaxed=commit_relaxed,
-            revise=steering.revise_context(gate, artifact, feedback),
+            revise=steering.revise_context(
+                gate, artifact, feedback, templates_dir=s.stage_templates_dir
+            ),
         )
         try:
             result = runner.dispatch_once(step, stage)

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import workspace
+from . import prompts, workspace
 
 # The step a revise re-dispatches per human gate: the action step that OWNS the artifact
 # the gate reviews — deterministic, derived from the lifecycle's own step→stage assignment.
@@ -130,14 +130,20 @@ def gate_actions(spec_id: str) -> list[tuple[str, str]]:
     ]
 
 
-def revise_context(gate: str, artifact: str, feedback: str) -> str:
+def revise_context(
+    gate: str, artifact: str, feedback: str, templates_dir: Path | None = None
+) -> str:
     """The deterministic prompt block a revise injects into the re-dispatched stage.
 
-    Carries the artifact under review and the human's feedback; assembly is a pure function of its
-    inputs so a revision reproduces byte-identically from the recorded feedback."""
-    subject = artifact or "the stage's artifact"
-    return (
-        f"REVISION REQUESTED (human gate '{gate}'): the artifact under review is {subject}. "
-        "Apply the following human feedback and revise that artifact in place — keep everything the "
-        f"feedback does not name, and do not advance past this stage:\n{feedback.strip()}"
+    Carries the artifact under review and the human's feedback, rendered from the ``revise``
+    prompt fragment (repo-local override first, else the bundled default); assembly is a pure
+    function of its inputs so a revision reproduces byte-identically from the recorded feedback."""
+    body = prompts.fragment_body("revise.agent.md", templates_dir)
+    return prompts.substitute(
+        body,
+        {
+            "GATE": gate,
+            "ARTIFACT": artifact or "the stage's artifact",
+            "FEEDBACK": feedback.strip(),
+        },
     )

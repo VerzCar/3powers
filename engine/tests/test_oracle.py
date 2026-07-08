@@ -479,7 +479,7 @@ def test_oracle_isolation_rules_are_preserved():
     for text in _oracle_template_texts():
         assert "MUST NOT read the implementation" in text
         assert "sealed spec" in text
-    body = prompts.stage_prompt_body("oracle")
+    body = prompts.resolve_body("oracle", None)
     assert "MUST NOT read the implementation" in body
-    assert "sealed spec bundle" in body
+    assert "sealed spec" in body
     assert "oracle.md" in body  # the Tests Specification is authored first, from the spec alone

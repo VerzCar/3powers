@@ -56,7 +56,7 @@ def _writer():
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
         d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
-        if "STAGE: Specify" in prompt:
+        if "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: FEAT\n", encoding="utf-8")
             out += "\nCOMMIT: authored the specify work for the run"
@@ -217,7 +217,7 @@ def test_oracle_instructions_target_the_feature_folder_id():
     """RUNID-FR-006 (as re-keyed by plan 033 Track E): the oracle stage instruction — engine
     built-in and the scaffolded repo template — names tests/oracle/<NNN>-<slug>/ (the run's
     feature-folder id) as the destination; the retired <spec-id> placeholder is gone."""
-    body = prompts.stage_prompt_body("oracle")
+    body = prompts.resolve_body("oracle", None)
     assert "tests/oracle/<NNN>-<slug>/" in body
     assert "<spec-id>" not in body
     template = scaffold.SCAFFOLD_DIR / "templates" / "agents" / "oracle.agent.md"

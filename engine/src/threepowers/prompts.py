@@ -6,17 +6,18 @@ instruction body for the step plus the run's context (intent, the approved spec,
 and the declared file scope). The same inputs always yield the same prompt, so prompt assembly never
 introduces run-to-run variance.
 
-A project can SEE and TUNE each stage's instructions: a repo-local stage template at
+Every dispatched prompt is sourced from template files — no instruction text lives inline in this
+module. A project can SEE and TUNE each stage's instructions: a repo-local stage template at
 ``.3powers/templates/agents/<step>.agent.md`` (the tasks step's file is named for its agent,
 ``implementation-plan.agent.md``) — a readable markdown file with a small metadata header
 (stage, artifact, role) — supplies that stage's instruction body when present; when the template is
-absent, empty, or unreadable, the engine's built-in instruction below applies unchanged.
-Template resolution is deterministic and offline: identical template bytes and
-identical run context yield identical assembled-prompt bytes, and a template changes only the
-instruction body, never the surrounding context blocks or their order.
+absent, empty, or unreadable, the engine's bundled default template applies, and a step with
+neither resolves to the generic fragment. Template resolution is deterministic and offline:
+identical template bytes and identical run context yield identical assembled-prompt bytes, and a
+template changes only the instruction body, never the surrounding context blocks or their order.
 
-These prompts carry the 3Powers discipline the ``.github/agents/*.agent.md`` files carried under the
-old substrate: EARS requirements with namespaced IDs, an explicit risk tier and non-goals, task
+The templates carry the 3Powers discipline the ``.github/agents/*.agent.md`` files carried under
+the old substrate: EARS requirements with namespaced IDs, an explicit risk tier and non-goals, task
 file-scope, and — for the oracle step — authoring purely from acceptance criteria without reading
 the implementation.
 """
@@ -37,82 +38,6 @@ _BUNDLED_TEMPLATES_DIR = Path(__file__).resolve().parent / "scaffold" / "templat
 # verbatim so template text stays predictable.
 _VARS = ("STEP", "GATE", "ARTIFACT", "FEATURE_FOLDER", "ORACLE_DESTINATION", "FEEDBACK")
 
-# A short standing preamble prepended to every stage prompt.
-_PREAMBLE = (
-    "You are an agent in the 3Powers judiciary-governed lifecycle. The spec is the law: never invent "
-    "scope, never weaken a gate, and keep each change within its declared file scope. Trace every "
-    "artifact to a requirement id."
-)
-
-# Per-step instruction bodies. Steps absent here fall back to a generic instruction.
-_STAGE_PROMPTS: dict[str, str] = {
-    "specify": (
-        "STAGE: Specify. Turn the intent below into a feature spec in EARS form. Declare a Spec ID, a "
-        "risk tier (Cosmetic|Standard|High-risk), and explicit non-goals BEFORE any requirement. Write "
-        "each requirement as '<SPECID>-FR-###: the system shall …' with a measurable Acceptance line. Do "
-        "NOT put implementation detail (named stack, schema, vendor) in the spec. Write the spec to "
-        "specs-src/<feature>/spec.md — FLAT in the run's feature folder, no spec/ or artifacts/ subfolder — "
-        "that file is the artifact this stage must produce."
-    ),
-    "clarify": (
-        "STAGE: Clarify. Find every ambiguous or unmeasurable requirement in the spec and resolve it into "
-        "a testable statement. An acceptance criterion that cannot be measured must be made measurable "
-        "before it can proceed."
-    ),
-    "plan": (
-        "STAGE: Plan. From the approved spec, produce the implementation plan and write it to "
-        "specs-src/<feature>/plan.md — FLAT in the run's feature folder — that file is the artifact this "
-        "stage must produce. "
-        "Required sections: Summary (primary requirement + approach); Risk tier & gates (the spec's "
-        "risk tier and the gates it drives); Design (the files to change and the "
-        "approach per requirement); Test layers (unit/integration/e2e as the tier demands); and Phases. "
-        "Decompose the work into small ORDERED PHASES, each sized so one fresh agent session — the "
-        "approved spec + the constitution/rules + the phase's tasks + the files in its scope — fits "
-        "comfortably inside the configured context budget (default ~110k tokens; estimate ~4 bytes per "
-        "token over those artifacts' bytes). Each phase declares its file scope and its estimated "
-        "context size; split any phase whose estimate exceeds the budget. Mark independent phases with "
-        "disjoint file scopes '[P]' so they can be dispatched to parallel subagent sessions. Do not "
-        "expand scope beyond the spec's requirements and non-goals."
-    ),
-    "tasks": (
-        "STAGE: Tasks. Break the plan into ordered tasks grouped into phases and write them to "
-        "specs-src/<feature>/implementation-plan.md — FLAT in the run's feature folder — that file is "
-        "the artifact this stage must produce. "
-        "Required sections: one '## Phase N: <name>' section per phase, in execution order, each "
-        "carrying a '**File scope**:' line (every file the phase may touch), a '**Depends on**:' line "
-        "('none' when independent), an '**Estimated context**:' line (~4 bytes/token over the spec + "
-        "rules + this phase's tasks + files in scope, against the configured budget, default ~110k "
-        "tokens), and a HANDOFF block naming what a fresh session must reload: the approved spec, the "
-        "constitution/rules, this phase's tasks, and the declared file scope. Each task is one line "
-        "'- [ ] T### [REQ-ID] description (files: …)' tracing to exactly ONE requirement id and "
-        "declaring its file scope; editing outside a task's declared file scope is a signal to stop and "
-        "re-spec. Split any phase whose estimate exceeds the budget. Mark independent phases with "
-        "disjoint file scopes '[P]' in the heading (or '**Parallel**: yes') so the executive can "
-        "dispatch them to parallel subagent sessions. Every phase's tasks include running the coding "
-        "gates (format, lint, types, tests + diff-coverage) over the phase's file scope and fixing "
-        "failures before the phase is done; the LAST phase is always a dedicated Verification phase "
-        "depending on all prior phases whose goal is a fully green build."
-    ),
-    "oracle": (
-        "STAGE: Oracle (Phase A — judiciary). Author the oracle SOLELY from the spec's acceptance "
-        "criteria. You MUST NOT read the implementation, plan, tasks, or contracts — author only from "
-        "the sealed spec bundle. FIRST author the implementation-agnostic Tests Specification "
-        "oracle.md — one section per requirement id with a Given/When/Then criterion; no file paths, "
-        "test frameworks, or source paths may appear in it — flat in the run's feature folder. THEN "
-        "write the runnable oracle tests, each named for the requirement id it verifies, under the "
-        "destination the engine names in this prompt's context blocks — tests/oracle/<NNN>-<slug>/, "
-        "keyed by the run's feature-folder id (or ./oracle-tests/ in a sanitized worktree) — those "
-        "test files are the artifact this stage must produce."
-    ),
-    "implement": (
-        "STAGE: Implement. Make the code satisfy the spec and pass the oracle tests, staying within each "
-        "task's file scope. Add the coder's own tests; never modify or weaken the oracle tests. This stage "
-        "must produce a non-empty implementation change."
-    ),
-}
-
-_GENERIC = "STAGE: {step}. Perform this lifecycle step for the intent below, staying within the spec's scope."
-
 # The producing stages whose prompt asks the agent for a commit description: the
 # post-stage git hook records it as the stage commit's message. A fixed, deterministic block —
 # never a gate or ledger input; an agent that yields none falls back to the deterministic default.
@@ -123,10 +48,6 @@ COMMIT_NOTE_STEPS: tuple[str, ...] = (
     "tasks",
     "oracle",
     "implement",
-)
-_COMMIT_NOTE = (
-    "COMMIT MESSAGE: end your final output with a single line 'COMMIT: <one line describing what "
-    "this stage changed and why>' — the engine records it as this stage's git commit message."
 )
 
 # The lifecycle stages that carry a dedicated agent template: every stage that
@@ -233,11 +154,6 @@ def fragment_body(filename: str, templates_dir: Optional[Path]) -> str:
     return bundled_template_body(filename)
 
 
-def stage_prompt_body(step: str) -> str:
-    """The engine-owned instruction body for a lifecycle step (generic fallback for unknown steps)."""
-    return _STAGE_PROMPTS.get(step) or _GENERIC.format(step=step)
-
-
 def resolve_body(step: str, templates_dir: Optional[Path] = None) -> str:
     """The instruction body the executive dispatches for ``step``.
 
@@ -258,20 +174,25 @@ def assemble(
     spec_text: str = "",
     context: str = "",
     file_scope: str = "",
-    body: str = "",
+    templates_dir: Optional[Path] = None,
+    variables: Optional[Mapping[str, str]] = None,
 ) -> str:
-    """Compose the full stage prompt deterministically.
+    """Compose the full stage prompt deterministically, entirely from template files.
 
-    Order is fixed: preamble, the step's instruction body, then whichever context blocks are present
-    (intent, spec, prior notes, file scope). Empty blocks are omitted so the output is a pure
-    function of the non-empty inputs. ``body`` — when non-empty — overrides the built-in instruction
-    body with a repo-local stage template's; it changes only the instruction body, never the
-    surrounding context blocks or their order."""
-    parts: list[str] = [_PREAMBLE, "", body.strip() or stage_prompt_body(step)]
+    Order is fixed: the preamble fragment, the step's instruction body (the three-tier
+    :func:`resolve_body` chain — repo-local, bundled, generic fragment), the commit-note fragment
+    for producing steps, then whichever context blocks are present (intent, spec, prior notes,
+    file scope). Empty blocks are omitted so the output is a pure function of the non-empty
+    inputs — the same inputs always assemble byte-identical prompts. ``variables`` fills the
+    closed ``$NAME`` vocabulary in the template-sourced pieces ONLY; the run-context blocks are
+    appended verbatim, so untrusted text (a spec containing ``$``) is never substituted."""
+    preamble = substitute(fragment_body("preamble.agent.md", templates_dir), variables)
+    body = substitute(resolve_body(step, templates_dir), variables)
+    parts: list[str] = [preamble, "", body]
     if step in COMMIT_NOTE_STEPS:
         # A fixed block outside the tunable instruction body: a repo-local stage
         # template cannot drop the commit-description request, and assembly stays deterministic.
-        parts += ["", _COMMIT_NOTE]
+        parts += ["", substitute(fragment_body("commit-note.agent.md", templates_dir), variables)]
     if intent.strip():
         parts += ["", "INTENT:", intent.strip()]
     if spec_text.strip():

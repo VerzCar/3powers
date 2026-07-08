@@ -411,27 +411,27 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         d = _feature_dir_of_prompt(prompt, cwd, spec_id)
-        if "STAGE: Specify" in prompt and "specify" not in skip:
+        if "# Specify agent" in prompt and "specify" not in skip:
             t = (cwd / spec_folder) if spec_folder else d
             t.mkdir(parents=True, exist_ok=True)
             (t / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt and "plan" not in skip:
+        elif "# Plan agent" in prompt and "plan" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt and "tasks" not in skip:
+        elif "# Implementation-plan agent" in prompt and "tasks" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "implementation-plan.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt and "oracle" not in skip:
+        elif "# Oracle agent" in prompt and "oracle" not in skip:
             import re
 
             m = re.search(r"ORACLE DESTINATION: [^\n]*?tests/oracle/([^<\s/]+)/", prompt)
             t = cwd / "tests" / "oracle" / (m.group(1) if m else spec_id)
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt and "implement" not in skip:
+        elif "# Implement agent" in prompt and "implement" not in skip:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -620,9 +620,16 @@ def test_resume_reruns_stage_whose_artifact_vanished(run_repo, monkeypatch, caps
 
     def recording(argv, **kw):
         prompt = argv[-1] if argv else ""
-        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
-            if f"STAGE: {key}" in prompt:
-                seen.append(key.lower())
+        for key, marker in (
+            ("specify", "# Specify agent"),
+            ("clarify", "# Clarify agent"),
+            ("plan", "# Plan agent"),
+            ("tasks", "# Implementation-plan agent"),
+            ("oracle", "# Oracle agent"),
+            ("implement", "# Implement agent"),
+        ):
+            if marker in prompt:
+                seen.append(key)
         return _writer()(argv, **kw)
 
     monkeypatch.setattr(runner, "dispatch_agent", recording)
