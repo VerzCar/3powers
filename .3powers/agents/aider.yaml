@@ -11,4 +11,10 @@ base_args: ["--yes-always", "--no-auto-commit", "--no-gitignore"]
 model_flag: "--model"
 prompt_flag: "--message"
 prompt_via: arg
+# Session freshness: aider persists chat history to .aider.chat.history.md; restoring it is
+# opt-in (`--restore-chat-history`, default off) — the explicit no-restore flag makes every
+# dispatch a provably clean session regardless of local config.
+new_session_args: ["--no-restore-chat-history"]
+# Usage: aider's "Tokens: … sent/received" summary uses abbreviated counts (e.g. "12k") — not
+# machine-stable, so usage reads as unknown.
 notes: "Reference backend. `--message` runs a single non-interactive turn; provider-resilient (any OpenAI-compatible API)."

@@ -164,6 +164,20 @@ reconstructs offline and survives a fresh checkout. In practice `3pwr run` drive
 the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
 command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
 
+### Fresh sessions, visible cost
+
+Each dispatched stage — and each phase of a phased build — runs as a **fresh agent session**: an
+independent process whose prompt reloads everything it needs (the approved spec, the rules, the
+phase's tasks and file scope). No conversation state carries over, and the engine never asks a
+backend to resume a prior session; a backend that could restore state gets its no-resume flag from
+its manifest. Parallelism is two-level: the *engine* dispatches `[P]`-marked phases with disjoint
+file scopes concurrently as separate fresh sessions, while `[P]`-marked *tasks inside* a phase must
+be executed via the agent's own sub-agents. Cost stays visible without touching determinism: the
+agent-reported token usage per stage and phase is recorded additively — in `progress.md`, the signed
+ledger's run entries, and the `--json` results — and shows as unknown when a backend doesn't report
+it. Tokens never enter the gates or the verdict. See
+[Engine Architecture](engine-architecture.md#session-freshness-and-cost-visibility).
+
 ## Agnostic by construction
 
 No required dependency on any single LLM provider, model vendor, language toolchain, or CI/CD platform.

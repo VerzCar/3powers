@@ -88,15 +88,15 @@ def test_write_renders_the_midbuild_schema_with_phases(tmp_path):
     _advance_to_build(rep)
     text = (fd / "progress.md").read_text(encoding="utf-8")
     assert text.splitlines()[0] == f"# Run 030 · add-button · {NOW}"
-    assert _row(text, "Spec") == f"| Spec | ✓ done | {NOW} |"
-    assert _row(text, "Plan") == f"| Plan | ✓ done | {NOW} |"
-    assert _row(text, "Build") == "| Build | ⏳ phase 2/3 |  |"
-    assert _row(text, "Verify") == "| Verify | ○ pending |  |"
-    assert _row(text, "Observe") == "| Observe | ○ pending |  |"
+    assert _row(text, "Spec") == f"| Spec | ✓ done | {NOW} | — |"
+    assert _row(text, "Plan") == f"| Plan | ✓ done | {NOW} | — |"
+    assert _row(text, "Build") == "| Build | ⏳ phase 2/3 |  | — |"
+    assert _row(text, "Verify") == "| Verify | ○ pending |  | — |"
+    assert _row(text, "Observe") == "| Observe | ○ pending |  | — |"
     assert "### Build — phase detail" in text
-    assert "| 1 | ButtonComponent styles | ✓ done | 2/2 |" in text
-    assert "| 2 | HeaderComponent logic | ⏳ running | 1/3 |" in text
-    assert "| 3 | Integration tests | ○ pending | — |" in text
+    assert "| 1 | ButtonComponent styles | ✓ done | 2/2 | — |" in text
+    assert "| 2 | HeaderComponent logic | ⏳ running | 1/3 | — |" in text
+    assert "| 3 | Integration tests | ○ pending | — | — |" in text
     assert "running 'implement'" in text
 
 
@@ -108,7 +108,7 @@ def test_phase_table_absent_without_phases(tmp_path):
     _advance_to_build(rep)  # no tasks.md at all
     text = (fd / "progress.md").read_text(encoding="utf-8")
     assert "phase detail" not in text
-    assert _row(text, "Build") == "| Build | ⏳ running |  |"
+    assert _row(text, "Build") == "| Build | ⏳ running |  | — |"
     (fd / "tasks.md").write_text("# Tasks\n- [ ] T001 flat task\n", encoding="utf-8")
     rep.stage_started("implement", "Build")  # rewrite with a phaseless artifact present
     text = (fd / "progress.md").read_text(encoding="utf-8")
@@ -161,7 +161,7 @@ def test_stage_start_marks_the_row_running(tmp_path):
     rep = _reporter(fd)
     rep.stage_started("specify", "Spec")
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Spec") == "| Spec | ⏳ running |  |"
+    assert _row(text, "Spec") == "| Spec | ⏳ running |  | — |"
     assert "**Stage:** Spec — running 'specify'" in text
 
 
@@ -173,11 +173,44 @@ def test_stage_complete_marks_the_row_done_with_timestamp(tmp_path):
     rep.stage_started("specify", "Spec")
     rep.stage_completed("specify", "Spec")  # clarify still ahead — Spec not done yet
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Spec") == "| Spec | ⏳ running |  |"
+    assert _row(text, "Spec") == "| Spec | ⏳ running |  | — |"
     rep.stage_started("clarify", "Spec")
     rep.stage_completed("clarify", "Spec")
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Spec") == f"| Spec | ✓ done | {NOW} |"
+    assert _row(text, "Spec") == f"| Spec | ✓ done | {NOW} | — |"
+
+
+def test_stage_tokens_accumulate_and_render_in_the_tokens_column(tmp_path):
+    """Plan 033 Track H (RUNVIS): agent-reported usage passed to ``stage_completed`` accumulates
+    per stage and renders in the stage table's Tokens column; a stage whose backend reports no
+    usage keeps the unknown placeholder — additive, never required."""
+    fd = _feature_dir(tmp_path)
+    rep = _reporter(fd)
+    rep.stage_started("specify", "Spec")
+    rep.stage_completed("specify", "Spec", tokens=1200)
+    rep.stage_started("clarify", "Spec")
+    rep.stage_completed("clarify", "Spec", tokens=300)  # accumulates onto the same stage
+    text = (fd / "progress.md").read_text(encoding="utf-8")
+    assert _row(text, "Spec") == f"| Spec | ✓ done | {NOW} | 1500 |"
+    rep.stage_started("plan", "Plan")
+    rep.stage_completed("plan", "Plan")  # no usage reported → unknown
+    text = (fd / "progress.md").read_text(encoding="utf-8")
+    assert _row(text, "Plan") == "| Plan | ⏳ running |  | — |"
+
+
+def test_phase_tokens_render_in_the_phase_detail_table(tmp_path):
+    """Plan 033 Track H (RUNVIS): per-phase usage recorded via ``phase_tokens`` renders in the
+    phase-detail table's Tokens column; unrecorded phases stay — (unknown)."""
+    fd = _feature_dir(tmp_path)
+    (fd / "tasks.md").write_text(TASKS_MD, encoding="utf-8")
+    rep = _reporter(fd)
+    _advance_to_build(rep)
+    rep.phase_tokens({1: 4200, 2: 800})
+    rep.stage_completed("implement", "Build", tokens=5000)
+    text = (fd / "progress.md").read_text(encoding="utf-8")
+    assert "| 1 | ButtonComponent styles | ✓ done | 2/2 | 4200 |" in text
+    assert "| 2 | HeaderComponent logic | ⏳ running | 1/3 | 800 |" in text
+    assert "| 3 | Integration tests | ○ pending | — | — |" in text
 
 
 def test_verdict_pass_updates_the_last_verdict_block(tmp_path):
@@ -188,7 +221,7 @@ def test_verdict_pass_updates_the_last_verdict_block(tmp_path):
     rep.stage_started("verify", "Verify")
     rep.verdict("pass", [])
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Verify") == f"| Verify | ✓ done | {NOW} |"
+    assert _row(text, "Verify") == f"| Verify | ✓ done | {NOW} | — |"
     assert f"✓ pass ({NOW})" in text and "(none yet)" in text
 
 
@@ -201,7 +234,7 @@ def test_verdict_fail_lists_the_failed_gates(tmp_path):
     rep.stage_started("verify", "Verify")
     rep.verdict("fail", ["lint", "tests"])
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Verify") == "| Verify | ✗ failed |  |"
+    assert _row(text, "Verify") == "| Verify | ✗ failed |  | — |"
     assert f"✗ fail ({NOW}) — failed gates: lint, tests" in text
     section = text.split("## Gate failures (last verify attempt)")[1]
     assert "- lint" in section and "- tests" in section and "(none yet)" not in section
@@ -215,7 +248,7 @@ def test_pause_marks_the_gates_stage_locked(tmp_path):
     rep.stage_started("specify", "Spec")
     rep.paused("review-spec", "Spec")
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Spec") == "| Spec | 🔒 paused |  |"
+    assert _row(text, "Spec") == "| Spec | 🔒 paused |  | — |"
     assert "paused at 'review-spec'" in text
     assert "3pwr run --resume --spec-id 030 --approver <you>" in text
 
@@ -228,8 +261,8 @@ def test_run_failure_marks_the_stage_failed(tmp_path):
     rep.stage_started("plan", "Plan")
     rep.failed("dispatch_failed", "Plan", "agent exited 1")
     text = (fd / "progress.md").read_text(encoding="utf-8")
-    assert _row(text, "Plan") == "| Plan | ✗ failed |  |"
-    assert _row(text, "Spec") == "| Spec | ✓ done |  |"  # earlier stages inferred done
+    assert _row(text, "Plan") == "| Plan | ✗ failed |  | — |"
+    assert _row(text, "Spec") == "| Spec | ✓ done |  | — |"  # earlier stages inferred done
     assert "✗ failed — dispatch_failed at Plan — agent exited 1" in text
 
 

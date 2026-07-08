@@ -472,6 +472,19 @@ completion times, per-phase detail during a phased build, the current state, the
 copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
+**Token consumption (advisory).** When an agent backend reports its token usage (declared per
+manifest via a `usage` extraction hint — a JSON field or a regex over the agent's output), the run
+records the per-stage and per-phase counts **additively**: a **Tokens** column in both `progress.md`
+tables (showing `—` — unknown — when a backend does not report), a `tokens` field on the `--json`
+per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases` (per phase
+result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was captured
+and are never renamed or removed; tokens never enter the gate suite or the deterministic verdict,
+whose bytes are identical whether or not usage was captured.
+**Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
+independent process with no conversation state carried between dispatches; the engine never emits a
+resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
+one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
+sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
 **The run's git discipline (GITX).** A working git repository is a run **precondition** (a non-git or
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base

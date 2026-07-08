@@ -656,6 +656,9 @@ def _dispatch_phased(
         constitution = ""
     total = len(phase_list)
     attempt_counts: list[int] = []  # list.append is atomic — safe across the batch threads
+    # Advisory per-phase usage: distinct keys per phase, so concurrent batch threads never
+    # collide. Feeds the additive ledger fields and the progress table — never the verdict.
+    tokens_by_phase: dict[int, int] = {}
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
         ctx = phases.handoff_context(
@@ -675,11 +678,19 @@ def _dispatch_phased(
             retries=retries,
         )
         attempt_counts.append(attempts)
+        if res.tokens is not None:
+            tokens_by_phase[ph.index] = res.tokens
         _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
     prun = phases.run_phases(batches, run_one)
     results = [r.as_dict() for r in prun.results]
+    for r in results:
+        # Additive per-phase token field — present only when that phase's backend reported usage.
+        tok = tokens_by_phase.get(int(r["phase"]))
+        if tok is not None:
+            r["tokens"] = tok
+    stage_tokens = sum(tokens_by_phase.values()) if tokens_by_phase else None
     ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
@@ -702,6 +713,7 @@ def _dispatch_phased(
             transcript=sink.rel_dir if sink is not None else "",
             artifact_paths=paths or [],
             phases=results,
+            tokens=stage_tokens,
         )
 
     if not prun.ok:
@@ -970,11 +982,27 @@ def _native_runner(
             stage_payload: dict[str, Any] = {"kind": "stage", "step": step, "stage": stage}
             if result.artifact_paths:
                 stage_payload["artifacts"] = result.artifact_paths
+            if result.tokens is not None:
+                # Additive advisory field (never in the verdict): the stage's agent-reported
+                # token usage; absent when the backend does not report usage.
+                stage_payload["tokens"] = result.tokens
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
             if progress_reporter is not None:
                 # The stage-complete trigger, BEFORE the post-stage commit below,
                 # so the committed progress.md already shows this stage ✓ done.
-                _progress_safe(lambda: progress_reporter.stage_completed(step, stage))
+                if result.phases:
+                    _progress_safe(
+                        lambda: progress_reporter.phase_tokens(
+                            {
+                                int(ph["phase"]): int(ph["tokens"])
+                                for ph in result.phases
+                                if ph.get("tokens") is not None
+                            }
+                        )
+                    )
+                _progress_safe(
+                    lambda: progress_reporter.stage_completed(step, stage, tokens=result.tokens)
+                )
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (superseding the earlier
             # opt-out checkpoint): the stage's produced paths land as exactly ONE commit on the run
@@ -1037,6 +1065,10 @@ def _native_runner(
                     # The accepted artifact's path rides in the signed stage entry, so the committed
                     # artifact trail is reconstructable from the ledger alone.
                     payload["artifacts"] = result.artifact_paths
+                if result.tokens is not None:
+                    # The same additive advisory token field as the stage entry — never a
+                    # verdict input.
+                    payload["tokens"] = result.tokens
                 ledger.append("run", payload, sk, spec_id=spec_id)
         if result.ok and feature_dir is not None and completion.is_producing(step):
             # The deterministic completion gate: the stage's declared markdown must

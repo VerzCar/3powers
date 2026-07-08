@@ -241,6 +241,17 @@ def test_implement_template_batches_independent_tasks_and_stops_out_of_scope():
     assert "STOP" in text and "re-spec" in text
 
 
+def test_implement_template_mandates_subagents_for_parallel_tasks():
+    """Plan 033 Track G (RUNVIS): both implement.agent.md copies state plainly that [P]-marked
+    tasks MUST run via the agent's own sub-agents, and that the engine's concurrent dispatch of
+    disjoint [P] phases is separate and not the agent's to manage."""
+    for base in (BUNDLED, REPO / ".3powers" / "templates" / "agents"):
+        text = (base / "implement.agent.md").read_text(encoding="utf-8")
+        assert "MUST be executed via your own sub-agents" in text, base
+        assert "one sub-agent per" in text, base
+        assert "already dispatched by the engine as separate fresh sessions" in text, base
+
+
 # --------------------------------------------------------------------------- AGENTX-FR-009 / NFR-003 (seeding)
 def test_seeding_is_idempotent_and_never_clobbers_a_hand_edited_template(tmp_path):
     """AGENTX-FR-009 / AGENTX-NFR-003: init seeds the templates when absent, preserves hand-edits,

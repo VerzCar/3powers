@@ -29,6 +29,11 @@ over. No other input channel exists.
 1. Execute the phase's tasks in checklist order, respecting declared dependencies: independent
    tasks (disjoint files, no dependency) proceed together; only true dependencies are serialized.
    Tasks touching the same file run sequentially, never concurrently.
+   **Tasks marked `[P]` MUST be executed via your own sub-agents** — dispatch one sub-agent per
+   `[P]` task, run them concurrently, and collect their results before proceeding; do not
+   serialize `[P]` tasks in your own session. (Whole `[P]` phases with disjoint file scopes are
+   already dispatched by the engine as separate fresh sessions — that engine-level parallelism
+   is not yours to manage.)
 2. **Stay within the declared file scope.** Needing to edit a file outside a task's declared
    scope is a signal to STOP and re-spec — report it; do not make the edit.
 3. Never modify, weaken, or delete an oracle test. Never game a gate: no inline lint-disables, no

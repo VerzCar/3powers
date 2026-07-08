@@ -72,11 +72,16 @@ def test_phase_prompt_states_the_scope_contract():
 
 
 def test_phase_prompt_instructs_parallel_subagent_dispatch():
-    """PHASEPR-FR-002: the prompt instructs [P]-marked tasks be dispatched concurrently via
-    subagents, results collected before proceeding."""
+    """PHASEPR-FR-002 (strengthened by plan 033 Track G): the prompt states plainly that [P]-marked
+    tasks MUST be executed via the agent's own sub-agents — one sub-agent per task, run
+    concurrently, results collected — and that the engine-level parallelism over whole [P] phases
+    is not the agent's to manage."""
     p = _prompt_for(2)
-    assert "may be dispatched concurrently via subagents." in p
-    assert "Dispatch all [P]-marked tasks in parallel, then collect their results" in p
+    assert "MUST be executed via your own sub-agents" in p
+    assert "dispatch one sub-agent per [P] task" in p
+    assert "collect their results" in p
+    assert "Do not serialize [P] tasks in your own session" in p
+    assert "already dispatched concurrently by the engine as separate fresh sessions" in p
 
 
 def test_phase_prompt_instructs_completion_markers_and_forbids_questions():

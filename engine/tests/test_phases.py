@@ -762,6 +762,82 @@ def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypa
     assert "estimated ~" in err  # the estimate is reported per phase (PHASE-FR-008)
 
 
+def test_phased_run_records_per_phase_tokens_additively(phased_project, monkeypatch):
+    """Plan 033 Track H (RUNVIS): when the coder backend reports usage, a phased implement records
+    each phase's token count as an ADDITIVE field on the run/phases ledger payload, sums them onto
+    the stage entry, and ledger verification stays green over the new payloads."""
+    import yaml
+
+    import threepowers.cli as climod
+    from threepowers.verdict import STATUS_PASS, Verdict
+
+    root, prompts_seen = phased_project
+    monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
+    monkeypatch.setattr(
+        climod,
+        "run_gates",
+        lambda *a, **k: Verdict(
+            spec_id="RUN", tier="Standard", adapter="python", result=STATUS_PASS
+        ),
+    )
+    (root / ".3powers" / "agents" / "claude.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "command": "claude",
+                "family": "anthropic",
+                "headless": True,
+                "prompt_flag": "-p",
+                "usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9,]+)"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "usage"], cwd=root, check=True, capture_output=True)
+    orig = runner.dispatch_agent
+
+    def with_usage(argv, **kw):
+        rc, out, err = orig(argv, **kw)
+        return rc, out + "\ntokens used: 100", err
+
+    monkeypatch.setattr(runner, "dispatch_agent", with_usage)
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "c",
+        ]
+    )
+    assert rc == 3  # paused at sign-off — the phased implement ran to completion
+    s = Settings(root=root)
+    entries = Ledger(s.ledger_path).entries()
+    recorded = next(
+        e["payload"]["results"]
+        for e in entries
+        if e.get("type") == "run" and e.get("payload", {}).get("kind") == "phases"
+    )
+    # every prior key survives (additive-only, PAT-002) and each phase carries its count
+    assert all({"phase", "name", "ok", "detail"} <= set(r) for r in recorded)
+    assert [r.get("tokens") for r in recorded] == [100, 100, 100]
+    implement_stage = next(
+        e["payload"]
+        for e in entries
+        if e.get("type") == "run"
+        and e.get("payload", {}).get("kind") == "stage"
+        and e["payload"].get("step") == "implement"
+    )
+    assert implement_stage.get("tokens") == 300  # the stage total sums the phases
+    vres = verify_ledger(s.ledger_path, s.pubkey_path)
+    assert vres.ok, getattr(vres, "problems", vres)
+
+
 # --------------------------------------------------------------------------- docs (PHASE-NFR-004)
 def test_docs_describe_workspace_budget_and_phased_dispatch():
     """PHASE-NFR-004: the forward-looking docs (CLAUDE.md, AGENTS.md, docs/STATUS.md) describe the

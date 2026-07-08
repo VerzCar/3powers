@@ -329,6 +329,14 @@ def _artifact_writer(spec_id="RUN"):
 @pytest.fixture()
 def native_project(tmp_path, monkeypatch):
     root = tmp_path / "repo"
+    _setup_native_project(root, tmp_path / "signer.key", monkeypatch)
+    return root
+
+
+def _setup_native_project(root: Path, keyfile: Path, monkeypatch) -> Path:
+    """Build one native-run project: agents + roles + signer + git, with the agent process faked
+    (no model call — EXEC-NFR-001). Module-level so tests needing more than one independent
+    project (e.g. the usage/no-usage verdict byte comparison) reuse the exact fixture setup."""
     (root / ".3powers" / "config").mkdir(parents=True)
     (root / ".3powers" / "agents").mkdir(parents=True)
     (root / "specs-src" / "009-x").mkdir(parents=True)
@@ -355,7 +363,6 @@ def native_project(tmp_path, monkeypatch):
         ),
         encoding="utf-8",
     )
-    keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
     _git_init(root)  # a real repo so artifact detection + checkpoints work (RUNLIVE-FR-001/010)
@@ -753,3 +760,309 @@ def test_no_auto_commit_is_superseded_and_warns(native_project, capsys):
         text=True,
     ).stdout.strip()
     assert int(after) > int(before)  # the mandatory stage commit still happened
+
+
+# --------------------------------------------------------------------------- session freshness (plan 033 Track G / RUNVIS)
+# Tokens that would reuse or resume a prior conversation/session — the engine must never emit one.
+_SESSION_REUSE_TOKENS = {
+    "--resume",
+    "--continue",
+    "-c",
+    "-r",
+    "--session",
+    "--session-id",
+    "resume",
+    "continue",
+}
+
+
+def test_build_command_emits_new_session_args_and_round_trips(tmp_path):
+    """Plan 033 Track G (RUNVIS): a manifest's `new_session_args` rides every invocation — after
+    the base args, before the model/prompt — and round-trips through a YAML manifest on disk."""
+    manifest = {
+        "command": "aider",
+        "base_args": ["--yes-always"],
+        "new_session_args": ["--no-restore-chat-history"],
+        "prompt_flag": "--message",
+    }
+    argv, stdin = agents.build_command(manifest, "DO", model="")
+    assert stdin is None
+    assert argv == ["aider", "--yes-always", "--no-restore-chat-history", "--message", "DO"]
+    # round-trip: the field survives the YAML manifest load and still shapes the invocation
+    s = _settings_with_agents(tmp_path, aider=manifest)
+    loaded = agents.load_agent(s, "aider")
+    assert loaded.get("new_session_args") == ["--no-restore-chat-history"]
+    argv2, _ = agents.build_command(loaded, "DO", model="")
+    assert "--no-restore-chat-history" in argv2
+
+
+def test_shipped_manifests_never_emit_a_session_reuse_flag():
+    """Plan 033 Track G (RUNVIS): no shipped CLI manifest builds an invocation carrying a
+    resume/continue/session-reuse token — every dispatch is a clean session by construction."""
+    import threepowers
+
+    repo_root = Path(threepowers.__file__).resolve().parents[3]
+    s = Settings(root=repo_root)
+    checked = 0
+    for name in agents.available_agents(s):
+        manifest = agents.load_agent(s, name)
+        if hosted.is_hosted(manifest):
+            continue  # a hosted backend triggers a NEW hosted run per dispatch — no session flag
+        argv, _ = agents.build_command(manifest, "PROMPT", model="some/model")
+        # exclude the prompt itself (the final token when passed as an argument)
+        flags = argv[:-1] if argv[-1] == "PROMPT" else argv
+        assert not (_SESSION_REUSE_TOKENS & set(flags)), f"{name}: session reuse flag in {flags}"
+        checked += 1
+    assert checked >= 3
+
+
+def test_each_dispatch_is_an_independent_process_with_no_carried_session(tmp_path):
+    """Plan 033 Track G (RUNVIS): two dispatches through one runner are two independent agent
+    processes with identical, session-free invocations — no state token is injected or carried
+    between them."""
+    s = Settings(root=tmp_path)
+    manifest = {"command": "claude", "prompt_flag": "-p"}
+    seen: list[list[str]] = []
+
+    def recording(argv, *, cwd, stdin, timeout, stream=False, tee=None):
+        seen.append(list(argv))
+        return (0, "done", "")
+
+    r = CliAgentRunner(s, manifest, intent="do it", dispatcher=recording)
+    assert r.dispatch("plan", "Plan").ok
+    assert r.dispatch("plan", "Plan").ok
+    assert len(seen) == 2  # one process per dispatch — never a shared session
+    assert seen[0] == seen[1]  # the second invocation carries nothing from the first
+    assert not (_SESSION_REUSE_TOKENS & set(seen[0][:-1]))
+
+
+# --------------------------------------------------------------------------- usage capture (plan 033 Track H / RUNVIS)
+def test_extract_usage_json_strategy_reads_a_dotted_field():
+    """Plan 033 Track H (RUNVIS): a `usage: {strategy: json}` manifest reads the token count from
+    the last JSON line of the agent output via a dotted field path."""
+    m = {"usage": {"strategy": "json", "field": "usage.total_tokens"}}
+    out = 'progress text\n{"usage": {"total_tokens": 1234}, "result": "ok"}\n'
+    assert agents.extract_usage(m, out) == 1234
+    # a flat field works too, and a whole-output JSON document is read as a fallback
+    flat = {"usage": {"strategy": "json", "field": "total_tokens"}}
+    assert agents.extract_usage(flat, '{"total_tokens": 42}') == 42
+
+
+def test_extract_usage_regex_strategy_takes_the_last_match():
+    """Plan 033 Track H (RUNVIS): a `usage: {strategy: regex}` manifest extracts group 1 of the
+    last pattern match, tolerating thousands separators."""
+    m = {"usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9][0-9,]*)"}}
+    out = "step one\ntokens used: 1,000\nmore work\ntokens used: 12,345\n"
+    assert agents.extract_usage(m, out) == 12345
+
+
+def test_extract_usage_unknown_reads_as_none_never_an_error():
+    """Plan 033 Track H (RUNVIS): an unreporting backend reads as None — no hint, an unmatched
+    hint, a malformed hint, or a broken pattern never raises and never fabricates a count."""
+    assert agents.extract_usage({}, "no usage here") is None  # backend declares no hint
+    m_regex = {"usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9,]+)"}}
+    assert agents.extract_usage(m_regex, "the agent printed no summary") is None
+    m_json = {"usage": {"strategy": "json", "field": "usage.total_tokens"}}
+    assert agents.extract_usage(m_json, "not json at all") is None
+    assert agents.extract_usage({"usage": {"strategy": "carrier-pigeon"}}, "x") is None
+    assert agents.extract_usage({"usage": {"strategy": "regex", "pattern": "(["}}, "x") is None
+    assert agents.extract_usage({"usage": "not-a-dict"}, "tokens used: 5") is None
+
+
+def test_cli_agent_runner_captures_manifest_declared_usage(tmp_path):
+    """Plan 033 Track H (RUNVIS): dispatch extracts the agent-reported token count per the
+    manifest's usage hint; a manifest without one reads as None."""
+    s = Settings(root=tmp_path)
+    reporting = {
+        "command": "codex",
+        "usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9,]+)"},
+    }
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None):
+        return (0, "changes written\ntokens used: 777", "")
+
+    res = CliAgentRunner(s, reporting, dispatcher=fake).dispatch("implement", "Build")
+    assert res.ok and res.tokens == 777
+    silent = CliAgentRunner(s, {"command": "codex"}, dispatcher=fake).dispatch("implement", "Build")
+    assert silent.ok and silent.tokens is None
+
+
+def test_run_stage_threads_tokens_into_the_stage_result_additively():
+    """Plan 033 Track H (RUNVIS): the dispatch's token count reaches StageResult and its
+    as_dict() — present only when reported, and always a superset of the prior keys (the e2e
+    notebooks' defensive parsing contract)."""
+    with_usage = runner.run_stage(
+        "implement",
+        "Build",
+        attempt=lambda: DispatchResult(True, tokens=55),
+        retries=0,
+        agent="codex",
+    )
+    without_usage = runner.run_stage(
+        "implement", "Build", attempt=lambda: DispatchResult(True), retries=0, agent="codex"
+    )
+    assert with_usage.tokens == 55 and without_usage.tokens is None
+    d_with, d_without = with_usage.as_dict(), without_usage.as_dict()
+    assert d_with["tokens"] == 55 and "tokens" not in d_without
+    prior_keys = {
+        "step",
+        "stage",
+        "ok",
+        "agent",
+        "model",
+        "attempts",
+        "duration_s",
+        "artifact",
+        "outcome",
+        "detail",
+    }
+    assert prior_keys <= set(d_without) <= set(d_with)  # strictly additive (PAT-002)
+
+
+def _fixed_verdict_gates(monkeypatch, calls):
+    """Patch the in-process gate suite to a FIXED verdict (stable id + timestamp) so two runs'
+    verdict payload bytes are comparable; records every run_gates call's kwargs."""
+    import threepowers.cli as climod
+    from threepowers.verdict import STATUS_PASS, Verdict
+
+    def fake_gates(settings, target, **kw):
+        calls.append(kw)
+        return Verdict(
+            spec_id="RUN",
+            tier="Standard",
+            adapter="python",
+            result=STATUS_PASS,
+            verdict_id="fixed-verdict-id",
+            created_at="2026-01-01T00:00:00Z",
+        )
+
+    monkeypatch.setattr(climod, "detect_adapter", lambda s, t: "python")
+    monkeypatch.setattr(climod, "run_gates", fake_gates)
+
+
+def _drive_to_signoff(root: Path) -> None:
+    assert main(["--root", str(root), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "run",
+            "--resume",
+            "--no-input",
+            "--spec-id",
+            "RUN",
+            "--approver",
+            "carlo",
+        ]
+    )
+    assert rc == 3  # paused at sign-off — Verify's in-process gate suite already ran
+
+
+def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkeypatch, capsys):
+    """Plan 033 Track H / CON-003 (RUNVIS): the deterministic verdict payload is byte-identical
+    whether or not usage is captured — tokens ride ONLY the additive run-entry fields, never
+    run_gates, the verdict, or the verdict bytes; `3pwr verify` stays green over the new
+    payloads."""
+    import yaml
+
+    from threepowers.canonical import canonical_bytes
+    from threepowers.ledger import Ledger
+
+    calls: list[dict] = []
+    _fixed_verdict_gates(monkeypatch, calls)
+
+    # Project A: no usage hint, no usage output — the pre-Track-H behavior.
+    root_a = tmp_path / "repo_a"
+    _setup_native_project(root_a, tmp_path / "a.key", monkeypatch)
+    _drive_to_signoff(root_a)
+
+    # Project B: the coder manifest declares a usage hint and the agent reports a token count.
+    root_b = tmp_path / "repo_b"
+    _setup_native_project(root_b, tmp_path / "b.key", monkeypatch)
+    (root_b / ".3powers" / "agents" / "claude.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "command": "claude",
+                "family": "anthropic",
+                "headless": True,
+                "prompt_flag": "-p",
+                "usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9,]+)"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    base = _artifact_writer()
+
+    def with_usage(argv, **kw):
+        rc, out, err = base(argv, **kw)
+        return rc, out + "\ntokens used: 4,321", err
+
+    monkeypatch.setattr(runner, "dispatch_agent", with_usage)
+    _drive_to_signoff(root_b)
+    capsys.readouterr()
+
+    def entries(root: Path) -> list[dict]:
+        return Ledger(root / ".3powers" / "ledger.jsonl").entries()
+
+    verdicts_a = [e["payload"] for e in entries(root_a) if e.get("type") == "verdict"]
+    verdicts_b = [e["payload"] for e in entries(root_b) if e.get("type") == "verdict"]
+    assert len(verdicts_a) == 1 and len(verdicts_b) == 1
+    # CON-003: the verdict bytes are identical with and without usage capture, and token-free.
+    assert canonical_bytes(verdicts_a[0]) == canonical_bytes(verdicts_b[0])
+    assert b"tokens" not in canonical_bytes(verdicts_b[0])
+    # run_gates itself received no token-shaped input on either run.
+    assert calls and all("token" not in k.lower() for kw in calls for k in kw)
+
+    # The additive fields landed where they belong: B's stage + checkpoint entries carry tokens…
+    def stage_payloads(root: Path, kind: str) -> list[dict]:
+        return [
+            e["payload"]
+            for e in entries(root)
+            if e.get("type") == "run" and e["payload"].get("kind") == kind
+        ]
+
+    b_stages = stage_payloads(root_b, "stage")
+    coder_stages = [p for p in b_stages if p["step"] != "oracle"]
+    assert coder_stages and all(p.get("tokens") == 4321 for p in coder_stages)
+    # the oracle role runs under the codex manifest, which declares no usage hint → unknown
+    assert all("tokens" not in p for p in b_stages if p["step"] == "oracle")
+    assert any(p.get("tokens") == 4321 for p in stage_payloads(root_b, "checkpoint"))
+    # …while A's payloads are untouched (the field appears only when usage was captured).
+    assert all("tokens" not in p for p in stage_payloads(root_a, "stage"))
+    assert all("tokens" not in p for p in stage_payloads(root_a, "checkpoint"))
+
+    # The run's progress.md shows the Tokens column with the accumulated per-stage counts
+    # (Spec = specify + clarify = 2 × 4321), and — (unknown) where nothing was reported.
+    prog = (root_b / "specs-src" / "010-add-x" / "progress.md").read_text(encoding="utf-8")
+    assert "| Tokens |" in prog and "8642" in prog
+
+    # Ledger verification stays green over the new additive payloads.
+    assert main(["--root", str(root_b), "verify"]) == 0
+    capsys.readouterr()
+
+
+def test_json_status_payload_keys_stay_a_superset_for_e2e_parsers(native_project, capsys):
+    """Plan 033 Track H / PAT-002 (RUNVIS): the --json pause payload keeps every prior key — the
+    e2e notebooks' defensive `.get()` parsing of status/stage results must keep working."""
+    import json as _json
+
+    rc = main(
+        ["--root", str(native_project), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"]
+    )
+    assert rc == 3
+    obj = _json.loads(capsys.readouterr().out)
+    assert {"status", "gate", "stage", "spec_id", "stages"} <= set(obj)
+    prior_stage_keys = {
+        "step",
+        "stage",
+        "ok",
+        "agent",
+        "model",
+        "attempts",
+        "duration_s",
+        "artifact",
+        "outcome",
+        "detail",
+    }
+    for st in obj["stages"]:
+        assert prior_stage_keys <= set(st)

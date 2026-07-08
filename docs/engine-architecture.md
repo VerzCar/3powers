@@ -219,6 +219,45 @@ tamper-**evidence**, not tamper-**proofing**: evasion is *detectable*, not *impo
 - **`revert`** appends a signed `reversal` entry returning a spec to a prior recorded stage — history is
   reversible, never rewritten.
 
+## Session freshness and cost visibility
+
+**Every dispatched stage and phase is a fresh agent session.** The native executive
+([`runner.py`](../engine/src/threepowers/runner.py)) builds each invocation from the agent manifest
+alone and runs it as an independent external process — no conversation state is carried between
+dispatches, and the engine never emits a resume/continue/session-reuse flag. Each session's prompt
+*reloads* everything it needs (the approved spec, the constitution/rules, the phase's tasks and file
+scope), so correctness never depends on a backend remembering anything. For a backend whose CLI could
+restore prior state, the manifest's `new_session_args` field passes the CLI's no-resume/new-session
+flag(s) on every invocation, making the clean session explicit rather than assumed.
+
+Per-backend session behavior of the shipped reference manifests (from each CLI's documented
+non-interactive conventions):
+
+| Backend | Invocation | Clean session by default? | Reuse is opt-in via (never emitted) | Manifest hook |
+|---|---|---|---|---|
+| Claude Code | `claude -p "<prompt>"` | yes — each `-p` call starts a new session | `--continue` / `--resume` | none needed |
+| Copilot CLI | `copilot -p "<prompt>"` | yes — new session per invocation | `--resume` / `--continue` | none needed |
+| Codex CLI | `codex exec` | yes — `exec` is a fresh non-interactive run | `codex exec resume` | none needed |
+| OpenCode | `opencode run` | yes — new session per `run` | `--session` / `--continue` | none needed |
+| Aider | `aider --message` | yes — history restore is opt-in (default off), but chat history *is* persisted to `.aider.chat.history.md` | `--restore-chat-history` | `new_session_args: ["--no-restore-chat-history"]` makes freshness explicit |
+| Hosted (async) | manifest-declared trigger/poll/collect | yes — each trigger starts a new hosted run | n/a | none needed |
+
+**`[P]` parallelism is two-level.** Whole phases marked `[P]` with disjoint declared file scopes are
+dispatched by the *engine* as concurrent, separate fresh sessions
+([`phases.py`](../engine/src/threepowers/phases.py) `schedule`/`run_phases`). *Inside* a phase, tasks
+marked `[P]` must be executed via the agent's **own sub-agents** — the phase handoff prompt and the
+implement agent template both mandate it — so intra-phase parallelism happens in the agent's runtime,
+never by the engine splitting a phase.
+
+**Token consumption is captured advisorily.** A manifest's optional `usage` hint declares how the
+backend reports usage in its output — `strategy: json` (a dotted field read from the last JSON output
+line) or `strategy: regex` (group 1 of a pattern match). The extracted per-stage/per-phase token
+counts ride as strictly **additive** fields: `tokens` on the `--json` per-stage results, on the signed
+`run`/`stage`, `run`/`phases` (per phase result), and `run`/`checkpoint` ledger payloads, and a Tokens
+column in `progress.md`. A backend that reports no usage reads as unknown (the fields stay absent; the
+column shows `—`). Tokens never enter the gate suite, the verdict, or the verdict bytes — the
+deterministic verdict is byte-identical whether or not usage was captured.
+
 ## Lifecycle, derived
 
 [`lifecycle.py`](../engine/src/threepowers/lifecycle.py) doesn't store stage state anywhere special — it

@@ -9,3 +9,6 @@ base_args: ["run"]
 model_flag: "--model"
 prompt_flag: null
 prompt_via: arg
+# Session freshness: `opencode run` starts a NEW session per invocation; reuse is opt-in only
+# (`--session` / `--continue`), which the engine never emits.
+# Usage: the run output carries no machine-stable token summary — usage reads as unknown.

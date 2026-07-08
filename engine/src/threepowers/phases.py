@@ -399,9 +399,14 @@ def handoff_context(
         "Do NOT modify files outside the declared file scope for this phase.",
         "Do NOT implement tasks from other phases.",
         "",
-        "PARALLEL TASKS: any task marked [P] in this phase may be dispatched concurrently via "
-        "subagents.",
-        "Dispatch all [P]-marked tasks in parallel, then collect their results before proceeding.",
+        "PARALLEL TASKS: tasks marked [P] in this phase MUST be executed via your own sub-agents "
+        "— dispatch one sub-agent per [P] task, run them concurrently, and collect their results "
+        "before proceeding.",
+        "Do not serialize [P] tasks in your own session; sub-agent dispatch is the required "
+        "execution mode for them.",
+        "(Whole phases marked [P] with disjoint file scopes are already dispatched concurrently "
+        "by the engine as separate fresh sessions — that engine-level parallelism is not yours "
+        "to manage.)",
         "",
         "CODING GATE: after finishing this phase's tasks, run the coding gates over this phase's "
         "file scope —",
