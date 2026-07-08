@@ -1,28 +1,27 @@
 """The native executive runner — drive the lifecycle by dispatching headless coding agents directly.
 
-This is the executive leg 3Powers now owns (EXEC-FR-001; amends 3PWR A1/A3). :class:`NativeRunner`
+This is the executive leg 3Powers now owns. :class:`NativeRunner`
 implements the same :class:`threepowers.orchestrate.Runner` protocol as the offline ``SimulatedRunner``,
 so the pure :func:`threepowers.orchestrate.drive` state machine, the two mandatory human gates, the stage
 tracker, and the ledger provenance are all reused unchanged. It walks the in-code ``LIFECYCLE_STEPS``:
 
 * an **action** step is dispatched to the role's configured agent (:class:`CliAgentRunner`), which builds
-  the invocation from a declarative manifest and runs the agent as an external process (EXEC-FR-004/005);
+  the invocation from a declarative manifest and runs the agent as an external process;
 * a **verdict** step runs the deterministic gate suite **in-process** via an injected ``run_verdict``
-  callable — never through a subprocess and never through a model (EXEC-FR-006);
+  callable — never through a subprocess and never through a model;
 * a **gate** step returns for the human decision.
 
-RUNLIVE hardens the dispatch of an action step: each attempt is bounded by a **timeout** and **retried**
-per policy (RUNLIVE-FR-004/005), the stage's declared **artifact contract** is verified before advancing
-(RUNLIVE-FR-001/002), and a machine-readable **per-stage result** (agent, model, attempts, duration,
-artifact, outcome) is recorded for ``--json`` (RUNLIVE-FR-006). None of this enters the deterministic
+The dispatch of an action step is hardened: each attempt is bounded by a **timeout** and **retried**
+per policy, the stage's declared **artifact contract** is verified before advancing,
+and a machine-readable **per-stage result** (agent, model, attempts, duration,
+artifact, outcome) is recorded for ``--json``. None of this enters the deterministic
 verdict.
 
 The engine issues no model/agent API call itself; all model work happens inside the dispatched agent
-process (EXEC-NFR-001, RUNLIVE-NFR-001). ``NativeRunner`` is pure given its injected callables, so the whole
-orchestration, diagnostics, and provenance flow is exercised in tests with a fake agent and no network
-(EXEC-NFR-004, RUNLIVE-NFR-002). A dispatch failure, an exhausted retry, or a missing artifact returns
-``ok=False`` so the caller reports it as a setup/dispatch failure, distinct from a real gate-red
-(EXEC-FR-016, RUNLIVE-FR-002).
+process. ``NativeRunner`` is pure given its injected callables, so the whole
+orchestration, diagnostics, and provenance flow is exercised in tests with a fake agent and no network.
+A dispatch failure, an exhausted retry, or a missing artifact returns
+``ok=False`` so the caller reports it as a setup/dispatch failure, distinct from a real gate-red.
 """
 
 from __future__ import annotations
@@ -44,13 +43,13 @@ if TYPE_CHECKING:  # typing-only import (avoids a runtime import cycle)
     from .artifacts import ArtifactCheck
     from .transcripts import TranscriptSink
 
-# Injected seams (EXEC-NFR-004): dispatch one action stage, or produce a verdict for one verify stage.
+# Injected seams: dispatch one action stage, or produce a verdict for one verify stage.
 Dispatcher = Callable[[str, str], "StageResult"]  # (step_id, stage) -> per-stage result
 VerdictFn = Callable[[str], str]  # (stage) -> "pass" | "fail" | "error"
 
 
 class TextSink(Protocol):
-    """Anything transcript lines can be teed into (a file, a redacting writer — AUTOX-FR-008)."""
+    """Anything transcript lines can be teed into (a file, a redacting writer)."""
 
     def write(self, s: str) -> object: ...
     def flush(self) -> None: ...
@@ -63,17 +62,17 @@ class DispatchResult:
     ok: bool
     detail: str = ""
     model: str = ""
-    # The persisted transcript path for this attempt, when one was written (AUTOX-FR-008).
+    # The persisted transcript path for this attempt, when one was written.
     transcript: str = ""
 
 
 @dataclass
 class StageResult:
-    """The machine-readable result of running one action stage end-to-end (RUNLIVE-FR-006).
+    """The machine-readable result of running one action stage end-to-end.
 
     Carries everything ``--json`` reports per dispatched stage: the agent + resolved model, the number of
     attempts, the wall-clock duration, a short artifact summary, and the outcome. ``ok`` drives the state
-    machine; ``outcome`` classifies a failure for an actionable message (RUNLIVE-FR-002/NFR-004):
+    machine; ``outcome`` classifies a failure for an actionable message:
     ``"ok"`` | ``"dispatch_failed"`` | ``"artifact_missing"``.
     """
 
@@ -87,15 +86,15 @@ class StageResult:
     artifact: str = ""
     outcome: str = ""
     detail: str = ""
-    # The persisted transcript path of the stage's LAST attempt (AUTOX-FR-008): a failure message
+    # The persisted transcript path of the stage's LAST attempt: a failure message
     # names it, and the run-failure ledger record stores the path — never the content.
     transcript: str = ""
     # The accepted artifact's repo-relative path(s), recorded with the stage's ledger entry so the
-    # committed artifact trail is reconstructable from the signed ledger alone (PHASE-FR-003).
+    # committed artifact trail is reconstructable from the signed ledger alone.
     artifact_paths: list[str] = field(default_factory=list)
-    # Advisory notes (e.g. the context-budget oversize warnings, PHASE-FR-009) — never a failure.
+    # Advisory notes (e.g. the context-budget oversize warnings) — never a failure.
     warnings: list[str] = field(default_factory=list)
-    # Per-phase results when the stage ran as context-sized phases (PHASE-FR-010/012), artifact order.
+    # Per-phase results when the stage ran as context-sized phases, artifact order.
     phases: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
@@ -135,15 +134,15 @@ def dispatch_agent(
 ) -> tuple[int, str, str]:
     """Run an agent invocation as an external process (no shell) and return ``(rc, stdout, stderr)``.
 
-    Module-level so tests monkeypatch it to a fake agent — the engine never calls a model API itself
-    (EXEC-NFR-001). ``argv`` comes only from a committed agent manifest via :func:`agents.build_command`,
+    Module-level so tests monkeypatch it to a fake agent — the engine never calls a model API itself.
+    ``argv`` comes only from a committed agent manifest via :func:`agents.build_command`,
     never from user input, so no shell/injection surface is opened.
 
-    ``timeout`` bounds the attempt (RUNLIVE-FR-004): an over-long agent is terminated and reported as a
+    ``timeout`` bounds the attempt: an over-long agent is terminated and reported as a
     dispatch failure (rc 124), never a hang. ``tee`` receives every stdout/stderr line as it arrives —
-    the persisted transcript sink (AUTOX-FR-008). With ``stream`` set the lines are ALSO echoed live
-    (RUNLIVE-FR-006) — to ``echo_out``/``echo_err`` when given (the run's live bar routes the
-    conversation above itself through these, STEER-FR-012), else straight to the process's own
+    the persisted transcript sink. With ``stream`` set the lines are ALSO echoed live —
+    to ``echo_out``/``echo_err`` when given (the run's live bar routes the
+    conversation above itself through these), else straight to the process's own
     stdout/stderr; output is captured in both cases, so a streamed run never loses its output.
     """
     if tee is None and not stream:
@@ -166,7 +165,7 @@ def dispatch_agent(
             return 124, "", f"agent timed out after {timeout}s"
 
     # The tee/stream path: pipe the child's output and pump it line by line into the capture
-    # buffers, the transcript sink, and — when streaming — the terminal (AUTOX-FR-008).
+    # buffers, the transcript sink, and — when streaming — the terminal.
     def note(msg: str) -> None:
         if tee is not None:
             tee.write(msg + "\n")
@@ -236,15 +235,15 @@ def dispatch_agent(
 
 
 class CliAgentRunner:
-    """Dispatch a lifecycle stage to a headless coding-agent CLI described by a manifest (EXEC-FR-001/003).
+    """Dispatch a lifecycle stage to a headless coding-agent CLI described by a manifest.
 
-    Assembles the engine-owned stage prompt (EXEC-FR-005), builds the invocation from the manifest, runs the
+    Assembles the engine-owned stage prompt, builds the invocation from the manifest, runs the
     agent in ``cwd`` (the working tree, or a sanitized worktree for the oracle role), and reports success or
-    a dispatch failure (EXEC-FR-016). The provider/gateway environment is inherited by the child process, so
-    an org routes model traffic through its own gateway with no engine change (EXEC-FR-012).
+    a dispatch failure. The provider/gateway environment is inherited by the child process, so
+    an org routes model traffic through its own gateway with no engine change.
 
     ``dispatch`` runs **one** attempt; retry/timeout/artifact policy lives in :func:`run_stage` so it stays
-    pure and unit-testable (RUNLIVE-NFR-002).
+    pure and unit-testable.
     """
 
     def __init__(
@@ -271,15 +270,15 @@ class CliAgentRunner:
         self.spec_text = spec_text
         self.timeout = timeout
         self.stream = stream
-        # Where a streamed attempt's live echo goes (STEER-FR-012): the run's live bar routes the
+        # Where a streamed attempt's live echo goes: the run's live bar routes the
         # agent conversation above itself through these; None keeps the process's own stdout/stderr.
         self.echo_out = echo_out
         self.echo_err = echo_err
-        # The per-run transcript sink (AUTOX-FR-008): every attempt's output is persisted,
-        # credential-redacted (AUTOX-NFR-002). None = no persistence (programmatic callers).
+        # The per-run transcript sink: every attempt's output is persisted,
+        # credential-redacted. None = no persistence (programmatic callers).
         self.transcripts = transcripts
         # Resolve the module-level default at construction time so a monkeypatched ``dispatch_agent``
-        # (tests / a fake agent) is honored — the engine still issues no model call (EXEC-NFR-001).
+        # (tests / a fake agent) is honored — the engine still issues no model call.
         self._dispatcher = dispatcher or dispatch_agent
 
     def dispatch(
@@ -291,11 +290,11 @@ class CliAgentRunner:
         context: str = "",
         file_scope: str = "",
     ) -> DispatchResult:
-        """Run one fresh headless session for ``step`` (EXEC-FR-001; PHASE-FR-005/010).
+        """Run one fresh headless session for ``step``.
 
         The optional per-dispatch blocks let the orchestrator inject the approved spec text, the
         prior stage's artifact reference, and — for a build phase — that phase's tasks and declared
-        file scope, so no stage depends on the agent rediscovering its inputs (PHASE-FR-005). Each
+        file scope, so no stage depends on the agent rediscovering its inputs. Each
         call is a new agent process: no conversation state is carried between dispatches."""
         prompt = prompts.assemble(
             step,
@@ -304,14 +303,14 @@ class CliAgentRunner:
             context=context,
             file_scope=file_scope,
             # A repo-local stage template supplies the instruction body when present; absent/empty/
-            # unreadable falls back to the built-in instruction (AGENTX-FR-005). Only the body
-            # changes — the context blocks and their order stay fixed (EXEC-FR-005).
+            # unreadable falls back to the built-in instruction. Only the body
+            # changes — the context blocks and their order stay fixed.
             body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
         )
         argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
-        # Persist this attempt's output to the run's transcript location (AUTOX-FR-008): teed even
+        # Persist this attempt's output to the run's transcript location: teed even
         # while streaming, so a streamed run no longer loses its output. The writer redacts
-        # credential-shaped env values before any byte lands on disk (AUTOX-NFR-002).
+        # credential-shaped env values before any byte lands on disk.
         path: Optional[Path] = None
         writer = None
         if self.transcripts is not None:
@@ -346,7 +345,7 @@ class CliAgentRunner:
             detail = (err.strip() or out.strip() or f"agent exited {rc}")[:400]
             if self.transcripts is not None:
                 # The excerpt rides in messages and the failure ledger record — redact it like the
-                # transcript itself; nothing persisted may carry a credential (AUTOX-NFR-002).
+                # transcript itself; nothing persisted may carry a credential.
                 detail = self.transcripts.redact_text(detail)
             return DispatchResult(False, detail=detail, model=self.model, transcript=rel)
         return DispatchResult(True, detail=step, model=self.model, transcript=rel)
@@ -359,11 +358,11 @@ def dispatch_with_retry(
     retries: int,
     on_attempt: Optional[Callable[[int], None]] = None,
 ) -> tuple[DispatchResult, int]:
-    """Run ``attempt`` until it succeeds or the retry budget is exhausted (RUNLIVE-FR-005).
+    """Run ``attempt`` until it succeeds or the retry budget is exhausted.
 
     A stage is tried at most ``retries + 1`` times; a successful attempt is never retried. Returns the final
     :class:`DispatchResult` and the number of attempts made (``≤ retries + 1``). Pure given ``attempt`` —
-    unit-tested with a fake (RUNLIVE-NFR-002)."""
+    unit-tested with a fake."""
     budget = max(0, int(retries))
     attempts = 0
     result = DispatchResult(False, detail="not attempted")
@@ -389,13 +388,13 @@ def run_stage(
     model: str = "",
     clock: Callable[[], float] = time.monotonic,
 ) -> StageResult:
-    """Dispatch one action stage under the retry/timeout policy, then verify its artifact (RUNLIVE-FR-001..006).
+    """Dispatch one action stage under the retry/timeout policy, then verify its artifact.
 
     ``attempt`` runs a single (already timeout-bounded) dispatch; ``verify_artifact`` — called only after a
     successful dispatch — returns an :class:`threepowers.artifacts.ArtifactCheck` for the stage's declared
-    contract, or ``None`` when the stage declares none (RUNLIVE-FR-003). Returns a :class:`StageResult` that
+    contract, or ``None`` when the stage declares none. Returns a :class:`StageResult` that
     is ``ok`` only when the dispatch succeeded *and* the artifact was produced. Pure given its callables — no
-    model, no network (RUNLIVE-NFR-002)."""
+    model, no network."""
     t0 = clock()
     result, attempts = dispatch_with_retry(attempt, retries=retries, on_attempt=on_attempt)
     if not result.ok:
@@ -438,7 +437,7 @@ def run_stage(
             outcome="ok",
             artifact=check.summary,
             transcript=result.transcript,
-            artifact_paths=list(check.matched),  # recorded with the ledger entry (PHASE-FR-003)
+            artifact_paths=list(check.matched),  # recorded with the ledger entry
         )
     return StageResult(
         step=step,
@@ -455,7 +454,7 @@ def run_stage(
 
 # --------------------------------------------------------------------------- working-tree change tracking (git)
 def _git(cwd: Path, args: list[str]) -> tuple[int, str, str]:
-    """Run a git command in ``cwd`` (module-level so tests can monkeypatch it — RUNLIVE-NFR-002)."""
+    """Run a git command in ``cwd`` (module-level so tests can monkeypatch it)."""
     try:
         proc = subprocess.run(
             ["git", *args], cwd=str(cwd), capture_output=True, text=True, check=False
@@ -468,7 +467,7 @@ def _git(cwd: Path, args: list[str]) -> tuple[int, str, str]:
 def _changed_files(cwd: Path) -> list[str]:
     """Repo-relative paths that are modified or untracked vs HEAD (empty when not a git repo).
 
-    Engine-written transcripts (``.3powers/runs/``, AUTOX-FR-008) are excluded even when the
+    Engine-written transcripts (``.3powers/runs/``) are excluded even when the
     trust-spine ``.gitignore`` is absent: they are never a stage's artifact and must not satisfy an
     artifact contract or be swept into a checkpoint commit."""
     rc, out, _ = _git(cwd, ["status", "--porcelain", "--untracked-files=all"])
@@ -487,7 +486,7 @@ def _changed_files(cwd: Path) -> list[str]:
 
 
 def worktree_state(cwd: Path) -> dict[str, str]:
-    """A content snapshot of the changed/untracked files — ``{path: sha256}`` (RUNLIVE-NFR-002).
+    """A content snapshot of the changed/untracked files — ``{path: sha256}``.
 
     Comparing a pre- and post-dispatch snapshot yields exactly the paths a stage produced, regardless of
     whether prior stages were committed (auto-commit) or accumulated (no auto-commit)."""
@@ -506,7 +505,7 @@ def produced_paths(pre: dict[str, str], post: dict[str, str]) -> list[str]:
 
     A path present in ``pre`` but absent from ``post`` also counts: the stage changed it back to its
     committed content (e.g. re-writing a deleted-then-regenerated artifact on a completion-gate
-    re-run — SRCX-FR-017) — the dispatch really did produce it even though the working tree ends
+    re-run) — the dispatch really did produce it even though the working tree ends
     clean for that path."""
     changed = {p for p, h in post.items() if pre.get(p) != h}
     changed |= {p for p in pre if p not in post}
@@ -514,12 +513,12 @@ def produced_paths(pre: dict[str, str], post: dict[str, str]) -> list[str]:
 
 
 class NativeRunner:
-    """Drive the lifecycle headlessly via injected dispatch + verdict callables (EXEC-FR-001/006).
+    """Drive the lifecycle headlessly via injected dispatch + verdict callables.
 
     Collects one :class:`StageResult` per dispatched action stage in :attr:`stage_results` for the
-    ``--json`` per-stage report (RUNLIVE-FR-006). A failing action stage carries its outcome + detail into
-    the :class:`~threepowers.orchestrate.Outcome` so the caller can name the stage and the missing artifact
-    (RUNLIVE-FR-002)."""
+    ``--json`` per-stage report. A failing action stage carries its outcome + detail into
+    the :class:`~threepowers.orchestrate.Outcome` so the caller can name the stage and the missing
+    artifact."""
 
     def __init__(
         self,
@@ -535,7 +534,7 @@ class NativeRunner:
         self._steps = steps if steps is not None else LIFECYCLE_STEPS
         self._i = start_index
         self.stage_results: list[StageResult] = []
-        # Live event delivery (STEER-FR-013): each event is surfaced the moment it happens — a
+        # Live event delivery: each event is surfaced the moment it happens — a
         # stage's step event BEFORE its dispatch, so the run's live bar tracks the walk in real
         # time instead of one whole segment late. The batched ``Outcome.events`` history is kept
         # unchanged; ``drive`` skips its replay when events were already delivered live.
@@ -543,7 +542,7 @@ class NativeRunner:
 
     @property
     def delivers_live_events(self) -> bool:
-        """Whether events reach the caller the moment they happen (STEER-FR-013) — ``drive`` then
+        """Whether events reach the caller the moment they happen — ``drive`` then
         skips the end-of-segment history replay so nothing is reported twice."""
         return self._progress is not None
 
@@ -559,12 +558,12 @@ class NativeRunner:
             if kind == "gate":
                 return Outcome("gate", gate=sid, stage=stage, events=events)
             if kind == "verdict":
-                # Announce the suite BEFORE it runs (STEER-FR-013) — a long gate run shows live too.
+                # Announce the suite BEFORE it runs — a long gate run shows live too.
                 self._live(Event("step", sid, stage))
                 v = self._verdict(stage)
                 if v == "error":
                     # The gate suite could not run (e.g. no spec resolved) — a setup/dispatch failure,
-                    # NOT a gate-red verdict (EXEC-FR-016). verdict="" signals the non-verdict failure.
+                    # NOT a gate-red verdict. verdict="" signals the non-verdict failure.
                     return Outcome(
                         "failed",
                         stage=stage,
@@ -581,14 +580,14 @@ class NativeRunner:
                         "failed", stage=stage, verdict=v, outcome="gate_red", events=events
                     )
             else:  # action — dispatch to the agent under the retry/artifact policy
-                # Announce the stage BEFORE dispatching it (STEER-FR-013): the live bar names the
+                # Announce the stage BEFORE dispatching it: the live bar names the
                 # running step and stage for the whole — possibly minutes-long — dispatch.
                 self._live(Event("step", sid, stage))
                 res = self._dispatch(sid, stage)
                 self.stage_results.append(res)
                 if not res.ok:
-                    # A dispatch/artifact failure — reported distinctly from a gate verdict
-                    # (EXEC-FR-016, RUNLIVE-FR-002), carrying the outcome + named detail.
+                    # A dispatch/artifact failure — reported distinctly from a gate verdict,
+                    # carrying the outcome + named detail.
                     return Outcome(
                         "failed",
                         stage=stage,
@@ -609,7 +608,7 @@ class NativeRunner:
         return self._walk()
 
     def dispatch_once(self, step: str, stage: str) -> StageResult:
-        """Dispatch exactly ONE action stage outside the walk — the revise re-run (STEER-FR-006).
+        """Dispatch exactly ONE action stage outside the walk — the revise re-run.
 
         Re-uses the injected dispatcher unchanged, so the retry/timeout/artifact policy, the git
         hooks, and the completion gate all apply to a revision exactly as to a first run; the walk
