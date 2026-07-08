@@ -72,7 +72,10 @@ next steps. Interactive by default; falls back to defaults with no TTY. Runs off
 `init` is idempotent — re-running preserves your ledger, keys, hand-edited config, an existing AGENTS.md,
 and an existing constitution. For the autonomous lifecycle you also need the constitution
 (`.3powers/memory/constitution.md`) and an agent backend on PATH for each role; `init` reports what's
-missing. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
+missing. The seeded constitution is mandatory but generic — **adapt it before the first real run** by
+completing its in-file "How to adapt this constitution" checklist (technical baseline + policies);
+`init` surfaces this as a call to action in the readiness checklist and as the final `--json`
+next step. Judiciary slash-commands (`/3pwr.*`) ship in `.github/`.
 
 `init` also seeds one **editable agent template per dispatched stage** into
 `.3powers/templates/agents/<stage>.agent.md` (discovery, specify, clarify, plan, tasks — whose
@@ -697,6 +700,23 @@ Reports which of a spec's NFRs have a declared live check in `.3powers/config/ob
 - `--spec SPEC` · `--registry REGISTRY` (default `.3powers/config/observability.yaml`).
 ```bash
 3pwr observe coverage --spec specs-src/002-engine-trust-spine/spec.md
+```
+
+#### Observability registry (`observability.yaml`)
+The registry `observe coverage` reads is `.3powers/config/observability.yaml` (seeded by `3pwr init`,
+never clobbered). It declares which of a spec's **NFRs have a live check in production** — the engine
+is fully offline and never runs or inspects your production system, so it cannot discover this
+instrumentation itself; you register it, and `observe coverage --spec <spec.md>` flags every NFR in
+the spec with no registered check. Schema (`version: 1`): a top-level `checks` list where each entry
+names one NFR —
+- `nfr` — the requirement ID exactly as it appears in the spec (e.g. `DEMO-NFR-001`);
+- `check` — a human-readable note describing *how* the NFR is verified in production (a probe, an
+  SLO monitor, an alert, a scheduled job).
+```yaml
+version: 1
+checks:
+  - nfr: DEMO-NFR-001
+    check: "p99 latency SLO monitor on the checkout endpoint, alerting at 250 ms"
 ```
 
 ### `observe log-action` / `observe verify-actions` — tamper-evident agent log

@@ -164,6 +164,18 @@ reconstructs offline and survives a fresh checkout. In practice `3pwr run` drive
 the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
 command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
 
+### Observability registry
+
+The **Observe** stage closes the loop: production lessons return to the spec as new intent, never as
+ad-hoc patches. Its anchor is the observability registry, `.3powers/config/observability.yaml` — a
+declaration of which of a spec's **non-functional requirements have a live check in production** (a
+probe, an SLO monitor, an alert, a scheduled job). The engine is fully offline and cannot see your
+production system, so the registry is how that knowledge enters the trust spine: each entry pairs an
+`nfr` requirement ID with a human `check` note, and `3pwr observe coverage --spec <spec.md>` flags
+every NFR with no registered check — the instrumentation gap stays visible instead of silently
+unmonitored. See the [CLI Reference](cli-reference.md#observability-registry-observabilityyaml) for
+the schema.
+
 ### Fresh sessions, visible cost
 
 Each dispatched stage — and each phase of a phased build — runs as a **fresh agent session**: an

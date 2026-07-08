@@ -5,6 +5,41 @@
 > the **separation of powers** that keeps validation from becoming circular when one model writes the
 > spec, the code, the tests, and the review.
 
+## How to adapt this constitution
+
+This constitution is **mandatory** — every dispatched stage loads it as the rules of the project —
+and it ships generic. **Adapt it to this project before the first real run**: keep the Core
+Principles below verbatim (see "What stays fixed"), then add project-specific articles covering
+everything in the checklist. An unadapted constitution leaves agents guessing at your standards.
+
+**Mandatory content — technical baseline** (add an article covering each):
+
+- [ ] Languages and runtimes, with the exact versions this project builds against.
+- [ ] Build / test / lint / type toolchain — including the exact commands the coding gates run.
+- [ ] Repository layout and module boundaries: what lives where, and what may import what.
+- [ ] Architectural rules: required patterns and forbidden anti-patterns.
+- [ ] Dependency policy: how a new dependency is justified, reviewed, and pinned.
+- [ ] Coding standards and naming conventions.
+- [ ] Testing conventions: test layout, and the coverage / mutation bars per risk tier.
+- [ ] Documentation expectations: what must be documented, where, in the same change.
+
+**Mandatory content — policies & rules** (add an article covering each):
+
+- [ ] Risk-tier defaults and thresholds for this project: which tier new work defaults to, and why.
+- [ ] Security & privacy rules: credentials, access control, hard-deletes, and security
+      configuration — what agents may never touch without human approval.
+- [ ] Branch / commit / PR discipline.
+- [ ] Definition of done: gates green, tests shipped with the change, docs updated.
+- [ ] Gate non-weakening: a gate is never satisfied by weakening it.
+- [ ] Oracle independence and requirement traceability, as they apply to this project.
+
+**What stays fixed:** the separation-of-powers Core Principles I–VII below are the point of
+3Powers — adapt everything around them, never them.
+
+**How to update:** edit the article, bump the version in the footer, and record the amendment (date
+and reason) under Governance. If this repository seals its constitution, an edit may require a
+re-seal — or a signed deviation — before `advance` accepts it.
+
 ## Core Principles
 
 ### I. Separation of Powers (NON-NEGOTIABLE)

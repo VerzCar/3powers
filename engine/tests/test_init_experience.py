@@ -345,3 +345,58 @@ def test_auto_commit_default_is_on(tmp_path):
     root.mkdir()
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
     assert Settings(root=root).auto_commit() is True
+
+
+# ------------------------------------------------------- constitution adaptation CTA (plan 033 Track M)
+def test_init_json_surfaces_constitution_adaptation(tmp_path, capsys):
+    """Init's --json report carries the constitution-adaptation call to action: an explicit
+    next step, and a readiness-checklist line that says to adapt it — not a passive 'in place'."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", "--json", key=tmp_path / "k.key") == 0
+    report = json.loads(capsys.readouterr().out)
+    assert any("constitution" in step and "adapt" in step.lower() for step in report["next_steps"])
+    detail = next(c["detail"] for c in report["checklist"] if c["item"] == "3Powers constitution")
+    assert "adapt" in detail.lower()
+    assert "How to adapt this constitution" in detail
+
+
+def test_init_human_output_carries_constitution_advisory(tmp_path, capsys):
+    """The interactive/human init summary prominently advises adapting the mandatory constitution
+    before the first real run, pointing at its in-file guidance section."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    out = capsys.readouterr().out
+    assert "Adapt the constitution before your first real run" in out
+    assert ".3powers/memory/constitution.md" in out
+    assert "How to adapt this constitution" in out
+
+
+def test_seeded_constitution_ships_the_adaptation_guide_and_checklist(tmp_path):
+    """The seeded constitution carries the in-file adaptation guide: the guidance section, the
+    mandatory-content checklist (technical baseline + policies), what stays fixed, and how to
+    update."""
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
+    text = (root / ".3powers" / "memory" / "constitution.md").read_text(encoding="utf-8")
+    assert "## How to adapt this constitution" in text
+    for marker in (
+        "technical baseline",
+        "policies & rules",
+        "What stays fixed:",
+        "How to update:",
+    ):
+        assert marker in text, f"constitution guide is missing {marker!r}"
+    # a few concrete checklist demands: toolchain/gate commands, dependency policy, tiered testing
+    # bars, security rules, definition of done, and gate non-weakening.
+    for item in (
+        "the exact commands the coding gates run",
+        "Dependency policy",
+        "coverage / mutation bars per risk tier",
+        "credentials, access control, hard-deletes",
+        "Definition of done",
+        "never satisfied by weakening it",
+    ):
+        assert item in text, f"constitution checklist is missing {item!r}"

@@ -1,10 +1,17 @@
-# NFR instrumentation registry: which non-functional requirements have a LIVE
-# production check. `3pwr observe coverage --spec <spec.md>` reports which of a spec's NFRs are covered
-# here (the acceptance bar: "a specified NFR has a live check in production"). A `check` describes how
-# the NFR is verified in production — a probe, an SLO monitor, a scheduled job.
+# Observability registry — the NFR-instrumentation registry read by `3pwr observe coverage`.
 #
-# The engine is offline (it does not run the target's production system); this registry DECLARES the
-# instrumentation so the coverage gap is visible and lessons can be routed back as new intent.
+# Purpose: declare which of a spec's non-functional requirements (NFRs) have a LIVE check in
+# production. The engine is fully offline — it never runs or inspects the production system — so
+# it cannot discover this instrumentation itself: it is registered here, and
+# `3pwr observe coverage --spec <spec.md>` flags every NFR in the spec that has no registered check
+# (the acceptance bar: "a specified NFR has a live check in production"; exit 1 while any NFR is
+# uninstrumented). Declaring the instrumentation keeps the coverage gap visible so production
+# lessons can be routed back to the spec as new intent.
+#
+# Schema (version 1): a top-level `checks` list; each entry registers one NFR:
+#   - nfr:   the requirement ID exactly as it appears in the spec
+#   - check: a human-readable note describing HOW that NFR is verified in production —
+#            a probe, an SLO monitor, an alert, a scheduled job.
 version: 1
 
 checks:

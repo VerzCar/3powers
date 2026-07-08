@@ -194,8 +194,9 @@ def test_present_cli_reports_authentication_caveat(tmp_path, monkeypatch, signer
 
 # --------------------------------------------------------------------------- AUTOX-FR-005 (next steps)
 def test_init_next_steps_are_exactly_the_unmet_fixes_in_order(tmp_path, monkeypatch, capsys):
-    """AUTOX-FR-005: after an init with N unmet auto-run items, the next-steps list contains exactly
-    those N fixes, in dependency order (key → coder agent → oracle agent)."""
+    """AUTOX-FR-005: after an init with N unmet auto-run items, the next-steps list leads with
+    exactly those N fixes, in dependency order (key → coder agent → oracle agent), followed only by
+    the always-on constitution-adaptation step (plan 033 Track M)."""
     root = tmp_path / "repo"
     root.mkdir()
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(tmp_path / "missing.key"))
@@ -205,20 +206,25 @@ def test_init_next_steps_are_exactly_the_unmet_fixes_in_order(tmp_path, monkeypa
     assert rc == 0
     report = json.loads(capsys.readouterr().out)
     unmet = [c for c in report["auto_run"] if not c["ok"]]
-    assert report["next_steps"] == [c["fix"] for c in unmet]
+    fixes = [c["fix"] for c in unmet]
+    assert report["next_steps"][: len(fixes)] == fixes
+    assert report["next_steps"][len(fixes) :] == [report["next_steps"][-1]]
+    assert "constitution" in report["next_steps"][-1]
     # dependency order: the signing key comes first when unmet
     assert "keygen" in report["next_steps"][0]
 
 
 def test_init_all_met_reports_auto_ready(tmp_path, monkeypatch, signer_key, capsys):
     """AUTOX-FR-005 (converse) / AUTOX-SC-001: with every prerequisite met, init reports auto_ready
-    and an empty next-steps list."""
+    and no auto-run fix remains in next-steps — only the always-on constitution-adaptation step
+    (plan 033 Track M)."""
     root = _project(tmp_path)
     monkeypatch.setattr(runpreflight.shutil, "which", lambda c: f"/usr/bin/{c}")
     rc = main(["--root", str(root), "init", "--yes", "--json", "--language", "python"])
     assert rc == 0
     report = json.loads(capsys.readouterr().out)
-    assert report["auto_ready"] is True and report["next_steps"] == []
+    assert report["auto_ready"] is True
+    assert [s for s in report["next_steps"] if "constitution" not in s] == []
 
 
 # --------------------------------------------------------------------------- AUTOX-NFR-001
