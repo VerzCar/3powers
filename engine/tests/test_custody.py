@@ -1,6 +1,6 @@
 """Key custody, the threat-model document, and the core private-key scan (HARDN-FR-001/002/003).
 
-Unit layer for the trust-spine hardening spec (`specs/005-trust-hardening/spec.md`): the custody
+Unit layer for the trust-spine hardening spec (`specs-src/005-trust-hardening/spec.md`): the custody
 preflight, the keygen refusal, and the always-on ``ed25519-priv`` secret check are exercised
 directly; the threat-model document is asserted structurally, docs-conformance style.
 """

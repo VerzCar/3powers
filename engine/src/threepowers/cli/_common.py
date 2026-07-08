@@ -84,8 +84,8 @@ def _settings(root: Optional[str]) -> Settings:
 def _resolve_spec(s: Settings, spec: Optional[str]) -> Path:
     if spec:
         return Path(spec).resolve()
-    # Native fallback: the newest spec under specs/ — exactly one per feature folder, whichever
-    # layout (the spec/ workspace subfolder or the legacy flat file).
+    # Native fallback: the newest spec under specs-src/ (or the legacy specs/) — exactly one per
+    # feature folder, whichever layout (the spec/ workspace subfolder or the legacy flat file).
     specs = sorted(workspace.find_specs(s.root), key=lambda q: q.stat().st_mtime, reverse=True)
     if specs:
         return specs[0]

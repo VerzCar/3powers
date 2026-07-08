@@ -77,7 +77,7 @@ never executed at generation time — so this is safe on untrusted legacy code:
 ```
 ```
 characterized demo.py → spec DEMO (3 symbol(s), 3 requirement(s))
-  spec:  specs/001-demo-characterization/spec.md
+  spec:  specs-src/001-demo-characterization/spec.md
   tests: src/legacy/characterization/test_demo_characterization.py
 ```
 

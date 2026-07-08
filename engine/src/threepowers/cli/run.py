@@ -377,7 +377,7 @@ def _resolve_run_spec(
     s: Settings, args: argparse.Namespace, feature_dir: Optional[Path] = None
 ) -> Optional[Path]:
     """The spec the native run resolves: --spec if given, else the run's bound feature folder
-    (no modification-time scan), else the newest feature spec under specs/ (legacy)."""
+    (no modification-time scan), else the newest feature spec under specs-src/ (legacy)."""
     if getattr(args, "spec", None):
         p = Path(args.spec)
         return p if p.exists() else None
@@ -1593,7 +1593,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
         if git_on and feature_dir is not None:
             # Rebind the run's progress file to the recorded workspace: the
-            # resumed segment's triggers keep updating specs/<NNN>-<slug>/progress.md.
+            # resumed segment's triggers keep updating specs-src/<NNN>-<slug>/progress.md.
             progress_box["reporter"] = progress.Reporter(
                 feature_dir,
                 spec_id=spec_id,
@@ -1672,8 +1672,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
                 return EXIT_SETUP
         # Bind the run's feature folder: an explicit --spec names it; otherwise a
-        # LIVE run auto-allocates specs/<NNN>-<slug>/ deterministically from the intent. --dry-run and
-        # the simulator dispatch nothing and write no artifacts, so they allocate nothing.
+        # LIVE run auto-allocates specs-src/<NNN>-<slug>/ deterministically from the intent.
+        # --dry-run and the simulator dispatch nothing and write no artifacts, so they allocate
+        # nothing.
         if getattr(args, "spec", None):
             spec_arg = Path(args.spec)
             feature_dir = workspace.feature_dir_of(spec_arg) if spec_arg.exists() else None
@@ -1681,10 +1682,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             try:
                 feature_dir = workspace.allocate_feature_dir(s.root, args.intent or "")
             except FileExistsError:
-                target = workspace.feature_folder_name(s.root / "specs", args.intent or "")
+                target = workspace.feature_folder_name(
+                    s.root / workspace.SPECS_DIR, args.intent or ""
+                )
                 print(
-                    f"cannot start `3pwr run` — the feature folder specs/{target} is already "
-                    "allocated (another run?); no folder is ever overwritten",
+                    f"cannot start `3pwr run` — the feature folder {workspace.SPECS_DIR}/{target} "
+                    "is already allocated (another run?); no folder is ever overwritten",
                     file=sys.stderr,
                 )
                 return EXIT_SETUP
@@ -2134,7 +2137,7 @@ def _register_git(sub: SubParsers, common: AddCommon) -> None:
     gits.add_argument("--spec-id", dest="spec_id", required=True)
     gits.add_argument(
         "--feature",
-        help="the run's feature folder (specs/<NNN>-<slug>); default: the ledger's recorded binding",
+        help="the run's feature folder (specs-src/<NNN>-<slug>); default: the ledger's recorded binding",
     )
     gits.set_defaults(func=cmd_git_start)
 
@@ -2178,7 +2181,7 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
     rnp.add_argument(
         "--spec",
         default=None,
-        help="spec.md the native verify stage gates against (default: the newest under specs/)",
+        help="spec.md the native verify stage gates against (default: the newest under specs-src/)",
     )
     rnp.add_argument(
         "--tier",

@@ -1,6 +1,6 @@
 """Per-stage agent templates + the headless-CLI / role→model setup (AGENTX-FR-001…018, NFR-001…005).
 
-Spec: specs/016-stage-agents-and-role-setup/spec.md (Spec ID AGENTX, Standard tier). Everything here
+Spec: specs-src/016-stage-agents-and-role-setup/spec.md (Spec ID AGENTX, Standard tier). Everything here
 runs offline and deterministically (AGENTX-NFR-001): templates are plain files, the catalog is data,
 and the setup is driven headlessly (pytest has no TTY, so init/setup are non-interactive and apply
 the documented defaults — AGENTX-NFR-004).

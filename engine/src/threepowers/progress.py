@@ -1,4 +1,4 @@
-"""Human-readable run progress — ``specs/<NNN>-<slug>/progress.md``.
+"""Human-readable run progress — ``specs-src/<NNN>-<slug>/progress.md``.
 
 The signed ledger is the run's authoritative, machine-readable record; this module writes the
 *operator's* view of it: one markdown file in the run's feature folder that an operator can ``cat``

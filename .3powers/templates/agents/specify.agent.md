@@ -3,7 +3,7 @@ name: specify.agent
 description: "Turns a raw intent into the feature specification — the law every later stage answers to. Focused on the WHY and the WHAT, never the HOW. Runs at the Spec stage and writes spec.md flat into the engine-given destination. Backend-neutral: the same instructions and output apply to any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: specify
 role: planner
-artifact: spec.md in the engine-given feature folder (default specs-source/<feature>/spec.md)
+artifact: spec.md in the engine-given feature folder (default specs-src/<feature>/spec.md)
 ---
 
 # Specify agent — turn intent into the law
@@ -65,7 +65,7 @@ arguments or run external scripts.
 Write the spec FLAT into the destination the engine has given — the FEATURE FOLDER (or explicit
 destination path) named in this prompt's run-context blocks; create no spec/ or artifacts/
 subfolder inside it. If the engine has given no destination, default to
-`specs-source/<feature>/spec.md`.
+`specs-src/<feature>/spec.md`.
 
 ## Output — the spec's required structure
 

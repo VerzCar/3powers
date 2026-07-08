@@ -592,7 +592,7 @@ def _register_signoff(sub: SubParsers, common: AddCommon) -> None:
     sp.add_argument(
         "--spec",
         help="path to the approved spec.md — its hash is sealed into a Spec-stage sign-off "
-        "(default: the newest spec under specs/)",
+        "(default: the newest spec under specs-src/)",
     )
     sp.set_defaults(func=cmd_signoff)
 

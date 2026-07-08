@@ -16,7 +16,7 @@ Repository layout:
 engine/                     # the 3pwr engine — Python, shipped as a uv tool (src/threepowers/, tests/)
 docs/                       # public documentation — kept current with every change
 plan/                       # plans and implementation plans (see the mandatory workflow below)
-specs/                      # spec artifacts produced by 3pwr runs
+specs-src/                  # spec artifacts produced by 3pwr runs
 e2e/                        # per-adapter notebook kit — real-world CLI testing in throwaway sandboxes
 .3powers/                   # this repo's own trust spine (config, templates, ledger)
 .github/agents/             # the agent roles used by the mandatory workflow
@@ -42,7 +42,7 @@ e2e/                        # per-adapter notebook kit — real-world CLI testin
 ## Development workflow
 
 - Engine work happens inside `engine/` — source in `engine/src/threepowers/`, tests in `engine/tests/`.
-- A `3pwr` run's stage artifacts lie flat in the run's auto-allocated feature folder `specs/<NNN>-<slug>/` — `spec.md`, `plan.md`, `tasks.md`, `oracle.md`, `implement.md`, plus the engine-maintained `progress.md`. The legacy split layout (`specs/<feature>/spec/spec.md` + the sibling `specs/<feature>/artifacts/` folder) stays readable.
+- A `3pwr` run's stage artifacts lie flat in the run's auto-allocated feature folder `specs-src/<NNN>-<slug>/` — `spec.md`, `plan.md`, `tasks.md`, `oracle.md`, `implement.md`, plus the engine-maintained `progress.md`. The legacy base folder `specs/` and the legacy split layout (`specs/<feature>/spec/spec.md` + the sibling `specs/<feature>/artifacts/` folder) stay readable.
 - Tasks artifacts group work into ordered phases sized to the context budget (`.3powers/config/context.yaml`); phases marked `[P]` with disjoint file scopes are dispatched in parallel as fresh sessions. The budget is advisory — an oversize phase warns, never blocks.
 - The full `3pwr` command surface (gate runs, ledger verification, lifecycle runs, oracle, brownfield, deviations, …) is documented in [docs/cli-reference.md](docs/cli-reference.md). Consult it there; it is not duplicated in this file.
 - The engine gates its own code (self-application): keep any engine change green under ruff, mypy, and pytest before declaring it done.
@@ -78,6 +78,6 @@ The `3pwr` engine's commands are documented once, publicly, in [docs/cli-referen
 
 This is an open-source project. Everything in this repository is public, so all outward-facing content — `docs/`, the README, CLI help text and error messages — must be open-source ready at all times:
 
-- **No internal references in public surfaces.** Do not reference internal plan files, spec artifacts, or internal requirement IDs in `docs/` or in CLI help descriptions. Internal working artifacts belong in `plan/` and `specs/` only.
-- **Internal requirement IDs stay out of end-user-readable text.** Internal requirement IDs (`3PWR-FR-###` and friends), epic letters, and plan/spec numbers live in `specs/`, `plan/`, engine tests (`Covers:` declarations — the requirement IDs in test docstrings that the conformance gate parses), commit messages, `docs/STATUS.md`, and this file — **never** in end-user-readable text: CLI help and messages, engine source docstrings and comments, `docs/` prose, or the scaffold assets shipped by `3pwr init`. Text that teaches the requirement-ID format uses the reserved example namespace (`DEMO-FR-###`) or bare `FR-###`. This composes with the de-jargon rule above: the *user's own* IDs stay in their artifacts; *3Powers'* IDs stay out of everything user-facing. Enforced by `engine/tests/test_oss_readiness.py`. The `Covers:` declarations are the requirement IDs in test docstrings that the `spec_conformance` gate parses.
+- **No internal references in public surfaces.** Do not reference internal plan files, spec artifacts, or internal requirement IDs in `docs/` or in CLI help descriptions. Internal working artifacts belong in `plan/` and `specs-src/` only.
+- **Internal requirement IDs stay out of end-user-readable text.** Internal requirement IDs (`3PWR-FR-###` and friends), epic letters, and plan/spec numbers live in `specs-src/`, `plan/`, engine tests (`Covers:` declarations — the requirement IDs in test docstrings that the conformance gate parses), commit messages, `docs/STATUS.md`, and this file — **never** in end-user-readable text: CLI help and messages, engine source docstrings and comments, `docs/` prose, or the scaffold assets shipped by `3pwr init`. Text that teaches the requirement-ID format uses the reserved example namespace (`DEMO-FR-###`) or bare `FR-###`. This composes with the de-jargon rule above: the *user's own* IDs stay in their artifacts; *3Powers'* IDs stay out of everything user-facing. Enforced by `engine/tests/test_oss_readiness.py`. The `Covers:` declarations are the requirement IDs in test docstrings that the `spec_conformance` gate parses.
 - **Docs stay current.** Every change and every new feature must be described in `docs/` (or referenced from there) as part of the same unit of work. A change that alters behavior without a matching docs update is incomplete.

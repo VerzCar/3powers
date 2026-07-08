@@ -53,7 +53,7 @@ This stage must produce a non-empty implementation change within the declared fi
 plus the coder's tests. A stage that produces nothing, or only an off-target change, has failed.
 If the engine asks this stage for a markdown note, write it to the destination the engine has
 given in this prompt's run-context blocks; if none has been given, default to
-`specs-source/<feature>/implement.md`. Do not commit, tag, push, or advance the lifecycle; the
+`specs-src/<feature>/implement.md`. Do not commit, tag, push, or advance the lifecycle; the
 executive records the verdict and the human gate does the rest.
 
 ## Completion report

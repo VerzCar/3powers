@@ -1,4 +1,4 @@
-"""The run's human-readable progress file — ``specs/<NNN>-<slug>/progress.md`` (PROGFILE, spec 024).
+"""The run's human-readable progress file — ``specs-src/<NNN>-<slug>/progress.md`` (PROGFILE, spec 024).
 
 Exercises Track E of plan 030 with fake agents and no network: the file written into the run's
 feature folder for every live run (PROGFILE-FR-001), the atomic tmp-then-rename write
@@ -46,7 +46,7 @@ TASKS_MD = """# Tasks
 
 # --------------------------------------------------------------------------- unit fixtures
 def _feature_dir(tmp_path: Path, name: str = "030-add-button") -> Path:
-    d = tmp_path / "specs" / name
+    d = tmp_path / "specs-src" / name
     d.mkdir(parents=True)
     return d
 
@@ -258,11 +258,14 @@ def test_progress_errors_degrade_to_a_warning(capsys):
 
 def test_clean_start_guard_ignores_the_progress_file():
     """PROGFILE-NFR-002: a feature workspace's progress.md — legitimately dirty after a paused or
-    failed run's last commit — is engine-owned state the clean-start guard never blocks on."""
+    failed run's last commit — is engine-owned state the clean-start guard never blocks on, under
+    the canonical base and the legacy one."""
     unrelated = gitflow.unrelated_changes(
-        ["specs/030-add-x/progress.md", "notes.txt", "specs/030-add-x/scratch.md"], set()
+        ["specs-src/030-add-x/progress.md", "notes.txt", "specs-src/030-add-x/scratch.md"], set()
     )
-    assert unrelated == ["notes.txt", "specs/030-add-x/scratch.md"]
+    assert unrelated == ["notes.txt", "specs-src/030-add-x/scratch.md"]
+    # legacy base back-compat: a paused legacy run's progress file is still never a blocker
+    assert gitflow.unrelated_changes(["specs/030-add-x/progress.md"], set()) == []
 
 
 # --------------------------------------------------------------------------- live run integration (FR-001/007/008)
@@ -294,7 +297,7 @@ def _writer(fail_specify: bool = False):
         if fail_specify and "STAGE: Specify" in prompt:
             return (1, "", "agent exploded")
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else "specs/unknown")
+        d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
         if "STAGE: Specify" in prompt:
             d.mkdir(parents=True, exist_ok=True)
@@ -336,9 +339,9 @@ def run_repo(tmp_path, monkeypatch):
     keyfile = tmp_path / "signer.key"
     monkeypatch.setenv("THREEPOWERS_SIGNING_KEY_FILE", str(keyfile))
     assert main(["--root", str(root), "keygen", "--out", str(keyfile)]) == 0
-    # Seed specs/029-seed so the run's workspace allocates 030 — committed, so the GITX
+    # Seed specs-src/029-seed so the run's workspace allocates 030 — committed, so the GITX
     # clean-start guard sees a clean tree.
-    seed = root / "specs" / "029-seed"
+    seed = root / "specs-src" / "029-seed"
     seed.mkdir(parents=True)
     (seed / "spec.md").write_text("# seed\n", encoding="utf-8")
     _git_init(root)
@@ -353,16 +356,16 @@ def test_live_run_writes_progress_and_commits_it(run_repo):
     NNN in the helper commands, no tmp file survives, and the producing stage's commit bundles
     progress.md alongside the stage artifact and the ledger."""
     assert main(["--root", str(run_repo), "run", "add x", "--no-input"]) == EXIT_PAUSED
-    prog = run_repo / "specs" / "030-add-x" / "progress.md"
+    prog = run_repo / "specs-src" / "030-add-x" / "progress.md"
     assert prog.is_file()
-    assert not (run_repo / "specs" / "030-add-x" / ".progress.md.tmp").exists()
+    assert not (run_repo / "specs-src" / "030-add-x" / ".progress.md.tmp").exists()
     text = prog.read_text(encoding="utf-8")
     assert text.startswith("# Run 030 · add-x · ")
     assert "🔒 paused" in text and "paused at 'review-spec'" in text
     assert "3pwr run --resume --spec-id 030 --approver <you>" in text
     files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
-    assert "specs/030-add-x/progress.md" in files
-    assert "specs/030-add-x/spec.md" in files and ".3powers/ledger.jsonl" in files
+    assert "specs-src/030-add-x/progress.md" in files
+    assert "specs-src/030-add-x/spec.md" in files and ".3powers/ledger.jsonl" in files
 
 
 def test_run_failure_reaches_the_progress_file(run_repo, monkeypatch):
@@ -373,13 +376,13 @@ def test_run_failure_reaches_the_progress_file(run_repo, monkeypatch):
         main(["--root", str(run_repo), "run", "add x", "--no-input", "--retries", "0"])
         == EXIT_SETUP
     )
-    text = (run_repo / "specs" / "030-add-x" / "progress.md").read_text(encoding="utf-8")
+    text = (run_repo / "specs-src" / "030-add-x" / "progress.md").read_text(encoding="utf-8")
     assert "✗ failed — dispatch_failed" in text
     assert re.search(r"^\| Spec \| ✗ failed \|", text, re.MULTILINE)
 
 
 def test_dry_run_writes_no_progress_file(run_repo):
     """PROGFILE-FR-001: a --dry-run dispatches nothing and writes nothing — no feature folder is
-    allocated and no progress.md appears anywhere under specs/."""
+    allocated and no progress.md appears anywhere under specs-src/."""
     assert main(["--root", str(run_repo), "run", "add x", "--no-input", "--dry-run"]) == EXIT_PAUSED
-    assert list((run_repo / "specs").glob("*/progress.md")) == []
+    assert list((run_repo / "specs-src").glob("*/progress.md")) == []

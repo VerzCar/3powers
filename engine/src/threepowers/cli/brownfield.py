@@ -14,6 +14,7 @@ from .. import (
     config,
     deps,
     runpreflight,
+    workspace,
 )
 from ..ledger import Ledger
 from ..verdict import STATUS_PASS
@@ -43,7 +44,7 @@ def cmd_characterize(args: argparse.Namespace) -> int:
     except FileNotFoundError:
         root = base or Path.cwd()
     module_path = Path(args.module).resolve()
-    specs_dir = Path(args.specs).resolve() if args.specs else root / "specs"
+    specs_dir = Path(args.specs).resolve() if args.specs else root / workspace.SPECS_DIR
     # A directory walk defaults each file's tests alongside it; an explicit --tests pins them all.
     tests_dir = Path(args.tests).resolve() if args.tests else None
     try:
@@ -267,7 +268,7 @@ def _register_characterize(sub: SubParsers, common: AddCommon) -> None:
         required=True,
         help="a legacy source file (e.g. src/foo.py) or a directory to walk and characterize",
     )
-    chp.add_argument("--specs", help="specs/ directory (default: <root>/specs)")
+    chp.add_argument("--specs", help="spec-stub directory (default: <root>/specs-src)")
     chp.add_argument("--tests", help="tests output dir (default: alongside the module)")
     chp.set_defaults(func=cmd_characterize)
 

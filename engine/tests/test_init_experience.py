@@ -161,7 +161,7 @@ def test_conformance_dry_run_names_untested_requirement(tmp_path):
     root = tmp_path / "proj"
     root.mkdir()
     assert _init(root, "--language", "python", key=tmp_path / "k.key") == 0
-    spec = root / "specs" / "demo" / "spec.md"
+    spec = root / "specs-src" / "demo" / "spec.md"
     spec.parent.mkdir(parents=True)
     spec.write_text(
         "**Spec ID**: DEMO\n\n### Functional Requirements\n"

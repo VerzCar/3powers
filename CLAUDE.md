@@ -51,8 +51,9 @@ prompts reload the approved spec + the prior stage's artifact reference; a phase
 artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with
 disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
 budget in `.3powers/config/context.yaml`. Each run's artifacts lie flat in its auto-allocated feature
-folder `specs/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy split layout
-(`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stays readable. For a hands-on,
+folder `specs-src/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy base folder
+`specs/` and the legacy split layout
+(`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stay readable. For a hands-on,
 step-by-step run, drive the stages with the `3pwr` CLI and the judiciary `/3pwr.*` prompts (`/3pwr.oracle`
 → `/3pwr.verify` → `/3pwr.review` → `/3pwr.signoff` → `/3pwr.advance`);
 

@@ -1,7 +1,7 @@
 # Concepts — how 3Powers thinks
 
 > Plain-English tour of the ideas. The **normative** version lives in the
-> [constitution](../.3powers/memory/constitution.md) and the [spec](../specs/3Powers_Spec_v0.2.md)
+> [constitution](../.3powers/memory/constitution.md) and the [spec](../specs-src/3Powers_Spec_v0.2.md)
 > (Spec ID `3PWR`); this page explains *why* they say what they say. New to the project? Read this,
 > then [Getting Started](getting-started.md). Terms of art are defined in the [glossary](glossary.md).
 
@@ -27,7 +27,7 @@ accountable**, and it makes that separation mechanical rather than a matter of g
 The rule (constitution, Principle I): **no single model or actor occupies two branches for the same
 change.** The model that wrote the code does not get to write the answer key.
 
-- **Legislative — the spec is law.** Requirements live versioned in [`specs/`](../specs/), in
+- **Legislative — the spec is law.** Requirements live versioned in [`specs-src/`](../specs-src/), in
   [EARS](https://alistairmavin.com/ears/) form, each with a unique ID like `DEMO-FR-001`. Every spec
   declares a **risk tier** and an explicit **non-goals** section *before* planning starts. Implementation
   detail (a database, a framework) does **not** belong in a spec and is flagged out.

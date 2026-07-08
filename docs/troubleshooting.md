@@ -98,7 +98,7 @@ an unknown risk tier.
 **Fix** — make the inputs resolvable, then resume:
 
 ```bash
-3pwr run --resume --spec-id <ID> --spec specs/<feature>/spec.md --tier Standard
+3pwr run --resume --spec-id <ID> --spec specs-src/<feature>/spec.md --tier Standard
 ```
 
 ## "nothing to resume"
@@ -183,5 +183,5 @@ gate doing its job: an approved spec can't drift silently.
 
 ```bash
 3pwr spec diff --spec-id <ID>
-3pwr signoff --approver <you> --stage spec --spec-id <ID> --spec specs/<feature>/spec.md
+3pwr signoff --approver <you> --stage spec --spec-id <ID> --spec specs-src/<feature>/spec.md
 ```

@@ -45,7 +45,7 @@ def test_is_excluded_and_isolation_violations():
         {"path": "engine/src/threepowers/oracle.py", "hash": "h"},
         {"path": "plan.md", "hash": "h"},
         {"path": "tasks.md", "hash": "h"},
-        {"path": "specs/x/contracts/api.yaml", "hash": "h"},
+        {"path": "specs-src/x/contracts/api.yaml", "hash": "h"},
         {"path": "tests/thing.test.py", "hash": "h"},
         {"path": "ORACLE_BUNDLE.json", "hash": "h"},
         {"path": "spec.md", "hash": "h"},
@@ -55,7 +55,7 @@ def test_is_excluded_and_isolation_violations():
     assert "src/impl.py" in v
     assert "engine/src/threepowers/oracle.py" in v
     assert "plan.md" in v and "tasks.md" in v
-    assert "specs/x/contracts/api.yaml" in v  # anything under a contracts/ dir
+    assert "specs-src/x/contracts/api.yaml" in v  # anything under a contracts/ dir
     assert "tests/thing.test.py" not in v  # a test file is not implementation
     assert "ORACLE_BUNDLE.json" not in v and "spec.md" not in v and "README.md" not in v
 

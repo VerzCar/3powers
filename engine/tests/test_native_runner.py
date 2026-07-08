@@ -298,7 +298,7 @@ def _artifact_writer(spec_id="RUN"):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
+        d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         if "STAGE: Specify" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
@@ -331,8 +331,10 @@ def native_project(tmp_path, monkeypatch):
     root = tmp_path / "repo"
     (root / ".3powers" / "config").mkdir(parents=True)
     (root / ".3powers" / "agents").mkdir(parents=True)
-    (root / "specs" / "009-x").mkdir(parents=True)
-    (root / "specs" / "009-x" / "spec.md").write_text("# Spec\n**Spec ID**: X\n", encoding="utf-8")
+    (root / "specs-src" / "009-x").mkdir(parents=True)
+    (root / "specs-src" / "009-x" / "spec.md").write_text(
+        "# Spec\n**Spec ID**: X\n", encoding="utf-8"
+    )
     import yaml
 
     for name, fam in (("claude", "anthropic"), ("codex", "openai")):
@@ -506,7 +508,7 @@ def test_run_stage_reports_dispatch_artifact_and_ok_outcomes():
         "Spec",
         attempt=lambda: DispatchResult(True, model="anthropic/opus"),
         retries=0,
-        verify_artifact=lambda: artifacts.verify(contract, ["specs/x/spec.md"]),
+        verify_artifact=lambda: artifacts.verify(contract, ["specs-src/x/spec.md"]),
         agent="claude",
         clock=clock,
     )
@@ -552,7 +554,7 @@ def _writer_no_implement():
         p = argv[-1] if argv else ""
         cwd = Path(kw["cwd"])
         m = re.search(r"FEATURE FOLDER: (\S+)", p)
-        d = cwd / (m.group(1) if m else "specs/RUN")
+        d = cwd / (m.group(1) if m else "specs-src/RUN")
         # plan/tasks carry hard contracts too (PHASE-FR-002) — write them flat so the run reaches Build
         if "STAGE: Plan" in p:
             d.mkdir(parents=True, exist_ok=True)
@@ -705,8 +707,8 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
             return (0, "completed", "")
         if argv[:2] == ["gh", "collect"]:
             if state["step"] == "specify":  # the hosted run's branch carries the produced spec
-                # the run deterministically allocated specs/010-add-x (SRCX-FR-008: max 009 + 1)
-                d = Path(cwd) / "specs" / "010-add-x"
+                # the run deterministically allocated specs-src/010-add-x (SRCX-FR-008: max 009 + 1)
+                d = Path(cwd) / "specs-src" / "010-add-x"
                 d.mkdir(parents=True, exist_ok=True)
                 (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
             return (0, "checked out", "")

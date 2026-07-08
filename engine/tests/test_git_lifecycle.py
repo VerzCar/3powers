@@ -53,7 +53,7 @@ def _writer(spec_id="RUN", skip=(), commit_line=True):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
-        d = cwd / (m.group(1) if m else f"specs/{spec_id}")
+        d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         step = ""
         if "STAGE: Specify" in prompt and "specify" not in skip:
             step = "specify"
@@ -250,7 +250,7 @@ def test_resume_reuses_the_existing_branch_never_a_new_one(run_repo, monkeypatch
         b.lstrip("* ") for b in _git(run_repo, "branch", "--list", "3pwr/*").splitlines()
     }
     assert branches_after == branches_before  # GITX-FR-004: no second run branch
-    folders = sorted(p.name for p in (run_repo / "specs").iterdir() if p.is_dir())
+    folders = sorted(p.name for p in (run_repo / "specs-src").iterdir() if p.is_dir())
     assert folders == ["001-add-x"]  # no new run number
     assert (
         main(["--root", str(run_repo), "verify"]) == 0
@@ -287,9 +287,9 @@ def test_run_produced_dirt_is_tolerated_on_resume(run_repo, monkeypatch, capsys)
     resume; only unrelated changes refuse."""
     assert _deviate(run_repo, "git_stage_commit") == 0
     assert _run(run_repo) == EXIT_PAUSED  # spec.md written, recorded, NOT committed
-    assert (run_repo / "specs" / "001-add-x" / "spec.md").is_file()
+    assert (run_repo / "specs-src" / "001-add-x" / "spec.md").is_file()
     entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
-    assert "specs/001-add-x/spec.md" in gitflow.recorded_run_paths(entries, "RUN")
+    assert "specs-src/001-add-x/spec.md" in gitflow.recorded_run_paths(entries, "RUN")
     assert _resume(run_repo) in (EXIT_PAUSED, EXIT_SETUP, EXIT_FAIL)  # tolerated, not refused
     err = capsys.readouterr().err
     assert "cannot start" not in err
@@ -337,8 +337,8 @@ def test_stage_commit_stages_only_produced_paths_with_agent_message(run_repo, ca
     # (PROGFILE-FR-008) — never add -A
     assert sorted(files) == [
         ".3powers/ledger.jsonl",
-        "specs/001-add-x/progress.md",
-        "specs/001-add-x/spec.md",
+        "specs-src/001-add-x/progress.md",
+        "specs-src/001-add-x/spec.md",
     ]
 
 
@@ -369,7 +369,7 @@ def test_human_committed_stage_keeps_the_human_author(run_repo, monkeypatch, cap
     stage's post-hook is a no-op and the commit keeps the human's own author."""
     assert _deviate(run_repo, "git_stage_commit") == 0
     assert _run(run_repo) == EXIT_PAUSED  # spec.md left uncommitted (relaxed)
-    subprocess.run(["git", "add", "specs/001-add-x/spec.md"], cwd=str(run_repo), check=True)
+    subprocess.run(["git", "add", "specs-src/001-add-x/spec.md"], cwd=str(run_repo), check=True)
     subprocess.run(
         ["git", "commit", "-q", "-m", "spec: written by hand"], cwd=str(run_repo), check=True
     )
@@ -458,7 +458,7 @@ def test_deviation_gates_include_the_named_git_guards():
 def test_git_start_establishes_the_branch_for_a_manual_drive(run_repo, capsys):
     """GITX-FR-016 + GITX-SC-006: `3pwr git start` gives the manual `/3pwr.*` drive the same
     clean-start + branch-isolation guarantees, binding the branch in the signed ledger."""
-    (run_repo / "specs" / "018-manual").mkdir(parents=True)
+    (run_repo / "specs-src" / "018-manual").mkdir(parents=True)
     rc = main(
         [
             "--root",
@@ -468,7 +468,7 @@ def test_git_start_establishes_the_branch_for_a_manual_drive(run_repo, capsys):
             "--spec-id",
             "MAN",
             "--feature",
-            "specs/018-manual",
+            "specs-src/018-manual",
             "--json",
         ]
     )
@@ -532,10 +532,10 @@ def test_git_mechanics_are_deterministic_and_offline(tmp_path, monkeypatch):
 
     monkeypatch.setattr(socket, "socket", _no_network)
     assert gitflow.run_branch_name("3pwr/", "018-x") == gitflow.run_branch_name("3pwr/", "018-x")
-    changed = ["src/a.py", ".3powers/ledger.jsonl", "specs/018-x/spec.md", "notes.txt"]
-    got = gitflow.unrelated_changes(changed, {"src/a.py"}, "specs/018-x/")
+    changed = ["src/a.py", ".3powers/ledger.jsonl", "specs-src/018-x/spec.md", "notes.txt"]
+    got = gitflow.unrelated_changes(changed, {"src/a.py"}, "specs-src/018-x/")
     assert got == ["notes.txt"]  # engine state + run paths + feature folder are never "unrelated"
-    assert gitflow.unrelated_changes(changed, {"src/a.py"}, "specs/018-x/") == got  # repeatable
+    assert gitflow.unrelated_changes(changed, {"src/a.py"}, "specs-src/018-x/") == got  # repeatable
     assert gitflow.stage_commit_message("GITX", "plan") == "3pwr(GITX): plan"
     assert (
         gitflow.stage_commit_message("GITX", "plan", "split the work")

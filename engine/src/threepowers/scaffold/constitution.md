@@ -14,7 +14,7 @@ deterministic gate suite, and a human reviewer judge whether the code matches th
 model or actor may occupy two branches for the same change.
 
 ### II. The Spec Is the Law
-Authoritative specifications live, versioned, in `specs/` — never in an external tracker.
+Authoritative specifications live, versioned, in `specs-src/` — never in an external tracker.
 Requirements are written in **EARS** form. Every spec declares a **Risk Tier** and an explicit
 **Non-Goals** section *before* planning may begin. Implementation detail (a named
 database, framework, schema, or stack choice) does not belong in spec text and must be flagged and

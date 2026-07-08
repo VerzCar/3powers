@@ -1,7 +1,7 @@
 # 3Powers Documentation
 
 Start here. These guides explain what 3Powers is, how to use it, and how the engine works — pick by what
-you're trying to do. The **spec** ([`3Powers_Spec_v0.2.md`](../specs/3Powers_Spec_v0.2.md), Spec ID `3PWR`) is
+you're trying to do. The **spec** ([`3Powers_Spec_v0.2.md`](../specs-src/3Powers_Spec_v0.2.md), Spec ID `3PWR`) is
 the law; these docs explain and operationalize it.
 
 ## Guides

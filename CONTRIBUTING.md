@@ -59,7 +59,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
 3Powers separates the powers on purpose. A code change follows the lifecycle
 (**Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe**):
 
-1. **Write or extend a spec.** Requirements live versioned under [`specs/`](specs/), in
+1. **Write or extend a spec.** Requirements live versioned under [`specs-src/`](specs-src/), in
    [EARS](https://alistairmavin.com/ears/) form. Each spec has a unique **Spec ID** and namespaced
    requirement IDs (e.g. `DEMO-FR-001`), a declared **risk tier**, and an explicit **non-goals** section.
    Keep implementation detail (a specific database, framework, or library) *out* of the spec.
@@ -69,7 +69,7 @@ export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/3powers.key"
    implementation. The engine records and checks this.
 4. **Run the gates and read the verdict:**
    ```bash
-   3pwr gate run --path <target> --spec specs/<feature>/spec.md --tier <tier>
+   3pwr gate run --path <target> --spec specs-src/<feature>/spec.md --tier <tier>
    3pwr verify        # recompute the signed ledger chain, offline
    ```
 5. **Sign off and advance.** A human approves the evidence; `advance` refuses to proceed without green

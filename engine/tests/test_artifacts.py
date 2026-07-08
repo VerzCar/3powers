@@ -13,9 +13,12 @@ def test_specify_contract_requires_a_spec_file():
     """RUNLIVE-FR-001: the Specify stage advances only if it produced a spec file."""
     c = artifacts.contract_for("specify")
     assert c is not None and c.kind == "path"
-    ok = artifacts.verify(c, ["specs/013-thing/spec.md", "notes.txt"])
-    assert ok.ok and "specs/013-thing/spec.md" in ok.matched
+    ok = artifacts.verify(c, ["specs-src/013-thing/spec.md", "notes.txt"])
+    assert ok.ok and "specs-src/013-thing/spec.md" in ok.matched
     assert "spec.md" in ok.summary
+    # legacy base back-compat: signed ledger history keeps its recorded specs/… paths
+    legacy = artifacts.verify(c, ["specs/013-thing/spec.md"])
+    assert legacy.ok and "specs/013-thing/spec.md" in legacy.matched
 
 
 def test_specify_empty_is_a_named_artifact_failure():
@@ -29,10 +32,10 @@ def test_specify_empty_is_a_named_artifact_failure():
 def test_right_artifact_wrong_location_names_expected_and_off_target():
     """Edge case: the right kind of file in the wrong place fails, naming expected + what was produced."""
     c = artifacts.contract_for("specify")
-    chk = artifacts.verify(c, ["docs/spec.md", "README.md"])  # not under specs/<feature>/
+    chk = artifacts.verify(c, ["docs/spec.md", "README.md"])  # not under specs-src/<feature>/
     assert not chk.ok
     assert "off-target" in chk.message and "docs/spec.md" in chk.message
-    assert "specs/<feature>/spec.md" in chk.message
+    assert "specs-src/<feature>/spec.md" in chk.message
 
 
 def test_oracle_contract_matches_common_oracle_locations():

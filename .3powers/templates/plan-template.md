@@ -2,10 +2,10 @@
 
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Feature specification from `specs/[###-feature-name]/spec.md`
+**Input**: Feature specification from `specs-src/[###-feature-name]/spec.md`
 (legacy features keep `specs/[###-feature-name]/spec.md`)
 
-**Output**: This file, committed to `specs/[###-feature-name]/artifacts/plan.md` — the Plan stage's
+**Output**: This file, committed to `specs-src/[###-feature-name]/artifacts/plan.md` — the Plan stage's
 artifact. A plan that was not written to the feature workspace fails the stage.
 
 ## Summary
@@ -104,7 +104,7 @@ Rules:
 ### Documentation (this feature — the workspace)
 
 ```text
-specs/[###-feature]/
+specs-src/[###-feature]/
 ├── spec/
 │   └── spec.md          # the specification (Specify stage's artifact)
 └── artifacts/

@@ -120,7 +120,7 @@ signed ledger entry.
 - `--tier TIER` — `Cosmetic` | `Standard` | `High-risk` (default: `Standard`).
 - `--adapter ADAPTER` — language adapter (default: auto-detect).
 - `--spec SPEC` — path to the governing `spec.md`.
-- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs/<NNN>-*/`
+- `--id NNN` — shorthand for `--spec`: resolves the spec of the feature folder `specs-src/<NNN>-*/`
   (the number `3pwr run` allocated and prints in its hints). Exactly one folder must match — zero
   or multiple matches are a clear error — and `--id` cannot be combined with `--spec`.
 - `--base BASE` — git ref for the `diff_coverage` / diff-scope base.
@@ -136,7 +136,7 @@ signed ledger entry.
 - `--no-ledger` — run without appending a ledger entry.
 ```bash
 3pwr gate run --path e2e/typescript-orders/project \
-              --spec specs/<NNN>-<slug>/spec.md --tier Standard
+              --spec specs-src/<NNN>-<slug>/spec.md --tier Standard
 3pwr gate run --id <NNN> --tier Standard      # same spec, resolved by run number
 ```
 Exit `0` if the verdict is green, `1` if red (unless `--report-only`), `4` when a required tool is
@@ -282,7 +282,7 @@ comment-only mention fails as `untraced_requirement`, and every requirement-boun
 assertion (`weak_test` otherwise). Adapters without patterns degrade to a visible quarantine.
 - `--spec SPEC` · `--tests [TESTS ...]` — test roots to scan.
 ```bash
-3pwr conformance --spec specs/002-engine-trust-spine/spec.md --tests engine/tests engine/src
+3pwr conformance --spec specs-src/002-engine-trust-spine/spec.md --tests engine/tests engine/src
 ```
 
 ### `verify` — verify the ledger (offline)
@@ -322,7 +322,7 @@ Extracts the acceptance criteria (requirement IDs + text — no impl/plan/tasks/
 `oracle` seal entry.
 - `--spec SPEC` · `--spec-id SPEC_ID`.
 ```bash
-3pwr oracle seal --spec specs/<NNN>-<slug>/spec.md --spec-id VUTIL
+3pwr oracle seal --spec specs-src/<NNN>-<slug>/spec.md --spec-id VUTIL
 ```
 
 ### `oracle record` — record oracle authoring
@@ -370,10 +370,10 @@ approved document into the signed payload — its raw-bytes SHA-256 (`spec_hash`
 `spec_path`, and the current git commit — which is what the `spec_integrity` gate and `advance` enforce
 thereafter. A fresh Spec-stage sign-off supersedes the previous hash.
 - `--approver APPROVER` (required) · `--stage STAGE` (default `review`) · `--note NOTE` · `--spec-id SPEC_ID` ·
-  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs/**/spec.md`).
+  `--spec SPEC` — path to the approved `spec.md` (Spec stage; default: the newest `specs-src/**/spec.md`).
 ```bash
 3pwr signoff --approver "$(git config user.name)" --stage spec --spec-id VUTIL \
-             --spec specs/<NNN>-<slug>/spec.md   # seals the approved spec's hash
+             --spec specs-src/<NNN>-<slug>/spec.md   # seals the approved spec's hash
 3pwr signoff --approver "$(git config user.name)" --stage review --spec-id VUTIL
 ```
 
@@ -435,7 +435,7 @@ suite. Sign-offs, per-stage completions, verdicts, and any terminal failure are 
 ledger, so a run is resumable and its state is always visible (`--status` / `3pwr status`).
 
 **The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
-allocates `specs/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
+allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
 from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
 alone. Every producing stage leaves its markdown FLAT in that folder — `spec.md`, `plan.md`, `tasks.md`,
 plus the `oracle.md`/`implement.md` records linking the real test/code outputs at their real repo paths.
@@ -548,10 +548,10 @@ the git precondition, applies the clean-start guard (unrelated uncommitted chang
 paths and the `git_clean_start` deviation), creates-or-re-enters the run's dedicated branch, and binds
 the branch to the spec-id in the signed ledger (the same additive `run`/`start` field the orchestrated
 path records). Idempotent — an already-established run re-enters its recorded branch and appends nothing.
-- `--spec-id SPEC_ID` (required) · `--feature specs/<NNN>-<slug>` (the run's feature folder; default:
+- `--spec-id SPEC_ID` (required) · `--feature specs-src/<NNN>-<slug>` (the run's feature folder; default:
   the ledger's recorded binding).
 ```bash
-3pwr git start --spec-id GITX --feature specs/018-git-lifecycle-integration
+3pwr git start --spec-id GITX --feature specs-src/018-git-lifecycle-integration
 ```
 
 ### `revert` — reverse to a prior recorded state
@@ -624,7 +624,7 @@ Reports which of a spec's NFRs have a declared live check in `.3powers/config/ob
 `1` if any NFR is uninstrumented.
 - `--spec SPEC` · `--registry REGISTRY` (default `.3powers/config/observability.yaml`).
 ```bash
-3pwr observe coverage --spec specs/002-engine-trust-spine/spec.md
+3pwr observe coverage --spec specs-src/002-engine-trust-spine/spec.md
 ```
 
 ### `observe log-action` / `observe verify-actions` — tamper-evident agent log
@@ -644,14 +644,14 @@ for a target system's runtime agents, and verifies it — the same tamper-eviden
 Every requirement maps to ≥1 task and every task traces to a requirement, *before* code.
 - `--spec SPEC` · `--tasks TASKS` (required).
 ```bash
-3pwr coverage-check --spec specs/003-x/spec.md --tasks specs/003-x/tasks.md
+3pwr coverage-check --spec specs-src/003-x/spec.md --tasks specs-src/003-x/tasks.md
 ```
 
 ### `scope-check` — task req-id + file-scope discipline
 Fails a task line with no requirement ID, and flags edits outside a task's declared file scope.
 - `--tasks TASKS` (required) · `--base BASE` · `--path PATH`.
 ```bash
-3pwr scope-check --tasks specs/003-x/tasks.md --base main
+3pwr scope-check --tasks specs-src/003-x/tasks.md --base main
 ```
 
 ---
