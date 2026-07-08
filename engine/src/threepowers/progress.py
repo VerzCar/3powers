@@ -1,21 +1,21 @@
-"""Human-readable run progress — ``specs/<NNN>-<slug>/progress.md`` (PROGFILE, spec 024).
+"""Human-readable run progress — ``specs/<NNN>-<slug>/progress.md``.
 
 The signed ledger is the run's authoritative, machine-readable record; this module writes the
 *operator's* view of it: one markdown file in the run's feature folder that an operator can ``cat``
 or share to see where the run is and what to do next. The file tracks stage-level progress (one row
-per lifecycle stage with a status glyph and completion timestamp — PROGFILE-FR-004) and, while the
+per lifecycle stage with a status glyph and completion timestamp) and, while the
 current stage has declared phases, phase-level progress read live from the tasks artifact's
-checkboxes (PROGFILE-FR-005). It carries a "Current state" block, the last deterministic-gate
+checkboxes. It carries a "Current state" block, the last deterministic-gate
 verdict, copy-pasteable helper commands with the run's real identity, and the failed gate names of
-the last verify attempt (PROGFILE-FR-006).
+the last verify attempt.
 
 Writes are atomic — rendered to ``.progress.md.tmp`` in the same directory, then ``os.replace``d
-onto ``progress.md`` — so a concurrent reader never sees a torn file (PROGFILE-FR-002, matching the
+onto ``progress.md`` — so a concurrent reader never sees a torn file (matching the
 ledger's durability posture). Rendering is a pure function of a :class:`Snapshot`; the stateful
 :class:`Reporter` folds the run loop's lifecycle triggers (stage start / stage complete / gate
-verdict / human-gate pause / run failure — PROGFILE-FR-007) into that snapshot. The module never
+verdict / human-gate pause / run failure) into that snapshot. The module never
 touches the ledger and never enters a verdict; a failure writing this file must never fail a run
-(PROGFILE-NFR-001 — the caller degrades errors to a warning).
+(the caller degrades errors to a warning).
 """
 
 from __future__ import annotations
@@ -32,11 +32,11 @@ from . import workspace
 from .lifecycle import STAGES
 from .orchestrate import LIFECYCLE_STEPS
 
-# The engine-owned progress file and its same-directory atomic-write staging name (PROGFILE-FR-002).
+# The engine-owned progress file and its same-directory atomic-write staging name.
 FILENAME = "progress.md"
 TMP_NAME = ".progress.md.tmp"
 
-# Row statuses and their glyphs (PROGFILE-FR-004).
+# Row statuses and their glyphs.
 STATUS_DONE = "done"
 STATUS_RUNNING = "running"
 STATUS_PENDING = "pending"
@@ -64,7 +64,7 @@ for _sid, _kind, _stage in LIFECYCLE_STEPS:
 
 @dataclass
 class StageRow:
-    """One rendered row of the stage-progress table (PROGFILE-FR-004)."""
+    """One rendered row of the stage-progress table."""
 
     stage: str
     status: str = STATUS_PENDING
@@ -74,7 +74,7 @@ class StageRow:
 
 @dataclass
 class PhaseRow:
-    """One rendered row of the phase-detail table (PROGFILE-FR-005)."""
+    """One rendered row of the phase-detail table."""
 
     index: int
     description: str
@@ -89,7 +89,7 @@ class Snapshot:
     Built by :class:`Reporter` at each lifecycle trigger; tests may construct one directly to
     assert the rendered schema without a live run."""
 
-    nnn: str  # the workspace number for the title line (PROGFILE-FR-003)
+    nnn: str  # the workspace number for the title line
     slug: str
     timestamp: str
     spec_id: str  # the run's resolved identity — interpolated into the helper commands
@@ -104,7 +104,7 @@ class Snapshot:
 
 
 def failed_gate_names(verdict: dict[str, Any]) -> list[str]:
-    """The failed gate names of a verdict dict, in verdict order (PROGFILE-FR-006).
+    """The failed gate names of a verdict dict, in verdict order.
 
     Names only — the actionable error lines stay with the gate-red event rendering; the progress
     file lists what failed, not the raw output."""
@@ -115,10 +115,10 @@ def failed_gate_names(verdict: dict[str, Any]) -> list[str]:
 def render(snap: Snapshot) -> str:
     """Render the progress markdown for ``snap`` — pure and deterministic given the snapshot.
 
-    Layout per the PROGFILE content schema: the title line (PROGFILE-FR-003), the stage-progress
-    table (PROGFILE-FR-004), the phase-detail table only when the snapshot carries phases
-    (PROGFILE-FR-005), then the Current state / Last verdict / fenced Helper commands / Gate
-    failures sections with the run's real identity interpolated (PROGFILE-FR-006)."""
+    Layout per the progress-file content schema: the title line, the stage-progress
+    table, the phase-detail table only when the snapshot carries phases,
+    then the Current state / Last verdict / fenced Helper commands / Gate
+    failures sections with the run's real identity interpolated."""
     lines = [f"# Run {snap.nnn} · {snap.slug} · {snap.timestamp}", ""]
     lines += ["## Stage progress", ""]
     lines += ["| Stage | Status | Completed |", "|-------|--------|-----------|"]
@@ -165,12 +165,12 @@ def render(snap: Snapshot) -> str:
 
 
 def write(snap: Snapshot, feature_dir: Path) -> Path:
-    """Atomically write the rendered snapshot as ``<feature_dir>/progress.md`` (PROGFILE-FR-001/002).
+    """Atomically write the rendered snapshot as ``<feature_dir>/progress.md``.
 
     Renders to ``.progress.md.tmp`` in the same directory, then ``os.replace``s it onto the target,
     so a reader never observes a torn file and no ``.tmp`` survives a successful write. Returns the
     written path. Raises ``OSError`` on an IO failure — the caller degrades it to a warning, never
-    a run failure (PROGFILE-NFR-001)."""
+    a run failure."""
     feature_dir.mkdir(parents=True, exist_ok=True)
     tmp = feature_dir / TMP_NAME
     target = feature_dir / FILENAME
@@ -189,12 +189,12 @@ class Reporter:
     One instance per run invocation, bound to the run's feature folder and resolved identity. Each
     trigger method — :meth:`stage_started`, :meth:`stage_completed`, :meth:`verdict`,
     :meth:`paused`, :meth:`failed`, :meth:`completed` — updates the tracked state and atomically
-    rewrites the file (PROGFILE-FR-007). Stage completion is per-step: a stage's row turns ``done``
+    rewrites the file. Stage completion is per-step: a stage's row turns ``done``
     when its last non-gate lifecycle step completes; starting a later stage marks every earlier
     stage done (a resume reconstructs past sessions' rows without replaying their events). Phase
     detail is re-read from the tasks artifact's checkboxes at every write, so an agent marking
-    tasks ``[x]`` is reflected on the next trigger (PROGFILE-FR-005). ``now`` is injectable for
-    deterministic tests; IO errors propagate for the caller to degrade (PROGFILE-NFR-001)."""
+    tasks ``[x]`` is reflected on the next trigger. ``now`` is injectable for
+    deterministic tests; IO errors propagate for the caller to degrade."""
 
     def __init__(
         self,
@@ -227,7 +227,7 @@ class Reporter:
 
     # ------------------------------------------------------------------ the lifecycle triggers
     def stage_started(self, step: str, stage: str) -> Path:
-        """Stage start (PROGFILE-FR-007): the stage's row turns ``⏳ running`` and the current-state
+        """Stage start: the stage's row turns ``⏳ running`` and the current-state
         block names the running step; every earlier stage is marked done (their events may belong
         to a prior session on a resume)."""
         self._complete_before(stage)
@@ -240,14 +240,14 @@ class Reporter:
         return self.write()
 
     def stage_completed(self, step: str, stage: str) -> Path:
-        """Stage complete (PROGFILE-FR-007): record the step; when it was the stage's last non-gate
-        step the row turns ``✓ done`` with a completion timestamp (PROGFILE-FR-004)."""
+        """Stage complete: record the step; when it was the stage's last non-gate
+        step the row turns ``✓ done`` with a completion timestamp."""
         self._mark_step_done(step, stage)
         self._current_state = f"**Stage:** {stage} — '{step}' complete"
         return self.write()
 
     def verdict(self, result: str, failed_gates: list[str]) -> Path:
-        """Gate verdict PASS/FAIL (PROGFILE-FR-007): update the last-verdict block; a red verdict
+        """Gate verdict PASS/FAIL: update the last-verdict block; a red verdict
         lists the failed gate names in the gate-failures section and marks Verify ``✗ failed``, a
         green one clears the section and completes Verify."""
         ts = self._now()
@@ -265,7 +265,7 @@ class Reporter:
         return self.write()
 
     def paused(self, gate: str, stage: str) -> Path:
-        """Human-gate pause (PROGFILE-FR-007): the gate's stage shows ``🔒 paused`` and the
+        """Human-gate pause: the gate's stage shows ``🔒 paused`` and the
         current-state block names the awaited gate with the resume command."""
         self._complete_before(stage)
         if stage in self._status:
@@ -277,7 +277,7 @@ class Reporter:
         return self.write()
 
     def failed(self, failure_class: str, stage: str, detail: str = "") -> Path:
-        """Run failure (PROGFILE-FR-007): the failing stage shows ``✗ failed`` and the current-state
+        """Run failure: the failing stage shows ``✗ failed`` and the current-state
         block carries the recorded failure class."""
         self._complete_before(stage)
         if stage in self._status:
@@ -326,7 +326,7 @@ class Reporter:
         )
 
     def write(self) -> Path:
-        """Atomically (re)write ``progress.md`` from the current state (PROGFILE-FR-001/002)."""
+        """Atomically (re)write ``progress.md`` from the current state."""
         return write(self.snapshot(), self._feature_dir)
 
     # ------------------------------------------------------------------ internals
@@ -346,7 +346,7 @@ class Reporter:
             self._completed_at.setdefault(stage, self._now())
 
     def _phases_view(self) -> tuple[list[PhaseRow], str]:
-        # Phase detail applies only while the phased stage is current (PROGFILE-FR-005): the
+        # Phase detail applies only while the phased stage is current: the
         # implement step, with a tasks artifact that declares phases. Checkbox state is re-read at
         # every write, so agents marking tasks [x] surface on the next trigger.
         if self._current_step != "implement":

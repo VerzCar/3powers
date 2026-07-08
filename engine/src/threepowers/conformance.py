@@ -1,18 +1,17 @@
-"""Spec-conformance gate — every requirement must have a linked test (3PWR-FR-030).
+"""Spec-conformance gate — every requirement must have a linked test.
 
-This is a deterministic, language-agnostic trace (3PWR-FR-028): we read the
-requirement IDs declared in a spec and confirm each is referenced by at least one
-test, across the unit / integration / e2e layers (3PWR-FR-064/065). A requirement
-with no linked test is an actionable failure naming the requirement ID
-(3PWR-FR-034).
+This is a deterministic, language-agnostic trace: we read the requirement IDs
+declared in a spec and confirm each is referenced by at least one test, across
+the unit / integration / e2e layers. A requirement with no linked test is an
+actionable failure naming the requirement ID.
 
-Anti-gaming (HARDN-FR-008/009): a requirement counts as *traced* only when its ID is
-bound to a test **declaration** — the test's name/title line or its adjacent docstring —
-not merely mentioned in a comment; and every requirement-bound test must contain at
-least one assertion, with the declaration and assertion patterns supplied per language
-adapter. An adapter that declares no patterns degrades to a visible quarantine, never a
-failure or a silent pass (3PWR-NFR-015, HARDN-NFR-003). One read per file — the binding
-and assertion checks ride the same scan pass (HARDN-NFR-002).
+Anti-gaming: a requirement counts as *traced* only when its ID is bound to a test
+**declaration** — the test's name/title line or its adjacent docstring — not merely
+mentioned in a comment; and every requirement-bound test must contain at least one
+assertion, with the declaration and assertion patterns supplied per language
+adapter. An adapter that declares no patterns degrades to a visible quarantine,
+never a failure or a silent pass. One read per file — the binding and assertion
+checks ride the same scan pass.
 """
 
 from __future__ import annotations
@@ -24,16 +23,16 @@ from typing import Any, Optional
 
 from .verdict import STATUS_FAIL, STATUS_PASS, GateResult, failure
 
-# Canonical requirement ID, namespaced by spec ID (3PWR-FR-059): e.g. VUTIL-FR-001 or
-# 3PWR-FR-038. The spec ID may start with a digit (the 3Powers epic id is "3PWR"). The
-# number group also captures slash-runs like "038/039/040", expanded by _iter_req_ids.
+# Canonical requirement ID, namespaced by spec ID: e.g. DEMO-FR-001. The spec ID may
+# start with a digit. The number group also captures slash-runs like "038/039/040",
+# expanded by _iter_req_ids.
 _REQ_RE = re.compile(r"\b([0-9A-Z]{2,16})-(FR|NFR)-(\d{3,}(?:/\d{3,})*)\b")
 _SPEC_ID_RE = re.compile(r"(?im)^\*{0,2}Spec ID\*{0,2}\s*[:=]\s*`?([0-9A-Z]{2,16})`?")
 
 
 def _iter_req_ids(text: str):
     """Yield ``(spec_id, kind, num)`` for every requirement ID in ``text``, expanding
-    slash-runs such as ``3PWR-FR-038/039/040`` into 038, 039, 040."""
+    slash-runs such as ``DEMO-FR-038/039/040`` into 038, 039, 040."""
     for sid, kind, nums in _REQ_RE.findall(text):
         for num in nums.split("/"):
             yield sid, kind, num
@@ -51,7 +50,7 @@ _TEST_GLOBS = ("*.test.*", "*.spec.*", "test_*.py", "*_test.py")
 def extract_spec(spec_path: Path | None) -> tuple[str, set[str]]:
     """Return ``(spec_id, {requirement_ids})`` declared in a spec file.
 
-    Tolerates ``None`` (a brownfield report-only run with no spec yet, 3PWR-FR-052): yields
+    Tolerates ``None`` (a brownfield report-only run with no spec yet): yields
     ``("", set())`` so callers need no separate guard."""
     if spec_path is None:
         return "", set()
@@ -106,14 +105,14 @@ def referenced_ids(test_roots: list[Path], spec_id: str) -> dict[str, set[str]]:
     return refs
 
 
-# ------------------------------------------------------------- declaration binding (HARDN-FR-008/009)
+# ------------------------------------------------------------- declaration binding
 _DOCSTRING_OPEN_RE = re.compile(r"^[rbuRBU]{0,2}(\"\"\"|''')")
 _TITLE_QUOTE = ('"', "'", "`")
 
 
 @dataclass
 class FileTrace:
-    """What one scan pass over the test files found (one read per file, HARDN-NFR-002)."""
+    """What one scan pass over the test files found (one read per file)."""
 
     mentioned: dict[str, set[str]] = field(default_factory=dict)  # rid → layers (any mention)
     bound: dict[str, set[str]] = field(default_factory=dict)  # rid → layers (declaration-bound)
@@ -136,7 +135,7 @@ def _indent_of(line: str) -> int:
 
 
 def _binding_end(lines: list[str], start: int, end: int) -> int:
-    """The exclusive end of a declaration's *binding region* (HARDN-FR-008).
+    """The exclusive end of a declaration's *binding region*.
 
     The region is the declaration line itself plus, when the next non-blank line opens a
     docstring (Python idiom) or is a bare title string (a wrapped ``describe(``/``it(``
@@ -168,7 +167,7 @@ def _scan_blocks(
     decl_res: list[re.Pattern[str]],
     assert_res: list[re.Pattern[str]],
 ) -> tuple[dict[str, bool], set[str]]:
-    """Parse one test file into declaration blocks (HARDN-FR-008/009).
+    """Parse one test file into declaration blocks.
 
     A block runs from a declaration line to the next declaration at the same or lower
     indentation — so a ``describe(`` binding spans its nested ``it(`` bodies. Returns
@@ -250,8 +249,8 @@ def run_conformance(
     untraced: list[str] = []
     weak: list[tuple[str, str]] = []
     if decl_res:
-        # Anti-gaming path (HARDN-FR-008/009): only declaration-bound IDs trace; a comment
-        # mention alone is an *untraced* requirement, and every binding block needs ≥1 assertion.
+        # Anti-gaming path: only declaration-bound IDs trace; a comment mention alone is an
+        # *untraced* requirement, and every binding block needs ≥1 assertion.
         trace = scan_trace(test_roots, spec_id, decl_res, assert_res)
         refs = trace.bound
         untraced = sorted((declared & set(trace.mentioned)) - set(trace.bound))
@@ -261,20 +260,20 @@ def run_conformance(
         else:
             quarantined.append(
                 "quarantined: adapter declares no assertion patterns — the weak-test check "
-                "is not enforced (3PWR-NFR-015)"
+                "is not enforced"
             )
     else:
         # No declaration patterns (legacy adapter): mention-based tracing, visibly quarantined —
-        # degraded, never silently strict or silently passing (HARDN-NFR-003).
+        # degraded, never silently strict or silently passing.
         refs = referenced_ids(test_roots, spec_id)
         untested = sorted(declared - set(refs))
         quarantined.append(
             "quarantined: adapter declares no test-declaration patterns — requirement-ID "
-            "binding is not enforced (3PWR-NFR-015)"
+            "binding is not enforced"
         )
     required = list(required_layers or [])
 
-    # Per tier, the CHANGE must exercise all required test layers (3PWR-FR-064/065). We check the
+    # Per tier, the CHANGE must exercise all required test layers. We check the
     # UNION of layers across the spec's tested requirements — a High-risk change needs unit +
     # integration + e2e tests *somewhere* for this spec, not every requirement in every layer. When
     # there are no tests at all, the untested-requirement failures already cover it (skip layers).
@@ -288,13 +287,10 @@ def run_conformance(
     findings = [f"requirement {rid} has no linked test" for rid in untested]
     findings += [
         f"requirement {rid} is mentioned but not bound to any test declaration — "
-        "a comment does not trace it (HARDN-FR-008)"
+        "a comment does not trace it"
         for rid in untraced
     ]
-    findings += [
-        f"requirement {rid} is bound to an assertion-free test in {f} (HARDN-FR-009)"
-        for rid, f in weak
-    ]
+    findings += [f"requirement {rid} is bound to an assertion-free test in {f}" for rid, f in weak]
     if missing_layers:
         findings.append(
             f"this change is missing tier-required test layer(s): {', '.join(missing_layers)}"
@@ -310,7 +306,7 @@ def run_conformance(
             # The requirement ids the scanned tests actually REFERENCE (bound/traced), not the
             # spec's declared set — this is what Verdict.requirement_ids() aggregates into the
             # ledger's requirement_ids field, so a verdict entry names the requirements its tests
-            # exercised (RUNID-FR-004). Empty exactly when nothing is referenced.
+            # exercised. Empty exactly when nothing is referenced.
             "requirement_ids": sorted(refs),
             "declared_requirements": sorted(declared),
             "untested_requirements": untested,
@@ -326,16 +322,16 @@ def run_conformance(
     )
 
 
-# A regression test names itself: a *regression* / *reproduce* file or body marker (3PWR-FR-008).
+# A regression test names itself: a *regression* / *reproduce* file or body marker.
 _REGRESSION_RE = re.compile(r"(?i)regress|reproduc")
 
 
 def has_regression_test(test_roots: list[Path], spec_id: str) -> tuple[bool, list[str]]:
-    """Detect a failing-regression test guarding a defect fix (3PWR-FR-008), deterministically.
+    """Detect a failing-regression test guarding a defect fix, deterministically.
 
     A regression test is one that is *marked* as such — by file name (``*regression*`` /
     ``*reproduce*``) or an inline mention — **and** references a requirement id of this spec, so it
-    is traceable to the defect it guards (mirrors the conformance trace; no model call, 3PWR-NFR-001).
+    is traceable to the defect it guards (mirrors the conformance trace; no model call).
     Returns ``(present, [requirement ids the regression tests reference])``.
     """
     hits: set[str] = set()
@@ -358,7 +354,7 @@ def has_regression_test(test_roots: list[Path], spec_id: str) -> tuple[bool, lis
 
 
 def regression_gate(spec_path: Path, test_roots: list[Path]) -> GateResult:
-    """The defect-flow gate (3PWR-FR-008): a defect fix must ship a failing regression test."""
+    """The defect-flow gate: a defect fix must ship a failing regression test."""
     spec_id, _ = extract_spec(spec_path)
     present, refs = has_regression_test(test_roots, spec_id)
     findings = (
@@ -392,7 +388,7 @@ def conformance_failures(gate: GateResult) -> list[dict]:
             "untraced_requirement",
             requirement_id=rid,
             detail="the ID appears only outside a test declaration — bind it to a test "
-            "name/declaration line (HARDN-FR-008)",
+            "name/declaration line",
         )
         for rid in gate.details.get("untraced_requirements", [])
     ]
@@ -401,7 +397,7 @@ def conformance_failures(gate: GateResult) -> list[dict]:
             "weak_test",
             requirement_id=rid,
             file=f,
-            detail="requirement-bound test contains no assertion (HARDN-FR-009)",
+            detail="requirement-bound test contains no assertion",
         )
         for rid, f in gate.details.get("weak_tests", [])
     ]
@@ -415,12 +411,12 @@ def conformance_failures(gate: GateResult) -> list[dict]:
     return out
 
 
-# A task line in tasks.md carries a task id like T001 (3PWR-FR-016).
+# A task line in tasks.md carries a task id like T001.
 _TASK_RE = re.compile(r"\bT\d{2,}\b")
 
 
 def two_way_coverage(spec_path: Path, tasks_path: Path) -> GateResult:
-    """Verify two-way requirement↔task coverage before code (3PWR-FR-015).
+    """Verify two-way requirement↔task coverage before code.
 
     Every requirement must map to ≥1 task and every task must trace to a requirement;
     a gap in either direction fails.

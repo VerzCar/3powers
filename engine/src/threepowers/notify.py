@@ -1,17 +1,17 @@
-"""Human-gate notifications — opt-in, best-effort channels for a paused/failed/completed run (STEER).
+"""Human-gate notifications — opt-in, best-effort channels for a paused/failed/completed run.
 
 When ``3pwr run`` pauses at a human gate, fails, or completes, the operator may be away from the
 terminal. This module routes those three event kinds to the channels configured in
-``.3powers/config/notifications.yaml`` (STEER-FR-009/010/011): reference senders for **Slack**,
+``.3powers/config/notifications.yaml``: reference senders for **Slack**,
 **Microsoft Teams**, **email**, and the **local desktop** (macOS first), all standard-library only —
-no SDK, no new dependency (STEER-FR-014's stance).
+no SDK, no new dependency.
 
-The trust isolation is absolute (STEER-NFR-001): notifications are **disabled by default** and are a
+The trust isolation is absolute: notifications are **disabled by default** and are a
 convenience signal, never a trust or enforcement channel. A channel error, timeout, or absence never
 blocks, delays, fails, or alters the run, its verdict bytes, its exit code, or the ledger —
 :func:`dispatch` never raises; it returns at most one-line warnings. Secrets (webhook URLs, SMTP
 credentials) are referenced from the ENVIRONMENT and never stored in the repo or written to the
-ledger, transcripts, or warnings (STEER-NFR-002; mirrors 3PWR-NFR-005). With no channel configured,
+ledger, transcripts, or warnings. With no channel configured,
 no network call is made at any point.
 """
 
@@ -29,20 +29,20 @@ from typing import Any, Mapping
 
 import yaml
 
-# The notifiable event kinds (STEER-FR-009) and the default routing (STEER-FR-011).
+# The notifiable event kinds and the default routing.
 EVENT_GATE = "gate"
 EVENT_FAILURE = "failure"
 EVENT_COMPLETION = "completion"
 DEFAULT_EVENTS: tuple[str, ...] = (EVENT_GATE, EVENT_FAILURE, EVENT_COMPLETION)
 
-# The reference channel types (STEER-FR-010).
+# The reference channel types.
 CHANNEL_TYPES: tuple[str, ...] = ("slack", "teams", "email", "desktop")
 
-# Default environment variables the webhook channels read their URL from (STEER-NFR-002).
+# Default environment variables the webhook channels read their URL from.
 _DEFAULT_WEBHOOK_ENV = {"slack": "THREEPOWERS_SLACK_WEBHOOK", "teams": "THREEPOWERS_TEAMS_WEBHOOK"}
 _DEFAULT_SMTP_PASSWORD_ENV = "THREEPOWERS_SMTP_PASSWORD"
 
-# Keys the loader recognizes on a channel entry — anything else warns once (STEER-FR-010).
+# Keys the loader recognizes on a channel entry — anything else warns once.
 _KNOWN_KEYS = {
     "type",
     "enabled",
@@ -78,7 +78,7 @@ class Channel:
 
 
 def load_channels(path: Path) -> tuple[list[Channel], list[str]]:
-    """The configured channels + at most one warning per problem, tolerantly (STEER-FR-010).
+    """The configured channels + at most one warning per problem, tolerantly.
 
     A missing file disables notifications silently; a malformed file, a non-list ``channels``, an
     unknown channel type, or an unknown key each yield a one-line warning and the offending part is
@@ -187,7 +187,7 @@ def _display_desktop(title: str, body: str, timeout: float) -> None:
 def _deliver(channel: Channel, subject: str, message: str, env: Mapping[str, str]) -> str:
     """Deliver one message to one channel; ``""`` on success, else a one-line warning.
 
-    Warnings NAME a missing environment variable but never leak its value (STEER-NFR-002)."""
+    Warnings NAME a missing environment variable but never leak its value."""
     opts = channel.options
     if channel.type in ("slack", "teams"):
         env_name = str(opts.get("webhook_env") or _DEFAULT_WEBHOOK_ENV[channel.type])
@@ -248,7 +248,7 @@ def dispatch(
     *,
     env: Mapping[str, str] | None = None,
 ) -> list[str]:
-    """Fire ``event`` at every channel routed to it — best-effort, never raising (STEER-NFR-001).
+    """Fire ``event`` at every channel routed to it — best-effort, never raising.
 
     Returns the (possibly empty) list of one-line delivery warnings. A misconfigured, unreachable, or
     timing-out channel yields a warning and nothing else — the caller's run, verdict, exit code, and
@@ -265,7 +265,7 @@ def dispatch(
             continue
         try:
             warn = _deliver(ch, subject, message, resolved_env)
-        except Exception as exc:  # delivery must NEVER take the run down (STEER-NFR-001)
+        except Exception as exc:  # delivery must NEVER take the run down
             warn = f"channel {ch.type}: delivery failed ({exc.__class__.__name__})"
         if warn:
             warnings.append(warn)
@@ -281,8 +281,9 @@ def gate_message(
     artifact: str,
     actions: list[tuple[str, str]],
 ) -> str:
-    """The actionable gate-pause message (STEER-FR-009): spec id, stage/gate, the artifact to review,
-    and the exact approve/reject/revise commands with the spec id filled in. Pure and deterministic."""
+    """The actionable gate-pause message: spec id, stage/gate, the artifact to review,
+    and the exact approve/reject/revise commands with the spec id filled in. Pure and
+    deterministic."""
     fr = f" ({gate_fr})" if gate_fr else ""
     lines = [f"3pwr run {spec_id}: paused at human gate '{gate}'{fr} — stage {stage}"]
     if artifact:
@@ -292,7 +293,7 @@ def gate_message(
 
 
 def failure_message(spec_id: str, failure_class: str, stage: str) -> str:
-    """The actionable failure message: the failure class, where, and how to resume (STEER-FR-009)."""
+    """The actionable failure message: the failure class, where, and how to resume."""
     where = f" at {stage}" if stage else ""
     return (
         f"3pwr run {spec_id}: {failure_class}{where} — resume: "
@@ -301,5 +302,5 @@ def failure_message(spec_id: str, failure_class: str, stage: str) -> str:
 
 
 def completion_message(spec_id: str) -> str:
-    """The completion notice (STEER-FR-009)."""
+    """The completion notice."""
     return f"3pwr run {spec_id}: lifecycle complete — advanced to Ship"

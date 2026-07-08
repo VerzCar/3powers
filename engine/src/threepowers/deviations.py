@@ -1,22 +1,22 @@
-"""Emergency & deviation paths — bending the process without breaking it (3PWR-FR-056/057).
+"""Emergency & deviation paths — bending the process without breaking it.
 
 A process that cannot bend under fire gets abandoned; one that bends without discipline
-rots. Both paths here are **pre-agreed, signed, and reversible** (spec §14).
+rots. Both paths here are **pre-agreed, signed, and reversible**.
 
 Design: deviations live at the **enforcement boundary**, not in the verdict. Gates always
-run honestly, so the verdict stays deterministic (3PWR-NFR-001). A ``deviation`` is a
+run honestly, so the verdict stays deterministic. A ``deviation`` is a
 signed ledger entry that lets ``advance`` accept *specific named red gates* — recorded and
-surfaced, never silent. It is also the **sanctioned way to accept a ``gate_gaming`` flag**
-(3PWR-FR-035): a legitimate suppression is a recorded deviation, not an absorbed one.
+surfaced, never silent. It is also the **sanctioned way to accept a ``gate_gaming`` flag**:
+a legitimate suppression is a recorded deviation, not an absorbed one.
 
-* **Deviation (3PWR-FR-057):** relaxes named gates with a reason, a human approver, and a
+* **Deviation:** relaxes named gates with a reason, a human approver, and a
   way back (an ``expires_at`` or an explicit revoke).
-* **Emergency (3PWR-FR-056):** a constrained profile that may defer only **mutation** and
+* **Emergency:** a constrained profile that may defer only **mutation** and
   **diff-coverage**, never the security/secret gates, and requires a **cleanup within one
   working day** — ``advance`` refuses while that cleanup is overdue.
 
 Human sign-off and provenance are *not* deviatable: they are separate enforcement checks
-that ``advance`` / ``deploy-gate`` always require (3PWR-FR-056).
+that ``advance`` / ``deploy-gate`` always require.
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# A named non-gate requirement a deviation MAY relax (3PWR-FR-057): model diversity (FR-022) is
+# A named non-gate requirement a deviation MAY relax: model diversity is
 # recommended, not forced — a same-family/same-model oracle proceeds only under a signed deviation.
-# The GITX git-discipline guards (GITX-FR-014) relax the same way: the clean-start guard, the
+# The git-discipline guards relax the same way: the clean-start guard, the
 # mandatory per-stage commit, and the run-branch isolation at stage boundaries — each maps to
 # exactly one named gate, and a relaxation is always a signed, revocable ledger entry.
 MODEL_DIVERSITY = "model_diversity"
@@ -40,11 +40,11 @@ DEVIATABLE_REQUIREMENTS: tuple[str, ...] = (
     GIT_RUN_BRANCH,
 )
 
-# Gates an emergency fast path MAY defer (3PWR-FR-056).
+# Gates an emergency fast path MAY defer.
 EMERGENCY_DEFERRABLE: tuple[str, ...] = ("mutation", "diff_coverage")
 # Gates an emergency fast path shall NEVER relax — the deterministic security + secret gates.
 EMERGENCY_FORBIDDEN: tuple[str, ...] = ("sast", "secret_scan", "dependency_scan")
-# Default cleanup window for an emergency: one working day (3PWR-FR-056).
+# Default cleanup window for an emergency: one working day.
 DEFAULT_CLEANUP_HOURS = 24
 
 
@@ -67,7 +67,7 @@ def parse_iso(value: str | None) -> datetime | None:
 
 
 def emergency_payload(reason: str, approver: str, cleanup_hours: int) -> dict[str, Any]:
-    """Build the constrained emergency-deviation payload (3PWR-FR-056)."""
+    """Build the constrained emergency-deviation payload."""
     return {
         "gates": list(EMERGENCY_DEFERRABLE),
         "reason": reason,
@@ -82,7 +82,7 @@ def emergency_payload(reason: str, approver: str, cleanup_hours: int) -> dict[st
 def deviation_payload(
     gates: list[str], reason: str, approver: str, expires_at: str | None
 ) -> dict[str, Any]:
-    """Build a general deviation payload (3PWR-FR-057)."""
+    """Build a general deviation payload."""
     return {
         "gates": sorted(set(gates)),
         "reason": reason,
@@ -97,7 +97,7 @@ def deviation_payload(
 def active_deviations(
     entries: list[dict[str, Any]], now: datetime | None = None
 ) -> list[dict[str, Any]]:
-    """Currently-active deviations: not expired and not revoked by a later entry (3PWR-FR-057)."""
+    """Currently-active deviations: not expired and not revoked by a later entry."""
     now = now or now_utc()
     revoked: set[int] = set()
     candidates: list[dict[str, Any]] = []
@@ -133,8 +133,8 @@ def covered_gates(active: list[dict[str, Any]], spec_id: str | None = None) -> s
 
 
 def diversity_deviation(active: list[dict[str, Any]], spec_id: str | None = None) -> int | None:
-    """Seq of an active deviation relaxing model diversity for ``spec_id`` (global applies too), else
-    None. Model diversity (3PWR-FR-022) is recommended; a same-family setup needs a signed deviation."""
+    """Seq of an active deviation relaxing model diversity for ``spec_id`` (global applies too),
+    else None. Model diversity is recommended; a same-family setup needs a signed deviation."""
     for dev in active:
         dev_spec = dev.get("spec_id") or ""
         if spec_id and dev_spec and dev_spec != spec_id:
@@ -145,14 +145,14 @@ def diversity_deviation(active: list[dict[str, Any]], spec_id: str | None = None
 
 
 def covers_model_diversity(active: list[dict[str, Any]], spec_id: str | None = None) -> bool:
-    """True iff an active deviation relaxes model diversity (3PWR-FR-022 via FR-057)."""
+    """True iff an active deviation relaxes model diversity."""
     return diversity_deviation(active, spec_id) is not None
 
 
 def overdue_emergencies(
     entries: list[dict[str, Any]], now: datetime | None = None
 ) -> list[dict[str, Any]]:
-    """Active emergency deviations whose one-day cleanup deadline has passed (3PWR-FR-056)."""
+    """Active emergency deviations whose one-day cleanup deadline has passed."""
     now = now or now_utc()
     out: list[dict[str, Any]] = []
     for dev in active_deviations(entries, now):

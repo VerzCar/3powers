@@ -1,19 +1,19 @@
-"""Per-stage artifact contracts — each executive action stage declares what it must produce (RUNLIVE-FR-001).
+"""Per-stage artifact contracts — each executive action stage declares what it must produce.
 
-Under EXEC the native runner treated *"agent exited 0"* as success and never checked that the stage
-actually produced the right thing. RUNLIVE closes that: an action stage declares the artifact it is
-responsible for (a spec file at Specify, oracle tests at Oracle, an implementation change at Implement),
-and after dispatch the runner verifies that artifact was produced *before advancing*. A stage that produced
-nothing — or only an off-target change — is a **dispatch/artifact failure naming the stage**, distinct from
-a gate-red verdict and never a silent pass (RUNLIVE-FR-002).
+An earlier native runner treated *"agent exited 0"* as success and never checked that the stage
+actually produced the right thing. These contracts close that: an action stage declares the artifact
+it is responsible for (a spec file at Specify, oracle tests at Oracle, an implementation change at
+Implement), and after dispatch the runner verifies that artifact was produced *before advancing*. A
+stage that produced nothing — or only an off-target change — is a **dispatch/artifact failure naming
+the stage**, distinct from a gate-red verdict and never a silent pass.
 
-Verification is a **pure function** of the contract and the set of paths the stage produced, so it is fully
-deterministic and unit-testable with a fake agent and no network (RUNLIVE-NFR-002). The engine-owned
-contract table below is provider-, model-, and language-agnostic (RUNLIVE-NFR-005): it names *kinds* of
-artifact by path shape, not any vendor, stack, or file. A stage with no declared contract falls back to the
-lenient prior behavior so unconfigured stages still run (RUNLIVE-FR-003) — but PHASE-FR-002 extended the
-hard contracts to every artifact-producing action stage: ``plan`` and ``tasks`` now declare theirs, so the
-committed artifact trail in the feature workspace (PHASE-FR-001) is checked at every stage.
+Verification is a **pure function** of the contract and the set of paths the stage produced, so it
+is fully deterministic and unit-testable with a fake agent and no network. The engine-owned
+contract table below is provider-, model-, and language-agnostic: it names *kinds* of
+artifact by path shape, not any vendor, stack, or file. A stage with no declared contract falls back
+to the lenient prior behavior so unconfigured stages still run — but the hard contracts extend to
+every artifact-producing action stage: ``plan`` and ``tasks`` declare theirs, so the
+committed artifact trail in the feature workspace is checked at every stage.
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ class ArtifactContract:
 
     ``kind`` is either ``"path"`` — at least one produced path must match one of ``patterns`` (each an
     anchored-anywhere regex over the repo-relative POSIX path) — or ``"change"`` — the stage must produce a
-    non-empty change (any produced path). ``expected`` is the human description named in a failure message
-    (RUNLIVE-FR-002), so it must read as *what was expected*, including the location.
+    non-empty change (any produced path). ``expected`` is the human description named in a failure
+    message, so it must read as *what was expected*, including the location.
     """
 
     step: str
@@ -40,7 +40,7 @@ class ArtifactContract:
 
 @dataclass
 class ArtifactCheck:
-    """The result of verifying a stage's produced paths against its contract (pure — RUNLIVE-NFR-002)."""
+    """The result of verifying a stage's produced paths against its contract (pure)."""
 
     ok: bool
     expected: str
@@ -51,7 +51,7 @@ class ArtifactCheck:
 
     @property
     def summary(self) -> str:
-        """A short artifact summary for the per-stage result (RUNLIVE-FR-006)."""
+        """A short artifact summary for the per-stage result."""
         if self.matched:
             head = ", ".join(self.matched[:3])
             more = f" (+{len(self.matched) - 3})" if len(self.matched) > 3 else ""
@@ -60,7 +60,7 @@ class ArtifactCheck:
 
     @property
     def message(self) -> str:
-        """The failure message naming the stage and the expected artifact (RUNLIVE-FR-002).
+        """The failure message naming the stage and the expected artifact.
 
         When the stage produced *something* but nothing on target (the "right artifact, wrong location"
         edge case), the message also names what was produced so the location mismatch is diagnosable."""
@@ -76,12 +76,12 @@ class ArtifactCheck:
         return f"expected {self.expected}, but the stage produced no change"
 
 
-# The engine-owned per-stage contracts (RUNLIVE-FR-001). Every lifecycle *action* stage that produces a
-# committed artifact carries a hard contract: specify/oracle/implement (RUNLIVE) plus plan/tasks — which
-# PHASE-FR-002 removed from RUNLIVE-FR-003's lenient fallback, so a plan or tasks dispatch that writes no
+# The engine-owned per-stage contracts. Every lifecycle *action* stage that produces a
+# committed artifact carries a hard contract: specify/oracle/implement plus plan/tasks — removed
+# from the lenient fallback, so a plan or tasks dispatch that writes no
 # artifact is a named failure, never a silent pass. Remaining steps (clarify/…) still fall back leniently.
-# The spec/plan/tasks patterns accept the canonical FLAT layout (specs/<f>/<step>.md — SRCX-FR-001) and
-# the legacy PHASE split layout (specs/<f>/spec/spec.md, specs/<f>/artifacts/<step>.md — SRCX-FR-003).
+# The spec/plan/tasks patterns accept the canonical FLAT layout (specs/<f>/<step>.md) and
+# the legacy split layout (specs/<f>/spec/spec.md, specs/<f>/artifacts/<step>.md).
 STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
     "specify": ArtifactContract(
         step="specify",
@@ -124,7 +124,7 @@ STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
 
 
 def contract_for(step: str) -> ArtifactContract | None:
-    """The artifact contract for an action step, or ``None`` when the step declares none (RUNLIVE-FR-003)."""
+    """The artifact contract for an action step, or ``None`` when the step declares none."""
     return STAGE_ARTIFACTS.get(step)
 
 
@@ -134,17 +134,17 @@ def _matches(path: str, patterns: tuple[str, ...]) -> bool:
 
 
 def verify(contract: ArtifactContract | None, produced: list[str]) -> ArtifactCheck:
-    """Verify a stage's ``produced`` paths against its ``contract`` — pure and deterministic (RUNLIVE-NFR-002).
+    """Verify a stage's ``produced`` paths against its ``contract`` — pure and deterministic.
 
-    ``produced`` is the set of repo-relative paths the stage created or modified. When ``contract`` is
-    ``None`` the stage declared no artifact, so the check is lenient and always passes (RUNLIVE-FR-003) — an
-    unconfigured stage still runs. For a ``path`` contract the check passes iff at least one produced path
-    matches a pattern; for a ``change`` contract it passes iff anything was produced. The returned
-    :class:`ArtifactCheck` carries the matched/produced paths for the per-stage summary and the named
-    failure message (RUNLIVE-FR-002/006).
+    ``produced`` is the set of repo-relative paths the stage created or modified. When ``contract``
+    is ``None`` the stage declared no artifact, so the check is lenient and always passes — an
+    unconfigured stage still runs. For a ``path`` contract the check passes iff at least one produced
+    path matches a pattern; for a ``change`` contract it passes iff anything was produced. The
+    returned :class:`ArtifactCheck` carries the matched/produced paths for the per-stage summary and
+    the named failure message.
     """
     produced = sorted(set(produced))
-    if contract is None:  # RUNLIVE-FR-003: no declared contract → never block
+    if contract is None:  # no declared contract → never block
         return ArtifactCheck(ok=True, expected="", matched=produced, produced=produced)
     if contract.kind == "path":
         matched = [p for p in produced if _matches(p, contract.patterns)]
