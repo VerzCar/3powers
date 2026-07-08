@@ -56,7 +56,11 @@ def _writer():
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/unknown")
         out = "changes written"
-        if "# Specify agent" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+            out += "\nCOMMIT: authored the discovery work for the run"
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: FEAT\n", encoding="utf-8")
             out += "\nCOMMIT: authored the specify work for the run"

@@ -42,6 +42,7 @@ _VARS = ("STEP", "GATE", "ARTIFACT", "FEATURE_FOLDER", "ORACLE_DESTINATION", "FE
 # post-stage git hook records it as the stage commit's message. A fixed, deterministic block —
 # never a gate or ledger input; an agent that yields none falls back to the deterministic default.
 COMMIT_NOTE_STEPS: tuple[str, ...] = (
+    "discovery",
     "specify",
     "clarify",
     "plan",

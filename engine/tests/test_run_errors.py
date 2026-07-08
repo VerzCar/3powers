@@ -43,7 +43,10 @@ def _spec_writer(spec_id="RUN"):
         prompt = argv[-1] if argv else ""
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "# Specify agent" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "# Plan agent" in prompt:
@@ -123,7 +126,7 @@ def test_dispatch_failure_is_recorded_in_the_ledger(run_repo, monkeypatch, capsy
     assert rc != 0
     e = _last_failure(run_repo)
     p = e["payload"]
-    assert p["class"] == "dispatch_failed" and p["stage"] == "Spec"
+    assert p["class"] == "dispatch_failed" and p["stage"] == "Discovery"
     assert p["attempts"] >= 1 and "boom" in p["detail"]
     capsys.readouterr()
     _verify_green(run_repo)
@@ -135,7 +138,7 @@ def test_artifact_missing_is_recorded_in_the_ledger(run_repo, monkeypatch, capsy
     rc = main(["--root", str(run_repo), "run", "add x", "--no-input", "--spec-id", "RUN"])
     assert rc != 0
     p = _last_failure(run_repo)["payload"]
-    assert p["class"] == "artifact_missing" and p["stage"] == "Spec"
+    assert p["class"] == "artifact_missing" and p["stage"] == "Discovery"
     capsys.readouterr()
     _verify_green(run_repo)
 
@@ -230,11 +233,11 @@ def test_status_shows_failed_stage_and_class_then_clears(run_repo, monkeypatch, 
 
     assert main(["--root", str(run_repo), "run", "--status", "--spec-id", "RUN"]) == 0
     out = capsys.readouterr().out
-    assert "failed at Spec (dispatch_failed)" in out and "paused" not in out
+    assert "failed at Discovery (dispatch_failed)" in out and "paused" not in out
 
     assert main(["--root", str(run_repo), "status", "--spec-id", "RUN"]) == 0
     out = capsys.readouterr().out
-    assert "failed at Spec (dispatch_failed)" in out
+    assert "failed at Discovery (dispatch_failed)" in out
 
     # A later run passing the failed stage clears the failure from both status views.
     monkeypatch.setattr(runner, "dispatch_agent", _spec_writer())
@@ -254,7 +257,7 @@ def test_status_json_carries_the_failure_fields(run_repo, monkeypatch, capsys):
     assert main(["--root", str(run_repo), "run", "--status", "--spec-id", "RUN", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
     assert obj["failed"] is True
-    assert obj["failed_stage"] == "Spec" and obj["failed_class"] == "dispatch_failed"
+    assert obj["failed_stage"] == "Discovery" and obj["failed_class"] == "dispatch_failed"
     assert obj["failed_at"]  # the failure entry's timestamp — "and when" (AUTOX-FR-007)
 
 

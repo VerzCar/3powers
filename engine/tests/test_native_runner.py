@@ -299,7 +299,10 @@ def _artifact_writer(spec_id="RUN"):
         prompt = argv[-1] if argv else ""
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "# Specify agent" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery: x\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "# Plan agent" in prompt:
@@ -545,7 +548,20 @@ def test_cli_json_emits_a_per_stage_result(native_project, capsys):
 def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monkeypatch, capsys):
     """RUNLIVE-FR-002/SC-001: a Specify agent that writes no spec stops the run with a named artifact
     failure — not a silent pass, not a gate-red."""
-    monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "did nothing", ""))
+
+    def discovery_only(argv, **kw):
+        # Discovery (the head step) produces its note; Specify then writes nothing.
+        import re
+
+        prompt = argv[-1] if argv else ""
+        if "# Discovery agent" in prompt:
+            m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
+            d = Path(kw["cwd"]) / (m.group(1) if m else "specs-src/RUN")
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        return (0, "did nothing", "")
+
+    monkeypatch.setattr(runner, "dispatch_agent", discovery_only)
     rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
     out = capsys.readouterr().out
     assert rc == 4  # EXIT_SETUP — a setup/dispatch problem, not a gate verdict (AUTOX-FR-009)
@@ -582,6 +598,7 @@ def _recording_writer(seen):
     def fake(argv, **kw):
         p = argv[-1] if argv else ""
         for key, marker in (
+            ("discovery", "# Discovery agent"),
             ("specify", "# Specify agent"),
             ("clarify", "# Clarify agent"),
             ("plan", "# Plan agent"),
@@ -720,9 +737,12 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
         if argv[:2] == ["gh", "poll"]:
             return (0, "completed", "")
         if argv[:2] == ["gh", "collect"]:
+            # the run deterministically allocated specs-src/010-add-x (SRCX-FR-008: max 009 + 1)
+            d = Path(cwd) / "specs-src" / "010-add-x"
+            if state["step"] == "discovery":  # the hosted run's branch carries the note
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
             if state["step"] == "specify":  # the hosted run's branch carries the produced spec
-                # the run deterministically allocated specs-src/010-add-x (SRCX-FR-008: max 009 + 1)
-                d = Path(cwd) / "specs-src" / "010-add-x"
                 d.mkdir(parents=True, exist_ok=True)
                 (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
             return (0, "checked out", "")

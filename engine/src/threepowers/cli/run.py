@@ -891,7 +891,7 @@ def _native_runner(
         spec_path = _resolve_run_spec(s, args, feature_dir)
         spec_text = _dispatch_spec_text(s, step, spec_path)
         variables: dict[str, str] = {}
-        if step in ("specify", "clarify", "plan", "tasks", "oracle"):
+        if step in ("discovery", "specify", "clarify", "plan", "tasks", "oracle"):
             variables["FEATURE_FOLDER"] = _feature_folder_value(s, feature_dir)
         if step == "oracle":
             variables["ORACLE_DESTINATION"] = _oracle_destination_value(feature_dir)

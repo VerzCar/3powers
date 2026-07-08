@@ -100,9 +100,13 @@ def test_deterministic_run_invokes_only_the_injectable_agent_seam(tmp_path, monk
 
         from pathlib import Path
 
-        if argv and "# Specify agent" in argv[-1]:
-            m = re.search(r"feature folder\s+`([^`\s]+)`", argv[-1])
-            d = Path(kw["cwd"]) / (m.group(1) if m else "specs/LIVE")
+        prompt = argv[-1] if argv else ""
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
+        d = Path(kw["cwd"]) / (m.group(1) if m else "specs/LIVE")
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: LIVE\n", encoding="utf-8")
         return (0, "ok", "")

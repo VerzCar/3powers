@@ -52,7 +52,10 @@ def _writer(spec_id="RUN", seen: list | None = None):
             seen.append(prompt)
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "# Specify agent" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             body = f"# Spec\n**Spec ID**: {spec_id}\n"
             if "REVISION REQUESTED" in prompt:
@@ -769,7 +772,7 @@ def test_frame_degrades_off_tty_json_no_color_and_small_terminals(run_repo, monk
     assert "\r" not in out and "\033" not in out
     obj = json.loads(out)
     assert obj["status"] == "paused_at_gate" and obj["gate"] == "review-spec"
-    assert [s["step"] for s in obj["stages"]] == ["specify", "clarify"]
+    assert [s["step"] for s in obj["stages"]] == ["discovery", "specify", "clarify"]
 
 
 def test_frame_resize_relayouts_and_teardown_restores_the_terminal():

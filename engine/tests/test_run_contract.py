@@ -47,7 +47,10 @@ def _stage_writer(spec_id="RUN", skip=()):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         d = _feature_dir(prompt, cwd, spec_id)
-        if "# Specify agent" in prompt and "specify" not in skip:
+        if "# Discovery agent" in prompt and "discovery" not in skip:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt and "specify" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
         elif "# Plan agent" in prompt and "plan" not in skip:
@@ -300,6 +303,7 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
     def recording(argv, **kw):
         prompt = argv[-1] if argv else ""
         for key, marker in (
+            ("discovery", "# Discovery agent"),
             ("specify", "# Specify agent"),
             ("clarify", "# Clarify agent"),
             ("plan", "# Plan agent"),
@@ -328,7 +332,9 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
     capsys.readouterr()
     assert rc3 in (EXIT_PAUSED, EXIT_FAIL, EXIT_SETUP)  # proceeds to verify/sign-off territory
     assert "oracle" in seen and "implement" in seen
-    assert not {"specify", "clarify", "plan", "tasks"} & set(seen)  # never re-dispatched
+    assert not {"discovery", "specify", "clarify", "plan", "tasks"} & set(
+        seen
+    )  # never re-dispatched
 
 
 def test_nothing_to_resume_names_the_fresh_start(run_repo, capsys):

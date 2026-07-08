@@ -55,7 +55,11 @@ def _writer(spec_id="RUN", skip=(), commit_line=True):
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         step = ""
-        if "# Specify agent" in prompt and "specify" not in skip:
+        if "# Discovery agent" in prompt and "discovery" not in skip:
+            step = "discovery"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt and "specify" not in skip:
             step = "specify"
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
@@ -395,7 +399,8 @@ def test_run_is_auditable_from_the_branch_log_alone(run_repo, monkeypatch):
     assert _resume(run_repo) == EXIT_PAUSED
     subjects = [s for s in reversed(_log_subjects(run_repo)) if s.startswith("3pwr(RUN):")]
     steps = [s.split(":")[1].split("—")[0].strip() for s in subjects]
-    assert steps == ["specify", "plan", "tasks", "oracle", "implement"]  # lifecycle order
+    # lifecycle order (discovery heads the walk since it became the first producing stage)
+    assert steps == ["discovery", "specify", "plan", "tasks", "oracle", "implement"]
     authors = set(_git(run_repo, "log", "--pretty=%an", "--grep", "3pwr(RUN)", "-F").splitlines())
     assert authors == {"3pwr"}  # every engine stage commit is attributable
 

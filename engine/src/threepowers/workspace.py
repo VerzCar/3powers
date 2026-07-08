@@ -5,6 +5,7 @@ Every lifecycle stage's artifact for a run lies flat in that run's feature folde
 ``specs-src/<NNN>-<slug>/``::
 
     specs-src/<NNN>-<slug>/
+      discovery.md             # the Discovery stage's problem-framing note
       spec.md                  # the specification (the Specify stage's artifact)
       plan.md                  # the Plan stage's markdown, flat
       implementation-plan.md   # the Tasks stage's artifact (legacy name: tasks.md)
@@ -41,7 +42,7 @@ ARTIFACTS_DIR = "artifacts"
 
 # The producing lifecycle steps — exactly the steps that declare a flat markdown artifact in the
 # feature folder. Pure gate / verdict / sign-off / advance steps stay ledger-only.
-PRODUCING_STEPS: tuple[str, ...] = ("specify", "plan", "tasks", "oracle", "implement")
+PRODUCING_STEPS: tuple[str, ...] = ("discovery", "specify", "plan", "tasks", "oracle", "implement")
 
 # The canonical artifact filename per producing step where it differs from ``<step>.md``: the
 # tasks step writes the detail-level implementation plan, and the implement step leaves an

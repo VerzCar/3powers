@@ -503,7 +503,10 @@ def phased_project(tmp_path, monkeypatch):
             prompts_seen.append(prompt)
         m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
-        if "# Specify agent" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
         elif "# Plan agent" in prompt:
@@ -867,6 +870,8 @@ def test_phases_module_never_touches_the_ledger():
 
 def test_lifecycle_steps_unchanged_by_phase_dispatch():
     """PHASE-SC-005: the lifecycle stages, gates, and verdict steps are untouched by phased dispatch."""
+    assert orchestrate.LIFECYCLE_STEPS[0] == ("discovery", "action", "Discovery")
+    assert orchestrate.step_index("discovery") == 0 and orchestrate.step_index("specify") == 1
     assert [sid for sid, kind, _ in orchestrate.LIFECYCLE_STEPS if kind == "gate"] == [
         "review-spec",
         "review-plan",

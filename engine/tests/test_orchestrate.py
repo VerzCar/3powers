@@ -56,8 +56,8 @@ def test_helpers_tracker_mandatory_resume_index():
     t = orchestrate.render_tracker("Plan")
     assert "▶ Plan" in t and "✓ Spec" in t and "· Ship" in t
     assert orchestrate.is_mandatory("review-spec") and not orchestrate.is_mandatory("review-plan")
-    assert orchestrate.resume_index("review-spec") == 3  # step after review-spec
-    assert orchestrate.resume_index("signoff") == 11
+    assert orchestrate.resume_index("review-spec") == 4  # step after review-spec
+    assert orchestrate.resume_index("signoff") == 12
 
 
 def test_tracker_frame_is_pure():

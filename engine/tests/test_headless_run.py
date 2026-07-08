@@ -255,7 +255,11 @@ def test_cli_dispatch_failure_is_not_gates_red(run_project, monkeypatch, capsys)
 # --------------------------------------------------------------------------- RUNX-FR-004/007 (segments, provenance)
 def test_segment_actions_are_per_segment_and_never_recount_completed():
     """RUNX-FR-004/007: each segment yields only its own action stages, up to the next gate."""
-    assert orchestrate.segment_actions("") == [("specify", "Spec"), ("clarify", "Spec")]
+    assert orchestrate.segment_actions("") == [
+        ("discovery", "Discovery"),
+        ("specify", "Spec"),
+        ("clarify", "Spec"),
+    ]
     assert orchestrate.segment_actions("review-spec") == [("plan", "Plan")]
     assert orchestrate.segment_actions("review-plan") == [
         ("tasks", "Plan"),

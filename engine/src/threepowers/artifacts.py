@@ -85,6 +85,12 @@ class ArtifactCheck:
 # artifacts/<step>.md) — signed ledger history keeps its recorded specs/… paths, so the
 # patterns must keep matching both bases forever.
 STAGE_ARTIFACTS: dict[str, ArtifactContract] = {
+    "discovery": ArtifactContract(
+        step="discovery",
+        kind="path",
+        expected="a discovery note (specs-src/<feature>/discovery.md)",
+        patterns=(r"(^|/)specs(-src)?/.+/discovery\.md$",),
+    ),
     "specify": ArtifactContract(
         step="specify",
         kind="path",
