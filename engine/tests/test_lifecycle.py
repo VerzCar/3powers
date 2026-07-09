@@ -17,6 +17,18 @@ def test_canonical_stage_is_case_insensitive():
     assert canonical_stage("nope") is None
 
 
+def test_spec_state_defaults_to_discovery(tmp_path):
+    """Plan 034 phase 4: a spec with no stage-bearing record starts at Discovery — the lifecycle's
+    first stage — and a run/stage record naming discovery folds to the canonical stage."""
+    ledger, sk = _ledger(tmp_path)
+    ledger.append("verdict", {"result": "none"}, sk, spec_id="NEW")
+    assert derive(ledger.entries())["NEW"].stage == "Discovery"
+    ledger.append(
+        "run", {"kind": "stage", "step": "discovery", "stage": "discovery"}, sk, spec_id="D"
+    )
+    assert derive(ledger.entries())["D"].stage == "Discovery"
+
+
 def test_derive_tracks_stage_verdict_and_signoff(tmp_path):
     """3PWR-FR-011 stage + 3PWR-FR-019 resumable state, derived from the ledger."""
     ledger, sk = _ledger(tmp_path)

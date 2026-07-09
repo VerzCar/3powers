@@ -46,7 +46,11 @@ independence, brownfield Stage Zero, deviations/emergency, observe — is docume
 
 **`3pwr run "<intent>"` drives the whole lifecycle**: the native executive
 dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
-and in `auto` mode stops only at the two human gates (spec approval, sign-off). Post-approval stage
+and in `auto` mode stops only at the two human gates (spec approval, sign-off). A conditional
+**Discovery** stage opens feature/design runs (skipped for defect/docs/chore/refactor;
+`--discovery`/`--no-discovery` override) and its `discovery.md` feeds Specify. Every stage prompt is
+assembled from markdown templates — repo-local `.3powers/templates/agents/*.agent.md` overriding the
+engine's bundled defaults — the single source of the dispatched instructions. Post-approval stage
 prompts reload the approved spec + the prior stage's artifact reference; a phased implementation
 plan (`implementation-plan.md`; legacy `tasks.md`)
 artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with

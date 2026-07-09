@@ -128,19 +128,21 @@ def test_specify_contract_accepts_workspace_layout():
 def test_plan_tasks_prompts_name_artifact_sections_and_rules():
     """PHASE-FR-004: the plan/tasks prompt bodies name the artifact path, the required sections, the
     phase-decomposition rules, and the context-sizing heuristic — at specify/oracle depth."""
-    plan = prompts.stage_prompt_body("plan")
-    assert "specs-src/<feature>/plan.md" in plan
+    plan = prompts.resolve_body("plan", None)
+    assert "plan.md" in plan and "$FEATURE_FOLDER" in plan
     assert "Required sections" in plan and "Phases" in plan
     assert "file scope" in plan and "[P]" in plan
-    assert "110k tokens" in plan and "4 bytes per token" in plan
-    tasks = prompts.stage_prompt_body("tasks")
-    assert "specs-src/<feature>/implementation-plan.md" in tasks
+    # markdown wraps lines, so compare on whitespace-normalized text
+    plan_flat = " ".join(plan.split())
+    assert "110k tokens" in plan_flat and "4 bytes per token" in plan_flat
+    tasks = prompts.resolve_body("tasks", None)
+    assert "implementation-plan.md" in tasks and "$FEATURE_FOLDER" in tasks
     assert "## Phase N" in tasks and "**File scope**" in tasks and "**Depends on**" in tasks
     assert "HANDOFF" in tasks and "Estimated context" in tasks
     assert "exactly ONE requirement id" in tasks
     # comparable depth to the specify/oracle prompts (both are multi-sentence, artifact-naming)
-    assert len(plan) > len(prompts.stage_prompt_body("clarify"))
-    assert len(tasks) > len(prompts.stage_prompt_body("clarify"))
+    assert len(plan) > len(prompts.resolve_body("clarify", None))
+    assert len(tasks) > len(prompts.resolve_body("clarify", None))
 
 
 def test_dispatch_injects_spec_context_and_scope_deterministically(tmp_path):
@@ -180,7 +182,7 @@ def test_spec_text_injected_only_after_spec_approval(tmp_path):
     spec.write_text("APPROVED TEXT\n", encoding="utf-8")
     for step in ("plan", "tasks", "oracle", "implement"):
         assert "APPROVED TEXT" in _dispatch_spec_text(s, step, spec), step
-    for step in ("specify", "clarify"):
+    for step in ("discovery", "specify", "clarify"):
         assert _dispatch_spec_text(s, step, spec) == "", step
 
 
@@ -499,22 +501,25 @@ def phased_project(tmp_path, monkeypatch):
         prompt = argv[-1] if argv else ""
         with seen_lock:
             prompts_seen.append(prompt)
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
-        if "STAGE: Specify" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt:
+        elif "# Plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt:
+        elif "# Implementation-plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "implementation-plan.md").write_text(_TASKS_3PHASE, encoding="utf-8")
-        elif "STAGE: Oracle" in prompt:
+        elif "# Oracle agent" in prompt:
             t = cwd / "tests" / "oracle" / "RUN"
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt:
+        elif "# Implement agent" in prompt:
             pm = re.search(r"PHASE (\d)/3", prompt)
             name = f"impl_phase{pm.group(1)}" if pm else "impl"
             src = cwd / "src"
@@ -572,7 +577,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
         assert f"3pwr(RUN): {step}" in log  # committed to git (PHASE-SC-001)
 
     # PHASE-FR-010/011: implement ran once per phase — three fresh sessions, each with its handoff
-    impl = [p for p in prompts_seen if "STAGE: Implement" in p]
+    impl = [p for p in prompts_seen if "# Implement agent" in p]
     assert len(impl) == 3
     for i in (1, 2, 3):
         assert any(f"PHASE {i}/3" in p for p in impl)
@@ -584,7 +589,7 @@ def test_native_run_phased_implement_end_to_end(phased_project, monkeypatch, cap
     assert "src/alpha.py" in p2 and "src/beta.py" not in p2.split("FILE SCOPE:")[1]
 
     # PHASE-FR-005: post-approval stages carry the prior stage's accepted artifact reference
-    tasks_prompt = next(p for p in prompts_seen if "STAGE: Tasks" in p)
+    tasks_prompt = next(p for p in prompts_seen if "# Implementation-plan agent" in p)
     assert "prior stage 'plan' accepted artifact: specs-src/001-add-x/plan.md" in tasks_prompt
 
     # PHASE-FR-003: the checkpoint ledger entries name the accepted artifact paths
@@ -691,8 +696,8 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
     def fake(argv, **kw):
         rc = orig(argv, **kw)
         prompt = argv[-1] if argv else ""
-        if "STAGE: Tasks" in prompt:
-            m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        if "# Implementation-plan agent" in prompt:
+            m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
             d = Path(kw["cwd"]) / (m.group(1) if m else "specs-src/RUN")
             (d / "implementation-plan.md").write_text(
                 "# Tasks\n- [ ] T001 [RUN-FR-001] everything\n", encoding="utf-8"
@@ -717,8 +722,8 @@ def test_phaseless_tasks_artifact_runs_single_implement_dispatch(phased_project,
         )
         == 3
     )
-    impl = [p for p in prompts_seen if "STAGE: Implement" in p]
-    assert len(impl) == 1 and "PHASE" not in impl[0].split("STAGE: Implement")[1].split("\n")[0]
+    impl = [p for p in prompts_seen if "# Implement agent" in p]
+    assert len(impl) == 1 and "PHASE" not in impl[0].split("# Implement agent")[1].split("\n")[0]
 
 
 def test_oversize_phase_warns_but_run_and_gates_proceed(phased_project, monkeypatch, capsys):
@@ -865,6 +870,8 @@ def test_phases_module_never_touches_the_ledger():
 
 def test_lifecycle_steps_unchanged_by_phase_dispatch():
     """PHASE-SC-005: the lifecycle stages, gates, and verdict steps are untouched by phased dispatch."""
+    assert orchestrate.LIFECYCLE_STEPS[0] == ("discovery", "action", "Discovery")
+    assert orchestrate.step_index("discovery") == 0 and orchestrate.step_index("specify") == 1
     assert [sid for sid, kind, _ in orchestrate.LIFECYCLE_STEPS if kind == "gate"] == [
         "review-spec",
         "review-plan",

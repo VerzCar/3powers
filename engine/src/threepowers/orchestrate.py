@@ -38,6 +38,7 @@ MANDATORY_GATES: dict[str, str] = {
 # The lifecycle steps, in order, mapped to their stage — the native executive walks these directly.
 # kind: "action" (an executive/judiciary command), "verdict" (the deterministic gate suite), "gate" (human).
 LIFECYCLE_STEPS: list[tuple[str, str, str]] = [
+    ("discovery", "action", "Discovery"),
     ("specify", "action", "Spec"),
     ("clarify", "action", "Spec"),
     ("review-spec", "gate", "Spec"),

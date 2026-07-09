@@ -50,28 +50,31 @@ def _writer(spec_id="RUN", seen: list | None = None):
         prompt = argv[-1] if argv else ""
         if seen is not None:
             seen.append(prompt)
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "STAGE: Specify" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             body = f"# Spec\n**Spec ID**: {spec_id}\n"
             if "REVISION REQUESTED" in prompt:
                 body += "REVISED per feedback\n"
             (d / "spec.md").write_text(body, encoding="utf-8")
-        elif "STAGE: Plan" in prompt:
+        elif "# Plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt:
+        elif "# Implementation-plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt:
+        elif "# Oracle agent" in prompt:
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt:
+        elif "# Implement agent" in prompt:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -769,7 +772,7 @@ def test_frame_degrades_off_tty_json_no_color_and_small_terminals(run_repo, monk
     assert "\r" not in out and "\033" not in out
     obj = json.loads(out)
     assert obj["status"] == "paused_at_gate" and obj["gate"] == "review-spec"
-    assert [s["step"] for s in obj["stages"]] == ["specify", "clarify"]
+    assert [s["step"] for s in obj["stages"]] == ["discovery", "specify", "clarify"]
 
 
 def test_frame_resize_relayouts_and_teardown_restores_the_terminal():
@@ -826,6 +829,16 @@ def test_rendering_and_resolution_deterministic(run_repo, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert rc == EXIT_PAUSED and "\033" not in out
     json.loads(out)  # still a clean machine payload
+
+
+def test_revise_context_names_gate_artifact_and_feedback():
+    """STEER-FR-005: the template-rendered revise block still names the gate, the artifact under
+    review, and the human's feedback verbatim — and an empty artifact gets the generic subject."""
+    block = steering.revise_context("review-plan", "specs-src/001-x/plan.md", "tighten section 3\n")
+    assert "REVISION REQUESTED (human gate 'review-plan')" in block
+    assert "specs-src/001-x/plan.md" in block
+    assert block.endswith("tighten section 3")
+    assert "the stage's artifact" in steering.revise_context("g", "", "fb")
 
 
 def test_width_unknown_terminal_yields_plain_log_without_exception():

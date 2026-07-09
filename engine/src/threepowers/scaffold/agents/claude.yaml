@@ -12,4 +12,14 @@ prompt_flag: "-p"
 prompt_via: arg
 # Session freshness: each `claude -p` invocation starts a NEW session by default; reuse is
 # opt-in only (`--continue` / `--resume`), which the engine never emits — no new-session flag needed.
-# Usage: plain `-p` text output carries no token summary — usage reads as unknown.
+# Usage (advisory): with structured output enabled (usage_mode below), the final JSON result
+# carries usage.input_tokens (the non-cached input — cache reads are counted separately in
+# cache_read_input_tokens) and usage.output_tokens; the hint sums them. Plain `-p` text output
+# (the default) carries no token summary, so the hint reads as unknown until usage_mode is set.
+usage:
+  strategy: json
+  fields: [usage.input_tokens, usage.output_tokens]
+# Opt-in structured output: uncomment `usage_mode` to append `usage_mode_args` to every
+# invocation, replacing the live text stream with the JSON result object the hint above reads.
+# usage_mode: json
+usage_mode_args: ["--output-format", "json"]

@@ -10,7 +10,9 @@ approves the spec and signs off on the evidence. Per-kind gate shaping
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Optional
 
 # Recognised kinds. "feature" is the default when nothing else matches.
 KINDS = ("defect", "design", "docs", "refactor", "chore", "feature")
@@ -71,6 +73,9 @@ _HIGH_RISK_KEYWORDS: tuple[str, ...] = (
 )
 # Kinds that, alone, warrant only the Cosmetic tier.
 _COSMETIC_KINDS = frozenset({"docs", "chore"})
+# Kinds whose work warrants a Discovery stage: new capability (feature) and design work benefit
+# from an up-front context note; defect/docs/refactor/chore runs go straight to Specify.
+_DISCOVERY_KINDS = frozenset({"feature", "design"})
 
 
 @dataclass
@@ -107,3 +112,16 @@ def classify(intent: str) -> WorkKind:
         tier = "Standard"
 
     return WorkKind(kinds=sorted(set(kinds)), suggested_tier=tier, signals=sorted(set(signals)))
+
+
+def discovery_enabled(kinds: Sequence[str], *, override: Optional[bool] = None) -> bool:
+    """Whether a run's Discovery stage should dispatch — deterministic, given the inferred kinds.
+
+    An explicit ``override`` (the ``--discovery``/``--no-discovery`` CLI flags) always wins when it
+    is not ``None``. Otherwise discovery runs iff any inferred kind is ``feature`` or ``design`` —
+    so the default classification (``["feature"]``) runs it, while an all-defect/docs/refactor/chore
+    intent skips straight to Specify. Pure: no I/O, no model call, never perturbs the verdict.
+    """
+    if override is not None:
+        return override
+    return any(k in _DISCOVERY_KINDS for k in kinds)

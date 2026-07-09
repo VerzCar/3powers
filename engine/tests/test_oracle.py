@@ -448,7 +448,8 @@ def test_oracle_template_carries_the_tests_specification_instruction():
     bundle, the hard stop on unmeasurable criteria ("Open Questions for the Legislature", routed
     to clarify, no invented thresholds), authoring the implementation-agnostic oracle.md (type
     marker, property invariant, NFR metric/threshold/protocol, executor notes, mutation flag,
-    Coverage Summary), then the runnable tests under tests/oracle/<NNN>-<slug>/; thresholds come
+    Coverage Summary), then the runnable tests at the engine-given $ORACLE_DESTINATION (under
+    tests/oracle/, keyed by the run's feature-folder id); thresholds come
     from the constitution + risk-tiers config; no substrate residue survives."""
     for text in _oracle_template_texts():
         for token in (
@@ -463,12 +464,13 @@ def test_oracle_template_carries_the_tests_specification_instruction():
             "Notes for executor",
             "High-risk mutation flag",
             "Coverage Summary",
-            "tests/oracle/<NNN>-<slug>/",
+            "$ORACLE_DESTINATION",
+            "tests/oracle/",
             ".3powers/memory/constitution.md",
             ".3powers/config/risk-tiers.yaml",
         ):
             assert token in text, f"oracle.agent.md lost the merged instruction {token!r}"
-        for residue in (".specify", "$ARGUMENTS", "tests.md", "<spec-id>"):
+        for residue in (".specify", "$ARGUMENTS", "tests.md", "<spec-id>", "<NNN>-<slug>"):
             assert residue not in text, f"oracle.agent.md carries residue {residue!r}"
 
 
@@ -479,7 +481,7 @@ def test_oracle_isolation_rules_are_preserved():
     for text in _oracle_template_texts():
         assert "MUST NOT read the implementation" in text
         assert "sealed spec" in text
-    body = prompts.stage_prompt_body("oracle")
+    body = prompts.resolve_body("oracle", None)
     assert "MUST NOT read the implementation" in body
-    assert "sealed spec bundle" in body
+    assert "sealed spec" in body
     assert "oracle.md" in body  # the Tests Specification is authored first, from the spec alone

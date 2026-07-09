@@ -143,10 +143,12 @@ class HostedAgentRunner:
         spec_text: Optional[str] = None,
         context: str = "",
         file_scope: str = "",
+        variables: Optional[dict[str, str]] = None,
     ) -> DispatchResult:
         """Trigger → poll → collect one stage; a failed/timed-out hosted run is a dispatch failure
         naming the stage, never a gate verdict. No credential is read or logged.
-        The per-dispatch prompt blocks mirror :meth:`CliAgentRunner.dispatch` so a hosted stage is
+        The per-dispatch prompt blocks — including the ``variables`` filling the template body's
+        closed ``$NAME`` vocabulary — mirror :meth:`CliAgentRunner.dispatch` so a hosted stage is
         judged and contextualized identically to a local one."""
         prompt = prompts.assemble(
             step,
@@ -155,7 +157,8 @@ class HostedAgentRunner:
             context=context,
             file_scope=file_scope,
             # The same repo-local stage-template resolution as the local runner.
-            body=prompts.stage_template_body(self.settings.stage_templates_dir, step),
+            templates_dir=self.settings.stage_templates_dir,
+            variables=variables,
         )
         mapping = {
             "prompt": prompt,

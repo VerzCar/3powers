@@ -52,30 +52,34 @@ def _writer(spec_id="RUN", skip=(), commit_line=True):
 
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
         step = ""
-        if "STAGE: Specify" in prompt and "specify" not in skip:
+        if "# Discovery agent" in prompt and "discovery" not in skip:
+            step = "discovery"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt and "specify" not in skip:
             step = "specify"
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt and "plan" not in skip:
+        elif "# Plan agent" in prompt and "plan" not in skip:
             step = "plan"
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt and "tasks" not in skip:
+        elif "# Implementation-plan agent" in prompt and "tasks" not in skip:
             step = "tasks"
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt and "oracle" not in skip:
+        elif "# Oracle agent" in prompt and "oracle" not in skip:
             step = "oracle"
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt and "implement" not in skip:
+        elif "# Implement agent" in prompt and "implement" not in skip:
             step = "implement"
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
@@ -395,7 +399,8 @@ def test_run_is_auditable_from_the_branch_log_alone(run_repo, monkeypatch):
     assert _resume(run_repo) == EXIT_PAUSED
     subjects = [s for s in reversed(_log_subjects(run_repo)) if s.startswith("3pwr(RUN):")]
     steps = [s.split(":")[1].split("—")[0].strip() for s in subjects]
-    assert steps == ["specify", "plan", "tasks", "oracle", "implement"]  # lifecycle order
+    # lifecycle order (discovery heads the walk since it became the first producing stage)
+    assert steps == ["discovery", "specify", "plan", "tasks", "oracle", "implement"]
     authors = set(_git(run_repo, "log", "--pretty=%an", "--grep", "3pwr(RUN)", "-F").splitlines())
     assert authors == {"3pwr"}  # every engine stage commit is attributable
 

@@ -33,11 +33,12 @@ poll_interval_s: 15
 # 3) Collect the produced changes (the branch/PR) into the working tree, so the verdict stage judges them.
 collect_command: ["gh", "pr", "checkout", "{run_id}"]
 
-# Optional advisory usage hint: when the hosted service reports token usage in a JSON field of the
-# trigger/poll/collect output, declare where — unknown otherwise; never enters the verdict.
-# usage:
-#   strategy: json
-#   field: usage.total_tokens
+# Advisory usage hint: the reference poll/collect output carries usage.total_tokens in its final
+# JSON — adjust the path (or use `fields:` summed with `subtract:` for a split cached count) to
+# match your deployment's fields; unknown when absent; never enters the verdict.
+usage:
+  strategy: json
+  field: usage.total_tokens
 
 notes: >
   Reference HOSTED backend for Copilot-only shops without a local headless CLI. Requires the `gh` CLI

@@ -9,6 +9,27 @@ from __future__ import annotations
 from threepowers import artifacts
 
 
+def test_discovery_contract_requires_a_note_in_the_feature_folder():
+    """Plan 034 phase 4: the Discovery stage advances only if it produced its note flat in the
+    run's feature folder (specs-src/<feature>/discovery.md; the legacy specs/ base matches too)."""
+    c = artifacts.contract_for("discovery")
+    assert c is not None and c.kind == "path"
+    ok = artifacts.verify(c, ["specs-src/034-thing/discovery.md", "notes.txt"])
+    assert ok.ok and "specs-src/034-thing/discovery.md" in ok.matched
+    assert artifacts.verify(c, ["specs/034-thing/discovery.md"]).ok
+
+
+def test_discovery_off_target_note_is_a_named_failure():
+    """Plan 034 phase 4: a discovery note outside a feature folder (or no note at all) fails,
+    naming the expected artifact and location."""
+    c = artifacts.contract_for("discovery")
+    chk = artifacts.verify(c, ["docs/discovery.md"])  # not under specs-src/<feature>/
+    assert not chk.ok
+    assert "off-target" in chk.message and "specs-src/<feature>/discovery.md" in chk.message
+    empty = artifacts.verify(c, [])
+    assert not empty.ok and "discovery note" in empty.message
+
+
 def test_specify_contract_requires_a_spec_file():
     """RUNLIVE-FR-001: the Specify stage advances only if it produced a spec file."""
     c = artifacts.contract_for("specify")

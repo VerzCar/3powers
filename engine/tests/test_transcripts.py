@@ -167,7 +167,7 @@ def test_cli_failure_names_the_transcript_path(run_repo, monkeypatch, capsys):
     assert rc != 0
     obj = json.loads(capsys.readouterr().out)
     tpath = obj["transcript"]
-    assert tpath.startswith(".3powers/runs/RUN/") and tpath.endswith("-specify-attempt2.log")
+    assert tpath.startswith(".3powers/runs/RUN/") and tpath.endswith("-discovery-attempt2.log")
     assert "agent said something" in (run_repo / tpath).read_text(encoding="utf-8")
     # ...and the human message names it too
     monkeypatch.setattr(runner, "dispatch_agent", fake)

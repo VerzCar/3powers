@@ -3,7 +3,7 @@ name: implementation-plan.agent
 description: "Breaks the approved high-level plan into the detailed implementation plan — an ordered, phase-organized, requirement-traced task checklist a machine executor can run with zero interpretation, with every parallelizable phase marked. Runs at the Tasks stage and writes implementation-plan.md flat into the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: tasks
 role: planner
-artifact: implementation-plan.md in the engine-given feature folder (default specs-src/<feature>/implementation-plan.md)
+artifact: implementation-plan.md, flat in the engine-given feature folder under specs-src/
 ---
 
 # Implementation-plan agent — an executable, phase-organized checklist
@@ -96,17 +96,16 @@ keeping the checklist the single source of task state.
 
 ## Output destination
 
-Write the checklist FLAT into the destination the engine has given — the FEATURE FOLDER (or
-explicit destination path) named in this prompt's run-context blocks; create no spec/ or
-artifacts/ subfolder inside it. If the engine has given no destination, default to
-`specs-src/<feature>/implementation-plan.md`.
+Write the checklist as `implementation-plan.md` FLAT into the engine-given feature folder
+`$FEATURE_FOLDER` — when the engine names none there, the feature folder under `specs-src/`
+allocated for this run; create no spec/ or artifacts/ subfolder inside it.
 
 ## Output — the file's required structure
 
 Fixed shape, so every run yields the same document structure regardless of the model:
 
 ```markdown
-# Implementation Plan (tasks): <feature>
+# Implementation Plan (tasks): <feature name>
 
 **Input**: the plan and the spec in this feature folder
 **Output**: this file — the Tasks stage's artifact

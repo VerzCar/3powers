@@ -790,11 +790,10 @@ def cmd_init(args: argparse.Namespace) -> int:
         lines.append(f"  signer: kept existing key at {key_path}")
     else:
         lines.append("  signer: using the key from your environment")
-    lines.append(
-        f"  language: {lang or '(none — no adapter selected)'} · "
-        f"adapter {adapter_status} · default tier: {tier} · autonomous default: "
-        f"{'yes' if auto_mode else 'no'}"
-    )
+    lines.append(f"  language: {lang or '(none — no adapter selected)'}")
+    lines.append(f"  adapter: {adapter_status}")
+    lines.append(f"  default tier: {tier}")
+    lines.append(f"  autonomous default: {'yes' if auto_mode else 'no'}")
     if lang == "" and langs:
         lines.append(
             f"  note: choose a language next time from: {', '.join(langs)} "

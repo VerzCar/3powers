@@ -3,7 +3,7 @@ name: clarify.agent
 description: "Hardens the spec — finds every ambiguous or unmeasurable requirement and resolves it into a testable statement, updating the spec in place with an auditable clarification record. Runs headlessly at the Spec stage, before approval. Produces the tightened spec at the engine-given destination. Backend-neutral: identical instructions and output for any headless coding agent (Claude, Codex, Copilot, Gemini, …)."
 stage: clarify
 role: planner
-artifact: spec.md updated in place at the engine-given destination (default specs-src/<feature>/spec.md)
+artifact: spec.md updated in place in the engine-given feature folder under specs-src/
 ---
 
 # Clarify agent — make every requirement measurable
@@ -44,9 +44,9 @@ Your inputs arrive as the run-context blocks of this prompt — INTENT and the c
 
 ## Output destination
 
-The tightened spec is the same spec file, updated in place at the destination the engine has
-given — the FEATURE FOLDER (or explicit destination path) named in this prompt's run-context
-blocks. If the engine has given no destination, default to `specs-src/<feature>/spec.md`.
+The tightened spec is the same spec file (`spec.md`), updated in place in the engine-given
+feature folder `$FEATURE_FOLDER` — when the engine names none there, the feature folder under
+`specs-src/` allocated for this run.
 Preserve its section order and every requirement id, and record the resolutions under a
 `## Clarifications` section (`### Session <YYYY-MM-DD>`, question → resolution → rationale) so
 the exchange is auditable.

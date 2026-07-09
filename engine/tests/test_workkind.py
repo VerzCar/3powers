@@ -45,3 +45,17 @@ def test_cli_classify_json(capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["kinds"] == ["defect"]
     assert out["suggested_tier"] == "High-risk"  # 'login' domain
+
+
+def test_discovery_enabled_by_kind():
+    """Plan 034 phase 5: discovery runs iff any inferred kind is feature/design."""
+    assert workkind.discovery_enabled(["feature"], override=None) is True
+    assert workkind.discovery_enabled(["defect"], override=None) is False
+    assert workkind.discovery_enabled(["docs", "chore"], override=None) is False
+    assert workkind.discovery_enabled(["design", "chore"], override=None) is True
+
+
+def test_discovery_override_wins_over_kind():
+    """Plan 034 phase 5: an explicit --discovery/--no-discovery override beats the work-kind gate."""
+    assert workkind.discovery_enabled(["feature"], override=False) is False
+    assert workkind.discovery_enabled(["defect"], override=True) is True

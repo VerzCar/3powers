@@ -297,27 +297,30 @@ def _artifact_writer(spec_id="RUN"):
 
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
-        m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
         d = cwd / (m.group(1) if m else f"specs-src/{spec_id}")
-        if "STAGE: Specify" in prompt:
+        if "# Discovery agent" in prompt:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery: x\n", encoding="utf-8")
+        elif "# Specify agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt:
+        elif "# Plan agent" in prompt:
             # plan/tasks carry hard artifact contracts (PHASE-FR-002) — the fake writes them
             # flat into the run's feature folder (SRCX-FR-001) like a real agent would.
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt:
+        elif "# Implementation-plan agent" in prompt:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt:
+        elif "# Oracle agent" in prompt:
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt:
+        elif "# Implement agent" in prompt:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -541,11 +544,153 @@ def test_cli_json_emits_a_per_stage_result(native_project, capsys):
     assert spec_stage["attempts"] == 1 and "spec.md" in spec_stage["artifact"]
 
 
+# --------------------------------------------------------------------------- discovery work-kind gate (plan 034 phase 5)
+def _discovery_ledger_entries(root: Path) -> tuple[list[dict], list[dict]]:
+    """The run's discovery ledger entries: (stage completions, dispatch provenance)."""
+    from threepowers.ledger import Ledger
+
+    entries = Ledger(root / ".3powers" / "ledger.jsonl").entries()
+    runs = [e.get("payload", {}) for e in entries if e.get("type") == "run"]
+    stage = [p for p in runs if p.get("kind") == "stage" and p.get("step") == "discovery"]
+    dispatch = [p for p in runs if p.get("kind") == "dispatch" and p.get("stage") == "discovery"]
+    return stage, dispatch
+
+
+def test_run_parser_resolves_discovery_override():
+    """Plan 034 phase 5: --discovery/--no-discovery resolve to an Optional[bool], default None."""
+    import threepowers.cli as climod
+
+    p = climod.build_parser()
+    assert p.parse_args(["run", "add x"]).discovery is None
+    assert p.parse_args(["run", "add x", "--discovery"]).discovery is True
+    assert p.parse_args(["run", "add x", "--no-discovery"]).discovery is False
+
+
+def test_run_help_lists_the_discovery_flags(capsys):
+    """Plan 034 phase 5: `3pwr run --help` lists both flag forms."""
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    out = capsys.readouterr().out
+    assert "--discovery" in out and "--no-discovery" in out
+
+
+def test_defect_intent_skips_discovery_and_proceeds_to_specify(native_project, monkeypatch, capsys):
+    """Plan 034 phase 5: a defect-kind intent short-circuits Discovery — outcome 'skipped' in the
+    parseable --json stages list, nothing written, no run/stage or dispatch discovery ledger entry
+    — and the walk proceeds straight to Specify with the prior-context handoff untouched."""
+    import json as _json
+
+    prompts_seen: list[str] = []
+    inner = _artifact_writer()
+
+    def recording(argv, **kw):
+        prompts_seen.append(argv[-1] if argv else "")
+        return inner(argv, **kw)
+
+    monkeypatch.setattr(runner, "dispatch_agent", recording)
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "fix the crash bug",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"  # the walk reached Specify and its gate
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "skipped"
+    assert "specify" in [st["step"] for st in obj["stages"]]
+    assert not list(native_project.glob("specs-src/**/discovery.md"))  # nothing written
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage == [] and dispatch == []  # no ledger trace of a stage that never ran
+    # prior_box untouched: the specify prompt (the FIRST dispatched) carries no discovery handoff
+    assert "# Specify agent" in prompts_seen[0]
+    assert "discovery.md" not in prompts_seen[0]
+    # The verdict/gate --json path never consumes StageResult, so the new outcome value
+    # cannot perturb its bytes (light source-level guard).
+    import inspect
+
+    from threepowers import verdict as verdictmod
+
+    assert "StageResult" not in inspect.getsource(verdictmod)
+
+
+def test_no_discovery_flag_skips_for_a_feature_intent(native_project, capsys):
+    """Plan 034 phase 5: --no-discovery overrides the work-kind gate — a feature intent skips."""
+    import json as _json
+
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "add x",
+            "--no-discovery",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "skipped"
+    assert not list(native_project.glob("specs-src/**/discovery.md"))
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage == [] and dispatch == []
+
+
+def test_discovery_flag_forces_dispatch_for_a_defect_intent(native_project, capsys):
+    """Plan 034 phase 5: --discovery overrides the work-kind gate — a defect intent dispatches
+    Discovery, its note lands and is recorded like any producing stage."""
+    import json as _json
+
+    rc = main(
+        [
+            "--root",
+            str(native_project),
+            "run",
+            "fix the crash bug",
+            "--discovery",
+            "--no-input",
+            "--json",
+            "--spec-id",
+            "RUN",
+        ]
+    )
+    obj = _json.loads(capsys.readouterr().out)
+    assert rc == 3 and obj["gate"] == "review-spec"
+    disc = next(st for st in obj["stages"] if st["step"] == "discovery")
+    assert disc["ok"] and disc["outcome"] == "ok"
+    assert list(native_project.glob("specs-src/**/discovery.md"))  # the note landed
+    stage, dispatch = _discovery_ledger_entries(native_project)
+    assert stage and dispatch  # recorded like any dispatched producing stage
+
+
 # --------------------------------------------------------------------------- per-stage artifact contract (RUNLIVE-FR-001/002)
 def test_cli_specify_producing_nothing_is_artifact_missing(native_project, monkeypatch, capsys):
     """RUNLIVE-FR-002/SC-001: a Specify agent that writes no spec stops the run with a named artifact
     failure — not a silent pass, not a gate-red."""
-    monkeypatch.setattr(runner, "dispatch_agent", lambda argv, **kw: (0, "did nothing", ""))
+
+    def discovery_only(argv, **kw):
+        # Discovery (the head step) produces its note; Specify then writes nothing.
+        import re
+
+        prompt = argv[-1] if argv else ""
+        if "# Discovery agent" in prompt:
+            m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
+            d = Path(kw["cwd"]) / (m.group(1) if m else "specs-src/RUN")
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        return (0, "did nothing", "")
+
+    monkeypatch.setattr(runner, "dispatch_agent", discovery_only)
     rc = main(["--root", str(native_project), "run", "add x", "--no-input", "--spec-id", "RUN"])
     out = capsys.readouterr().out
     assert rc == 4  # EXIT_SETUP — a setup/dispatch problem, not a gate verdict (AUTOX-FR-009)
@@ -560,16 +705,16 @@ def _writer_no_implement():
 
         p = argv[-1] if argv else ""
         cwd = Path(kw["cwd"])
-        m = re.search(r"FEATURE FOLDER: (\S+)", p)
+        m = re.search(r"feature folder\s+`([^`\s]+)`", p)
         d = cwd / (m.group(1) if m else "specs-src/RUN")
         # plan/tasks carry hard contracts too (PHASE-FR-002) — write them flat so the run reaches Build
-        if "STAGE: Plan" in p:
+        if "# Plan agent" in p:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in p:
+        elif "# Implementation-plan agent" in p:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text("# Tasks\n- [ ] T001 [RUN-FR-001] x\n", encoding="utf-8")
-        elif "STAGE: Oracle" in p:
+        elif "# Oracle agent" in p:
             t = cwd / "tests" / "oracle" / "RUN"
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_o.py").write_text("def test_o():\n    assert True\n", encoding="utf-8")
@@ -581,10 +726,18 @@ def _writer_no_implement():
 def _recording_writer(seen):
     def fake(argv, **kw):
         p = argv[-1] if argv else ""
-        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
-            if f"STAGE: {key}" in p:
-                seen.append(key.lower())
-        if "STAGE: Implement" in p:
+        for key, marker in (
+            ("discovery", "# Discovery agent"),
+            ("specify", "# Specify agent"),
+            ("clarify", "# Clarify agent"),
+            ("plan", "# Plan agent"),
+            ("tasks", "# Implementation-plan agent"),
+            ("oracle", "# Oracle agent"),
+            ("implement", "# Implement agent"),
+        ):
+            if marker in p:
+                seen.append(key)
+        if "# Implement agent" in p:
             d = Path(kw["cwd"]) / "src"
             d.mkdir(parents=True, exist_ok=True)
             (d / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -713,9 +866,12 @@ def test_cli_native_run_with_hosted_backend_reaches_spec_gate(native_project, mo
         if argv[:2] == ["gh", "poll"]:
             return (0, "completed", "")
         if argv[:2] == ["gh", "collect"]:
+            # the run deterministically allocated specs-src/010-add-x (SRCX-FR-008: max 009 + 1)
+            d = Path(cwd) / "specs-src" / "010-add-x"
+            if state["step"] == "discovery":  # the hosted run's branch carries the note
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
             if state["step"] == "specify":  # the hosted run's branch carries the produced spec
-                # the run deterministically allocated specs-src/010-add-x (SRCX-FR-008: max 009 + 1)
-                d = Path(cwd) / "specs-src" / "010-add-x"
                 d.mkdir(parents=True, exist_ok=True)
                 (d / "spec.md").write_text("# Spec\n**Spec ID**: RUN\n", encoding="utf-8")
             return (0, "checked out", "")
@@ -837,6 +993,11 @@ def test_each_dispatch_is_an_independent_process_with_no_carried_session(tmp_pat
 
 
 # --------------------------------------------------------------------------- usage capture (plan 033 Track H / RUNVIS)
+# The real Copilot CLI summary shape (plan 034 Track D): ↑ total input (cache-inclusive),
+# "(… written)" non-cached input, ↓ output — the hint sums the written + output groups.
+_COPILOT_USAGE_PATTERN = r"Tokens ↑[^\n]*\(([0-9.,_kKmM]+) written\)[^\n]*↓\s*([0-9.,_kKmM]+)"
+
+
 def test_extract_usage_json_strategy_reads_a_dotted_field():
     """Plan 033 Track H (RUNVIS): a `usage: {strategy: json}` manifest reads the token count from
     the last JSON line of the agent output via a dotted field path."""
@@ -959,10 +1120,11 @@ def _drive_to_signoff(root: Path) -> None:
 
 
 def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkeypatch, capsys):
-    """Plan 033 Track H / CON-003 (RUNVIS): the deterministic verdict payload is byte-identical
-    whether or not usage is captured — tokens ride ONLY the additive run-entry fields, never
-    run_gates, the verdict, or the verdict bytes; `3pwr verify` stays green over the new
-    payloads."""
+    """Plan 033 Track H / CON-003 (RUNVIS), extended by plan 034 Track D: the deterministic
+    verdict payload is byte-identical whether or not usage is captured — tokens ride ONLY the
+    additive run-entry fields, never run_gates, the verdict, or the verdict bytes; `3pwr verify`
+    stays green over the new payloads. The captured shape is the real Copilot summary line
+    (`Tokens ↑ … (… written) • ↓ …`) whose two groups sum to the non-cached count."""
     import yaml
 
     from threepowers.canonical import canonical_bytes
@@ -986,7 +1148,7 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
                 "family": "anthropic",
                 "headless": True,
                 "prompt_flag": "-p",
-                "usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9,]+)"},
+                "usage": {"strategy": "regex", "pattern": _COPILOT_USAGE_PATTERN},
             }
         ),
         encoding="utf-8",
@@ -995,7 +1157,7 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
 
     def with_usage(argv, **kw):
         rc, out, err = base(argv, **kw)
-        return rc, out + "\ntokens used: 4,321", err
+        return rc, out + "\nTokens ↑ 629.8k (29.5k written) • ↓ 9.2k", err
 
     monkeypatch.setattr(runner, "dispatch_agent", with_usage)
     _drive_to_signoff(root_b)
@@ -1023,22 +1185,64 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
 
     b_stages = stage_payloads(root_b, "stage")
     coder_stages = [p for p in b_stages if p["step"] != "oracle"]
-    assert coder_stages and all(p.get("tokens") == 4321 for p in coder_stages)
+    # 29.5k written + 9.2k output = 38700 — the non-cached count, never the ↑ cache total
+    assert coder_stages and all(p.get("tokens") == 38700 for p in coder_stages)
     # the oracle role runs under the codex manifest, which declares no usage hint → unknown
     assert all("tokens" not in p for p in b_stages if p["step"] == "oracle")
-    assert any(p.get("tokens") == 4321 for p in stage_payloads(root_b, "checkpoint"))
+    assert any(p.get("tokens") == 38700 for p in stage_payloads(root_b, "checkpoint"))
     # …while A's payloads are untouched (the field appears only when usage was captured).
     assert all("tokens" not in p for p in stage_payloads(root_a, "stage"))
     assert all("tokens" not in p for p in stage_payloads(root_a, "checkpoint"))
 
     # The run's progress.md shows the Tokens column with the accumulated per-stage counts
-    # (Spec = specify + clarify = 2 × 4321), and — (unknown) where nothing was reported.
+    # (Spec = specify + clarify = 2 × 38700), and — (unknown) where nothing was reported.
     prog = (root_b / "specs-src" / "010-add-x" / "progress.md").read_text(encoding="utf-8")
-    assert "| Tokens |" in prog and "8642" in prog
+    assert "| Tokens |" in prog and "77400" in prog
 
     # Ledger verification stays green over the new additive payloads.
     assert main(["--root", str(root_b), "verify"]) == 0
     capsys.readouterr()
+
+
+def test_cli_json_stage_result_carries_the_copilot_usage_integer(
+    native_project, monkeypatch, capsys
+):
+    """Plan 034 Track D: a dispatch whose transcript tail carries the real Copilot token summary
+    line lands ONE advisory integer (non-cached written + output) in the stage --json result;
+    the surrounding prose changes nothing."""
+    import json as _json
+
+    import yaml
+
+    copilot_line = (Path(__file__).parent / "fixtures" / "usage" / "copilot.txt").read_text(
+        encoding="utf-8"
+    )
+    (native_project / ".3powers" / "agents" / "claude.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "command": "claude",
+                "family": "anthropic",
+                "headless": True,
+                "prompt_flag": "-p",
+                "usage": {"strategy": "regex", "pattern": _COPILOT_USAGE_PATTERN},
+            }
+        ),
+        encoding="utf-8",
+    )
+    base = _artifact_writer()
+
+    def with_usage(argv, **kw):
+        rc, out, err = base(argv, **kw)
+        return rc, f"{out}\n{copilot_line}", err
+
+    monkeypatch.setattr(runner, "dispatch_agent", with_usage)
+    rc = main(
+        ["--root", str(native_project), "run", "add x", "--no-input", "--json", "--spec-id", "RUN"]
+    )
+    assert rc == 3
+    obj = _json.loads(capsys.readouterr().out)
+    spec_stage = next(st for st in obj["stages"] if st["step"] == "specify")
+    assert spec_stage["tokens"] == 38700  # 29.5k written + 9.2k ↓ output, not the ↑ total
 
 
 def test_json_status_payload_keys_stay_a_superset_for_e2e_parsers(native_project, capsys):

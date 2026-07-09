@@ -35,7 +35,7 @@ def _feature_dir(prompt: str, cwd: Path, spec_id: str) -> Path:
     """The allocated feature folder the engine names in the prompt (SRCX-FR-001/008)."""
     import re
 
-    m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+    m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
     return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 
@@ -47,23 +47,26 @@ def _stage_writer(spec_id="RUN", skip=()):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         d = _feature_dir(prompt, cwd, spec_id)
-        if "STAGE: Specify" in prompt and "specify" not in skip:
+        if "# Discovery agent" in prompt and "discovery" not in skip:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt and "specify" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt and "plan" not in skip:
+        elif "# Plan agent" in prompt and "plan" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt and "tasks" not in skip:
+        elif "# Implementation-plan agent" in prompt and "tasks" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "tasks.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt and "oracle" not in skip:
+        elif "# Oracle agent" in prompt and "oracle" not in skip:
             t = cwd / "tests" / "oracle" / spec_id
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt and "implement" not in skip:
+        elif "# Implement agent" in prompt and "implement" not in skip:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -299,9 +302,17 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
 
     def recording(argv, **kw):
         prompt = argv[-1] if argv else ""
-        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
-            if f"STAGE: {key}" in prompt:
-                seen.append(key.lower())
+        for key, marker in (
+            ("discovery", "# Discovery agent"),
+            ("specify", "# Specify agent"),
+            ("clarify", "# Clarify agent"),
+            ("plan", "# Plan agent"),
+            ("tasks", "# Implementation-plan agent"),
+            ("oracle", "# Oracle agent"),
+            ("implement", "# Implement agent"),
+        ):
+            if marker in prompt:
+                seen.append(key)
         return _stage_writer()(argv, **kw)
 
     monkeypatch.setattr(runner, "dispatch_agent", recording)
@@ -321,7 +332,9 @@ def test_no_auto_commit_failure_resumes_at_the_failed_stage(run_repo, monkeypatc
     capsys.readouterr()
     assert rc3 in (EXIT_PAUSED, EXIT_FAIL, EXIT_SETUP)  # proceeds to verify/sign-off territory
     assert "oracle" in seen and "implement" in seen
-    assert not {"specify", "clarify", "plan", "tasks"} & set(seen)  # never re-dispatched
+    assert not {"discovery", "specify", "clarify", "plan", "tasks"} & set(
+        seen
+    )  # never re-dispatched
 
 
 def test_nothing_to_resume_names_the_fresh_start(run_repo, capsys):

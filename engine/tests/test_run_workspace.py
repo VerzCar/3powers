@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from threepowers import completion, runner, runpreflight, workspace
+from threepowers import artifacts, completion, orchestrate, runner, runpreflight, workspace
 from threepowers.cli import EXIT_PAUSED, EXIT_SETUP, _run_feature_dir_from_ledger, main
 from threepowers.config import Settings
 from threepowers.ledger import Ledger
@@ -31,6 +31,7 @@ def test_stage_artifact_paths_are_flat(tmp_path):
     implement — with no spec/ or artifacts/ subfolder in any write location."""
     f = tmp_path / "specs-src" / "017-x"
     assert workspace.stage_artifact_path(f, "specify") == f / "spec.md"
+    assert workspace.stage_artifact_path(f, "discovery") == f / "discovery.md"
     assert workspace.stage_artifact_path(f, "plan") == f / "plan.md"
     assert workspace.stage_artifact_path(f, "tasks") == f / "implementation-plan.md"
     assert workspace.stage_artifact_path(f, "oracle") == f / "oracle.md"
@@ -74,10 +75,18 @@ def test_find_artifact_prefers_flat_never_two(tmp_path):
     assert workspace.find_artifact(f, "plan") == f / "plan.md"
 
 
-def test_producing_steps_declare_exactly_five_markdowns():
-    """SRCX-FR-004 (property): the producing set is exactly {specify, plan, tasks, oracle,
-    implement}; SRCX-FR-007 (property): no gate / verdict / sign-off / advance step is gated."""
-    assert workspace.PRODUCING_STEPS == ("specify", "plan", "tasks", "oracle", "implement")
+def test_producing_steps_declare_exactly_six_markdowns():
+    """SRCX-FR-004 (property): the producing set is exactly {discovery, specify, plan, tasks,
+    oracle, implement}; SRCX-FR-007 (property): no gate / verdict / sign-off / advance step is gated."""
+    assert workspace.PRODUCING_STEPS == (
+        "discovery",
+        "specify",
+        "plan",
+        "tasks",
+        "oracle",
+        "implement",
+    )
+    assert workspace.step_filename("discovery") == "discovery.md"  # the default <step>.md branch
     for step in workspace.PRODUCING_STEPS:
         assert completion.is_producing(step)
     for step in (
@@ -286,6 +295,18 @@ def test_completion_check_passes_when_disk_and_ledger_agree(tmp_path):
     assert not completion.check_step(tmp_path, f, "plan", other).ok
 
 
+def test_resume_entry_index_skips_steps_a_legacy_run_never_recorded(tmp_path):
+    """Plan 034 phase 4 (regression): a ledger written before the Discovery step existed carries no
+    discovery entries — the resume gate checks only steps the run recorded, so a legacy run still
+    resumes at its ledger-derived index instead of being forced back to the new head step."""
+    f = _mk_feature(tmp_path)
+    (f / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    entries = [_stage_entry("specify", ["specs-src/017-x/spec.md"])]
+    start = orchestrate.step_index("plan")
+    idx, broken = completion.resume_entry_index(entries, "RUN", start, root=tmp_path, feature_dir=f)
+    assert idx == start and broken is None
+
+
 def test_completion_check_absent_and_unrecorded_are_distinct(tmp_path):
     """SRCX-FR-014/015: recorded-but-deleted is artifact_absent; on-disk-but-unrecorded is
     artifact_unrecorded — two distinct named classes, both naming the stage and the path, and both
@@ -399,7 +420,7 @@ def _git_init(root: Path) -> None:
 def _feature_dir_of_prompt(prompt: str, cwd: Path, spec_id: str) -> Path:
     import re
 
-    m = re.search(r"FEATURE FOLDER: (\S+)", prompt)
+    m = re.search(r"feature folder\s+`([^`\s]+)`", prompt)
     return cwd / (m.group(1) if m else f"specs-src/{spec_id}")
 
 
@@ -411,27 +432,30 @@ def _writer(spec_id="RUN", skip=(), spec_folder: str | None = None):
         cwd = Path(kw.get("cwd", "."))
         prompt = argv[-1] if argv else ""
         d = _feature_dir_of_prompt(prompt, cwd, spec_id)
-        if "STAGE: Specify" in prompt and "specify" not in skip:
+        if "# Discovery agent" in prompt and "discovery" not in skip:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "discovery.md").write_text("# Discovery\n", encoding="utf-8")
+        elif "# Specify agent" in prompt and "specify" not in skip:
             t = (cwd / spec_folder) if spec_folder else d
             t.mkdir(parents=True, exist_ok=True)
             (t / "spec.md").write_text(f"# Spec\n**Spec ID**: {spec_id}\n", encoding="utf-8")
-        elif "STAGE: Plan" in prompt and "plan" not in skip:
+        elif "# Plan agent" in prompt and "plan" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "plan.md").write_text("# Plan\n", encoding="utf-8")
-        elif "STAGE: Tasks" in prompt and "tasks" not in skip:
+        elif "# Implementation-plan agent" in prompt and "tasks" not in skip:
             d.mkdir(parents=True, exist_ok=True)
             (d / "implementation-plan.md").write_text(
                 f"# Tasks\n- [ ] T001 [{spec_id}-FR-001] do it (files: src/impl.py)\n",
                 encoding="utf-8",
             )
-        elif "STAGE: Oracle" in prompt and "oracle" not in skip:
+        elif "# Oracle agent" in prompt and "oracle" not in skip:
             import re
 
-            m = re.search(r"ORACLE DESTINATION: [^\n]*?tests/oracle/([^<\s/]+)/", prompt)
+            m = re.search(r"tests/oracle/([^`<\s/]+)/", prompt)
             t = cwd / "tests" / "oracle" / (m.group(1) if m else spec_id)
             t.mkdir(parents=True, exist_ok=True)
             (t / "test_oracle.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
-        elif "STAGE: Implement" in prompt and "implement" not in skip:
+        elif "# Implement agent" in prompt and "implement" not in skip:
             src = cwd / "src"
             src.mkdir(parents=True, exist_ok=True)
             (src / "impl.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -517,8 +541,15 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
         if (run_repo / "CHANGELOG.md").is_file()
         else None
     )
-    for name in ("spec.md", "plan.md", "implementation-plan.md", "oracle.md", "changelog.md"):
-        assert (fdir / name).is_file(), name  # SRCX-FR-004: the five producing markdowns, flat
+    for name in (
+        "discovery.md",
+        "spec.md",
+        "plan.md",
+        "implementation-plan.md",
+        "oracle.md",
+        "changelog.md",
+    ):
+        assert (fdir / name).is_file(), name  # SRCX-FR-004: the six producing markdowns, flat
     for legacy in ("tasks.md", "implement.md"):
         assert not (fdir / legacy).exists(), legacy  # legacy names are never written
     assert not (fdir / "spec").exists() and not (fdir / "artifacts").exists()  # SRCX-FR-001
@@ -551,6 +582,37 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
     # SRCX-FR-011: the run/start payload binds the allocated folder, recoverable offline
     assert _run_feature_dir_from_ledger(Settings(root=run_repo), entries, "RUN") == fdir
     assert main(["--root", str(run_repo), "verify"]) == 0  # SRCX-NFR-002
+
+
+def test_run_walks_discovery_first_and_feeds_the_note_to_specify(run_repo, monkeypatch, capsys):
+    """Plan 034 phase 4: a fresh run dispatches Discovery FIRST, its note lands flat in the run's
+    feature folder satisfying the discovery contract, and Specify's dispatched prompt carries the
+    accepted note as PRIOR CONTEXT — the existing prior-artifact handoff, one stage further back."""
+    prompts_seen: list[str] = []
+
+    def recording(argv, **kw):
+        prompts_seen.append(argv[-1] if argv else "")
+        return _writer()(argv, **kw)
+
+    monkeypatch.setattr(runner, "dispatch_agent", recording)
+    assert main(["--root", str(run_repo), "run", "add x", "--no-input", "--spec-id", "RUN"]) == 3
+    capsys.readouterr()
+    assert "# Discovery agent" in prompts_seen[0]  # the walk's head step, dispatched first
+    note = run_repo / "specs-src" / "001-add-x" / "discovery.md"
+    assert note.is_file()
+    chk = artifacts.verify(
+        artifacts.contract_for("discovery"), ["specs-src/001-add-x/discovery.md"]
+    )
+    assert chk.ok  # the produced note satisfies the discovery contract
+    # ...and the signed stage entry records it, like every other producing stage
+    entries = Ledger(run_repo / ".3powers" / "ledger.jsonl").entries()
+    recorded = completion.recorded_stage_artifacts(entries, "RUN")
+    assert "specs-src/001-add-x/discovery.md" in recorded["discovery"]
+    spec_prompt = next(p for p in prompts_seen if "# Specify agent" in p)
+    assert "PRIOR CONTEXT:" in spec_prompt
+    assert (
+        "prior stage 'discovery' accepted artifact: specs-src/001-add-x/discovery.md" in spec_prompt
+    )
 
 
 def test_wrong_folder_spec_is_blocked_as_artifact_absent(run_repo, monkeypatch, capsys):
@@ -620,9 +682,16 @@ def test_resume_reruns_stage_whose_artifact_vanished(run_repo, monkeypatch, caps
 
     def recording(argv, **kw):
         prompt = argv[-1] if argv else ""
-        for key in ("Specify", "Clarify", "Plan", "Tasks", "Oracle", "Implement"):
-            if f"STAGE: {key}" in prompt:
-                seen.append(key.lower())
+        for key, marker in (
+            ("specify", "# Specify agent"),
+            ("clarify", "# Clarify agent"),
+            ("plan", "# Plan agent"),
+            ("tasks", "# Implementation-plan agent"),
+            ("oracle", "# Oracle agent"),
+            ("implement", "# Implement agent"),
+        ):
+            if marker in prompt:
+                seen.append(key)
         return _writer()(argv, **kw)
 
     monkeypatch.setattr(runner, "dispatch_agent", recording)

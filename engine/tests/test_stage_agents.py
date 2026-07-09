@@ -36,6 +36,9 @@ STAGES = (
 # Substrate machinery no shipped template may carry (AGENTX-FR-002).
 FORBIDDEN = (".specify/", "$ARGUMENTS", "handoffs:", "extensions.yml", "before_specify")
 
+# The bundled prompt fragments — reusable blocks, never dispatched as stages (no stage: key).
+FRAGMENTS = ("preamble", "generic", "commit-note", "revise")
+
 
 def _init(root, *extra, key=None):
     argv = ["--root", str(root), "init", "--yes"]
@@ -98,7 +101,7 @@ def test_templates_preserve_threepowers_discipline():
         assert "spec" in body.lower(), f"{step} template never mentions the spec"
         assert "requirement" in body.lower() or "law" in body.lower() or "scope" in body.lower()
         # the assembled prompt always carries the standing discipline preamble:
-        assembled = prompts.assemble(step, intent="x", body=body)
+        assembled = prompts.assemble(step, intent="x")
         assert "The spec is the law" in assembled
         assert "never weaken a gate" in assembled
         assert "declared file scope" in assembled
@@ -122,7 +125,7 @@ def test_templates_declare_stage_artifact_role_and_reference_context_blocks():
 # --------------------------------------------------------------------------- AGENTX-FR-005 (resolution)
 def test_repo_local_template_body_wins_and_fallback_is_builtin(tmp_path):
     """AGENTX-FR-005: a repo-local stage template supplies the instruction body; absent, empty, or
-    unreadable falls back to the built-in instruction unchanged."""
+    unreadable falls back to the bundled default template unchanged."""
     tdir = tmp_path / "templates"
     tdir.mkdir()
     (tdir / "plan.agent.md").write_text(
@@ -131,19 +134,25 @@ def test_repo_local_template_body_wins_and_fallback_is_builtin(tmp_path):
     )
     body = prompts.stage_template_body(tdir, "plan")
     assert body == "CUSTOM PLAN INSTRUCTIONS"
-    with_tpl = prompts.assemble("plan", intent="i", spec_text="S", body=body)
+    with_tpl = prompts.assemble("plan", intent="i", spec_text="S", templates_dir=tdir)
     assert "CUSTOM PLAN INSTRUCTIONS" in with_tpl
-    assert prompts.stage_prompt_body("plan") not in with_tpl
-    # absent → built-in
+    assert prompts.resolve_body("plan", None) not in with_tpl
+    # absent → the bundled default (identical to assembling with no templates dir)
     assert prompts.stage_template_body(tdir, "tasks") == ""
-    assert prompts.assemble("tasks", intent="i") == prompts.assemble("tasks", intent="i", body="")
-    # empty (header only, no body) → built-in
+    assert prompts.assemble("tasks", intent="i", templates_dir=tdir) == prompts.assemble(
+        "tasks", intent="i"
+    )
+    # empty (header only, no body) → the bundled default
     (tdir / "oracle.agent.md").write_text("---\nstage: oracle\n---\n", encoding="utf-8")
     assert prompts.stage_template_body(tdir, "oracle") == ""
-    # unreadable (a directory at the template path) → built-in, no crash
+    assert prompts.resolve_body("oracle", tdir) == prompts.bundled_template_body("oracle.agent.md")
+    # unreadable (a directory at the template path) → the bundled default, no crash
     (tdir / "implement.agent.md").mkdir()
     assert prompts.stage_template_body(tdir, "implement") == ""
-    assert prompts.resolve_body("implement", tdir) == prompts.stage_prompt_body("implement")
+    # the three-tier chain answers the bundled default when the repo-local copy is unreadable:
+    assert prompts.resolve_body("implement", tdir) == prompts.bundled_template_body(
+        "implement.agent.md"
+    )
 
 
 def test_template_resolution_is_deterministic_and_changes_only_the_body(tmp_path):
@@ -152,14 +161,19 @@ def test_template_resolution_is_deterministic_and_changes_only_the_body(tmp_path
     tdir = tmp_path / "t"
     tdir.mkdir()
     (tdir / "plan.agent.md").write_text("---\nstage: plan\n---\nBODY X\n", encoding="utf-8")
-    body = prompts.stage_template_body(tdir, "plan")
-    a = prompts.assemble("plan", intent="i", spec_text="S", context="C", file_scope="F", body=body)
-    b = prompts.assemble("plan", intent="i", spec_text="S", context="C", file_scope="F", body=body)
+    a = prompts.assemble(
+        "plan", intent="i", spec_text="S", context="C", file_scope="F", templates_dir=tdir
+    )
+    b = prompts.assemble(
+        "plan", intent="i", spec_text="S", context="C", file_scope="F", templates_dir=tdir
+    )
     assert a == b
     builtin = prompts.assemble("plan", intent="i", spec_text="S", context="C", file_scope="F")
-    # the surrounding context blocks are byte-identical — only the body differs:
-    assert a.split("BODY X", 1)[1] == builtin.split(prompts.stage_prompt_body("plan"), 1)[1]
-    assert a.split("BODY X", 1)[0] == builtin.split(prompts.stage_prompt_body("plan"), 1)[0]
+    # the surrounding context blocks are byte-identical — only the body differs
+    # (assemble substitutes the variable vocabulary into template-sourced bodies):
+    default_body = prompts.substitute(prompts.resolve_body("plan", None))
+    assert a.split("BODY X", 1)[1] == builtin.split(default_body, 1)[1]
+    assert a.split("BODY X", 1)[0] == builtin.split(default_body, 1)[0]
 
 
 # --------------------------------------------------------------------------- AGENTX-FR-006/007 (phases + [P])
@@ -223,7 +237,7 @@ def test_plan_surfaces_carry_no_judicial_label_or_model_family_table():
         (BUNDLED / "plan.agent.md").read_text(encoding="utf-8"),
         (REPO / ".3powers" / "templates" / "agents" / "plan.agent.md").read_text(encoding="utf-8"),
         (REPO / ".3powers" / "templates" / "plan-template.md").read_text(encoding="utf-8"),
-        prompts.stage_prompt_body("plan"),
+        prompts.resolve_body("plan", None),
     ]
     for text in surfaces:
         assert "Judicial" not in text
@@ -250,6 +264,31 @@ def test_implement_template_mandates_subagents_for_parallel_tasks():
         assert "MUST be executed via your own sub-agents" in text, base
         assert "one sub-agent per" in text, base
         assert "already dispatched by the engine as separate fresh sessions" in text, base
+
+
+# --------------------------------------------------------------------------- fragments
+def test_bundled_fragments_declare_role_and_carry_clean_bodies():
+    """Each bundled prompt fragment opens with a metadata header declaring role: fragment and no
+    stage binding, and ships a non-empty body free of substrate machinery."""
+    for name in FRAGMENTS:
+        text = (BUNDLED / f"{name}.agent.md").read_text(encoding="utf-8")
+        fm = _front_matter(text)
+        assert fm.get("role") == "fragment", f"{name} must declare role: fragment"
+        assert "stage" not in fm, f"{name} is a fragment, never a dispatched stage"
+        body = prompts.template_body(text)
+        assert body, f"{name} fragment has no body"
+        for token in FORBIDDEN:
+            assert token not in text, f"{name} carries substrate machinery {token!r}"
+
+
+def test_unseeded_repo_resolves_the_full_bundled_body_per_stage():
+    """With no repo-local templates dir, resolve_body answers each dispatched stage's full
+    bundled template body — the three-tier chain never degrades a shipped stage to the generic
+    fragment."""
+    for step in STAGES:
+        bundled = prompts.bundled_template_body(prompts.template_name(step))
+        assert bundled, f"{step} ships no bundled body"
+        assert prompts.resolve_body(step, None) == bundled
 
 
 # --------------------------------------------------------------------------- AGENTX-FR-009 / NFR-003 (seeding)
@@ -494,10 +533,9 @@ def test_setup_and_resolution_are_deterministic(tmp_path):
     first = s.roles_path.read_bytes()
     assert main(args) == 0
     assert s.roles_path.read_bytes() == first  # converges — same bytes on re-run
-    body = prompts.stage_template_body(s.stage_templates_dir, "specify")
-    assert prompts.assemble("specify", intent="i", body=body) == prompts.assemble(
-        "specify", intent="i", body=body
-    )
+    assert prompts.assemble(
+        "specify", intent="i", templates_dir=s.stage_templates_dir
+    ) == prompts.assemble("specify", intent="i", templates_dir=s.stage_templates_dir)
 
 
 # --------------------------------------------------------------------------- AGENTX-NFR-002 (authoring layer only)
@@ -581,7 +619,8 @@ def test_init_reports_seeded_templates_and_stays_promptless(tmp_path, capsys):
     assert _init(root, "--language", "python", "--json", key=tmp_path / "k.key") == 0
     payload = json.loads(capsys.readouterr().out)
     seeded = payload["stage_templates"]
-    assert set(seeded) == {prompts.template_name(s) for s in STAGES}
+    expected = {prompts.template_name(s) for s in STAGES} | {f"{f}.agent.md" for f in FRAGMENTS}
+    assert set(seeded) == expected
     assert all(v == "created" for v in seeded.values())
 
 

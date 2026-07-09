@@ -84,7 +84,8 @@ agent, different-family oracle) plus a dependency summary, and exits 0 only when
 ```
 
 **What success looks like:** a live stage tracker streams each stage
-(specify → … → implement → verify), and the run stops exactly twice for you:
+(discovery → specify → … → implement → verify — discovery runs for feature/design work and shows
+*skipped* otherwise), and the run stops exactly twice for you:
 
 1. **Spec approval** — read the generated spec, then
    `3pwr run --resume --spec-id RUN --approver <you>`;

@@ -33,7 +33,7 @@ def next_stage(name: str) -> Optional[str]:
 @dataclass
 class SpecState:
     spec_id: str
-    stage: str = "Spec"
+    stage: str = "Discovery"
     last_verdict: str = "none"  # pass | fail | none
     signed_off_seq: int = -1
     last_verdict_seq: int = -1

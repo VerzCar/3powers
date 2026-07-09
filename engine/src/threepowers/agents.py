@@ -36,9 +36,20 @@ from .config import Settings
 #                that would otherwise restore prior conversation state (fresh-session hook)
 #   usage        dict | None — how the backend reports token usage in its output (advisory):
 #                  strategy: "json" | "regex"
-#                  field:    dotted path into a JSON output line (json strategy)
-#                  pattern:  a regex whose group 1 captures the token count (regex strategy)
-#                Absent, malformed, or unmatched → usage reads as unknown; never an error.
+#                  field:    dotted path into a JSON output line (json strategy, single count)
+#                  fields:   list of dotted paths summed (json strategy; e.g. non-cached
+#                            input + output reported separately)
+#                  subtract: list of dotted paths subtracted when present (json strategy;
+#                            e.g. a cached-input count folded into a total)
+#                  pattern:  a regex whose capture groups are summed over the LAST match
+#                            (regex strategy; one group keeps its plain single-count meaning)
+#                Counts may be human-formatted ("29,500", "629.8k", "1.2M"). Absent,
+#                malformed, or unmatched → usage reads as unknown; never an error.
+#   usage_mode   str | None — opt-in structured output: when set (e.g. "json"), build_command
+#                appends `usage_mode_args` so the backend emits machine-readable usage; absent
+#                (the default) keeps the backend's live text stream untouched
+#   usage_mode_args  list[str] — the backend's own structured-output flag(s) to append when
+#                `usage_mode` is set (e.g. ["--output-format", "json"]); inert otherwise
 
 
 def load_agent(settings: Settings, name: str) -> dict[str, Any]:
@@ -92,6 +103,12 @@ def build_command(
     # its no-resume / new-session flag(s) here, so every dispatch is a clean session by
     # construction. The engine itself never emits a resume/continue flag.
     argv += [str(a) for a in (manifest.get("new_session_args") or [])]
+    # Opt-in structured output (usage_mode): when the manifest sets `usage_mode`, its own
+    # `usage_mode_args` (e.g. ["--output-format", "json"]) are appended so token usage becomes
+    # machine-readable. Default off preserves the live text stream; the engine stays
+    # backend-neutral — it never invents a flag, it only appends what the manifest declares.
+    if str(manifest.get("usage_mode") or "").strip():
+        argv += [str(a) for a in (manifest.get("usage_mode_args") or [])]
 
     model_flag = manifest.get("model_flag")
     if model_flag and model:
@@ -110,22 +127,66 @@ def build_command(
     return argv, None
 
 
+_COUNT_RE = re.compile(r"^([0-9][0-9,_]*(?:\.[0-9]+)?)\s*([kKmM]?)$")
+
+
+def _parse_count(raw: str) -> Optional[int]:
+    """Parse one human-formatted token count to an integer, or ``None`` when non-numeric.
+
+    Accepts plain integers (``"9200"``), thousands separators (``"29,500"``, ``"29_500"``), and
+    the abbreviated units agent CLIs print (``"629.8k"`` → 629800, ``"1.2M"`` → 1200000;
+    case-insensitive k/M). Pure and total — any other input reads as ``None``, never an error.
+    """
+    m = _COUNT_RE.match(str(raw).strip())
+    if not m:
+        return None
+    number = m.group(1).replace(",", "").replace("_", "")
+    scale = {"k": 1_000, "m": 1_000_000}.get(m.group(2).lower(), 1)
+    try:
+        return round(float(number) * scale)
+    except ValueError:
+        return None
+
+
 def _json_field(obj: Any, dotted: str) -> Optional[int]:
-    """Walk a dotted path into a parsed JSON object and coerce the leaf to ``int``, else ``None``."""
+    """Walk a dotted path into a parsed JSON object and coerce the leaf to ``int``, else ``None``.
+
+    Numeric leaves pass through; string leaves go through :func:`_parse_count`, so a service
+    reporting ``"629.8k"`` reads the same as one reporting ``629800``.
+    """
     node = obj
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
             return None
         node = node[part]
-    try:
-        return int(node)
-    except (TypeError, ValueError):
+    if isinstance(node, bool):
         return None
+    if isinstance(node, int):
+        return node
+    if isinstance(node, float):
+        return round(node)
+    if isinstance(node, str):
+        return _parse_count(node)
+    return None
 
 
-def _usage_from_json(output: str, field_path: str) -> Optional[int]:
-    # Scan output lines last-to-first: the usage summary is typically the final JSON line an
-    # agent prints; a whole-output JSON document is tried last.
+def _usage_from_json(output: str, fields: list[str], subtract: list[str]) -> Optional[int]:
+    """Sum ``fields`` (minus any resolvable ``subtract`` paths) from the output's JSON usage line.
+
+    An object counts only when EVERY ``fields`` path resolves to a number — their sum, minus the
+    ``subtract`` paths that resolve (a missing subtract path reads as 0, so an optional
+    cached-token field degrades gracefully). Output lines are scanned last-to-first — the usage
+    summary is typically the final JSON line an agent prints; a whole-output JSON document is
+    tried last.
+    """
+
+    def from_obj(obj: Any) -> Optional[int]:
+        values = [_json_field(obj, f) for f in fields]
+        if any(v is None for v in values):
+            return None
+        total = sum(v for v in values if v is not None)
+        return total - sum(v for p in subtract if (v := _json_field(obj, p)) is not None)
+
     for line in reversed(output.splitlines()):
         line = line.strip()
         if not (line.startswith("{") and line.endswith("}")):
@@ -134,45 +195,67 @@ def _usage_from_json(output: str, field_path: str) -> Optional[int]:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
-        value = _json_field(obj, field_path)
+        value = from_obj(obj)
         if value is not None:
             return value
     try:
-        return _json_field(json.loads(output), field_path)
+        return from_obj(json.loads(output))
     except json.JSONDecodeError:
         return None
 
 
 def _usage_from_regex(output: str, pattern: str) -> Optional[int]:
+    """Sum the capture groups of the LAST ``pattern`` match, each via :func:`_parse_count`.
+
+    A single-group pattern keeps its plain single-count meaning; a multi-group pattern (e.g.
+    non-cached input and output captured separately) yields the groups' sum. A groupless pattern
+    parses the whole match. A match whose groups all fail to parse falls back to the previous
+    match; ``None`` when nothing usable matches or the pattern itself is broken.
+    """
     try:
-        matches = re.findall(pattern, output)
+        matches = list(re.finditer(pattern, output))
     except re.error:
         return None
-    for raw in reversed(matches):  # the last match is the final (cumulative) summary
-        digits = str(raw).replace(",", "").replace("_", "").strip()
-        try:
-            return int(digits)
-        except ValueError:
-            continue
+    for m in reversed(matches):  # the last match is the final (cumulative) summary
+        groups = m.groups() or (m.group(0),)
+        counts = [c for g in groups if g is not None and (c := _parse_count(g)) is not None]
+        if counts:
+            return sum(counts)
     return None
 
 
 def extract_usage(manifest: dict[str, Any], output: str) -> Optional[int]:
-    """The total token count one dispatch's agent output reports, or ``None`` when unknown.
+    """The consumed token count one dispatch's agent output reports, or ``None`` when unknown.
 
     Driven entirely by the manifest's optional ``usage`` hint — ``strategy: json`` reads a dotted
-    ``field`` from the last JSON line of the output, ``strategy: regex`` takes group 1 of the last
-    ``pattern`` match (thousands separators tolerated). A backend that declares no hint, a
-    malformed hint, or output that simply carries no usage all read as ``None`` — usage is
-    strictly advisory and never fails a dispatch. Never raises.
+    ``field`` (or a ``fields`` list summed, minus optional ``subtract`` paths for cached counts)
+    from the last JSON line of the output; ``strategy: regex`` sums the capture groups of the
+    last ``pattern`` match. Counts tolerate thousands separators and abbreviated units
+    (``629.8k``, ``1.2M``). A backend that declares no hint, a malformed hint, or output that
+    simply carries no usage all read as ``None`` — usage is strictly advisory and never fails a
+    dispatch. Never raises.
     """
     spec = manifest.get("usage")
     if not isinstance(spec, dict) or not output:
         return None
     strategy = str(spec.get("strategy") or "").strip().lower()
     if strategy == "json":
-        field_path = str(spec.get("field") or "").strip()
-        return _usage_from_json(output, field_path) if field_path else None
+        single = str(spec.get("field") or "").strip()
+        raw_fields = spec.get("fields")
+        fields = (
+            [single]
+            if single
+            else [str(f).strip() for f in raw_fields if str(f).strip()]
+            if isinstance(raw_fields, list)
+            else []
+        )
+        if not fields:
+            return None
+        raw_sub = spec.get("subtract")
+        subtract = (
+            [str(p).strip() for p in raw_sub if str(p).strip()] if isinstance(raw_sub, list) else []
+        )
+        return _usage_from_json(output, fields, subtract)
     if strategy == "regex":
         pattern = str(spec.get("pattern") or "")
         return _usage_from_regex(output, pattern) if pattern else None
