@@ -238,8 +238,8 @@ DETECT_RULES: tuple[DetectRule, ...] = (
         globs=("biome.json",),
         tool="biome",
         spec={
-            "check_cmd": "npx --no-install @biomejs/biome check .",
-            "fix_cmd": "npx --no-install @biomejs/biome check --write .",
+            "check_cmd": "npx --no-install @biomejs/biome format .",
+            "fix_cmd": "npx --no-install @biomejs/biome format --write .",
             "parser": "biome",
         },
     ),
@@ -259,16 +259,8 @@ DETECT_RULES: tuple[DetectRule, ...] = (
         tool="gofmt",
         spec={"check_cmd": "gofmt -l .", "parser": "gofmt"},
     ),
-    DetectRule(
-        gate="lint",
-        globs=("biome.json",),
-        tool="biome",
-        spec={
-            "check_cmd": "npx --no-install @biomejs/biome check .",
-            "fix_cmd": "npx --no-install @biomejs/biome check --write .",
-            "parser": "biome",
-        },
-    ),
+    # For `lint`, a dedicated linter config (ESLint) outranks biome's combined config:
+    # a biome-formats-and-ESLint-lints repo gets `lint · eslint` with no double-linting.
     DetectRule(
         gate="lint",
         globs=(".eslintrc*", "eslint.config.*"),
@@ -277,6 +269,16 @@ DETECT_RULES: tuple[DetectRule, ...] = (
             "check_cmd": "npx --no-install eslint .",
             "fix_cmd": "npx --no-install eslint --fix .",
             "parser": "eslint",
+        },
+    ),
+    DetectRule(
+        gate="lint",
+        globs=("biome.json",),
+        tool="biome",
+        spec={
+            "check_cmd": "npx --no-install @biomejs/biome lint .",
+            "fix_cmd": "npx --no-install @biomejs/biome lint --write .",
+            "parser": "biome",
         },
     ),
     DetectRule(

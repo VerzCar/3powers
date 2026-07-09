@@ -250,6 +250,17 @@ class Settings:
     def load_risk_tiers(self) -> dict[str, Any]:
         return _load_yaml(self.risk_tiers_path)
 
+    def _scan_config(self) -> dict[str, Any]:
+        """The parsed ``scan.yaml`` mapping — ``{}`` when the file is absent or malformed."""
+        path = self.scan_config_path
+        if not path.exists():
+            return {}
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
     def load_scan_ignores(self) -> dict[str, dict[str, list[str]]]:
         """Per-tool scanner exclusions from ``scan.yaml`` — tolerant, deterministic, never raises.
 
@@ -262,16 +273,7 @@ class Settings:
         out: dict[str, dict[str, list[str]]] = {
             tool: {"ignore": [], "ignore_rules": []} for tool in _SCAN_TOOLS
         }
-        path = self.scan_config_path
-        if not path.exists():
-            return out
-        data: Any
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
-            return out
-        if not isinstance(data, dict):
-            return out
+        data = self._scan_config()
         for tool in _SCAN_TOOLS:
             section = data.get(tool)
             if not isinstance(section, dict):
@@ -280,6 +282,40 @@ class Settings:
                 vals = section.get(key)
                 if isinstance(vals, list):
                     out[tool][key] = [v for v in vals if isinstance(v, str) and v.strip()]
+        return out
+
+    def load_scan_advisories(self) -> list[dict[str, str]]:
+        """The ``dependency_scan`` advisory allowlist from ``scan.yaml`` — tolerant, never raises.
+
+        Returns the ``dependency_scan.advisories`` entries normalized to
+        ``{"id": str, "reason": str, "until": str}`` — only mapping entries carrying a
+        non-empty string ``id`` are kept, and ``until`` is stringified so an unquoted YAML
+        date still round-trips as an ISO date. Whether an entry actually suppresses a
+        finding (non-empty reason, unexpired ``until``) is enforced by the scanner itself,
+        fail-closed — this loader only shapes the data.
+        """
+        section = self._scan_config().get("dependency_scan")
+        if not isinstance(section, dict):
+            return []
+        raw = section.get("advisories")
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, str]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            vid = entry.get("id")
+            if not isinstance(vid, str) or not vid.strip():
+                continue
+            reason = entry.get("reason")
+            until = entry.get("until")
+            out.append(
+                {
+                    "id": vid.strip(),
+                    "reason": str(reason).strip() if reason is not None else "",
+                    "until": str(until).strip() if until is not None else "",
+                }
+            )
         return out
 
     def load_roles(self) -> dict[str, Any]:

@@ -1,7 +1,9 @@
 # TypeScript reference adapter (built + exercised in plan 001).
 #
-# Biome covers BOTH formatting and linting via its `ci` check command (no writes,
-# non-zero exit on any issue); we map both gates to it for a unified, fast floor.
+# Biome is split by concern: the `format` gate runs `biome format` (formatter only)
+# and the `lint` gate runs `biome lint` (linter only) — each gate checks exactly what
+# its name says, and lint findings never fail the format gate (no double-linting).
+# Both commands write nothing and exit non-zero on any issue.
 # Vitest emits LCOV which the core uses for diff-coverage. Stryker is wired for the
 # mutation gate but stays non-blocking until plan 002.
 language: typescript
@@ -29,14 +31,14 @@ toolchain:
 
 gates:
   format:
-    check_cmd: "npx --no-install @biomejs/biome ci ."
+    check_cmd: "npx --no-install @biomejs/biome format ."
     # fix_cmd runs only under `3pwr gate run --auto-fix` (format/lint only, never by default).
-    fix_cmd: "npx --no-install @biomejs/biome check --write ."
+    fix_cmd: "npx --no-install @biomejs/biome format --write ."
     parser: biome
     requires: biome
   lint:
-    cmd: "npx --no-install @biomejs/biome ci ."
-    fix_cmd: "npx --no-install @biomejs/biome check --write ."
+    cmd: "npx --no-install @biomejs/biome lint ."
+    fix_cmd: "npx --no-install @biomejs/biome lint --write ."
     parser: biome
     requires: biome
   types:

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import threepowers.cli as _cli
 from .. import (
+    deviations,
     keys,
     orchestrate,
     scope,
@@ -39,6 +40,28 @@ from ._common import (
 
 if TYPE_CHECKING:
     from ._common import AddCommon, SubParsers
+
+
+def _waiver_annotations(verdict_dict: dict[str, Any], ledger_path: Path) -> dict[str, str]:
+    """Map each FAILED gate covered by an active signed deviation to its waiver annotation.
+
+    A read-only ledger lookup for human rendering only: the verdict stays honestly red and the
+    machine payload is never touched — the annotation just tells the user the deviation is
+    recognized and that ``run``/``advance`` will accept the red gate."""
+    active = deviations.active_deviations(Ledger(ledger_path).entries())
+    if not active:
+        return {}
+    spec_id = str(verdict_dict.get("spec_id") or "")
+    out: dict[str, str] = {}
+    for g in verdict_dict.get("gates") or []:
+        if g.get("status") != "fail":
+            continue
+        name = str(g.get("gate", ""))
+        dev = deviations.covering_deviation(name, active, spec_id)
+        if dev is not None:
+            approver = str(dev.get("approver") or "?")
+            out[name] = f"↳ waived by active deviation seq={dev.get('seq')} (approver: {approver})"
+    return out
 
 
 def cmd_gate_run(args: argparse.Namespace) -> int:
@@ -142,8 +165,15 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
                 human += f"\n  ↳ auto-fixed by {fixer}"
     # One panel per failed gate, printed after the live pipeline exits — the
     # structured replacement for the former bottom "failures:" block. Human output only.
+    # A failed gate covered by an active signed deviation carries its waiver annotation — the
+    # verdict stays honestly red; the lookup is read-only and never enters the --json payload.
     if not args.json:
-        panels = orchestrate.failure_panels(verdict.to_dict(), gst, verbose=v_level == "verbose")
+        panels = orchestrate.failure_panels(
+            verdict.to_dict(),
+            gst,
+            verbose=v_level == "verbose",
+            waivers=_waiver_annotations(verdict.to_dict(), s.ledger_path),
+        )
         if panels:
             human += "\n" + panels
     if args.report_only and verdict.result != STATUS_PASS:

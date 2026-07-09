@@ -9,11 +9,20 @@
 #     ignore_rules:         # optional scanner rule ids to suppress (secret scanner RuleIDs)
 #       - "generic-api-key"
 #
+#   dependency_scan:        # additionally: an auditable, expiring advisory allowlist
+#     advisories:           # accepted vulnerability ids — each acceptance is reported
+#       - id: "GHSA-xxxx-xxxx-xxxx"
+#         reason: "not exploitable here — dev-only tooling"  # required, non-empty
+#         until: "2026-12-31"        # optional ISO date; past it the gate fails again
+#
 # SECURITY — read before widening this list:
 #   * Every glob removes real scan surface: a broad ignore weakens the gate. Keep the set to
 #     generated or vendored trees.
-#   * Exclusions are never silent — each scanner reports the applied globs/rules and how many
-#     findings they excluded in its gate output.
+#   * An advisory acceptance requires a non-empty reason, and an `until` expiry is strongly
+#     recommended; an entry without a reason — or past its expiry — suppresses nothing
+#     (fail-closed). Every acceptance is reported in the gate output, never silent.
+#   * Exclusions are never silent — each scanner reports the applied globs/rules/advisories
+#     and how many findings they excluded in its gate output.
 #   * The engine's core ed25519-priv private-key check ALWAYS runs and cannot be disabled by
 #     this file: the secret_scan globs only shape its directory walk, and it still fires on
 #     key material anywhere outside them.
@@ -35,6 +44,10 @@ dependency_scan:
     - "**/dist/**"
     - "**/build/**"
     - "**/node_modules/**"
+  # advisories:             # accepted vulnerability ids — auditable, expiring, never silent
+  #   - id: "GHSA-xxxx-xxxx-xxxx"
+  #     reason: "not exploitable here — dev-only tooling"
+  #     until: "2026-12-31"
 
 sast:
   ignore:

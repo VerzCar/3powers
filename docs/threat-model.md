@@ -36,6 +36,12 @@ are claims by the signer), or that the signing machine was uncompromised.
 | **Signature mismatch** — an entry forged without the signing key | Ed25519 verification against the committed public key(s) fails |
 | **Key swap** — `.3powers/keys/ledger.pub` replaced without authority | the committed key does not descend from the genesis key through signed `key_rotation` entries |
 
+Detection is not only on demand: **every ledger append first re-verifies the current tail
+entry** — recomputed content hash plus Ed25519 signature, O(1), no chain walk — and refuses to
+write on top of a tampered last entry, pointing at `3pwr verify`. This stops tail damage from
+being buried under fresh, validly signed history; damage deeper in the chain (middle entries,
+sequence gaps, broken linkage) remains `3pwr verify`'s job.
+
 ## What `verify` cannot detect
 
 - **Forgery by a holder of the signing key, absent an anchor.** An adversary who obtains the

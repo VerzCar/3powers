@@ -169,7 +169,22 @@ def test_uncovered_red_gate_still_blocks(project):
     _make_conformance_red(proj)
     assert _gate_run(root, proj) == 1
     assert _signoff(root) == 0
-    assert main(["--root", str(root), "deviation", "--gate", "lint", "--approver", "carlo"]) == 0
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "deviation",
+                "--gate",
+                "lint",
+                "--approver",
+                "carlo",
+                "--note",
+                "n/a",
+            ]
+        )
+        == 0
+    )
     assert _advance(root) == 1  # still red on un-deviated spec_conformance
 
 
@@ -189,6 +204,8 @@ def test_deviation_revoke_reblocks_advance(project):
                 "spec_conformance",
                 "--approver",
                 "carlo",
+                "--note",
+                "tracked follow-up",
                 "--spec-id",
                 "DEMO",
             ]
@@ -198,6 +215,73 @@ def test_deviation_revoke_reblocks_advance(project):
     assert _advance(root) == 0  # #3 — proceeds under deviation
     assert main(["--root", str(root), "deviation", "--revoke", "2"]) == 0  # #4 — way back
     assert _advance(root) == 1  # re-blocked
+
+
+def test_deviation_without_a_reason_is_rejected(project, capsys):
+    """3PWR-FR-057: a deviation must state a reason — an empty/whitespace --note is refused with
+    an actionable message; a non-empty one records; a revoke needs no note."""
+    root, _proj = project
+    base = ["--root", str(root), "deviation", "--gate", "lint", "--approver", "carlo"]
+    assert main(base) == 2  # no --note at all
+    assert 'a deviation must state a reason — pass --note "<why>"' in capsys.readouterr().err
+    assert main([*base, "--note", "   "]) == 2  # whitespace-only
+    assert main([*base, "--note", "tracked follow-up"]) == 0  # non-empty records
+    assert main(["--root", str(root), "deviation", "--revoke", "0"]) == 0  # revoke unaffected
+
+
+def test_gate_run_annotates_a_waived_red_gate(project, capsys):
+    """3PWR-FR-057: a red gate covered by an active deviation is annotated in the gate run output;
+    the recorded verdict stays honestly red and the --json payload never carries the annotation."""
+    root, proj = project
+    _make_conformance_red(proj)
+    assert (
+        main(
+            [
+                "--root",
+                str(root),
+                "deviation",
+                "--gate",
+                "spec_conformance",
+                "--approver",
+                "carlo",
+                "--note",
+                "tracked follow-up",
+                "--spec-id",
+                "DEMO",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert _gate_run(root, proj) == 1  # still red — deviations never touch the verdict
+    out = capsys.readouterr().out
+    assert "waived by active deviation seq=0 (approver: carlo)" in out
+    verdict = json.loads((root / ".3powers" / "verdicts" / "latest.json").read_text())
+    assert verdict["result"] == "fail"
+    assert "waived" not in json.dumps(verdict)  # the recorded verdict is untouched
+    # --json: pure machine payload — the annotation is human rendering only
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "gate",
+            "run",
+            "--path",
+            str(proj),
+            "--adapter",
+            "fake",
+            "--spec",
+            str(proj / "spec.md"),
+            "--tier",
+            "Standard",
+            "--json",
+        ]
+    )
+    assert rc == 1
+    json_out = capsys.readouterr().out
+    payload = json.loads(json_out)
+    assert json_out == json.dumps(payload, indent=2) + "\n"  # nothing but the payload
+    assert "waived" not in json_out
 
 
 def test_emergency_overdue_cleanup_blocks_advance(project):

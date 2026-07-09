@@ -6,9 +6,11 @@ When a scanner binary is absent the gate is **quarantined** — reported as ``sk
 finding — never silently passed.
 
 Each scanner accepts auditable exclusions from the committed ``scan.yaml`` (per-tool ``ignore``
-path globs, plus ``ignore_rules`` for the secret scanner). Security invariants: every applied
-exclusion is reported in the gate output — never silent; exclusions are deterministic in the
-config's committed bytes; and the core ``ed25519-priv`` private-key check always runs — the globs
+path globs, ``ignore_rules`` for the secret scanner, plus an expiring ``advisories`` allowlist
+for the dependency scanner). Security invariants: every applied exclusion or advisory acceptance
+is reported in the gate output — never silent; exclusions are deterministic in the config's
+committed bytes; an advisory suppresses only with a non-empty reason and only until its optional
+expiry (fail-closed); and the core ``ed25519-priv`` private-key check always runs — the globs
 only filter its walk, never disable it.
 """
 
@@ -21,10 +23,12 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .adapters import run_cmd
+from .deviations import parse_iso
 from .verdict import STATUS_FAIL, STATUS_PASS, STATUS_SKIP, GateResult
 
 
@@ -85,14 +89,17 @@ def _with_exclusion_report(
     ignore: Sequence[str],
     ignore_rules: Sequence[str] = (),
     excluded: int = 0,
+    advisories: Sequence[tuple[str, str, int]] = (),
 ) -> GateResult:
     """Surface every configured scanner exclusion on the gate result — never silent.
 
     Security invariant: an exclusion from the committed ``scan.yaml`` always appears in the gate
     output — the configured globs/rules land in ``details`` and one informational findings line
-    counts what they excluded. Applied only after the gate's status is computed, so the report
-    itself never changes a verdict."""
-    if not ignore and not ignore_rules:
+    counts what they excluded. ``advisories`` holds the *accepted* dependency advisories as
+    ``(id, reason, count)`` triples; each acceptance is named with its reason and count.
+    Applied only after the gate's status is computed, so the report itself never changes a
+    verdict."""
+    if not ignore and not ignore_rules and not advisories:
         return gr
     gr.details["excluded_count"] = excluded
     parts: list[str] = []
@@ -102,6 +109,17 @@ def _with_exclusion_report(
     if ignore_rules:
         gr.details["ignored_rules"] = list(ignore_rules)
         parts.append("rules " + ", ".join(ignore_rules))
+    if advisories:
+        gr.details["accepted_advisories"] = [
+            {"id": vid, "reason": reason, "count": count} for vid, reason, count in advisories
+        ]
+        parts.append(
+            "advisories "
+            + ", ".join(
+                f"{vid} ({count} finding(s) accepted — {reason})"
+                for vid, reason, count in advisories
+            )
+        )
     gr.findings.append(
         f"scan.yaml exclusions applied ({excluded} finding(s) excluded): " + "; ".join(parts)
     )
@@ -281,11 +299,49 @@ def secret_scan(
         return _with_exclusion_report(gr, ignore, ignore_rules, excluded)
 
 
-def dependency_scan(target: Path, ignore: Sequence[str] = ()) -> GateResult:
+def _accepted_advisories(advisories: Sequence[Mapping[str, object]]) -> dict[str, str]:
+    """Advisory ids currently eligible to suppress a dependency finding, mapped to their reasons.
+
+    Fail-closed: an entry suppresses only when it carries a non-empty (non-whitespace) reason
+    and has not expired — a missing/blank reason, a past ``until``, or an unparseable ``until``
+    suppresses nothing. ``until`` accepts an ISO-8601 date or timestamp; a date-only value is
+    treated as UTC midnight (the acceptance lapses at the start of that day)."""
+    accepted: dict[str, str] = {}
+    now = datetime.now(timezone.utc)
+    for adv in advisories:
+        vid = str(adv.get("id") or "").strip()
+        reason = str(adv.get("reason") or "").strip()
+        if not vid or not reason:
+            continue
+        until_raw = str(adv.get("until") or "").strip()
+        if until_raw:
+            until = parse_iso(until_raw)
+            if until is None:
+                continue  # unparseable expiry never suppresses (fail-closed)
+            if until.tzinfo is None:
+                # parse_iso yields a naive datetime for date-only values; compare in UTC so
+                # the expiry check is stable regardless of the machine's local zone.
+                until = until.replace(tzinfo=timezone.utc)
+            if until < now:
+                continue
+        accepted[vid] = reason
+    return accepted
+
+
+def dependency_scan(
+    target: Path,
+    ignore: Sequence[str] = (),
+    advisories: Sequence[Mapping[str, object]] = (),
+) -> GateResult:
     """Scan dependency manifests/lockfiles for known vulnerabilities with osv-scanner.
 
     ``ignore`` globs (the committed ``scan.yaml``) drop findings whose *source manifest* path
-    matches; every applied exclusion is surfaced on the result — never silent."""
+    matches. ``advisories`` is the committed allowlist of accepted vulnerability ids
+    (``{id, reason, until}``): a matching finding is suppressed only while the entry carries a
+    non-empty reason and has not passed its optional ``until`` expiry — expired or reason-less
+    entries suppress nothing. Every applied exclusion and every accepted advisory (id, reason,
+    count) is surfaced on the result — never silent."""
+    accepted = _accepted_advisories(advisories)
     if not shutil.which("osv-scanner"):
         return _with_exclusion_report(_quarantine("dependency_scan", "osv-scanner"), ignore)
     with tempfile.TemporaryDirectory() as td:
@@ -293,6 +349,7 @@ def dependency_scan(target: Path, ignore: Sequence[str] = ()) -> GateResult:
         res = run_cmd(f"osv-scanner --format json --output-file {report} -r {target}", cwd=target)
         findings: list[str] = []
         excluded = 0
+        accepted_hits: dict[str, int] = {}
         if report.exists():
             try:
                 data = json.loads(report.read_text(encoding="utf-8") or "{}")
@@ -305,14 +362,20 @@ def dependency_scan(target: Path, ignore: Sequence[str] = ()) -> GateResult:
                             if drop:
                                 excluded += 1
                                 continue
-                            findings.append(f"{v.get('id', 'VULN')} in {name}")
+                            vid = str(v.get("id") or "VULN")
+                            if vid in accepted:
+                                excluded += 1
+                                accepted_hits[vid] = accepted_hits.get(vid, 0) + 1
+                                continue
+                            findings.append(f"{vid} in {name}")
             except (ValueError, OSError):
                 pass
         if res.returncode == 0:
             status = STATUS_PASS
         elif res.returncode == 1:
-            # Every vulnerable source was excluded by the committed scan.yaml (reported below)
-            # → not blocking; an unparsed red exit without exclusions stays a conservative fail.
+            # Every vulnerable source was excluded/accepted by the committed scan.yaml (reported
+            # below) → not blocking; an unparsed red exit without exclusions stays a
+            # conservative fail.
             status = STATUS_PASS if (excluded and not findings) else STATUS_FAIL
         else:  # e.g. nothing to scan / scanner error → quarantine, do not false-fail
             return _with_exclusion_report(_quarantine("dependency_scan", "osv-scanner"), ignore)
@@ -324,7 +387,12 @@ def dependency_scan(target: Path, ignore: Sequence[str] = ()) -> GateResult:
             details={"count": len(findings)},
             findings=findings[:10],
         )
-        return _with_exclusion_report(gr, ignore, excluded=excluded)
+        return _with_exclusion_report(
+            gr,
+            ignore,
+            excluded=excluded,
+            advisories=[(vid, accepted[vid], n) for vid, n in accepted_hits.items()],
+        )
 
 
 def sast_scan(

@@ -170,12 +170,40 @@ configuration declares a fix command — a suggested manual fix:
 ```
   ── format · biome  1.2 s
     vite.config.ts:12  formatting drift
-    ↳ auto-fix: biome check --write .
+    ↳ auto-fix: biome format --write .
 ```
 
 Dependency- and secret-scan panels list one line per finding (the advisory/rule ID and the
-package or file). The panels are the failure surface — there is no separate summary block at the
-bottom of the output.
+package or file). When a failed gate is covered by an active signed deviation, its panel is
+annotated with `↳ waived by active deviation seq=N (approver: …)` — the verdict still records
+red (deviations never touch the verdict), but the annotation tells you the deviation is
+recognized and that `run`/`advance` will accept it. The annotation is human output only; the
+`--json` payload is unchanged. The panels are the failure surface — there is no separate summary
+block at the bottom of the output.
+
+**Remediation on every failed gate.** Each failed gate's panel ends with an honest next-step
+block, and one coder hand-back section follows the panels:
+
+- *What it means* — one line naming what the failure is (e.g. `types`: the type checker found
+  real type errors).
+- *Fix* — the honest action, always framed as making the code satisfy the check, never as making
+  the check pass. When the gate supplied a finding-specific hint (e.g. the fixed version a
+  vulnerability scanner reports) that hint is shown instead of the generic guidance; for
+  `dependency_scan` the guidance names the auditable `scan.yaml` `advisories:` allowlist
+  (id + required reason + optional expiry, every acceptance reported). The safe auto-fix
+  command, when one is configured, stays on its own `↳ auto-fix:` line above.
+- *Hand back to your coding agent* — a copy-pasteable prompt naming the failed gates and their
+  findings and instructing an honest fix ("never weaken a gate: fix the code, not the check"),
+  followed by the re-dispatch command `3pwr run --resume --spec-id <id>`.
+- *Last resort* — the pre-filled
+  `3pwr deviation --gate <gate> --approver <you> --note "<why>" [--until <date>]` command, under
+  an explicit label that a deviation is only for a deliberate, justified exception — an
+  auditable acceptance of risk, never a fix. A recorded deviation is honoured by both `3pwr run`
+  and `3pwr advance`.
+
+The whole remediation surface is presentational and human output only: the deterministic
+verdict, the signed ledger entry, and the `--json` payload are byte-identical with or without
+it, and no model is ever called to produce it.
 
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
@@ -241,7 +269,7 @@ target once at gate-run startup and picks up the project's native tooling (first
 | Gate | Signal | Tool |
 |---|---|---|
 | `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` | biome · prettier · gofmt |
-| `lint` | `biome.json` · `.eslintrc*`/`eslint.config.*` | biome · eslint |
+| `lint` | `.eslintrc*`/`eslint.config.*` · `biome.json` | eslint · biome |
 | `types` | `tsconfig.json` · `pyproject.toml` with `[tool.pyright]` | tsc · pyright |
 | `tests` | `vitest.config.*` · `jest.config.*` · `playwright.config.*` · `go.mod` | vitest · jest · playwright · go test |
 
@@ -264,7 +292,9 @@ never executed.
 **Scanner exclusions (`.3powers/config/scan.yaml`).** The three scanner gates — `secret_scan`,
 `dependency_scan`, and `sast` — honor an auditable, committed per-tool ignore config. Each tool
 takes `ignore` (path globs relative to the scanned target, `**` allowed); `secret_scan`
-additionally takes `ignore_rules`, a list of scanner rule ids to suppress:
+additionally takes `ignore_rules`, a list of scanner rule ids to suppress; and
+`dependency_scan` additionally takes `advisories`, an expiring allowlist of accepted
+vulnerability ids:
 
 ```yaml
 # .3powers/config/scan.yaml
@@ -278,9 +308,23 @@ secret_scan:
   ignore_rules: []          # optional: suppress specific secret-scanner rule ids
 dependency_scan:
   ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
+  advisories:               # optional: accepted vulnerability ids (auditable, expiring)
+    - id: "GHSA-xxxx-xxxx-xxxx"
+      reason: "not exploitable here — dev-only tooling"   # required, non-empty
+      until: "2026-12-31"   # optional ISO date or timestamp; past it the gate fails again
 sast:
   ignore: ["**/.next/**", "**/dist/**", "**/build/**", "**/node_modules/**"]
 ```
+
+**Advisory allowlist (`dependency_scan.advisories`).** The sanctioned way to accept a known,
+assessed dependency vulnerability without weakening the gate. Each entry names the advisory
+`id` reported by the scanner, a **required non-empty `reason`**, and an optional `until`
+ISO-8601 expiry (an expiry is strongly recommended). A matching finding is suppressed only
+while the entry has a reason and has not expired — an entry with a blank reason, a past
+`until`, or an unparseable `until` suppresses **nothing** (fail-closed; a date-only `until`
+lapses at UTC midnight at the start of that day). Every acceptance is **always reported** in
+the gate output — the result names each accepted advisory id, its reason, and how many
+findings it suppressed, in both the human output and `--json`. It is never silent.
 
 `3pwr init` seeds the file with that small default ignore set — generated and vendored trees
 (`**/.next/**`, `**/dist/**`, `**/build/**`, `**/node_modules/**`) for all three tools — and a
@@ -290,10 +334,10 @@ silent**: every affected gate result reports the applied globs/rules and how man
 excluded, in both the human output and `--json`.
 
 > **Security note.** Every glob removes real scan surface — a broad ignore weakens the gate, so
-> keep the set to generated or vendored trees and review changes to this file like any other
-> trust configuration. The engine's core `ed25519-priv` private-key check **always runs** and
-> cannot be disabled by this file: the `secret_scan` globs only shape its directory walk, and it
-> still fires on key material anywhere outside them.
+> keep the set to generated or vendored trees and review changes to this file — including every
+> advisory acceptance — like any other trust configuration. The engine's core `ed25519-priv`
+> private-key check **always runs** and cannot be disabled by this file: the `secret_scan` globs
+> only shape its directory walk, and it still fires on key material anywhere outside them.
 
 ### `gate config show` — the effective gate configuration
 Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
@@ -302,10 +346,10 @@ overrides, and the auto-detected tooling — **without executing any gate**.
 
 ```
 $ 3pwr gate config show --adapter typescript
-gate    tool   check_cmd                        fix_cmd                                source
-format  biome  npx --no-install @biomejs/… ci . npx … @biomejs/biome check --write .   [adapter]
-tests   jest   npm run test:unit                —                                      [gates.yaml]
-types   tsc    npx --no-install tsc --noEmit    —                                      [auto-detected]
+gate    tool   check_cmd                            fix_cmd                                 source
+format  biome  npx --no-install @biomejs/… format . npx … @biomejs/biome format --write .   [adapter]
+tests   jest   npm run test:unit                    —                                       [gates.yaml]
+types   tsc    npx --no-install tsc --noEmit        —                                       [auto-detected]
 ```
 
 Each row's source tag names where that gate's configuration came from: `[adapter]` (the manifest),
@@ -326,7 +370,9 @@ assertion (`weak_test` otherwise). Adapters without patterns degrade to a visibl
 Recomputes the hash chain + signatures — including any recorded **key rotations** (the committed public
 key must descend from the genesis key) — and runs a **custody preflight** (a resolved private key inside
 the working tree, or readable by other users, is a failing `key_custody` finding). Fails on any tamper,
-gap, or break.
+gap, or break. Detection is not only on demand: **every ledger append first re-verifies the current tail
+entry** (recomputed hash + signature, O(1)) and refuses to write on top of a tampered last entry,
+pointing here — damage deeper in the chain (middle entries, gaps, linkage) is `verify`'s job.
 - `--anchored` — also cross-check the chain against the latest local anchor tag (see `anchor`): a ledger
   truncated or rewritten behind the anchored head fails, even if every signature verifies.
 ```bash
@@ -591,6 +637,14 @@ line, followed by ready-to-run commands:
      Resume:  3pwr run --resume --spec-id 042
      Inspect: 3pwr gate run --id 042
 ```
+
+**Active deviations are honoured at Verify.** When every red gate of the just-recorded verdict is
+covered by an active signed deviation (scoped to the run's spec id; a global deviation applies
+too), the run proceeds past Verify instead of stopping at gate-red, printing one
+`proceeding past <gate> under deviation seq=N` notice per waived gate — the same coverage decision
+`advance` makes, from the same shared logic. The recorded verdict stays honestly red; only the
+proceed decision consults deviations. If any red gate is uncovered, the run stops naming the
+uncovered gate(s) exactly as before.
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
@@ -672,16 +726,22 @@ Appends a signed `reversal` entry returning a spec to its stage at a given ledge
 ## Off the happy path (emergency & deviation)
 
 Both paths are **signed, recorded, and reversible** — bending the process without breaking it. They act
-at the `advance` enforcement boundary; gates always run honestly, so the verdict stays deterministic. See
+at the enforcement boundary — `advance`, and `3pwr run`'s proceed decision at Verify; gates always run
+honestly, so the verdict stays deterministic. See
 [Concepts → emergencies & deviations](concepts.md).
 
 ### `deviation` — relax named gates, reversibly
-Records a signed, reversible gate exception that lets `advance` accept specific red gates, with a reason, a
-human approver, and a way back (an expiry or an explicit revoke). Also the **sanctioned way to accept a
+Records a signed, reversible gate exception that lets `advance` — and `3pwr run` at its Verify stage —
+accept specific red gates, with a reason, a human approver, and a way back (an expiry or an explicit
+revoke). Also the **sanctioned way to accept a
 `gate_gaming` flag**, and the only relaxation of the git run discipline (`git_clean_start`,
-`git_stage_commit`, `git_run_branch`). Human sign-off and provenance are never deviatable.
+`git_stage_commit`, `git_run_branch`). Human sign-off and provenance are never deviatable. A red gate
+covered by an active deviation is annotated wherever it is shown (`gate run` failure panels; the run's
+proceed notice) — the recorded verdict itself stays red.
 - `--gate GATE` (repeatable; required unless `--revoke`) · `--approver APPROVER` (required to record) ·
-  `--note NOTE` (reason) · `--until ISO8601` (auto-expiry) · `--revoke SEQ` (the way back) · `--spec-id SPEC_ID`
+  `--note NOTE` (the reason — **required** to record: a deviation with no stated reason is refused) ·
+  `--until ISO8601` (auto-expiry; a date-only value like `2026-10-01` is taken as UTC) ·
+  `--revoke SEQ` (the way back) · `--spec-id SPEC_ID`
   (scope; default global).
 ```bash
 # accept a specific red gate, tracked as a follow-up, until a date
