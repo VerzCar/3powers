@@ -43,12 +43,11 @@ def test_unrotated_committed_key_swap_fails_verify(tmp_path):
     root, ledger, pub = _setup(tmp_path)
     genesis, attacker = keys.generate(), keys.generate()
     ledger.append("signoff", {"approver": "a", "stage": "review", "note": ""}, genesis)
-    # The attacker appends entries signed with their own key, then swaps the committed key.
-    # (Appending before the swap: `Ledger.append` itself now refuses to write on top of a
-    # tail that does not verify against the registered keys, and a real attacker hand-writes
-    # lines anyway — the resulting history `verify` sees is identical either way.)
-    ledger.append("signoff", {"approver": "x", "stage": "review", "note": ""}, attacker)
+    # The attacker swaps the committed key, then appends entries signed with their own key.
+    # (The pre-append tail check does not block this: the genesis tail's signer is no
+    # longer resolvable, which is a key-succession question for `verify`, not tamper.)
     keys.write_public(pub, attacker.verify_key)
+    ledger.append("signoff", {"approver": "x", "stage": "review", "note": ""}, attacker)
     res = verify_ledger(ledger.path, pub)
     assert not res.ok
     assert any("unrotated key change" in p for p in res.problems)

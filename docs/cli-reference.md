@@ -371,8 +371,10 @@ Recomputes the hash chain + signatures — including any recorded **key rotation
 key must descend from the genesis key) — and runs a **custody preflight** (a resolved private key inside
 the working tree, or readable by other users, is a failing `key_custody` finding). Fails on any tamper,
 gap, or break. Detection is not only on demand: **every ledger append first re-verifies the current tail
-entry** (recomputed hash + signature, O(1)) and refuses to write on top of a tampered last entry,
-pointing here — damage deeper in the chain (middle entries, gaps, linkage) is `verify`'s job.
+entry** (recomputed hash, plus the signature when the tail's signer is resolvable; O(1)) and refuses to
+write on top of provable tamper, pointing here — key-succession issues (e.g. a replaced committed key
+with no recorded rotation) never block appends and surface in `verify`, as does damage deeper in the
+chain (middle entries, gaps, linkage).
 - `--anchored` — also cross-check the chain against the latest local anchor tag (see `anchor`): a ledger
   truncated or rewritten behind the anchored head fails, even if every signature verifies.
 ```bash

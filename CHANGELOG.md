@@ -57,9 +57,10 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
   advisory is suppressed but always named in the gate output — expired or reason-less entries
   never suppress. (plan/035)
 - **Eager ledger tail check.** Every ledger append first re-verifies the current last entry
-  (recomputed hash + signature, O(1)) and refuses with a tamper error naming the sequence and
-  pointing at `3pwr verify` — a corrupted tail can no longer be buried under fresh entries.
-  (plan/035)
+  (recomputed hash, plus its signature when the signing key is resolvable — O(1)) and refuses
+  with a tamper error naming the sequence and pointing at `3pwr verify` — a corrupted tail can
+  no longer be buried under fresh entries. Key-succession issues never block an append; they
+  stay `3pwr verify`'s findings. (plan/035)
 - **Deviations require a reason.** `3pwr deviation` rejects an empty `--note`. (plan/035)
 - **Prompt templates as the single source of truth.** Every dispatched agent prompt is now
   assembled from the markdown `*.agent.md` templates (repo-local `.3powers/templates/agents/`
