@@ -29,6 +29,11 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 - **TypeScript e2e sample.** `e2e/typescript-orders` migrated to biome v2 (format-only/lint-only
   scripts) and its dev-dependency tree upgraded past all nine known advisories, so
   `./e2e/run.sh typescript --check` is green again. (plan/035)
+- **Copilot token accounting.** The Copilot backend's advisory usage pattern now matches the
+  current CLI summary line (column-aligned `Tokens` and a cached-count prefix before the
+  written count), so per-stage token counts appear in `progress.md` again instead of the
+  unknown placeholder. Repos seeded before the fix update `.3powers/agents/copilot.yaml`
+  by hand or re-init.
 
 ### Changed
 

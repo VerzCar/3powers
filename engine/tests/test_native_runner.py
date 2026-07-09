@@ -995,7 +995,11 @@ def test_each_dispatch_is_an_independent_process_with_no_carried_session(tmp_pat
 # --------------------------------------------------------------------------- usage capture (plan 033 Track H / RUNVIS)
 # The real Copilot CLI summary shape (plan 034 Track D): ↑ total input (cache-inclusive),
 # "(… written)" non-cached input, ↓ output — the hint sums the written + output groups.
-_COPILOT_USAGE_PATTERN = r"Tokens ↑[^\n]*\(([0-9.,_kKmM]+) written\)[^\n]*↓\s*([0-9.,_kKmM]+)"
+# Kept identical to the shipped copilot.yaml pattern (tolerates the column-aligned layout
+# and the "cached, " prefix inside the parenthetical of newer CLI versions).
+_COPILOT_USAGE_PATTERN = (
+    r"Tokens\s+↑[^\n]*?\([^)\n]*?([0-9.,_kKmM]+) written\)[^\n]*?↓\s*([0-9.,_kKmM]+)"
+)
 
 
 def test_extract_usage_json_strategy_reads_a_dotted_field():

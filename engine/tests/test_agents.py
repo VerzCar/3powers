@@ -110,6 +110,25 @@ def test_copilot_hint_sums_written_and_output_from_the_real_summary_line() -> No
     assert agents.extract_usage(_manifest("copilot"), _fixture("copilot.txt")) == 38700
 
 
+def test_copilot_hint_reads_the_column_aligned_summary_with_a_cached_prefix() -> None:
+    """Plan 035 (defect): the newer Copilot CLI column-aligns the summary (multiple spaces
+    after `Tokens`) and prefixes the parenthetical with the cached count —
+    `Tokens     ↑ 157.6k (134.7k cached, 22.9k written) • ↓ 6.9k (82 reasoning)` yields
+    written + output = 22900 + 6900, never the cached or ↑ cache-inclusive totals."""
+    assert agents.extract_usage(_manifest("copilot"), _fixture("copilot-cached.txt")) == 29800
+
+
+def test_copilot_hint_takes_the_last_summary_when_both_cli_formats_appear() -> None:
+    """Plan 035 (defect): when a transcript carries both an old-style and a new-style summary
+    line, the LAST match wins — the final cumulative count, per the regex-hint contract."""
+    out = (
+        "Tokens ↑ 629.8k (29.5k written) • ↓ 9.2k\n"
+        "intermediate prose\n"
+        "Tokens     ↑ 157.6k (134.7k cached, 22.9k written) • ↓ 6.9k (82 reasoning)\n"
+    )
+    assert agents.extract_usage(_manifest("copilot"), out) == 29800
+
+
 def test_claude_hint_reads_non_cached_input_plus_output_from_the_json_result() -> None:
     """Plan 034 Track D: Claude Code's `--output-format json` result reports input_tokens
     EXCLUDING cache reads; the hint sums it with output_tokens (312 + 9273), ignoring the

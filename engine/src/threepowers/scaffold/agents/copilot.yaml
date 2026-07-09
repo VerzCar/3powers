@@ -11,11 +11,14 @@ prompt_flag: "-p"
 prompt_via: arg
 # Session freshness: each `copilot -p` invocation starts a NEW session by default; reuse is
 # opt-in only (`--resume` / `--continue`), which the engine never emits.
-# Usage (advisory, never in the verdict): the CLI's final summary line reads
+# Usage (advisory, never in the verdict): the CLI's final summary line reads, depending on
+# the CLI version, either
 #   Tokens ↑ 629.8k (29.5k written) • ↓ 9.2k
+# or (column-aligned, with a cached prefix inside the parenthetical)
+#   Tokens     ↑ 157.6k (134.7k cached, 22.9k written) • ↓ 6.9k (82 reasoning)
 # — ↑ is total input INCLUDING cache reads; "(… written)" is the non-cached input actually
 # written; ↓ is output. The two capture groups (written + output) are summed = the real
 # consumed count.
 usage:
   strategy: regex
-  pattern: 'Tokens ↑[^\n]*\(([0-9.,_kKmM]+) written\)[^\n]*↓\s*([0-9.,_kKmM]+)'
+  pattern: 'Tokens\s+↑[^\n]*?\([^)\n]*?([0-9.,_kKmM]+) written\)[^\n]*?↓\s*([0-9.,_kKmM]+)'

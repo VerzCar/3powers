@@ -1,0 +1,7 @@
+● Wired the discovery notes into the spec draft and refreshed the summary tables.
+
+✓ Done. All requested files are updated.
+
+Changes    +282 -0
+Tokens     ↑ 157.6k (134.7k cached, 22.9k written) • ↓ 6.9k (82 reasoning)
+Resume     copilot --resume=1f3c9a2e-77aa-4d1b-9c0e-5b2d8f4a6e01
