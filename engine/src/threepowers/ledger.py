@@ -8,8 +8,9 @@ hash/signature fields), so the chain and the signatures both bind the same conte
 
 The ledger is committed to the repository, which keeps the whole trust record
 self-contained and offline-reconstructable. Every append first re-verifies the current
-tail entry (recomputed hash + signature, O(1)) and refuses to write on top of a tampered
-tail; full-chain verification stays with ``verify``.
+tail entry (recomputed hash, plus the signature when the tail's signer is resolvable;
+O(1)) and refuses to write on top of provable tamper; key-succession problems never
+block appends, and full-chain verification stays with ``verify``.
 """
 
 from __future__ import annotations
@@ -166,15 +167,30 @@ class Ledger:
         with ``3pwr verify``; this check only stops the tail's damage from being buried
         under fresh, validly signed history.
 
+        Refuses only on *provable* tamper: a content-hash mismatch, or a bad signature
+        under a key the repository can resolve. When the tail's recorded signer is not
+        among the resolvable keys — e.g. the committed public key was replaced without a
+        ``key_rotation`` entry — the signature check is skipped (only the content-hash
+        check applies): without the signing key's public half a superseded key and a
+        forgery are indistinguishable here, and that judgement belongs to ``3pwr verify``,
+        which still fails loudly on an unrotated key change. Key-succession problems
+        therefore never block appends.
+
         Raises:
-            LedgerTamperError: the tail's recomputed hash or signature does not check
-                out. Nothing is written.
+            LedgerTamperError: the tail's recomputed hash does not match, or its
+                signature fails against the resolvable key that signed it. Nothing
+                is written.
         """
         # Local import: verify.py imports this module at load time, so the shared
         # verify_entry helper must be resolved lazily here to avoid a circular import.
         from .verify import verify_entry
 
-        problems = verify_entry(tail, None, self._registered_keys(entries))
+        candidates = self._registered_keys(entries)
+        if tail.get("signer_key_id") not in {vk.key_id for vk in candidates}:
+            # The tail's signer is unresolvable (superseded key, or no key material at
+            # all): skip the signature check rather than falsely refusing a valid append.
+            candidates = []
+        problems = verify_entry(tail, None, candidates)
         if problems:
             raise LedgerTamperError(tail.get("seq", "?"), problems)
 
@@ -190,9 +206,11 @@ class Ledger:
         key that ``verify_ledger`` resolves by walking the rotation chain — any tail that
         full verification accepts is signed by the committed key, an extra signer, or a
         rotation-chain key, all of which are in this set, so a valid append is never
-        refused (the full chain walk stays with ``3pwr verify``). When no key material is
-        resolvable at all, the list is empty and the signature check is skipped rather
-        than refusing valid appends; the content-hash check still applies.
+        refused (the full chain walk stays with ``3pwr verify``). ``_check_tail`` only
+        applies the signature check when the tail's recorded signer is in this set: a
+        tail signed by a key that is *not* resolvable here (a replaced committed key
+        with no recorded rotation, or no key material at all) gets the content-hash
+        check only, and the succession problem is left for ``3pwr verify`` to report.
         """
         candidates: list[VerifyKey] = []
         keys_dir = self.path.parent / "keys"

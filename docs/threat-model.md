@@ -37,10 +37,13 @@ are claims by the signer), or that the signing machine was uncompromised.
 | **Key swap** — `.3powers/keys/ledger.pub` replaced without authority | the committed key does not descend from the genesis key through signed `key_rotation` entries |
 
 Detection is not only on demand: **every ledger append first re-verifies the current tail
-entry** — recomputed content hash plus Ed25519 signature, O(1), no chain walk — and refuses to
-write on top of a tampered last entry, pointing at `3pwr verify`. This stops tail damage from
-being buried under fresh, validly signed history; damage deeper in the chain (middle entries,
-sequence gaps, broken linkage) remains `3pwr verify`'s job.
+entry** — recomputed content hash, plus the Ed25519 signature when the tail's signer is
+resolvable; O(1), no chain walk — and refuses to write on top of provable tamper (a
+content-hash mismatch, or a bad signature under a resolvable key), pointing at `3pwr verify`.
+This stops tail damage from being buried under fresh, validly signed history. Key-succession
+issues — e.g. a replaced committed key with no recorded rotation — never block appends; they
+surface in `3pwr verify`, as does damage deeper in the chain (middle entries, sequence gaps,
+broken linkage).
 
 ## What `verify` cannot detect
 

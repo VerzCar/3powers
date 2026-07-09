@@ -344,3 +344,48 @@ def test_append_skips_malformed_rotation_payload_keys(repo_ledger):
     )
     entry = ledger.append("verdict", {"result": "pass"}, sk)
     assert entry["seq"] == 1
+
+
+def test_append_succeeds_after_unrotated_committed_key_swap(repo_ledger):
+    """Regression: a replaced committed key (no key_rotation entry) must not wedge appends.
+
+    The tail was signed by a key the repo can no longer resolve — a key-succession
+    problem, which is `3pwr verify`'s to report, not tail tamper. The append under the
+    new key succeeds, and full verification still names the succession problem."""
+    ledger, sk, pub = repo_ledger
+    ledger.append("verdict", {"result": "pass"}, sk)
+    successor = keys.generate()
+    keys.write_public(pub, successor.verify_key)  # regenerated key, no rotation recorded
+    entry = ledger.append("verdict", {"result": "pass"}, successor)  # must not refuse
+    assert entry["seq"] == 1
+    res = verify_ledger(ledger.path, pub)
+    assert not res.ok  # the succession problem still surfaces where it belongs
+    assert any("unrotated key change" in p for p in res.problems)
+
+
+def test_append_proceeds_when_tail_signer_is_unknown_but_content_intact(repo_ledger):
+    """A tail whose recorded signer is missing/unresolvable gets the content-hash check
+
+    only: without the signing key's public half, a superseded key and a forgery are
+    indistinguishable at append time — that judgement is `3pwr verify`'s."""
+    ledger, sk, _pub = repo_ledger
+    ledger.append("verdict", {"result": "pass"}, sk)
+    # signer_key_id is derived (outside the signed core): dropping it leaves the
+    # content hash intact but makes the signer unresolvable.
+    _rewrite_tail(ledger, lambda e: e.pop("signer_key_id"))
+    entry = ledger.append("verdict", {"result": "pass"}, sk)
+    assert entry["seq"] == 1
+
+
+def test_append_refuses_payload_tamper_even_with_unknown_tail_signer(repo_ledger):
+    """The content-hash check is unconditional: a hand-edited payload refuses the next
+
+    append even when the tail's signer is unresolvable (so the signature check is
+    skipped)."""
+    ledger, sk, pub = repo_ledger
+    ledger.append("verdict", {"result": "pass"}, sk)
+    keys.write_public(pub, keys.generate().verify_key)  # unrotated key swap
+    _rewrite_tail(ledger, lambda e: e["payload"].update(result="fail"))
+    with pytest.raises(LedgerTamperError) as exc:
+        ledger.append("verdict", {"result": "pass"}, sk)
+    assert "entry_hash mismatch" in str(exc.value)
