@@ -57,13 +57,21 @@ def iso(dt: datetime) -> str:
 
 
 def parse_iso(value: str | None) -> datetime | None:
-    """Parse an ISO-8601 timestamp (``...Z`` or with offset); None if absent/malformed."""
+    """Parse an ISO-8601 timestamp (``...Z`` or with offset); None if absent/malformed.
+
+    Always returns a timezone-aware datetime: a naive value (a date-only or offset-less
+    timestamp) is taken as UTC, so every downstream comparison against ``now_utc()`` is
+    aware-to-aware and can never raise. A value that will not parse stays ``None``
+    (fail-safe: the deviation never expires)."""
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def emergency_payload(reason: str, approver: str, cleanup_hours: int) -> dict[str, Any]:
@@ -130,6 +138,42 @@ def covered_gates(active: list[dict[str, Any]], spec_id: str | None = None) -> s
             continue  # a spec-scoped deviation does not leak to another spec
         gates.update(dev.get("gates", []))
     return gates
+
+
+def red_gates(verdict_payload: dict[str, Any]) -> set[str]:
+    """The names of the failed gates in a recorded verdict payload."""
+    return {g["gate"] for g in verdict_payload.get("gates", []) if g.get("status") == "fail"}
+
+
+def uncovered_red_gates(
+    verdict_payload: dict[str, Any],
+    active: list[dict[str, Any]],
+    spec_id: str | None = None,
+) -> set[str]:
+    """The verdict's red gates NOT covered by an active signed deviation.
+
+    The single coverage decision both ``advance`` and ``run`` consume, so the two
+    enforcement points cannot drift. A deviation scoped to a spec id covers only that
+    spec's gates; a global deviation (empty spec id) covers every spec. An empty result
+    means every red gate is covered and the enforcement point may proceed — the recorded
+    verdict itself stays honestly red (deviations never touch the verdict)."""
+    return red_gates(verdict_payload) - covered_gates(active, spec_id)
+
+
+def covering_deviation(
+    gate: str, active: list[dict[str, Any]], spec_id: str | None = None
+) -> dict[str, Any] | None:
+    """The first active deviation covering ``gate`` for ``spec_id`` (global applies), else None.
+
+    Read-only over the active set — used to annotate a waived red gate with the deviation's
+    seq and approver wherever the failure is shown."""
+    for dev in active:
+        dev_spec = dev.get("spec_id") or ""
+        if spec_id and dev_spec and dev_spec != spec_id:
+            continue
+        if gate in dev.get("gates", []):
+            return dev
+    return None
 
 
 def diversity_deviation(active: list[dict[str, Any]], spec_id: str | None = None) -> int | None:

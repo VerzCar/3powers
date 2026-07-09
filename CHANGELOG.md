@@ -10,6 +10,26 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 
 ## [1.0.0-rc.1] — v1.0: lifecycle & ecosystem (release candidate)
 
+### Fixed
+
+- **Biome double-lint.** The `format` gate now runs the biome formatter only and the `lint` gate
+  the biome linter only (adapter manifest + auto-detection); a repo that formats with biome and
+  lints with ESLint gets `lint · eslint` with no duplicated findings. (plan/035)
+- **Gaming-detector false positives.** `gate_gaming` no longer flags the engine's own `.3powers/`
+  trust-spine files (ledger, verdicts) or removed/reordered testing-import lines; assertion loss
+  is now matched on assertion *calls*, and genuine net assertion loss and added lint-suppressions
+  still fail. (plan/035)
+- **Expiring deviations no longer crash.** A deviation recorded with a date-only `--until` is
+  parsed timezone-aware; `run`, `gate run`, and `advance` compare it safely. (plan/035)
+- **Deviations honoured by `3pwr run`.** A red Verify whose failed gates are all covered by
+  active signed deviations proceeds (with a `proceeding past <gate> under deviation seq=N`
+  notice) instead of stopping — the recorded verdict stays honestly red; `run` and `advance` now
+  share one coverage decision. Waived gates are annotated
+  `waived by active deviation seq=N (approver: …)` in failure output. (plan/035)
+- **TypeScript e2e sample.** `e2e/typescript-orders` migrated to biome v2 (format-only/lint-only
+  scripts) and its dev-dependency tree upgraded past all nine known advisories, so
+  `./e2e/run.sh typescript --check` is green again. (plan/035)
+
 ### Changed
 
 - **`3pwr init` readiness summary.** The language / adapter / default tier / autonomous-default
@@ -27,6 +47,20 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 
 ### Added
 
+- **Actionable red verdicts.** Every failed gate's failure panel now carries an honest
+  remediation block: what the gate means, the safe auto-fix command when one exists, a
+  copy-pasteable coder hand-back prompt (never "weaken the check"), and the pre-filled
+  `3pwr deviation` command as an explicitly labelled last resort. Human output only — the
+  verdict, ledger, and `--json` payload are byte-identical. (plan/035)
+- **Dependency-advisory allowlist.** `scan.yaml` gains an `advisories:` list under
+  `dependency_scan` (`id` + required `reason` + optional `until` expiry); a matched, non-expired
+  advisory is suppressed but always named in the gate output — expired or reason-less entries
+  never suppress. (plan/035)
+- **Eager ledger tail check.** Every ledger append first re-verifies the current last entry
+  (recomputed hash + signature, O(1)) and refuses with a tamper error naming the sequence and
+  pointing at `3pwr verify` — a corrupted tail can no longer be buried under fresh entries.
+  (plan/035)
+- **Deviations require a reason.** `3pwr deviation` rejects an empty `--note`. (plan/035)
 - **Prompt templates as the single source of truth.** Every dispatched agent prompt is now
   assembled from the markdown `*.agent.md` templates (repo-local `.3powers/templates/agents/`
   override → bundled default → generic fragment) — the engine carries no inline prompt text.

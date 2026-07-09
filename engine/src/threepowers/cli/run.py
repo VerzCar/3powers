@@ -453,6 +453,30 @@ def _native_verdict(
     return "pass" if verdict.result == STATUS_PASS else "fail"
 
 
+def _deviation_proceed_notices(
+    verdict_payload: dict[str, Any], entries: list[dict[str, Any]], spec_id: str
+) -> Optional[list[str]]:
+    """The proceed notices when EVERY red gate of a Verify verdict is covered by an active,
+    signed deviation scoped to ``spec_id`` (a global deviation applies too) — one
+    ``proceeding past <gate> under deviation seq=N`` line per red gate. ``None`` when any red
+    gate is uncovered (the run must stop at gate-red, as today) or when the verdict carries no
+    red gate at all. Consumes the same shared coverage helper as ``advance``, so the two
+    enforcement points cannot drift; the recorded verdict itself stays honestly red — only the
+    run's proceed decision consults deviations."""
+    reds = deviations.red_gates(verdict_payload)
+    if not reds:
+        return None
+    active = deviations.active_deviations(entries)
+    if deviations.uncovered_red_gates(verdict_payload, active, spec_id):
+        return None
+    notices: list[str] = []
+    for gate in sorted(reds):
+        dev = deviations.covering_deviation(gate, active, spec_id)
+        seq = dev.get("seq") if dev else None
+        notices.append(f"proceeding past {gate} under deviation seq={seq}")
+    return notices
+
+
 def _dispatch_timeout(s: Settings, args: argparse.Namespace) -> int:
     """The per-stage dispatch timeout: --timeout wins, else the configured default."""
     v = getattr(args, "timeout", None)
@@ -1110,6 +1134,7 @@ def _native_runner(
         # The in-run verdict is recorded exactly as a standalone `3pwr gate run` records it:
         # a red or green at Verify is never invisible to the trust spine. The
         # verdict dict lands in ``verdict_box`` so a red one renders its failed gates inline.
+        box = verdict_box if verdict_box is not None else {}
         outcome = _native_verdict(
             s,
             args,
@@ -1118,12 +1143,24 @@ def _native_runner(
             ledger=ledger,
             sk=sk,
             feature_dir=feature_dir,
-            out=verdict_box,
+            out=box,
         )
+        if outcome == "fail":
+            # The recorded verdict stays honestly red; only the PROCEED decision consults the
+            # active signed deviations — the same shared coverage helper `advance` uses, so a
+            # deviation recorded mid-run is honoured here exactly as at a standalone advance.
+            notices = _deviation_proceed_notices(
+                box.get("verdict") or {}, ledger.entries(), spec_id
+            )
+            if notices is not None:
+                if not getattr(args, "json", False):
+                    for line in notices:
+                        print(f"  ↳ {line}")
+                outcome = "pass"
         # An --auto-fix run's fixed paths join the run's produced set: they land
         # as the verify stage's commit on the run branch, so no run-produced change is left
         # uncommitted. The signed ledger rides along, as on every stage commit.
-        fixed = auto_fixed_paths((verdict_box or {}).get("verdict") or {})
+        fixed = auto_fixed_paths(box.get("verdict") or {})
         if fixed and run_branch and not commit_relaxed:
             paths = list(fixed)
             if s.ledger_path.is_file():

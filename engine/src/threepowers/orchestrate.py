@@ -752,13 +752,125 @@ class GatePipeline:
             pass  # never let a repaint take the gate run down
 
 
-def _panel_body_lines(gate: Mapping[str, Any], verbose: bool = False) -> list[str]:
+# ------------------------------------------------------------------ remediation guidance
+# Per-gate honest remediation, keyed by gate name: (what a failure means, the honest way out).
+# The framing is always "make the code satisfy the check" — never "make the check pass" — so the
+# guidance can never read as an instruction to weaken a gate. Purely presentational: it renders
+# in the human failure panels only and never enters the verdict dict, the ledger, or the
+# machine (--json) payload. A gate result may override the fix half with a finding-specific
+# hint via ``details["remediation"]`` (e.g. the fixed version a vulnerability scanner reports).
+_GENERIC_GUIDANCE: tuple[str, str] = (
+    "this gate's check failed — the findings above say exactly where",
+    "make the code satisfy the check; never weaken the check itself",
+)
+
+GATE_GUIDANCE: dict[str, tuple[str, str]] = {
+    "format": (
+        "the code's formatting drifts from the configured style",
+        "run the auto-fix command above — formatting is safely auto-fixable",
+    ),
+    "lint": (
+        "the linter found rule violations in the code",
+        "fix each finding in the code so it satisfies the rule "
+        "(the auto-fix command above handles the safely fixable ones)",
+    ),
+    "types": (
+        "the type checker found real type errors",
+        "make the code satisfy its declared types — correct the code or the annotations",
+    ),
+    "tests": (
+        "the test suite has failing tests",
+        "make the code satisfy the failing tests and the spec they trace to — never weaken a test",
+    ),
+    "gate_gaming": (
+        "a check appears weakened — a lost assertion or an added waiver; review before accepting",
+        "restore the weakened check and make the code satisfy it; only a deliberate, justified "
+        "exception belongs in a recorded deviation, which 3pwr run and 3pwr advance both honour",
+    ),
+    "dependency_scan": (
+        "a dependency carries a known vulnerability",
+        "upgrade the dependency to a fixed version; a vetted advisory can be accepted in "
+        ".3powers/config/scan.yaml under advisories: (id + reason, optional until expiry — "
+        "every acceptance is reported in the gate output); a recorded deviation is honoured "
+        "by both 3pwr run and 3pwr advance",
+    ),
+}
+
+# The findings ceiling per gate inside the coder hand-back prompt — enough to act on,
+# small enough to paste.
+HANDBACK_MAX_FINDINGS = 5
+
+
+def coder_handback(verdict: Mapping[str, Any]) -> str:
+    """The copy-pasteable coder hand-back prompt for a failed verdict — deterministic text.
+
+    Names every failed gate and its first findings and instructs an honest fix, consistent
+    with the implement-stage instructions ("never weaken a gate; make the code satisfy the
+    spec"). It never instructs weakening, silencing, or removing a check. Pure and
+    presentation-only: built from the verdict *dict* (the ``Verdict.to_dict()`` shape), it
+    never mutates it and never enters the ledger or the machine payload. Empty string when
+    nothing failed."""
+    failed = [g for g in (verdict.get("gates") or []) if g.get("status") == "fail"]
+    if not failed:
+        return ""
+    lines = [
+        "The deterministic gate suite rejected this change. Make the code satisfy the spec",
+        "and every failed check below. Never weaken a gate: fix the code, not the check —",
+        "keep every existing test, assertion, and check configuration intact.",
+        "",
+        "Failed gates:",
+    ]
+    for g in failed:
+        name = str(g.get("gate", "?"))
+        tool = str(g.get("tool") or "").strip()
+        lines.append(f"- {name} · {tool}" if tool else f"- {name}")
+        findings = meaningful_lines(g.get("findings") or [])
+        for finding in findings[:HANDBACK_MAX_FINDINGS]:
+            lines.append(f"    {finding}")
+        hidden = len(findings) - HANDBACK_MAX_FINDINGS
+        if hidden > 0:
+            lines.append(f"    … plus {hidden} more finding{'' if hidden == 1 else 's'}")
+    lines.extend(
+        [
+            "",
+            "For each finding, correct the underlying code so it genuinely satisfies the",
+            "check, keep the change minimal and traceable to the spec, then re-run the",
+            "failed checks and report the honest result.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _remediation_lines(gate: Mapping[str, Any]) -> list[str]:
+    """The per-gate remediation tail of a failure panel — guidance plus the labelled last resort.
+
+    Resolves the fix hint from ``details["remediation"]`` (a finding-specific hint the gate
+    supplied) when present, else the static :data:`GATE_GUIDANCE` table, with a generic
+    default for unknown gates. Presentation only — never enters the verdict."""
+    name = str(gate.get("gate", "?"))
+    meaning, fix_hint = GATE_GUIDANCE.get(name, _GENERIC_GUIDANCE)
+    specific = str((gate.get("details") or {}).get("remediation") or "").strip()
+    return [
+        f"↳ what it means: {meaning}",
+        f"↳ fix: {specific or fix_hint}",
+        "↳ last resort — only if this is a deliberate, justified exception:",
+        f'    3pwr deviation --gate {name} --approver <you> --note "<why>" [--until <date>]',
+    ]
+
+
+def _panel_body_lines(
+    gate: Mapping[str, Any], verbose: bool = False, waiver: str = ""
+) -> list[str]:
     """A failed gate's panel body: meaningful error lines trimmed to :data:`PANEL_MAX_LINES`
-    with a truncation note, then the configured auto-fix hint when present.
+    with a truncation note, then the configured auto-fix hint when present, then the waiver
+    annotation when the gate is covered by an active deviation, then the honest remediation
+    tail (what the failure means, the honest fix, and the deviation last resort).
 
     Scanner gates (dependency/secret scan) already carry one finding per line — ID plus
     package/file (and a remediation hint when the gate details supply one) — so the generic
-    line path renders them one per line."""
+    line path renders them one per line. ``waiver`` is a pre-built human annotation line
+    (e.g. "↳ waived by active deviation seq=1 (approver: …)"); it never touches the verdict
+    dict itself."""
     lines = meaningful_lines(gate.get("findings") or [], verbose)
     if not lines:
         lines = ["non-zero exit — the tool reported no output"]
@@ -769,11 +881,19 @@ def _panel_body_lines(gate: Mapping[str, Any], verbose: bool = False) -> list[st
     fix = (gate.get("details") or {}).get("fix_cmd")
     if fix:
         shown.append(f"↳ auto-fix: {fix}")
+    if waiver:
+        shown.append(waiver)
+    shown.extend(_remediation_lines(gate))
     return shown
 
 
 def _render_panel(
-    gate: Mapping[str, Any], st: style.Styler, *, verbose: bool, width: Optional[int]
+    gate: Mapping[str, Any],
+    st: style.Styler,
+    *,
+    verbose: bool,
+    width: Optional[int],
+    waiver: str = "",
 ) -> str:
     """One failed gate's panel — a rich panel with a dim ``gate · tool`` header on a color TTY,
     plain indented text otherwise."""
@@ -781,7 +901,7 @@ def _render_panel(
     tool = str(gate.get("tool") or "").strip() or "?"
     elapsed = _gate_elapsed(int(gate.get("duration_ms") or 0))
     title = f"{name} · {tool}  {elapsed}"
-    body = _panel_body_lines(gate, verbose)
+    body = _panel_body_lines(gate, verbose, waiver)
     if st.enabled:
         buf = io.StringIO()
         console = Console(
@@ -810,15 +930,48 @@ def failure_panels(
     *,
     verbose: bool = False,
     width: Optional[int] = None,
+    waivers: Optional[Mapping[str, str]] = None,
 ) -> str:
-    """The post-run failure surface: one panel per FAILED gate of ``verdict``.
+    """The post-run failure surface: one panel per FAILED gate of ``verdict``, followed by one
+    coder hand-back block (a copy-pasteable prompt for the coding agent plus the re-dispatch
+    command) covering all failed gates.
 
     Rendered after the live pipeline exits; replaces the former bottom "failures:" block. Takes
     the verdict *dict* (the ``Verdict.to_dict()`` shape the emitters already carry) so run-path
     and gate-run callers share one renderer. Empty string when nothing failed. Degrades to plain
-    indented text with a disabled styler — never an ANSI byte off a color TTY."""
+    indented text with a disabled styler — never an ANSI byte off a color TTY. Human output
+    only: callers never route it through ``--json``, and nothing here mutates the verdict.
+
+    ``waivers`` maps a failed gate's name to a pre-built waiver annotation line (a red gate
+    covered by an active deviation); the annotation is human rendering only and never mutates
+    the verdict mapping."""
     st = st or style.Styler()
     failed = [g for g in (verdict.get("gates") or []) if g.get("status") == "fail"]
     if not failed:
         return ""
-    return "\n".join(_render_panel(g, st, verbose=verbose, width=width) for g in failed)
+    panels = "\n".join(
+        _render_panel(
+            g,
+            st,
+            verbose=verbose,
+            width=width,
+            waiver=(waivers or {}).get(str(g.get("gate", "")), ""),
+        )
+        for g in failed
+    )
+    return panels + "\n" + _handback_block(verdict, st)
+
+
+def _handback_block(verdict: Mapping[str, Any], st: style.Styler) -> str:
+    """The rendered coder hand-back section — the prompt indented under a dim header, then the
+    re-dispatch command. Presentation only; empty when nothing failed."""
+    prompt = coder_handback(verdict)
+    if not prompt:
+        return ""
+    spec_id = str(verdict.get("spec_id") or "").strip() or "<spec-id>"
+    lines = [
+        "  " + st.dim("hand back to your coding agent — copy-paste:"),
+        *(f"    {ln}" for ln in prompt.splitlines()),
+        f"  re-dispatch: 3pwr run --resume --spec-id {spec_id}",
+    ]
+    return "\n".join(lines)

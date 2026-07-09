@@ -28,10 +28,17 @@ _SUPPRESSIONS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(pragma:\s*no cover|istanbul[ ]ignore|c8[ ]ignore)"), "coverage pragma"),
 ]
 # Assertions whose REMOVAL weakens a test — and whose ABSENCE from a newly added
-# requirement-referencing test is a gaming signal. Language-agnostic union.
+# requirement-referencing test is a gaming signal. Language-agnostic union, matched on
+# assertion CALLS (an opening paren after the token) or Python's paren-less `assert`
+# statement — never on a bare identifier, so a reordered `import { expect, … }` line
+# is not a false removal signal.
 _ASSERT = re.compile(
-    r"\b(assert|expect|\.toBe|\.toEqual|self\.assert|pytest\.raises"
-    r"|t\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)|require\.\w+)\b"
+    r"^\s*assert\b"  # Python assert statement (no parens)
+    r"|\b(?:assert|expect|pytest\.raises)\s*\("
+    r"|\b(?:self\.assert\w*|assert\.\w+|require\.\w+)\s*\("  # unittest / node+chai / testify
+    r"|\.to[A-Z]\w*\s*\("  # expect-style matchers: .toBe, .toEqual, .toHaveBeenCalledTimes, …
+    r"|\bt\.(?:Error|Errorf|Fatal|Fatalf|Fail|FailNow)\s*\(",
+    re.MULTILINE,
 )
 # A test declaration opening, per language (chosen by file suffix so a snippet quoted
 # inside another language's test fixture never false-positives — self-application).
@@ -131,7 +138,7 @@ def _scan_untracked(repo_root: Path, target: Path) -> list[str]:
     others = _git(repo_root, ["ls-files", "--others", "--exclude-standard", "--", str(target)])
     for rel in others.splitlines():
         rel = rel.strip()
-        if not rel:
+        if not rel or rel.startswith(".3powers/"):  # trust-spine state is engine-managed, not code
             continue
         try:
             text = (repo_root / rel).read_text(encoding="utf-8")
@@ -150,7 +157,20 @@ def _diff(repo_root: Path, target: Path, base: str | None) -> str | None:
     ref = _resolve_base(repo_root, base)
     if ref is None:
         return None
-    return _git(repo_root, ["diff", "--unified=0", "--no-color", ref, "--", str(target)])
+    # The trust spine (.3powers/ — ledger appends, config, templates) is engine-managed
+    # audit state, not reviewed code: its churn must never read as gate-gaming.
+    return _git(
+        repo_root,
+        [
+            "diff",
+            "--unified=0",
+            "--no-color",
+            ref,
+            "--",
+            str(target),
+            ":(exclude).3powers/**",
+        ],
+    )
 
 
 def _git(repo_root: Path, args: list[str]) -> str:

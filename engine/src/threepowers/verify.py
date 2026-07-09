@@ -42,6 +42,70 @@ def _payload_key(payload: dict, field: str) -> Optional[VerifyKey]:
     return VerifyKey(raw=raw) if len(raw) == 32 else None
 
 
+def verify_entry(
+    entry: dict,
+    expected_prev: Optional[str],
+    candidates: list[VerifyKey],
+    *,
+    expected_seq: Optional[int] = None,
+    loc: Optional[str] = None,
+) -> list[str]:
+    """Run the per-entry integrity checks on a single ledger entry.
+
+    This is the one implementation of the entry-level checks: ``verify_ledger`` calls it
+    for every entry of the chain, and ``Ledger.append`` calls it on the current tail
+    before writing, so the two can never drift apart.
+
+    Args:
+        entry: the parsed ledger entry to check.
+        expected_prev: the predecessor's ``entry_hash``; pass ``None`` to skip the
+            chain-linkage check (e.g. for a single-entry check without the predecessor).
+        candidates: public keys the signature may verify against. An empty list skips
+            the signature check entirely — callers without any key material still get
+            the content-hash check, and a valid entry is never refused for lack of keys.
+        expected_seq: the sequence number this entry must carry; ``None`` skips the check.
+        loc: label used to prefix problem messages; defaults to ``entry seq=<seq>``.
+
+    Returns:
+        A list of human-readable problems, empty when every applicable check passes.
+    """
+    problems: list[str] = []
+    where = loc if loc is not None else f"entry seq={entry.get('seq', '?')}"
+
+    # 1. Sequence is dense and monotonic from 0.
+    if expected_seq is not None and entry.get("seq") != expected_seq:
+        problems.append(f"{where}: sequence gap/break — expected seq={expected_seq}")
+
+    # 2. Chain linkage.
+    if expected_prev is not None and entry.get("prev_hash") != expected_prev:
+        problems.append(f"{where}: broken chain — prev_hash does not match predecessor")
+
+    # 3. Recomputed content hash matches the stored hash (detects tamper).
+    recomputed = hash_payload(core_of(entry))
+    if recomputed != entry.get("entry_hash"):
+        problems.append(f"{where}: content tampered — entry_hash mismatch")
+
+    # 4. Signature verifies against one of the candidate keys.
+    if candidates:
+        try:
+            sig = base64.b64decode(entry["signature"])
+            signed = canonical_bytes(core_of(entry))
+            if not any(vk.verify(sig, signed) for vk in candidates):
+                skid = entry.get("signer_key_id") or "?"
+                known = {vk.key_id for vk in candidates}
+                if skid not in known:
+                    problems.append(
+                        f"{where}: invalid signature — signed by {skid}, not the active key; "
+                        "unrotated key change (no key_rotation entry records this succession)"
+                    )
+                else:
+                    problems.append(f"{where}: invalid signature")
+        except (KeyError, ValueError):
+            problems.append(f"{where}: missing or malformed signature")
+
+    return problems
+
+
 def verify_ledger(
     ledger_path: Path,
     pubkey_path: Path,
@@ -98,36 +162,12 @@ def verify_ledger(
     for idx, entry in enumerate(entries):
         loc = f"entry seq={entry.get('seq', '?')} (line {idx + 1})"
 
-        # 1. Sequence is dense and monotonic from 0.
-        if entry.get("seq") != idx:
-            res.problems.append(f"{loc}: sequence gap/break — expected seq={idx}")
-
-        # 2. Chain linkage.
-        if entry.get("prev_hash") != expected_prev:
-            res.problems.append(f"{loc}: broken chain — prev_hash does not match predecessor")
-
-        # 3. Recomputed content hash matches the stored hash (detects tamper).
-        recomputed = hash_payload(core_of(entry))
-        if recomputed != entry.get("entry_hash"):
-            res.problems.append(f"{loc}: content tampered — entry_hash mismatch")
-
-        # 4. Signature verifies against the active ledger key or a distinct extra signer.
+        # Checks 1-4 (sequence, chain linkage, content hash, signature) live in
+        # verify_entry — shared with the pre-append tail check in Ledger.append.
         candidates = ([active] if active else []) + extras
-        try:
-            sig = base64.b64decode(entry["signature"])
-            signed = canonical_bytes(core_of(entry))
-            if not any(vk.verify(sig, signed) for vk in candidates):
-                skid = entry.get("signer_key_id") or "?"
-                known = {vk.key_id for vk in candidates}
-                if skid not in known:
-                    res.problems.append(
-                        f"{loc}: invalid signature — signed by {skid}, not the active key; "
-                        "unrotated key change (no key_rotation entry records this succession)"
-                    )
-                else:
-                    res.problems.append(f"{loc}: invalid signature")
-        except (KeyError, ValueError):
-            res.problems.append(f"{loc}: missing or malformed signature")
+        res.problems.extend(
+            verify_entry(entry, expected_prev, candidates, expected_seq=idx, loc=loc)
+        )
 
         # 5. A key rotation hands over the active key — authored by the OUTGOING key
         #    (its signature was just checked against `active` above), naming the successor.

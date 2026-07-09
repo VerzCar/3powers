@@ -332,6 +332,83 @@ def test_dependency_scan_non_ignored_source_still_fails(tmp_path, monkeypatch):
     assert any("GHSA-xxxx" in f for f in gate.findings)
 
 
+# ------------------------------------------------- dependency advisory allowlist (SEC-001)
+
+_OSV_ONE_VULN = (
+    '{"results":[{"source":{"path":"package-lock.json"},'
+    '"packages":[{"package":{"name":"glob"},"vulnerabilities":[{"id":"GHSA-xxxx"}]}]}]}'
+)
+
+
+def test_dependency_scan_advisory_with_reason_suppresses_and_reports(tmp_path, monkeypatch):
+    """SEC-001: an allowlisted advisory with a non-empty reason is suppressed AND the
+    acceptance is reported — id, reason, and count — never silent."""
+    _osv_report(monkeypatch, _OSV_ONE_VULN)
+    gate = scanners.dependency_scan(
+        tmp_path, advisories=[{"id": "GHSA-xxxx", "reason": "dev-only tooling"}]
+    )
+    assert gate.status == STATUS_PASS
+    assert not any("GHSA-xxxx in" in f for f in gate.findings)
+    assert gate.details["excluded_count"] == 1
+    assert gate.details["accepted_advisories"] == [
+        {"id": "GHSA-xxxx", "reason": "dev-only tooling", "count": 1}
+    ]
+    report = "\n".join(gate.findings)
+    assert "GHSA-xxxx" in report
+    assert "dev-only tooling" in report
+    assert "1 finding(s) accepted" in report
+
+
+def test_dependency_scan_advisory_without_reason_does_not_suppress(tmp_path, monkeypatch):
+    """SEC-001: a missing or whitespace-only reason never suppresses (fail-closed)."""
+    for entry in ({"id": "GHSA-xxxx"}, {"id": "GHSA-xxxx", "reason": "   "}):
+        _osv_report(monkeypatch, _OSV_ONE_VULN)
+        gate = scanners.dependency_scan(tmp_path, advisories=[entry])
+        assert gate.status == STATUS_FAIL
+        assert any("GHSA-xxxx" in f for f in gate.findings)
+
+
+def test_dependency_scan_expired_advisory_does_not_suppress(tmp_path, monkeypatch):
+    """SEC-001: an advisory past its `until` expiry never suppresses (fail-closed)."""
+    _osv_report(monkeypatch, _OSV_ONE_VULN)
+    gate = scanners.dependency_scan(
+        tmp_path, advisories=[{"id": "GHSA-xxxx", "reason": "assessed", "until": "2000-01-01"}]
+    )
+    assert gate.status == STATUS_FAIL
+    assert any("GHSA-xxxx" in f for f in gate.findings)
+
+
+def test_dependency_scan_malformed_until_does_not_suppress(tmp_path, monkeypatch):
+    """SEC-001: an unparseable `until` never suppresses (fail-closed)."""
+    _osv_report(monkeypatch, _OSV_ONE_VULN)
+    gate = scanners.dependency_scan(
+        tmp_path, advisories=[{"id": "GHSA-xxxx", "reason": "assessed", "until": "not-a-date"}]
+    )
+    assert gate.status == STATUS_FAIL
+
+
+def test_dependency_scan_future_until_suppresses_naive_and_aware(tmp_path, monkeypatch):
+    """A future `until` suppresses — both a date-only (naive) and a `Z`-suffixed (aware)
+    value compare safely against a UTC now."""
+    for until in ("2999-12-31", "2999-01-01T00:00:00Z"):
+        _osv_report(monkeypatch, _OSV_ONE_VULN)
+        gate = scanners.dependency_scan(
+            tmp_path, advisories=[{"id": "GHSA-xxxx", "reason": "assessed", "until": until}]
+        )
+        assert gate.status == STATUS_PASS, until
+
+
+def test_dependency_scan_unrelated_advisory_still_fails(tmp_path, monkeypatch):
+    """SEC-001: an advisory entry never blankets the gate — an unlisted id still fails."""
+    _osv_report(monkeypatch, _OSV_ONE_VULN)
+    gate = scanners.dependency_scan(
+        tmp_path, advisories=[{"id": "GHSA-other", "reason": "assessed"}]
+    )
+    assert gate.status == STATUS_FAIL
+    assert any("GHSA-xxxx" in f for f in gate.findings)
+    assert "accepted_advisories" not in gate.details
+
+
 def test_scanner_exclusions_are_deterministic(tmp_path, monkeypatch):
     """SEC-001: same inputs + same committed config → byte-identical results across runs."""
     _secret_report(monkeypatch, '[{"RuleID":"github-pat","File":"dist/app.js","StartLine":1}]')
@@ -377,6 +454,36 @@ def test_scan_config_loader_parses_per_tool_and_drops_non_strings(tmp_path):
     assert cfg["dependency_scan"] == {"ignore": [], "ignore_rules": []}
 
 
+def test_scan_advisories_loader_normalizes_and_drops_malformed(tmp_path):
+    """The loader keeps only mapping entries with a non-empty string id, stringifies an
+    unquoted YAML date `until`, and yields [] for a missing/malformed file or section."""
+    s = Settings(root=tmp_path)
+    assert s.load_scan_advisories() == []  # absent file
+    s.scan_config_path.parent.mkdir(parents=True)
+    s.scan_config_path.write_text(
+        "version: 1\n"
+        "dependency_scan:\n"
+        "  ignore: []\n"
+        "  advisories:\n"
+        "    - id: GHSA-aaaa\n"
+        "      reason: dev-only\n"
+        "      until: 2026-12-31\n"  # unquoted — YAML parses it as a date object
+        "    - id: '  '\n"
+        "      reason: blank id is dropped\n"
+        "    - not-a-mapping\n"
+        "    - id: GHSA-bbbb\n",
+        encoding="utf-8",
+    )
+    assert s.load_scan_advisories() == [
+        {"id": "GHSA-aaaa", "reason": "dev-only", "until": "2026-12-31"},
+        {"id": "GHSA-bbbb", "reason": "", "until": ""},
+    ]
+    s.scan_config_path.write_text(
+        "version: 1\ndependency_scan:\n  advisories: not-a-list\n", encoding="utf-8"
+    )
+    assert s.load_scan_advisories() == []  # malformed advisories key
+
+
 def test_init_seeds_scan_yaml_and_never_clobbers(tmp_path):
     """`3pwr init` seeds scan.yaml with the default ignore set and keeps a hand-edited one."""
     s = Settings(root=tmp_path)
@@ -404,7 +511,10 @@ def test_gate_dispatch_threads_scan_ignores_into_each_scanner(tmp_path, monkeypa
     (tp / "config" / "scan.yaml").write_text(
         "version: 1\n"
         "secret_scan:\n  ignore: ['**/dist/**']\n  ignore_rules: [generic-api-key]\n"
-        "dependency_scan:\n  ignore: ['**/node_modules/**']\n"
+        "dependency_scan:\n"
+        "  ignore: ['**/node_modules/**']\n"
+        "  advisories:\n"
+        "    - {id: GHSA-xxxx, reason: dev-only, until: '2999-01-01'}\n"
         "sast:\n  ignore: ['**/.next/**']\n",
         encoding="utf-8",
     )
@@ -420,8 +530,8 @@ def test_gate_dispatch_threads_scan_ignores_into_each_scanner(tmp_path, monkeypa
         seen["sast"] = list(ignore)
         return GateResult(gate="sast", status=STATUS_PASS)
 
-    def fake_dep(target, ignore=()):
-        seen["dependency_scan"] = list(ignore)
+    def fake_dep(target, ignore=(), advisories=()):
+        seen["dependency_scan"] = (list(ignore), [dict(a) for a in advisories])
         return GateResult(gate="dependency_scan", status=STATUS_PASS)
 
     def fake_secret(target, changed=None, ignore=(), ignore_rules=()):
@@ -434,5 +544,8 @@ def test_gate_dispatch_threads_scan_ignores_into_each_scanner(tmp_path, monkeypa
     v = run_gates(Settings(root=tmp_path), proj, tier="T", spec_path=None, adapter_name="a")
     assert v.result == STATUS_PASS
     assert seen["sast"] == ["**/.next/**"]
-    assert seen["dependency_scan"] == ["**/node_modules/**"]
+    assert seen["dependency_scan"] == (
+        ["**/node_modules/**"],
+        [{"id": "GHSA-xxxx", "reason": "dev-only", "until": "2999-01-01"}],
+    )
     assert seen["secret_scan"] == (["**/dist/**"], ["generic-api-key"])

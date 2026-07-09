@@ -70,6 +70,11 @@ def cmd_deviation(args: argparse.Namespace) -> int:
     if not args.approver:
         print("error: --approver is required — a human accepts the deviation", file=sys.stderr)
         return EXIT_USAGE
+    if not (args.note or "").strip():
+        # A signed acceptance of risk with no stated reason is not auditable. Recorded
+        # deviations already in the ledger stay honoured — the ledger is never rewritten.
+        print('error: a deviation must state a reason — pass --note "<why>"', file=sys.stderr)
+        return EXIT_USAGE
     allowed = set(GATE_ORDER) | set(deviations.DEVIATABLE_REQUIREMENTS)
     unknown = sorted(set(args.gate) - allowed)
     if unknown:

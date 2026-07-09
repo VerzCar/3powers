@@ -86,3 +86,48 @@ def test_go_adapter_is_detected_on_go_mod(tmp_path):
     proj.mkdir()
     (proj / "go.mod").write_text("module example.com/x\n\ngo 1.22\n", encoding="utf-8")
     assert adapters.detect_adapter(_repo_settings(), proj) == "go"
+
+
+# --------------------------------------------------------------- plan 035 Track A: biome split
+def test_biome_detect_rules_are_format_only_and_lint_only():
+    """Plan 035 Track A: the biome detection specs are formatter-only / linter-only —
+    a gate named format never lints and a gate named lint never formats."""
+    biome = {r.gate: r.spec for r in adapters.DETECT_RULES if r.tool == "biome"}
+    assert biome["format"]["check_cmd"] == "npx --no-install @biomejs/biome format ."
+    assert biome["format"]["fix_cmd"] == "npx --no-install @biomejs/biome format --write ."
+    assert biome["lint"]["check_cmd"] == "npx --no-install @biomejs/biome lint ."
+    assert biome["lint"]["fix_cmd"] == "npx --no-install @biomejs/biome lint --write ."
+
+
+def test_typescript_adapter_manifest_splits_biome_format_and_lint():
+    """Plan 035 Track A: the shipped TS adapter maps format→`biome format` and
+    lint→`biome lint` (no combined `ci`/`check` command on either gate)."""
+    gates_ = adapters.load_adapter(_repo_settings(), "typescript")["gates"]
+    assert gates_["format"]["check_cmd"] == "npx --no-install @biomejs/biome format ."
+    assert gates_["format"]["fix_cmd"] == "npx --no-install @biomejs/biome format --write ."
+    assert gates_["lint"]["cmd"] == "npx --no-install @biomejs/biome lint ."
+    assert gates_["lint"]["fix_cmd"] == "npx --no-install @biomejs/biome lint --write ."
+
+
+def test_eslint_repo_resolves_biome_format_and_eslint_lint(tmp_path):
+    """Plan 035 Track A: on a repo with both biome and ESLint configs, biome formats and
+    ESLint owns lint — no double-linting."""
+    proj = tmp_path / "both"
+    proj.mkdir()
+    (proj / "biome.json").write_text("{}", encoding="utf-8")
+    (proj / "eslint.config.js").write_text("", encoding="utf-8")
+    found = adapters.detect_native_tools(proj)
+    assert found["format"][0] == "biome"
+    assert "biome format" in found["format"][1]["check_cmd"]
+    assert found["lint"][0] == "eslint"
+
+
+def test_biome_only_repo_resolves_lint_to_biome_lint(tmp_path):
+    """Plan 035 Track A: a biome-only repo still lints — via `biome lint`, not `format`."""
+    proj = tmp_path / "solo"
+    proj.mkdir()
+    (proj / "biome.json").write_text("{}", encoding="utf-8")
+    found = adapters.detect_native_tools(proj)
+    assert found["lint"][0] == "biome"
+    assert "biome lint" in found["lint"][1]["check_cmd"]
+    assert "biome format" in found["format"][1]["check_cmd"]

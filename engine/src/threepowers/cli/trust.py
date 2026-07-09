@@ -308,13 +308,13 @@ def cmd_advance(args: argparse.Namespace) -> int:
     if not last_verdict:
         reasons.append("no enforced verdict recorded")
     elif last_verdict.get("payload", {}).get("result") != STATUS_PASS:
-        red_gates = {
-            g["gate"]
-            for g in last_verdict.get("payload", {}).get("gates", [])
-            if g.get("status") == "fail"
-        }
-        covered = deviations.covered_gates(active, last_verdict.get("spec_id"))
-        uncovered = sorted(red_gates - covered)
+        # The shared coverage decision: `run` consults the same helper at Verify, so the
+        # two enforcement points cannot drift.
+        verdict_payload = last_verdict.get("payload", {})
+        red_gates = deviations.red_gates(verdict_payload)
+        uncovered = sorted(
+            deviations.uncovered_red_gates(verdict_payload, active, last_verdict.get("spec_id"))
+        )
         if uncovered:
             reasons.append(f"latest verdict is red on un-deviated gate(s): {', '.join(uncovered)}")
         else:
