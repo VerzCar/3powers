@@ -137,6 +137,16 @@ def _verbosity(args: argparse.Namespace) -> str:
     )
 
 
+def _layout(args: argparse.Namespace) -> str:
+    """The effective output layout for this command: ``normal`` | ``compact``.
+
+    Read from the ``ui.yaml`` ``layout`` preference (an unrecognized value falls back to
+    ``normal``). Presentation only — it never touches the ``--json`` payload or a verdict."""
+    prefs, _ = _resolve_ui(args)
+    lay = prefs.get("layout", "normal")
+    return lay if lay in ("normal", "compact") else "normal"
+
+
 def _compose(
     args: argparse.Namespace,
     st: style.Styler,
@@ -150,7 +160,9 @@ def _compose(
 
     ``title`` renders a self-identifying header (hidden at ``quiet``); ``rows`` are the core result
     lines (always shown); ``extra`` are verbose-only detail lines. Detail grows monotonically
-    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload."""
+    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload. Under a ``compact``
+    layout the whitespace-only separator lines are dropped for a denser view; ``normal`` keeps the
+    output byte-identical to before the layout knob existed."""
     v = _verbosity(args)
     out: list[str] = []
     if title and v != "quiet":
@@ -158,7 +170,10 @@ def _compose(
     out.extend(rows or [])
     if v == "verbose":
         out.extend(extra or [])
-    return "\n".join(out)
+    text = "\n".join(out)
+    if _layout(args) == "compact":
+        text = "\n".join(ln for ln in text.split("\n") if ln.strip())
+    return text
 
 
 def _git_out(root: Path, args: list[str]) -> str:
@@ -260,17 +275,34 @@ def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
     return default if not ans else ans in ("y", "yes")
 
 
-def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler] = None) -> str:
+def _format_verdict(
+    verdict, appended: Optional[dict], st: Optional[style.Styler] = None, run_id: str = ""
+) -> str:
     """Human-readable verdict: failing gate, class, and offending item — no transcript needed.
 
     ``st`` colorizes the status markers consistently with the rest of the CLI; a disabled
-    styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before.
+    styler (the default) leaves the plain ✓/✗/– glyphs. ``run_id`` is the run's numeric
+    feature-folder id (e.g. ``002``) — the primary, copy-pasteable identity shown as ``id=``;
+    the spec's front-matter prefix, when it differs, appears only as a clearly-labelled secondary
+    ``spec=`` field (never as the ``--id``/``--spec-id`` value, which it cannot resolve).
     Failure detail is no longer summarized in a bottom "failures:" block: each failed gate gets its
     own panel after the pipeline view instead."""
     st = st or style.Styler()
     result = verdict.result.upper()
-    head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
-    lines = [f"{head}  spec={verdict.spec_id or '?'} tier={verdict.tier} adapter={verdict.adapter}"]
+    head = "verdict " + (
+        st.paint(result, "bold", "green")
+        if verdict.result == "pass"
+        else st.paint(result, "bold", "red")
+    )
+    ident_parts: list[str] = []
+    if run_id:
+        ident_parts.append(f"id={run_id}")
+    if verdict.spec_id and verdict.spec_id != run_id:
+        ident_parts.append(f"spec={verdict.spec_id}")
+    if not ident_parts:
+        ident_parts.append("spec=?")
+    ident = " ".join(ident_parts)
+    lines = [f"{head}  {ident} tier={verdict.tier} adapter={verdict.adapter}"]
     for g in verdict.gates:
         extra = ""
         if g.gate == "diff_coverage" and g.details:

@@ -228,6 +228,23 @@ def test_implement_template_makes_the_coding_gate_mandatory():
         assert "Change summary" in text, base
 
 
+def test_implement_template_authors_the_business_changelog(tmp_path):
+    """Track F: both implement.agent.md copies instruct the coder to AUTHOR the run's
+    business-readable changelog (a `## Business changelog` section grouped Added/Changed/Fixed,
+    written for a non-engineer and traced to requirement ids) which the engine then validates and
+    places as changelog.md — no longer merely handing the engine a report to fold into a table."""
+    for base in (BUNDLED, REPO / ".3powers" / "templates" / "agents"):
+        text = (base / "implement.agent.md").read_text(encoding="utf-8")
+        assert "## Business changelog" in text, base
+        assert "non-engineer" in text, base
+        for section in ("### Added", "### Changed", "### Fixed"):
+            assert section in text, (base, section)
+        # the agent authors it; the engine validates coverage + places it (author-then-validate)
+        assert "validates" in text and "covered" in text, base
+        # the hand-maintained top-level CHANGELOG.md stays out of scope
+        assert "top-level `CHANGELOG.md`" in text and "never touch it" in text, base
+
+
 def test_plan_surfaces_carry_no_judicial_label_or_model_family_table():
     """AGENTX-FR-002 (de-judicialized plan doc): the plan agent template (both copies), the built-in
     plan prompt body, and the plan document template carry no "Judicial" label and no

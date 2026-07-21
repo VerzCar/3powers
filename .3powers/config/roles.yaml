@@ -36,3 +36,14 @@ roles:
   # coder:  { model_family: "openai", model: "openai/gpt-4o" }   # add `model` for diversity_level: model
   oracle:   { model_family: "anthropic", require_dispatch: false }  # judiciary — SHOULD differ from `coder`
   reviewer: { model_family: "google" }      # residual review (arrives v0.5)
+
+# Optional, additive: pin a CHEAPER sub-agent model per stage/step so research and fan-out sub-work
+# costs less, while each stage's MAIN agent keeps its role model above. Keyed by step (discovery,
+# specify, clarify, plan, tasks, oracle, implement). UNSET CHANGES NOTHING — dispatch is byte-identical.
+# Values are model ids from .3powers/config/models.yaml for the dispatching integration; an unlisted
+# id still works (BYOK) and only warns. Delivery is backend-neutral: a backend whose manifest declares
+# no sub-agent transport (see `subagent_model` in .3powers/agents/<name>.yaml) simply ignores it.
+# subagent_models:
+#   discovery: anthropic/claude-haiku-4-5
+#   plan:      anthropic/claude-haiku-4-5
+#   implement: anthropic/claude-haiku-4-5

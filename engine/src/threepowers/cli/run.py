@@ -8,6 +8,7 @@ import hashlib
 import json
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -16,6 +17,7 @@ import threepowers.cli as _cli
 from .. import (
     agents,
     artifacts,
+    autofix,
     completion,
     deviations,
     gitflow,
@@ -453,6 +455,91 @@ def _native_verdict(
     return "pass" if verdict.result == STATUS_PASS else "fail"
 
 
+def _auto_fix_loop(
+    s: Settings,
+    args: argparse.Namespace,
+    *,
+    tier: str,
+    kinds: list[str],
+    feature_dir: Optional[Path],
+    ledger: Ledger,
+    sk,
+    coder,
+    retries: int,
+    initial_verdict: dict[str, Any],
+    out: dict[str, Any],
+    report: Callable[[str], None] = lambda _m: None,
+) -> autofix.AutoFixResult:
+    """Drive the bounded, code-only auto-fix loop over a red Verify verdict.
+
+    Wires the pure :func:`autofix.run_loop` to this run's collaborators: it dispatches the run's
+    already-constructed ``coder`` as a fresh session with the failed-gate hand-back prompt, and
+    re-runs the deterministic gate suite via :func:`_native_verdict` — which records an honest signed
+    verdict on every pass. It performs NO other action: it never records a deviation/advisory, edits
+    gate config, or mutates a verdict. ``out`` receives the latest verdict dict on each re-check so
+    the caller can read the final (green or still-red) verdict. Returns the loop's outcome."""
+    cfg = s.auto_fix()
+
+    def _dispatch(prompt: str, scope: Sequence[str]) -> bool:
+        spec_path = _resolve_run_spec(s, args, feature_dir)
+        spec_text = _dispatch_spec_text(s, "implement", spec_path)
+        result, _attempts = runnermod.dispatch_with_retry(
+            lambda: coder.dispatch(
+                "implement",
+                "Build",
+                spec_text=spec_text,
+                context=prompt,
+                file_scope="\n".join(scope),
+            ),
+            retries=retries,
+        )
+        return result.ok
+
+    def _recompute() -> tuple[str, dict[str, Any]]:
+        outcome = _native_verdict(
+            s, args, tier, kinds, ledger=ledger, sk=sk, feature_dir=feature_dir, out=out
+        )
+        return outcome, out.get("verdict") or {}
+
+    return autofix.run_loop(
+        verdict=initial_verdict,
+        max_attempts=cfg.max_attempts,
+        scope_to_failed=cfg.scope_to_failed,
+        dispatch=_dispatch,
+        recompute=_recompute,
+        snapshot=lambda: runnermod.worktree_state(s.root),
+        report=report,
+    )
+
+
+def build_coder_runner(
+    s: Settings, args: argparse.Namespace, *, spec_id: str, stream: bool = False
+):
+    """Build the coder backend exactly as a live run does — for the standalone ``3pwr gate fix``.
+
+    Resolves the coder integration (``--integration``/``--agent`` wins, else
+    ``roles.coder.integration``) and constructs its dispatch backend with a transcript sink keyed by
+    ``spec_id``. Returns ``(runner, agent_name)``; ``(None, "")`` when no coder integration is
+    configured, so the caller can refuse with an actionable message. Raises ``FileNotFoundError``
+    when the resolved agent has no manifest."""
+    coder_agent = _resolve_coder_agent(s, args)
+    if not coder_agent:
+        return None, ""
+    manifest = agents.load_agent(s, coder_agent)
+    timeout = _dispatch_timeout(s, args)
+    sink = transcripts.TranscriptSink(s.root, spec_id)
+    coder = _make_agent_runner(
+        s,
+        manifest,
+        model=str(s.role("coder").get("model") or ""),
+        intent=getattr(args, "intent", "") or "",
+        timeout=timeout,
+        stream=stream,
+        transcripts_sink=sink,
+    )
+    return coder, coder_agent
+
+
 def _deviation_proceed_notices(
     verdict_payload: dict[str, Any], entries: list[dict[str, Any]], spec_id: str
 ) -> Optional[list[str]]:
@@ -490,8 +577,15 @@ def _dispatch_retries(s: Settings, args: argparse.Namespace) -> int:
 
 
 def _run_stream(args: argparse.Namespace) -> bool:
-    """Stream agent output live only on a real TTY and not under --json."""
-    return bool(sys.stdout.isatty()) and not args.json
+    """Whether to echo agent output live.
+
+    On by default only on a real TTY and never under ``--json`` (pipes/JSON stay clean). An
+    explicit ``--stream`` opts in off a TTY as well — the persisted transcript is always written
+    either way — but ``--json`` still wins, so machine-readable output is never interleaved with
+    live event noise."""
+    if args.json:
+        return False
+    return bool(sys.stdout.isatty()) or bool(getattr(args, "stream", False))
 
 
 def _make_agent_runner(
@@ -504,6 +598,8 @@ def _make_agent_runner(
     stream: bool,
     transcripts_sink: Optional[transcripts.TranscriptSink] = None,
     echo: Optional[TextSink] = None,
+    subagent_models: Optional[dict[str, str]] = None,
+    raw_events: bool = False,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI
     (:class:`CliAgentRunner`) or, when the manifest declares ``mode: async-hosted``, the async hosted
@@ -511,7 +607,11 @@ def _make_agent_runner(
     DispatchResult`` contract, so the
     verdict is judged identically. The transcript sink persists each local attempt's
     output; a hosted backend's output lives with its hosting service. ``echo`` routes the
-    streamed agent conversation above the run's live bar instead of raw stdout."""
+    streamed agent conversation above the run's live bar instead of raw stdout.
+    ``subagent_models`` (roles.yaml, keyed by step) threads a per-stage cheaper sub-agent model into
+    the local dispatch; a hosted backend has no such mechanism and ignores it (backend-neutral).
+    ``raw_events`` (from ``--raw-events``) shows a stream-json backend's underlying events verbatim
+    instead of the rendered assistant text deltas."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -527,6 +627,8 @@ def _make_agent_runner(
         transcripts=transcripts_sink,
         echo_out=echo,
         echo_err=echo,
+        subagent_models=subagent_models,
+        raw_events=raw_events,
     )
 
 
@@ -684,6 +786,11 @@ def _dispatch_phased(
     # Advisory per-phase usage: distinct keys per phase, so concurrent batch threads never
     # collide. Feeds the additive ledger fields and the progress table — never the verdict.
     tokens_by_phase: dict[int, int] = {}
+    cost_by_phase: dict[int, float] = {}
+    # Each phase's authored completion report, keyed by phase index — combined in phase order into
+    # the stage's business changelog prose so an N-phase run's changelog covers every phase's
+    # requirements (the collector below folds them into one record).
+    reports_by_phase: dict[int, str] = {}
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
         ctx = phases.handoff_context(
@@ -710,6 +817,11 @@ def _dispatch_phased(
         attempt_counts.append(attempts)
         if res.tokens is not None:
             tokens_by_phase[ph.index] = res.tokens
+        if res.cost is not None:
+            cost_by_phase[ph.index] = res.cost
+        rep = _implement_report(s, res.transcript)
+        if rep:
+            reports_by_phase[ph.index] = rep
         _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
@@ -720,7 +832,15 @@ def _dispatch_phased(
         tok = tokens_by_phase.get(int(r["phase"]))
         if tok is not None:
             r["tokens"] = tok
+        # Additive per-phase cost field, in step with tokens — present only when reported.
+        pcost = cost_by_phase.get(int(r["phase"]))
+        if pcost is not None:
+            r["cost"] = pcost
     stage_tokens = sum(tokens_by_phase.values()) if tokens_by_phase else None
+    stage_cost = sum(cost_by_phase.values()) if cost_by_phase else None
+    # The stage's business changelog prose: every phase's authored report in deterministic phase
+    # order, so the collected changelog covers all phases' requirements.
+    combined_report = "\n\n".join(reports_by_phase[i] for i in sorted(reports_by_phase))
     ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
@@ -743,7 +863,9 @@ def _dispatch_phased(
             transcript=sink.rel_dir if sink is not None else "",
             artifact_paths=paths or [],
             phases=results,
+            report=combined_report,
             tokens=stage_tokens,
+            cost=stage_cost,
         )
 
     if not prun.ok:
@@ -815,6 +937,7 @@ def _native_runner(
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
     verdict_box: Optional[dict[str, Any]] = None,
     progress_reporter: Optional[progress.Reporter] = None,
+    mode: str = "auto",
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent, verify
     its declared artifact, retry/timeout-bound the dispatch,
@@ -835,9 +958,16 @@ def _native_runner(
     coder_agent = _resolve_coder_agent(s, args)
     oracle_agent = runpreflight.resolve_oracle_integration(s)
     coder_manifest = agents.load_agent(s, coder_agent)
+    # Optional per-stage cheaper sub-agent models (roles.yaml `subagent_models`); an empty map
+    # changes nothing. Surface a likely-typo model once here (advisory, never a gate) before the
+    # walk, then thread the map into both role runners keyed by step.
+    subagent_models = s.subagent_models()
+    for warning in s.subagent_model_warnings():
+        print(f"  ⚠ {warning}", file=sys.stderr)
     # One transcript sink per run, shared by both roles: every stage attempt's output is persisted
     # under .3powers/runs/<spec-id>/, credential-redacted.
     sink = transcripts.TranscriptSink(s.root, spec_id)
+    raw_events = bool(getattr(args, "raw_events", False))
     coder = _make_agent_runner(
         s,
         coder_manifest,
@@ -847,6 +977,8 @@ def _native_runner(
         stream=stream,
         transcripts_sink=sink,
         echo=echo,
+        subagent_models=subagent_models,
+        raw_events=raw_events,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -861,6 +993,8 @@ def _native_runner(
         stream=stream,
         transcripts_sink=sink,
         echo=echo,
+        subagent_models=subagent_models,
+        raw_events=raw_events,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
@@ -987,21 +1121,43 @@ def _native_runner(
                 if step == "implement":
                     # the record links the full produced change set
                     linked = produced_box.get("paths") or result.artifact_paths
+                    # The agent-authored business changelog prose: the phased collector's combined
+                    # per-phase reports, or the single session's report from its transcript.
+                    report = result.report or _implement_report(s, result.transcript)
                 else:
                     linked = result.artifact_paths  # the contract-matched oracle test paths
-                rel = completion.write_record(
-                    s.root,
-                    feature_dir,
-                    step,
-                    spec_id=spec_id,
-                    linked=linked,
-                    phases=result.phases or None,
-                    phase_scopes=scopes,
-                    phase_requirements={ph.index: phases.requirement_ids(ph) for ph in phase_list},
-                    work_kinds=wk.kinds,
-                    report=_implement_report(s, result.transcript) if step == "implement" else "",
-                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
-                )
+                    report = ""
+                try:
+                    rel = completion.write_record(
+                        s.root,
+                        feature_dir,
+                        step,
+                        spec_id=spec_id,
+                        linked=linked,
+                        phases=result.phases or None,
+                        phase_scopes=scopes,
+                        phase_requirements={
+                            ph.index: phases.requirement_ids(ph) for ph in phase_list
+                        },
+                        work_kinds=wk.kinds,
+                        report=report,
+                        on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
+                    )
+                except completion.ChangelogValidationError as exc:
+                    # A bad business changelog fails the step with a named, actionable class —
+                    # never silently emitted. The implement agent must re-author it.
+                    return runnermod.StageResult(
+                        step=step,
+                        stage=stage,
+                        ok=False,
+                        agent=agent_name,
+                        model=str(backend.model),
+                        attempts=result.attempts,
+                        duration_s=result.duration_s,
+                        outcome=completion.CLASS_CHANGELOG_INVALID,
+                        detail="changelog validation failed — " + "; ".join(exc.findings),
+                        transcript=result.transcript,
+                    )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)
                 if rel not in produced_box.get("paths", []):
@@ -1023,6 +1179,10 @@ def _native_runner(
                 # Additive advisory field (never in the verdict): the stage's agent-reported
                 # token usage; absent when the backend does not report usage.
                 stage_payload["tokens"] = result.tokens
+            if result.cost is not None:
+                # Additive advisory field, in step with tokens: the stage's agent-reported run
+                # cost (USD); absent when the backend reports no cost.
+                stage_payload["cost"] = result.cost
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
             if progress_reporter is not None:
                 # The stage-complete trigger, BEFORE the post-stage commit below,
@@ -1037,8 +1197,19 @@ def _native_runner(
                             }
                         )
                     )
+                    _progress_safe(
+                        lambda: progress_reporter.phase_costs(
+                            {
+                                int(ph["phase"]): float(ph["cost"])
+                                for ph in result.phases
+                                if ph.get("cost") is not None
+                            }
+                        )
+                    )
                 _progress_safe(
-                    lambda: progress_reporter.stage_completed(step, stage, tokens=result.tokens)
+                    lambda: progress_reporter.stage_completed(
+                        step, stage, tokens=result.tokens, cost=result.cost
+                    )
                 )
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (superseding the earlier
@@ -1106,6 +1277,10 @@ def _native_runner(
                     # The same additive advisory token field as the stage entry — never a
                     # verdict input.
                     payload["tokens"] = result.tokens
+                if result.cost is not None:
+                    # The same additive advisory cost field as the stage entry — never a
+                    # verdict input.
+                    payload["cost"] = result.cost
                 ledger.append("run", payload, sk, spec_id=spec_id)
         if result.ok and feature_dir is not None and completion.is_producing(step):
             # The deterministic completion gate: the stage's declared markdown must
@@ -1145,6 +1320,64 @@ def _native_runner(
             feature_dir=feature_dir,
             out=box,
         )
+        if outcome == "fail" and mode == "auto":
+            # Bounded, code-only auto-remediation, tried FIRST — before the deviation-proceed check
+            # below and entirely independent of it: it only hands the red gates back to the coder and
+            # re-runs the suite (recording an honest signed verdict each pass), never a deviation, a
+            # config edit, or a verdict mutation. A signed deviation stays the human's last resort for
+            # a residual red. `gate_gaming` stays the backstop. Only entered when the verdict names
+            # failed gates to hand back and the loop is enabled in auto mode.
+            redv = box.get("verdict") or {}
+            if s.auto_fix().enabled and autofix.failed_gate_names(redv):
+                report = (
+                    (lambda m: None)
+                    if getattr(args, "json", False)
+                    else (lambda m: print(f"  ↳ {m}"))
+                )
+                fix = _auto_fix_loop(
+                    s,
+                    args,
+                    tier=tier,
+                    kinds=wk.kinds,
+                    feature_dir=feature_dir,
+                    ledger=ledger,
+                    sk=sk,
+                    coder=coder,
+                    retries=retries,
+                    initial_verdict=redv,
+                    out=box,
+                    report=report,
+                )
+                if fix.fixed:
+                    outcome = "pass"
+                    # The coder's remediation lands as the verify stage's commit on the run branch,
+                    # so no run-produced change is left uncommitted. Best-effort — a commit problem
+                    # warns, never fails the now-green run.
+                    code_fixed = sorted({p for a in fix.attempts for p in a.changed_files})
+                    if code_fixed and run_branch and not commit_relaxed:
+                        paths = list(code_fixed)
+                        if s.ledger_path.is_file():
+                            ledger_rel = str(s.ledger_path.relative_to(s.root))
+                            if ledger_rel not in paths:
+                                paths.append(ledger_rel)
+                        commit = gitflow.commit_stage(
+                            s.root,
+                            paths,
+                            message=gitflow.stage_commit_message(
+                                spec_id, "verify", "apply auto-fix code remediation"
+                            ),
+                            author_name=prefs.author_name,
+                            author_email=prefs.author_email,
+                        )
+                        if commit.error:
+                            print(
+                                f"warning: auto-fix remediation not committed — {commit.error}",
+                                file=sys.stderr,
+                            )
+                else:
+                    # Stash the given-up loop so the terminal gate-red branch can print the
+                    # step-by-step human remediation summary after the live bar has closed.
+                    box["auto_fix"] = fix
         if outcome == "fail":
             # The recorded verdict stays honestly red; only the PROCEED decision consults the
             # active signed deviations — the same shared coverage helper `advance` uses, so a
@@ -1227,6 +1460,7 @@ def _run_make_runner(
         on_progress=on_progress,
         verdict_box=verdict_box,
         progress_reporter=progress_reporter,
+        mode=mode,
     )
 
 
@@ -1890,6 +2124,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             )
             print("  " + rst.dim("you still approve the spec"))
+            # Surface where the full per-attempt agent output lands: the persisted transcript is
+            # ground truth (always written, even when the live view is off), so the run is
+            # followable after the fact — especially off a TTY / without --stream.
+            print("  " + rst.dim(f"full agent output: {transcripts.run_dir_rel(spec_id)}/"))
         runner = _make_runner(0)
         _record_dispatch(0)  # provenance for the first segment (up to the spec-approval gate)
     first_resuming = False  # start_index already positions native/sim runners; resume==run for both
@@ -2048,6 +2286,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"`3pwr gate run --id {spec_id}`, fix the failing gate(s), then "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
+            # When the auto-fix loop tried and gave up, print the step-by-step human remediation
+            # summary — the per-gate panels plus a "what I tried / what's left for you" block.
+            # Human output only; never in the --json payload.
+            fix = verdict_box.get("auto_fix")
+            if fix is not None and not args.json:
+                human += "\n" + autofix.give_up_summary(
+                    fix, verdict_box.get("verdict") or {}, rst, run_id=spec_id
+                )
             _print(
                 {"status": "gates_red", "stage": reached, "spec_id": spec_id, "stages": _stages()},
                 args.json,
@@ -2258,7 +2504,7 @@ def cmd_abort(args: argparse.Namespace) -> int:
 
 def _register_status(sub: SubParsers, common: AddCommon) -> None:
     stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
-    stp.add_argument("--spec-id", dest="spec_id")
+    stp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     stp.set_defaults(func=cmd_status)
 
 
@@ -2272,7 +2518,9 @@ def _register_git(sub: SubParsers, common: AddCommon) -> None:
             "(clean-start guarded)",
         )
     )
-    gits.add_argument("--spec-id", dest="spec_id", required=True)
+    gits.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     gits.add_argument(
         "--feature",
         help="the run's feature folder (specs-src/<NNN>-<slug>); default: the ledger's recorded binding",
@@ -2347,13 +2595,31 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         "(default: the configured value, or 1)",
     )
     rnp.add_argument(
+        "--stream",
+        action="store_true",
+        help="echo the agent's live output even when stdout is not a TTY (still off under --json; "
+        "the full per-attempt transcript is always written under .3powers/runs/)",
+    )
+    rnp.add_argument(
+        "--raw-events",
+        dest="raw_events",
+        action="store_true",
+        help="show a stream-json backend's underlying events verbatim instead of the rendered "
+        "assistant text (diagnostic)",
+    )
+    rnp.add_argument(
         "--no-auto-commit",
         dest="no_auto_commit",
         action="store_true",
         help="SUPERSEDED: the per-stage commit is mandatory; this flag only warns. "
         "Relax on the record: `3pwr deviation --gate git_stage_commit`",
     )
-    rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
+    rnp.add_argument(
+        "--spec-id",
+        dest="spec_id",
+        help="the run's numeric id, e.g. 002 (default: derived from the allocated feature "
+        "folder; resolves to specs-src/<NNN>-*/)",
+    )
     rnp.add_argument(
         "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'
     )
@@ -2410,6 +2676,8 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
 
 def _register_abort(sub: SubParsers, common: AddCommon) -> None:
     abp = common(sub.add_parser("abort", help="record an abort for a spec's run"))
-    abp.add_argument("--spec-id", dest="spec_id", required=True)
+    abp.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     abp.add_argument("--reason")
     abp.set_defaults(func=cmd_abort)

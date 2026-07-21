@@ -223,6 +223,67 @@ def _default_role_model(
     return fallback
 
 
+# The stages a chosen sub-agent model is applied to by default — the research/fan-out-heavy ones
+# where a cheaper sub-agent saves the most while each stage's MAIN agent keeps its role model.
+_SUBAGENT_STAGES = ("discovery", "plan", "implement")
+
+
+def _is_cheap_model(entry: dict[str, str]) -> bool:
+    """Whether a catalog entry looks cost-optimized (a cheaper tier), by its id/label tokens.
+
+    Advisory highlight only — it steers the default and the "(cheaper)" marker; a maintainer can
+    still pick any model. Matches the small, current families (Haiku/Flash/mini/lite/nano)."""
+    hay = f"{entry.get('model', '')} {entry.get('label', '')}".lower()
+    return any(tok in hay for tok in ("haiku", "flash", "mini", "lite", "nano"))
+
+
+def _offer_subagent_model(
+    s: Settings,
+    cat: dict[str, Any],
+    selected: list[str],
+    written: dict[str, Any],
+    *,
+    interactive: bool,
+) -> dict[str, Any]:
+    """Optionally pin a cheaper per-stage sub-agent model from the coder integration's catalog.
+
+    Additive and off by default: a non-interactive setup, an empty catalog, or declining the offer
+    leaves ``subagent_models`` unset — dispatch stays byte-identical. When a model is chosen it is
+    applied to the research/fan-out stages (:data:`_SUBAGENT_STAGES`), with the catalog's cheaper
+    models highlighted and defaulted. Dispatch configuration only — never a gate, verdict, ledger,
+    or diversity input."""
+    coder_intg = str(written.get("coder", {}).get("integration") or "").strip() or (
+        selected[0] if selected else ""
+    )
+    if not interactive or not coder_intg:
+        return {"status": "skipped", "models": {}}
+    entries = catalog.models_for(cat, coder_intg)
+    none_opt = "none — sub-agents use each stage's main model"
+    custom_opt = "custom (type a model id)"
+    options = [none_opt]
+    for e in entries:
+        options.append(f"{e['model']}  (cheaper)" if _is_cheap_model(e) else e["model"])
+    options.append(custom_opt)
+    cheap = next((e["model"] for e in entries if _is_cheap_model(e)), "")
+    # Default to "none": sub-agent steering is opt-in, so declining leaves dispatch byte-identical.
+    # The catalog's cheaper models stay highlighted so the cost win is one keystroke away.
+    pick = _ask_choice(
+        f"Cheaper sub-agent model for research/fan-out sub-work ({coder_intg})? (optional)",
+        options,
+        none_opt,
+        interactive=interactive,
+    )
+    if pick == none_opt:
+        model = ""
+    elif pick == custom_opt:
+        model = _ask("  sub-agent model id (free-form / BYOK)", cheap, interactive=interactive)
+    else:
+        model = pick.split("  (cheaper)")[0].strip()
+    mapping = {stage: model for stage in _SUBAGENT_STAGES} if model else {}
+    scaffold.set_subagent_models(s, mapping)
+    return {"status": "written" if mapping else "none", "models": mapping}
+
+
 def _roles_setup_flow(
     s: Settings,
     st: style.Styler,
@@ -371,6 +432,9 @@ def _roles_setup_flow(
     )
     scaffold.set_diversity_level(s, level)
     warned = _warn_diversity(s, st)
+    # 4) Optional: a cheaper per-stage sub-agent model (additive; off by default). The main stage
+    #    agents keep their role models — this only steers each stage's sub-agents.
+    subagent = _offer_subagent_model(s, cat, selected, written, interactive=interactive)
     return {
         "integration": (
             written.get("coder", {}).get("integration") or (selected[0] if selected else "")
@@ -379,6 +443,7 @@ def _roles_setup_flow(
         "roles": written,
         "diversity_level": level,
         "diversity_warned": warned,
+        "subagent_models": subagent.get("models", {}),
     }
 
 
@@ -413,6 +478,13 @@ def cmd_config_roles_setup(args: argparse.Namespace) -> int:
             )
         else:
             rows.append(st.status_row("info", f"{role}: kept — {info.get('model') or 'unset'}"))
+    subagent = report.get("subagent_models") or {}
+    if subagent:
+        stages = ", ".join(sorted(subagent))
+        model = next(iter(subagent.values()))
+        rows.append(
+            st.status_row("pass", f"sub-agent model: {model} for {stages} (main agents unchanged)")
+        )
     rows.append(
         st.status_row(
             "info",

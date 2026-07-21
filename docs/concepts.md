@@ -193,9 +193,10 @@ backend to resume a prior session; a backend that could restore state gets its n
 its manifest. Parallelism is two-level: the *engine* dispatches `[P]`-marked phases with disjoint
 file scopes concurrently as separate fresh sessions, while `[P]`-marked *tasks inside* a phase must
 be executed via the agent's own sub-agents. Cost stays visible without touching determinism: the
-agent-reported token usage per stage and phase is recorded additively — in `progress.md`, the signed
-ledger's run entries, and the `--json` results — and shows as unknown when a backend doesn't report
-it. Tokens never enter the gates or the verdict. See
+agent-reported token usage — and, where the backend reports it, the run's dollar cost — per stage
+and phase is recorded additively — in `progress.md`, the signed ledger's run entries, and the
+`--json` results — and shows as unknown when a backend doesn't report it. Neither tokens nor cost
+enter the gates or the verdict. See
 [Engine Architecture](engine-architecture.md#session-freshness-and-cost-visibility).
 
 ## Agnostic by construction

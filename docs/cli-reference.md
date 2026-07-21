@@ -112,6 +112,27 @@ authoring the oracle in-IDE; enable it once the project adopts headless oracle a
 A judiciary role sharing the coder's model family only ever **warns** — diversity is recommended, never
 forced; proceed with `3pwr deviation --gate model_diversity …`.
 
+**Cheaper sub-agents per stage (`subagent_models`).** The setup also *optionally* offers a cheaper
+model for each stage's **sub-agents** — the research and fan-out sub-work a stage delegates — while the
+stage's **main** agent keeps its role model. Accepting pins the chosen model for the research-heavy
+stages (discovery, plan, implement) as an additive `subagent_models` map in `roles.yaml`, keyed by
+step (`discovery`, `specify`, `clarify`, `plan`, `tasks`, `oracle`, `implement`):
+```yaml
+# .3powers/config/roles.yaml  (additive; unset changes nothing)
+subagent_models:
+  discovery: anthropic/claude-haiku-4-5
+  plan:      anthropic/claude-haiku-4-5
+  implement: anthropic/claude-haiku-4-5
+```
+Delivery is **backend-neutral**: each stage's model is emitted only through the transport its agent
+manifest declares (`subagent_model` in `.3powers/agents/<name>.yaml`) — the engine never invents a
+flag. **Claude Code** carries it via `--agents` JSON (a per-sub-agent `model` field) and also honors the
+`CLAUDE_CODE_SUBAGENT_MODEL` environment variable. A backend whose manifest declares **no** such
+transport (e.g. the Codex reference manifest) simply **ignores** the entry and dispatches unchanged.
+Values are model ids from the integration's `models.yaml` catalog; an unlisted id still works (BYOK) and
+only prints an advisory typo warning. Leaving `subagent_models` unset makes every dispatch
+**byte-identical** to before the feature.
+
 ---
 
 ## Gates & verification
@@ -194,7 +215,8 @@ block, and one coder hand-back section follows the panels:
   command, when one is configured, stays on its own `↳ auto-fix:` line above.
 - *Hand back to your coding agent* — a copy-pasteable prompt naming the failed gates and their
   findings and instructing an honest fix ("never weaken a gate: fix the code, not the check"),
-  followed by the re-dispatch command `3pwr run --resume --spec-id <id>`.
+  followed by the re-dispatch command `3pwr run --resume --spec-id <NNN>`, carrying the run's
+  numeric feature-folder id so it resolves to `specs-src/<NNN>-*/`.
 - *Last resort* — the pre-filled
   `3pwr deviation --gate <gate> --approver <you> --note "<why>" [--until <date>]` command, under
   an explicit label that a deviation is only for a deliberate, justified exception — an
@@ -204,6 +226,24 @@ block, and one coder hand-back section follows the panels:
 The whole remediation surface is presentational and human output only: the deterministic
 verdict, the signed ledger entry, and the `--json` payload are byte-identical with or without
 it, and no model is ever called to produce it.
+
+**Colorized on a terminal.** On a color-capable TTY the verdict header and the failure panels
+render as a readable hierarchy: the verdict result reads `PASS` in bold green / `FAIL` in bold
+red; inside each panel the findings keep the default weight, `↳ what it means` is dimmed, the
+`↳ fix` / `↳ auto-fix` action is green, and the `↳ last resort` label and its `3pwr deviation`
+command are yellow — a warning, never the primary action. The coder hand-back header and the
+`re-dispatch:` line carry a distinct accent so the copy-paste block is easy to spot. Color is
+presentation only and centrally gated: it is forced off for `--json`, `--yes`, `NO_COLOR`, and any
+non-TTY (piped/CI) stream, so the machine payload and the plain-text bytes are unchanged. Set
+`color_mode: never` in `.3powers/config/ui.yaml` to keep human output plain everywhere, or
+`always` to force it on.
+
+**Denser output with `layout: compact`.** Setting `layout: compact` in
+`.3powers/config/ui.yaml` tightens the human output: the failure panels drop their surrounding
+padding and the blank separator lines inside the hand-back block are removed, so the panels and
+hand-back read as one dense block. `layout: normal` (the default) is unchanged. Like every
+`ui.yaml` preference it is presentation only — it never touches the verdict, the ledger, or the
+`--json` payload.
 
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
@@ -287,7 +327,8 @@ configured fix, prints `↳ auto-fixed by <tool>`, and re-checks: a passing re-c
 green and the fixed files join the run's produced set, so a `3pwr run` stage commit picks them up;
 a failing re-check reports normally. Auto-fix is never the default — produced output is never
 silently mutated — and a `fix_cmd` on any other gate (types, tests, mutation, …) is discarded and
-never executed.
+never executed. This flag is the deterministic, tool-driven format/lint fix; the coder-driven,
+code-only remediation loop for *any* red gate is `gate fix` (see below).
 
 **Scanner exclusions (`.3powers/config/scan.yaml`).** The three scanner gates — `secret_scan`,
 `dependency_scan`, and `sast` — honor an auditable, committed per-tool ignore config. Each tool
@@ -338,6 +379,48 @@ excluded, in both the human output and `--json`.
 > advisory acceptance — like any other trust configuration. The engine's core `ed25519-priv`
 > private-key check **always runs** and cannot be disabled by this file: the `secret_scan` globs
 > only shape its directory walk, and it still fires on key material anywhere outside them.
+
+### `gate fix` — bounded, code-only auto-remediation
+Runs the gate suite and, on a **red** verdict, hands the failing gates back to the configured coding
+agent through the same structured hand-back prompt the run path uses, re-runs the suite, and loops
+until the verdict is green or the attempt budget is exhausted. It is **code-only**: it only dispatches
+the coder (which edits code) and re-runs the gates. It **never** records a deviation, edits gate
+configuration, or mutates a verdict — every re-check records an honest signed verdict, so the trust
+spine sees each attempt. `gate_gaming` stays the backstop: if a coder attempt trips it (a weakened
+check — a deleted assertion, an inline suppression), the loop stops at once and hands off to you.
+- `--tier TIER` — risk tier (default: `Standard`).
+- `--adapter ADAPTER` — language adapter (default: auto-detect).
+- `--spec SPEC` / `--id NNN` — the governing spec, by path or feature-folder number (mutually exclusive).
+- `--integration AGENT` / `--agent NAME` — the coder backend (default: `roles.coder.integration`).
+- `--work-kind KIND` — shape the gate set for an inferred kind (repeatable; same semantics as `gate run`).
+- `--retries N` — dispatch retry budget per attempt (default: configured).
+- `--timeout SECONDS` — per-dispatch timeout.
+
+```bash
+3pwr gate fix --id <NNN> --tier Standard
+```
+
+Exit `0` when the suite is already green (`nothing to fix`) or the loop reached green; `1` when it
+gave up on a still-red verdict — where it prints the step-by-step **human remediation summary** (the
+per-gate failure panels plus a "what I tried / what's left for you" block, ending with the labelled
+last-resort option of a human-authored signed deviation); `4` when no coder integration is configured
+(set `roles.coder.integration`, or pass `--integration`). The loop's attempt budget and whether it is
+enabled on the run path come from `.3powers/config/auto-fix.yaml` (see below).
+
+**Loop configuration (`.3powers/config/auto-fix.yaml`).** Governs the harness's code-only
+remediation loop. `enabled` (default `true`) gates the **run-path** loop — a red Verify in `3pwr run`
+auto mode is handed back to the coder automatically before the run pauses; a standalone `gate fix`
+runs the loop regardless. `max_attempts` (default `3`, clamped to at least 1) bounds the coder
+attempts before the loop gives up to the human summary. `scope_to_failed` (default `false`) optionally
+narrows each dispatch to the failed gates' files. A missing or malformed file falls back to these
+defaults; it is advisory config only — never a gate, verdict, or ledger input.
+
+```yaml
+# .3powers/config/auto-fix.yaml
+enabled: true          # run-path loop on/off (a red Verify in `3pwr run` auto mode)
+max_attempts: 3        # coder attempts before giving up to the human summary
+scope_to_failed: false # scope each dispatch to the failed gates' files
+```
 
 ### `gate config show` — the effective gate configuration
 Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
@@ -553,9 +636,16 @@ Given/When/Then criterion; the engine validates it names every requirement and l
 test framework, and writes a visible structural stub when it is absent — the machine record of the
 actual oracle test paths lives in the signed ledger entries, and the runnable tests land under
 `tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, the run's
-engine-generated change record — grouped by phase and traced to requirement ids, linking the real
-code outputs at their real repo paths — which never touches the project's top-level `CHANGELOG.md`
-(features written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
+**business-readable** change record. The implement agent authors it as plain-language
+Added/Changed/Fixed prose for a non-engineer reader — what shipped and why it matters, each entry
+tracing to a requirement id — and the engine validates it the way it validates `oracle.md`: every
+requirement the run addressed must be covered, no foreign/internal requirement id may leak
+(OSS-readiness), and the Added/Changed/Fixed structure must be present; a validation miss fails the
+step with an actionable message rather than emitting a bad changelog. The engine places the authored
+prose as the document body and appends a clearly-separated, **additive machine-readable
+requirement→files trace** (one row per requirement id, grouped by phase) so anything that consumed
+the old table keeps its data. It never touches the project's top-level `CHANGELOG.md` (features
+written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
@@ -564,25 +654,41 @@ completion times, per-phase detail during a phased build, the current state, the
 copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
-**Token consumption (advisory).** When an agent backend reports its token usage (declared per
-manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
+**Token consumption and cost (advisory).** When an agent backend reports its token usage (declared
+per manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
 unit-aware parsing of `k`/`M`/comma-formatted counts), the run records the **real consumed** count —
 non-cached input plus output tokens — per stage and per phase, **additively**: a **Tokens** column in
 both `progress.md` tables (showing `—` — unknown — when a backend does not report), a `tokens` field
 on the `--json` per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases`
-(per phase result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was
-captured and are never renamed or removed; tokens never enter the gate suite or the deterministic
-verdict, whose bytes are identical whether or not usage was captured. Backends differ in what they
-can report: some text-mode totals are cache-inclusive (aider's "sent" includes the cached context;
-codex's plain-text total likewise), and a backend that reports nothing shows `—`. Where the backend
-supports it, a manifest can opt into structured output for the exact non-cached count: set
-`usage_mode: json` plus `usage_mode_args` — the backend's own flag, e.g. `--output-format json`
-(claude) or `--json` (codex). Off by default, preserving the live text stream.
+(per phase result), and `run`/`checkpoint` ledger payloads. A backend that also reports a run **cost**
+(declared via a `usage.cost_field` — a dotted path to the run's USD cost) records it the same way,
+in step: a **Cost** column beside Tokens in both `progress.md` tables (`—` when unknown, else
+`$0.0000`) and a `cost` field alongside `tokens` on the `--json` results and the signed `run`/`stage`,
+`run`/`phases`, and `run`/`checkpoint` payloads. These fields appear only when usage or cost was
+captured and are never renamed or removed; neither tokens nor cost enter the gate suite or the
+deterministic verdict, whose bytes are identical whether or not they were captured. Backends differ
+in what they can report: some text-mode totals are cache-inclusive (aider's "sent" includes the
+cached context; codex's plain-text total likewise), and a backend that reports nothing shows `—`.
+Where the backend supports it, a manifest opts into structured output for the exact non-cached count
+and cost: set `usage_mode: json` plus `usage_mode_args` — the backend's own flag. The shipped claude
+backend enables it with `--output-format stream-json --verbose`, an **event stream** that carries the
+final `usage` and `total_cost_usd` while preserving the live conversation: the engine renders the
+assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the transcript.
+(A note for older claude-code builds: versions before `v2.1.208` can truncate the final `result`
+line, so cost/tokens may read `—`; upgrade to capture them.) Pass `--raw-events` to echo the
+underlying NDJSON verbatim for debugging.
+
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
 one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
 sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
+**Cheaper sub-agents per stage (advisory, opt-in).** A stage's own sub-agents can be steered to a
+cheaper model per step via the additive `subagent_models` map in `roles.yaml` (see `config roles
+setup` above), while the stage's main agent keeps its role model. It is emitted only through the
+transport an agent manifest declares (`subagent_model`), so it is backend-neutral — Claude Code
+carries it (via `--agents`/`CLAUDE_CODE_SUBAGENT_MODEL`), a backend without the mechanism ignores it,
+and leaving the map unset keeps every dispatch byte-identical.
 **Editing the agent prompts.** Every dispatched stage prompt is assembled from markdown
 templates — the single source of the stage instructions; no prompt text lives inline in the engine.
 A repo-local template at `.3powers/templates/agents/<name>.agent.md` (seeded by `3pwr init`)
@@ -640,6 +746,16 @@ line, followed by ready-to-run commands:
      Inspect: 3pwr gate run --id 042
 ```
 
+**Auto-fix at Verify (auto mode).** Before pausing on a red Verify, a `3pwr run` in `auto` mode
+runs the bounded, **code-only** auto-fix loop (unless disabled in `auto-fix.yaml`): it hands the
+failing gates back to the coder, re-runs the suite recording an honest signed verdict each pass, and
+loops until green or the attempt budget is exhausted. It never records a deviation, edits config, or
+mutates a verdict, and `gate_gaming` stays the backstop. If it reaches green the run continues; if it
+gives up it prints the step-by-step human remediation summary and stops at gate-red. It is the same
+loop as the standalone `gate fix` — see that command for the configuration and safety details. A
+signed deviation remains the human's last-resort waiver for a residual red, applied only after the
+loop gives up.
+
 **Active deviations are honoured at Verify.** When every red gate of the just-recorded verdict is
 covered by an active signed deviation (scoped to the run's spec id; a global deviation applies
 too), the run proceeds past Verify instead of stopping at gate-red, printing one
@@ -649,8 +765,10 @@ proceed decision consults deviations. If any red gate is uncovered, the run stop
 uncovered gate(s) exactly as before.
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
-  `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
-  `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--auto-fix` (at the
+  `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (the run's
+  numeric id, e.g. `042`; default: derived from the allocated feature folder, resolving to
+  `specs-src/<NNN>-*/`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) ·
+  `--auto-fix` (at the
   verify stage, let a failing format/lint check run its configured fix command and re-check —
   opt-in, never the default; see `gate run`) · `--discovery` / `--no-discovery` (force or skip the
   Discovery stage, overriding the work-kind default) · `--timeout N` /
@@ -662,13 +780,16 @@ uncovered gate(s) exactly as before.
   return to the same gate) ·
   `--status` (print the stage tracker + the run branch and committed stages) · `--dry-run` (simulate
   offline; no git required) · `--simulate-fail` (force a
-  red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
+  red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE` ·
+  `--stream` (echo the live agent conversation even when stdout is not a TTY — on by default on a
+  TTY) · `--raw-events` (for a stream-json backend, echo the underlying NDJSON events verbatim
+  instead of the rendered assistant text — debugging).
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"
-3pwr run --resume --spec-id RUN --approver "$(git config user.name)"
-3pwr run --resume --spec-id RUN --revise "tighten the non-goals; leave out point 5"
-3pwr run --status --spec-id RUN
+3pwr run --resume --spec-id 042 --approver "$(git config user.name)"
+3pwr run --resume --spec-id 042 --revise "tighten the non-goals; leave out point 5"
+3pwr run --status --spec-id 042
 ```
 
 <a id="run-exit-codes"></a>

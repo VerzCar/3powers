@@ -60,10 +60,13 @@ over. No other input channel exists.
 This stage must produce a non-empty implementation change within the declared file scope — code
 plus the coder's tests. A stage that produces nothing, or only an off-target change, has failed.
 If the engine asks this stage for a markdown note, write it to the destination the engine has
-given in this prompt's run-context blocks; the engine itself generates the stage's changelog
-record (`changelog.md`, flat in the run's feature folder) from the collected phase results and
-your completion report. Do not commit, tag, push, or advance the lifecycle; the
-executive records the verdict and the human gate does the rest.
+given in this prompt's run-context blocks. You author the run's **business changelog** as the
+`## Business changelog` section of your completion report (below); the engine validates it (every
+requirement the run addressed is covered, no foreign requirement id leaks, the Added/Changed/Fixed
+structure is present) and places it as the run's `changelog.md` (flat in the feature folder,
+alongside an additive machine-readable requirement→files trace the engine appends). The project's
+top-level `CHANGELOG.md` is hand-maintained — never touch it. Do not commit, tag, push, or advance
+the lifecycle; the executive records the verdict and the human gate does the rest.
 
 ## Completion report
 
@@ -81,3 +84,28 @@ identically no matter which model ran it):
 - **Blockers**: what could not be resolved autonomously — the exact impediment, what you attempted,
   and what a human must decide — or `none`
 - **Gate-integrity note**: confirm no oracle test was changed and no gate was gamed
+
+Then author the run's business changelog — the artifact the engine validates and places as
+`changelog.md`:
+
+## Business changelog
+
+Write for a **non-engineer** reader: what shipped and why it matters, in plain language — no file
+paths, no gate/tool names, no framework jargon. Group the entries under the Keep-a-Changelog
+headings that apply, and name the `[REQ-ID]` each entry traces to so **every requirement the run
+addressed is covered by at least one entry**:
+
+### Added
+
+- New capability a user or operator now has, and the value it delivers — `[REQ-ID]`.
+
+### Changed
+
+- Behavior that now works differently, and why the change matters — `[REQ-ID]`.
+
+### Fixed
+
+- A defect that is now resolved, in terms of the impact it had — `[REQ-ID]`.
+
+Omit any heading with no entries, but include at least one of Added/Changed/Fixed. Trace only to
+this spec's own requirement ids — never reference another project's or the harness's internal ids.

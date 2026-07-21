@@ -71,6 +71,7 @@ class StageRow:
     completed: str = ""  # the completion timestamp, empty until the stage is done
     label: str = ""  # an override for the status word (e.g. "phase 2/3" on a phased Build)
     tokens: Optional[int] = None  # agent-reported usage; None renders the unknown placeholder
+    cost: Optional[float] = None  # agent-reported run cost (USD); None renders the placeholder
 
 
 @dataclass
@@ -82,6 +83,7 @@ class PhaseRow:
     status: str  # done | running | pending | failed
     tasks_done: str  # "3/5", or "—" for an untouched pending phase
     tokens: Optional[int] = None  # agent-reported usage; None renders the unknown placeholder
+    cost: Optional[float] = None  # agent-reported run cost (USD); None renders the placeholder
 
 
 @dataclass
@@ -119,34 +121,43 @@ def _tokens_cell(tokens: Optional[int]) -> str:
     return str(tokens) if tokens is not None else "—"
 
 
+def _cost_cell(cost: Optional[float]) -> str:
+    """The Cost column cell: the agent-reported run cost as ``$0.0000``, or ``—`` when unknown."""
+    return f"${cost:.4f}" if cost is not None else "—"
+
+
 def render(snap: Snapshot) -> str:
     """Render the progress markdown for ``snap`` — pure and deterministic given the snapshot.
 
     Layout per the progress-file content schema: the title line, the stage-progress
     table, the phase-detail table only when the snapshot carries phases,
     then the Current state / Last verdict / fenced Helper commands / Gate
-    failures sections with the run's real identity interpolated. Both tables carry a Tokens
-    column — the agent-reported usage per stage/phase, ``—`` when the backend reports none."""
+    failures sections with the run's real identity interpolated. Both tables carry Tokens and
+    Cost columns — the agent-reported usage and run cost per stage/phase, ``—`` when the backend
+    reports none."""
     lines = [f"# Run {snap.nnn} · {snap.slug} · {snap.timestamp}", ""]
     lines += ["## Stage progress", ""]
     lines += [
-        "| Stage | Status | Completed | Tokens |",
-        "|-------|--------|-----------|--------|",
+        "| Stage | Status | Completed | Tokens | Cost |",
+        "|-------|--------|-----------|--------|------|",
     ]
     for row in snap.stages:
         cell = f"{GLYPHS.get(row.status, '·')} {row.label or row.status}"
-        lines.append(f"| {row.stage} | {cell} | {row.completed} | {_tokens_cell(row.tokens)} |")
+        lines.append(
+            f"| {row.stage} | {cell} | {row.completed} | {_tokens_cell(row.tokens)} | "
+            f"{_cost_cell(row.cost)} |"
+        )
     if snap.phases:
         lines += ["", f"### {snap.phase_stage} — phase detail", ""]
         lines += [
-            "| Phase | Description | Status | Tasks done | Tokens |",
-            "|-------|-------------|--------|------------|--------|",
+            "| Phase | Description | Status | Tasks done | Tokens | Cost |",
+            "|-------|-------------|--------|------------|--------|------|",
         ]
         for ph in snap.phases:
             status_cell = f"{GLYPHS.get(ph.status, '·')} {ph.status}"
             lines.append(
                 f"| {ph.index} | {ph.description} | {status_cell} | {ph.tasks_done} | "
-                f"{_tokens_cell(ph.tokens)} |"
+                f"{_tokens_cell(ph.tokens)} | {_cost_cell(ph.cost)} |"
             )
     lines += ["", "## Current state", "", snap.current_state or "○ not started yet"]
     if snap.since:
@@ -242,6 +253,10 @@ class Reporter:
         # and per-phase counts for the phase-detail table. Unknown stays absent — rendered —.
         self._stage_tokens: dict[str, int] = {}
         self._phase_tokens: dict[int, int] = {}
+        # Advisory agent-reported run cost (USD), in step with the token totals: per-stage
+        # accumulated and per-phase, rendered in the Cost column. Unknown stays absent — rendered —.
+        self._stage_cost: dict[str, float] = {}
+        self._phase_cost: dict[int, float] = {}
 
     # ------------------------------------------------------------------ the lifecycle triggers
     def stage_started(self, step: str, stage: str) -> Path:
@@ -257,13 +272,17 @@ class Reporter:
         self._current_state = f"**Stage:** {stage} — running '{step}'"
         return self.write()
 
-    def stage_completed(self, step: str, stage: str, tokens: Optional[int] = None) -> Path:
+    def stage_completed(
+        self, step: str, stage: str, tokens: Optional[int] = None, cost: Optional[float] = None
+    ) -> Path:
         """Stage complete: record the step; when it was the stage's last non-gate
         step the row turns ``✓ done`` with a completion timestamp. ``tokens`` — the step's
-        agent-reported usage — accumulates into the stage's Tokens cell (additive; ``None``
-        leaves the cell unknown)."""
+        agent-reported usage — accumulates into the stage's Tokens cell, and ``cost`` (USD) into
+        the Cost cell (both additive; ``None`` leaves the respective cell unknown)."""
         if tokens is not None and stage in self._status:
             self._stage_tokens[stage] = self._stage_tokens.get(stage, 0) + int(tokens)
+        if cost is not None and stage in self._status:
+            self._stage_cost[stage] = self._stage_cost.get(stage, 0.0) + float(cost)
         self._mark_step_done(step, stage)
         self._current_state = f"**Stage:** {stage} — '{step}' complete"
         return self.write()
@@ -274,6 +293,14 @@ class Reporter:
         Feeds the phase-detail table's Tokens column; phases absent from the mapping stay
         unknown. No write is triggered — the next lifecycle trigger renders the counts."""
         self._phase_tokens.update({int(k): int(v) for k, v in tokens_by_index.items()})
+
+    def phase_costs(self, cost_by_index: dict[int, float]) -> None:
+        """Record the agent-reported run cost (USD) of a phased build's phases, keyed by index.
+
+        In step with :meth:`phase_tokens`, feeds the phase-detail table's Cost column; phases
+        absent from the mapping stay unknown. No write is triggered — the next lifecycle trigger
+        renders the costs."""
+        self._phase_cost.update({int(k): float(v) for k, v in cost_by_index.items()})
 
     def verdict(self, result: str, failed_gates: list[str]) -> Path:
         """Gate verdict PASS/FAIL: update the last-verdict block; a red verdict
@@ -338,6 +365,7 @@ class Reporter:
                     completed=self._completed_at.get(stage, ""),
                     label=label,
                     tokens=self._stage_tokens.get(stage),
+                    cost=self._stage_cost.get(stage),
                 )
             )
         return Snapshot(
@@ -414,6 +442,7 @@ class Reporter:
                     status=status,
                     tasks_done=tasks_done,
                     tokens=self._phase_tokens.get(ph.index),
+                    cost=self._phase_cost.get(ph.index),
                 )
             )
         return rows, running_label

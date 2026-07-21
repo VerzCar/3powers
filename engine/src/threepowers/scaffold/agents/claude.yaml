@@ -12,14 +12,31 @@ prompt_flag: "-p"
 prompt_via: arg
 # Session freshness: each `claude -p` invocation starts a NEW session by default; reuse is
 # opt-in only (`--continue` / `--resume`), which the engine never emits — no new-session flag needed.
-# Usage (advisory): with structured output enabled (usage_mode below), the final JSON result
+# Usage (advisory): with structured output enabled (usage_mode below), the final `result` event
 # carries usage.input_tokens (the non-cached input — cache reads are counted separately in
-# cache_read_input_tokens) and usage.output_tokens; the hint sums them. Plain `-p` text output
-# (the default) carries no token summary, so the hint reads as unknown until usage_mode is set.
+# cache_read_input_tokens), usage.output_tokens, and total_cost_usd; the hints sum the tokens and
+# read the cost. Plain `-p` text output carries no token summary, so the hints read as unknown
+# until usage_mode is set.
 usage:
   strategy: json
   fields: [usage.input_tokens, usage.output_tokens]
-# Opt-in structured output: uncomment `usage_mode` to append `usage_mode_args` to every
-# invocation, replacing the live text stream with the JSON result object the hint above reads.
-# usage_mode: json
-usage_mode_args: ["--output-format", "json"]
+  cost_field: total_cost_usd
+# Structured output for native token/cost accounting WITHOUT killing the live stream:
+# `usage_mode` appends `usage_mode_args` below. `--output-format stream-json` (with the required
+# `--verbose`) emits ONE JSON event per line, so the dispatch/echo path renders the assistant text
+# deltas live AND the final `result` event carries the usage/cost the hints read. This is
+# deliberately NOT plain `--output-format json`, which buffers a single end-of-run blob and
+# destroys the live conversation. (Pre-v2.1.208 Claude Code truncated the stream-json final line;
+# the persisted transcript is unaffected regardless — upgrade to restore native cost/usage.)
+usage_mode: json
+usage_mode_args: ["--output-format", "stream-json", "--verbose"]
+# Sub-agent model steering (optional, backend-neutral): when a `subagent_models` entry in
+# .3powers/config/roles.yaml applies to the dispatched stage, the engine appends the directive below
+# so that stage's *sub-agents* run on the cheaper model while the main session keeps its role model.
+# `$MODEL` is replaced with the resolved sub-agent model id. Claude Code also honors the
+# CLAUDE_CODE_SUBAGENT_MODEL environment variable as an alternative — export it before the run if you
+# prefer env delivery. Absent this block (or when no `subagent_models` entry applies), the feature
+# no-ops: the dispatch is byte-identical.
+subagent_model:
+  flag: "--agents"
+  arg: '{"cost-optimized": {"description": "Cost-optimized helper for research and fan-out sub-work", "prompt": "You are a focused helper sub-agent.", "model": "$MODEL"}}'

@@ -155,7 +155,7 @@ def _register_provenance(sub: SubParsers, common: AddCommon) -> None:
     pvp = common(sub.add_parser("provenance", help="sign build provenance + SBOM for an artifact"))
     pvp.add_argument("--artifact", required=True)
     pvp.add_argument("--path", help="project dir for the SBOM (default: repo root)")
-    pvp.add_argument("--spec-id", dest="spec_id")
+    pvp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     pvp.set_defaults(func=cmd_provenance)
 
 
@@ -172,5 +172,5 @@ def _register_residual(sub: SubParsers, common: AddCommon) -> None:
     rsp.add_argument("--reviewer", required=True)
     rsp.add_argument("--note")
     rsp.add_argument("--findings", nargs="*")
-    rsp.add_argument("--spec-id", dest="spec_id")
+    rsp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     rsp.set_defaults(func=cmd_residual)

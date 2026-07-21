@@ -76,6 +76,81 @@ def test_build_command_positional_and_stdin_and_no_command():
         agents.build_command({}, "P")
 
 
+# ------------------------------------------------------ subagent model steering (plan 036 Track D)
+_SUBAGENT_MANIFEST = {
+    "command": "claude",
+    "model_flag": "--model",
+    "prompt_flag": "-p",
+    "subagent_model": {"flag": "--agents", "arg": '{"h": {"model": "$MODEL"}}'},
+}
+
+
+def test_build_command_emits_subagent_directive_when_declared():
+    """Track D: a `subagent_model` maps a per-stage cheaper model onto the manifest-declared flag,
+    with `$MODEL` rendered; the main-session `--model` is untouched."""
+    argv, _ = agents.build_command(
+        _SUBAGENT_MANIFEST,
+        "P",
+        model="anthropic/claude-opus-4-8",
+        subagent_model="anthropic/claude-haiku-4-5",
+    )
+    assert "--agents" in argv
+    assert argv[argv.index("--agents") + 1] == '{"h": {"model": "anthropic/claude-haiku-4-5"}}'
+    # the main session keeps its role model — sub-agent steering never touches --model
+    assert argv[argv.index("--model") + 1] == "anthropic/claude-opus-4-8"
+
+
+def test_build_command_subagent_unset_is_byte_identical():
+    """Track D (REQ-D): with no sub-agent model the assembled argv is byte-identical — the flag is
+    never emitted, even though the manifest declares the transport."""
+    base, _ = agents.build_command(_SUBAGENT_MANIFEST, "P", model="m")
+    same, _ = agents.build_command(_SUBAGENT_MANIFEST, "P", model="m", subagent_model="")
+    assert base == same
+    assert "--agents" not in base
+
+
+def test_build_command_subagent_no_ops_when_manifest_lacks_transport():
+    """Track D (CON-003): a backend whose manifest declares no `subagent_model` block no-ops
+    cleanly — the same argv with or without an override; the engine never invents a flag."""
+    manifest = {"command": "codex", "base_args": ["exec"]}
+    with_override, _ = agents.build_command(manifest, "P", subagent_model="cheap/model")
+    without, _ = agents.build_command(manifest, "P")
+    assert with_override == without == ["codex", "exec", "P"]
+
+
+def test_build_command_subagent_empty_arg_passes_model_as_flag_value():
+    """Track D: a transport with no `arg` template carries the model id as the flag's value —
+    the common `--subagent-model <id>` shape a non-JSON backend would declare."""
+    manifest = {"command": "x", "subagent_model": {"flag": "--subagent-model"}}
+    argv, _ = agents.build_command(manifest, "P", subagent_model="cheap/m")
+    assert argv == ["x", "--subagent-model", "cheap/m", "P"]
+
+
+def test_cli_runner_threads_subagent_model_by_step(tmp_path):
+    """Track D (TASK-020): the runner looks up `subagent_models[step]` and threads only the matching
+    step's model; a step with no entry dispatches byte-identically (no directive)."""
+    s = Settings(root=tmp_path)
+    seen: list[list[str]] = []
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None):
+        seen.append(argv)
+        return (0, "ok", "")
+
+    r = CliAgentRunner(
+        s,
+        _SUBAGENT_MANIFEST,
+        model="anthropic/claude-opus-4-8",
+        subagent_models={"implement": "anthropic/claude-haiku-4-5"},
+        dispatcher=fake,
+    )
+    r.dispatch("implement", "Build")
+    r.dispatch("plan", "Plan")
+    impl_argv, plan_argv = seen
+    assert "--agents" in impl_argv
+    assert "claude-haiku-4-5" in impl_argv[impl_argv.index("--agents") + 1]
+    assert "--agents" not in plan_argv  # a step with no override threads nothing
+
+
 def test_reference_manifests_ship(tmp_path, monkeypatch):
     """EXEC-FR-004: the repo ships ≥3 reference manifests (claude/codex/copilot/opencode/aider)."""
     import threepowers
@@ -1078,6 +1153,34 @@ def test_run_stage_threads_tokens_into_the_stage_result_additively():
         "detail",
     }
     assert prior_keys <= set(d_without) <= set(d_with)  # strictly additive (PAT-002)
+
+
+def test_dispatch_and_run_stage_thread_cost_additively(tmp_path):
+    """Plan 036 Track E: a stream-json backend's ``total_cost_usd`` (read via the manifest's
+    ``usage.cost_field``) reaches ``DispatchResult.cost`` and ``StageResult.cost``/``as_dict()`` in
+    step with the token count — present only when reported, always a superset of the prior keys."""
+    s = Settings(root=tmp_path)
+    reporting = {
+        "command": "claude",
+        "usage": {"strategy": "json", "field": "usage.output_tokens", "cost_field": "cost_usd"},
+    }
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None):
+        return (0, '{"usage": {"output_tokens": 9}, "cost_usd": 0.1234}', "")
+
+    res = CliAgentRunner(s, reporting, dispatcher=fake).dispatch("implement", "Build")
+    assert res.ok and res.tokens == 9 and res.cost == pytest.approx(0.1234)
+
+    with_cost = runner.run_stage(
+        "implement", "Build", attempt=lambda: DispatchResult(True, tokens=9, cost=0.12), retries=0
+    )
+    without = runner.run_stage(
+        "implement", "Build", attempt=lambda: DispatchResult(True, tokens=9), retries=0
+    )
+    assert with_cost.cost == pytest.approx(0.12) and without.cost is None
+    d_with, d_without = with_cost.as_dict(), without.as_dict()
+    assert d_with["cost"] == pytest.approx(0.12) and "cost" not in d_without
+    assert set(d_without) <= set(d_with)  # strictly additive (PAT-002)
 
 
 def _fixed_verdict_gates(monkeypatch, calls):

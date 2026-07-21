@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Callable, Optional, Protocol
 
-from . import agents, prompts
+from . import agents, prompts, stream as streammod
 from .config import Settings
 from .orchestrate import Event, LIFECYCLE_STEPS, Outcome
 
@@ -67,6 +67,9 @@ class DispatchResult:
     # The agent-reported token usage for this attempt (manifest-declared extraction);
     # None when the backend does not report usage. Strictly advisory — never enters the verdict.
     tokens: Optional[int] = None
+    # The agent-reported run cost in USD for this attempt (manifest-declared `usage.cost_field`);
+    # None when the backend reports no cost. Strictly advisory — never enters the verdict.
+    cost: Optional[float] = None
 
 
 @dataclass
@@ -101,9 +104,15 @@ class StageResult:
     warnings: list[str] = field(default_factory=list)
     # Per-phase results when the stage ran as context-sized phases, artifact order.
     phases: list[dict] = field(default_factory=list)
+    # The implement agent's authored completion report, combined across phases when phased. Carried
+    # for the changelog author-then-validate step; never serialized into ``as_dict``/``--json``.
+    report: str = ""
     # The agent-reported token usage for the stage (summed over phases when phased);
     # None when the backend does not report usage. Advisory — never enters the verdict.
     tokens: Optional[int] = None
+    # The agent-reported run cost in USD for the stage (summed over phases when phased);
+    # None when the backend reports no cost. Advisory — never enters the verdict.
+    cost: Optional[float] = None
 
     def as_dict(self) -> dict:
         d = {
@@ -130,6 +139,10 @@ class StageResult:
             # Additive-only: the token field joins the payload only when the backend reported
             # usage, so every prior key stays present and prior parsers keep working.
             d["tokens"] = self.tokens
+        if self.cost is not None:
+            # Additive-only, alongside tokens: the cost field joins the payload only when the
+            # backend reported a run cost, so every prior key stays present and prior parsers work.
+            d["cost"] = self.cost
         return d
 
 
@@ -273,6 +286,8 @@ class CliAgentRunner:
         transcripts: Optional["TranscriptSink"] = None,
         echo_out: Optional[TextSink] = None,
         echo_err: Optional[TextSink] = None,
+        subagent_models: Optional[dict[str, str]] = None,
+        raw_events: bool = False,
     ) -> None:
         self.settings = settings
         self.manifest = manifest
@@ -286,9 +301,16 @@ class CliAgentRunner:
         # agent conversation above itself through these; None keeps the process's own stdout/stderr.
         self.echo_out = echo_out
         self.echo_err = echo_err
+        # When this backend streams a stream-json event stream, the live stdout echo is rendered to
+        # assistant text deltas (never raw JSON) unless `raw_events` shows the underlying events.
+        self.raw_events = raw_events
         # The per-run transcript sink: every attempt's output is persisted,
         # credential-redacted. None = no persistence (programmatic callers).
         self.transcripts = transcripts
+        # Optional per-stage sub-agent model overrides (roles.yaml `subagent_models`), keyed by
+        # step. `dispatch` looks up the current step and threads any hit into `build_command`; an
+        # empty map (the default) or a step with no entry changes nothing — byte-identical dispatch.
+        self.subagent_models = subagent_models or {}
         # Resolve the module-level default at construction time so a monkeypatched ``dispatch_agent``
         # (tests / a fake agent) is honored — the engine still issues no model call.
         self._dispatcher = dispatcher or dispatch_agent
@@ -323,7 +345,12 @@ class CliAgentRunner:
             templates_dir=self.settings.stage_templates_dir,
             variables=variables,
         )
-        argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
+        argv, stdin = agents.build_command(
+            self.manifest,
+            prompt,
+            model=self.model,
+            subagent_model=self.subagent_models.get(step, ""),
+        )
         # Persist this attempt's output to the run's transcript location: teed even
         # while streaming, so a streamed run no longer loses its output. The writer redacts
         # credential-shaped env values before any byte lands on disk.
@@ -332,10 +359,17 @@ class CliAgentRunner:
         if self.transcripts is not None:
             path, writer = self.transcripts.open(step)
         # Echo sinks ride as extra kwargs only when set, so monkeypatched fake dispatchers with the
-        # historical signature keep working unchanged.
+        # historical signature keep working unchanged. A stream-json backend renders its live
+        # stdout echo to assistant text deltas (never raw JSON); the persisted transcript (`tee`)
+        # keeps every raw byte regardless.
+        stream_json = agents.is_stream_json(self.manifest)
         extra: dict = {}
         if self.echo_out is not None:
-            extra["echo_out"] = self.echo_out
+            extra["echo_out"] = (
+                streammod.wrap_echo(self.echo_out, raw=self.raw_events)
+                if stream_json
+                else self.echo_out
+            )
         if self.echo_err is not None:
             extra["echo_err"] = self.echo_err
         try:
@@ -361,6 +395,10 @@ class CliAgentRunner:
         # count from the attempt's output; an unreporting backend reads as None. Never enters
         # the verdict — it rides only the additive result/ledger/progress fields.
         tokens = agents.extract_usage(self.manifest, f"{out}\n{err}")
+        # Advisory cost capture, in step with tokens: the manifest's `usage.cost_field` extracts
+        # the agent-reported run cost (USD) from the final result event; unknown when the backend
+        # reports none. Additive-only, never a verdict input.
+        cost = agents.extract_cost(self.manifest, f"{out}\n{err}")
         if rc != 0:
             detail = (err.strip() or out.strip() or f"agent exited {rc}")[:400]
             if self.transcripts is not None:
@@ -368,9 +406,11 @@ class CliAgentRunner:
                 # transcript itself; nothing persisted may carry a credential.
                 detail = self.transcripts.redact_text(detail)
             return DispatchResult(
-                False, detail=detail, model=self.model, transcript=rel, tokens=tokens
+                False, detail=detail, model=self.model, transcript=rel, tokens=tokens, cost=cost
             )
-        return DispatchResult(True, detail=step, model=self.model, transcript=rel, tokens=tokens)
+        return DispatchResult(
+            True, detail=step, model=self.model, transcript=rel, tokens=tokens, cost=cost
+        )
 
 
 # --------------------------------------------------------------------------- retry / artifact policy (pure)
@@ -432,6 +472,7 @@ def run_stage(
             detail=result.detail,
             transcript=result.transcript,
             tokens=result.tokens,
+            cost=result.cost,
         )
     resolved = result.model or model
     if verify_artifact is not None:
@@ -449,6 +490,7 @@ def run_stage(
                 detail=f"stage '{step}' produced no expected artifact — {check.message}",
                 transcript=result.transcript,
                 tokens=result.tokens,
+                cost=result.cost,
             )
         return StageResult(
             step=step,
@@ -463,6 +505,7 @@ def run_stage(
             transcript=result.transcript,
             artifact_paths=list(check.matched),  # recorded with the ledger entry
             tokens=result.tokens,
+            cost=result.cost,
         )
     return StageResult(
         step=step,
@@ -475,6 +518,7 @@ def run_stage(
         outcome="ok",
         transcript=result.transcript,
         tokens=result.tokens,
+        cost=result.cost,
     )
 
 

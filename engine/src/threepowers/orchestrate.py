@@ -354,15 +354,17 @@ def _gate_red_summary(ev: Event, st: style.Styler, g: dict[str, str]) -> str:
 
     Renders one row per failed gate — ``name · tool`` plus its first actionable error line — from
     the verdict dict the emitter attached under ``ev.data['verdict']``, then the filled-in
-    ``Resume:``/``Inspect:`` command hints carrying the run's resolved spec id. Returns ``""`` when
-    the event carries no verdict (the plain one-liner then applies), so a simulated or legacy
-    emitter renders exactly as before."""
+    ``Resume:``/``Inspect:`` command hints carrying the run's numeric feature-folder id (the value
+    ``workspace.resolve_feature_dir`` can resolve, which the emitter attaches under
+    ``ev.data['spec_id']``) — never the verdict's front-matter prefix, which a resume/inspect
+    command cannot resolve. Returns ``""`` when the event carries no verdict (the plain one-liner
+    then applies), so a simulated or legacy emitter renders exactly as before."""
     verdict = ev.data.get("verdict") or {}
     gates = verdict.get("gates") or []
     failed = [x for x in gates if x.get("status") == "fail"]
     if not failed:
         return ""
-    spec_id = str(ev.data.get("spec_id") or verdict.get("spec_id") or "").strip()
+    spec_id = str(ev.data.get("spec_id") or "").strip()
     header = st.err(f"gates failed ({len(failed)} of {len(gates)}):")
     lines = [f"  {st.err(g['fail'])}  {header}"]
     width = max(len(str(x.get("gate", ""))) for x in failed)
@@ -841,25 +843,29 @@ def coder_handback(verdict: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _remediation_lines(gate: Mapping[str, Any]) -> list[str]:
+def _remediation_lines(gate: Mapping[str, Any], st: style.Styler) -> list[str]:
     """The per-gate remediation tail of a failure panel — guidance plus the labelled last resort.
 
     Resolves the fix hint from ``details["remediation"]`` (a finding-specific hint the gate
     supplied) when present, else the static :data:`GATE_GUIDANCE` table, with a generic
-    default for unknown gates. Presentation only — never enters the verdict."""
+    default for unknown gates. Presentation only — never enters the verdict. ``st`` colorizes the
+    hierarchy — meaning dim, fix success-weighted, the last-resort deviation a warning — and is a
+    plain no-op when color is off, so the returned bytes are identical off-TTY."""
     name = str(gate.get("gate", "?"))
     meaning, fix_hint = GATE_GUIDANCE.get(name, _GENERIC_GUIDANCE)
     specific = str((gate.get("details") or {}).get("remediation") or "").strip()
     return [
-        f"↳ what it means: {meaning}",
-        f"↳ fix: {specific or fix_hint}",
-        "↳ last resort — only if this is a deliberate, justified exception:",
-        f'    3pwr deviation --gate {name} --approver <you> --note "<why>" [--until <date>]',
+        st.guidance_meaning(f"↳ what it means: {meaning}"),
+        st.guidance_fix(f"↳ fix: {specific or fix_hint}"),
+        st.guidance_warn("↳ last resort — only if this is a deliberate, justified exception:"),
+        st.guidance_warn(
+            f'    3pwr deviation --gate {name} --approver <you> --note "<why>" [--until <date>]'
+        ),
     ]
 
 
 def _panel_body_lines(
-    gate: Mapping[str, Any], verbose: bool = False, waiver: str = ""
+    gate: Mapping[str, Any], st: style.Styler, verbose: bool = False, waiver: str = ""
 ) -> list[str]:
     """A failed gate's panel body: meaningful error lines trimmed to :data:`PANEL_MAX_LINES`
     with a truncation note, then the configured auto-fix hint when present, then the waiver
@@ -870,7 +876,8 @@ def _panel_body_lines(
     package/file (and a remediation hint when the gate details supply one) — so the generic
     line path renders them one per line. ``waiver`` is a pre-built human annotation line
     (e.g. "↳ waived by active deviation seq=1 (approver: …)"); it never touches the verdict
-    dict itself."""
+    dict itself. ``st`` colorizes the guidance hierarchy (findings keep default weight); with
+    color off every line is byte-identical to the pre-color output."""
     lines = meaningful_lines(gate.get("findings") or [], verbose)
     if not lines:
         lines = ["non-zero exit — the tool reported no output"]
@@ -880,10 +887,10 @@ def _panel_body_lines(
         shown.append(f"… {hidden} more line{'' if hidden == 1 else 's'}")
     fix = (gate.get("details") or {}).get("fix_cmd")
     if fix:
-        shown.append(f"↳ auto-fix: {fix}")
+        shown.append(st.guidance_fix(f"↳ auto-fix: {fix}"))
     if waiver:
-        shown.append(waiver)
-    shown.extend(_remediation_lines(gate))
+        shown.append(st.guidance_waived(waiver))
+    shown.extend(_remediation_lines(gate, st))
     return shown
 
 
@@ -894,14 +901,16 @@ def _render_panel(
     verbose: bool,
     width: Optional[int],
     waiver: str = "",
+    layout: str = "normal",
 ) -> str:
     """One failed gate's panel — a rich panel with a dim ``gate · tool`` header on a color TTY,
-    plain indented text otherwise."""
+    plain indented text otherwise. ``layout`` ``compact`` tightens the panel padding so a denser
+    view drops the surrounding whitespace; ``normal`` is unchanged."""
     name = str(gate.get("gate", "?"))
     tool = str(gate.get("tool") or "").strip() or "?"
     elapsed = _gate_elapsed(int(gate.get("duration_ms") or 0))
     title = f"{name} · {tool}  {elapsed}"
-    body = _panel_body_lines(gate, verbose, waiver)
+    body = _panel_body_lines(gate, st, verbose, waiver)
     if st.enabled:
         buf = io.StringIO()
         console = Console(
@@ -912,10 +921,11 @@ def _render_panel(
         )
         console.print(
             Panel(
-                Text("\n".join(f"  {ln}" for ln in body)),
-                title=Text(title, style="dim"),
+                Text.from_ansi("\n".join(f"  {ln}" for ln in body)),
+                title=Text(title, style=st.panel_title()),
                 title_align="left",
-                border_style="dim",
+                border_style=st.panel_border(),
+                padding=(0, 0) if layout == "compact" else (0, 1),
             )
         )
         return buf.getvalue().rstrip("\n")
@@ -931,6 +941,8 @@ def failure_panels(
     verbose: bool = False,
     width: Optional[int] = None,
     waivers: Optional[Mapping[str, str]] = None,
+    run_id: str = "",
+    layout: str = "normal",
 ) -> str:
     """The post-run failure surface: one panel per FAILED gate of ``verdict``, followed by one
     coder hand-back block (a copy-pasteable prompt for the coding agent plus the re-dispatch
@@ -944,7 +956,11 @@ def failure_panels(
 
     ``waivers`` maps a failed gate's name to a pre-built waiver annotation line (a red gate
     covered by an active deviation); the annotation is human rendering only and never mutates
-    the verdict mapping."""
+    the verdict mapping. ``run_id`` is the run's numeric feature-folder id — the value the
+    re-dispatch command's ``--spec-id`` must carry so it resolves via
+    ``workspace.resolve_feature_dir``; empty falls back to the verdict's own id. ``layout``
+    ``compact`` tightens the surface — tighter panels and no blank separators — for a denser
+    view; ``normal`` is unchanged."""
     st = st or style.Styler()
     failed = [g for g in (verdict.get("gates") or []) if g.get("status") == "fail"]
     if not failed:
@@ -956,22 +972,36 @@ def failure_panels(
             verbose=verbose,
             width=width,
             waiver=(waivers or {}).get(str(g.get("gate", "")), ""),
+            layout=layout,
         )
         for g in failed
     )
-    return panels + "\n" + _handback_block(verdict, st)
+    result = panels + "\n" + _handback_block(verdict, st, run_id)
+    if layout == "compact":
+        # A denser view: drop whitespace-only separator lines (e.g. the blank lines inside the
+        # hand-back prompt), so the panels + hand-back read as one tight block.
+        result = "\n".join(ln for ln in result.split("\n") if ln.strip())
+    return result
 
 
-def _handback_block(verdict: Mapping[str, Any], st: style.Styler) -> str:
-    """The rendered coder hand-back section — the prompt indented under a dim header, then the
-    re-dispatch command. Presentation only; empty when nothing failed."""
+def _handback_block(verdict: Mapping[str, Any], st: style.Styler, run_id: str = "") -> str:
+    """The rendered coder hand-back section — the prompt indented under an accented header, then
+    the re-dispatch command carrying the run's numeric feature-folder id.
+
+    ``run_id`` is that numeric id (the value ``workspace.resolve_feature_dir`` resolves); it wins
+    over the verdict's own front-matter prefix so the printed ``--spec-id`` actually resolves. The
+    re-dispatch line is omitted entirely when neither is known — never a non-resolving placeholder.
+    Presentation only; empty when nothing failed. ``st`` gives the header + re-dispatch line a
+    distinct accent so the copy-paste block is scannable, and is a plain no-op when color is off —
+    the ``coder_handback`` prompt bytes it wraps stay pre-color plain."""
     prompt = coder_handback(verdict)
     if not prompt:
         return ""
-    spec_id = str(verdict.get("spec_id") or "").strip() or "<spec-id>"
+    spec_id = run_id or str(verdict.get("spec_id") or "").strip()
     lines = [
-        "  " + st.dim("hand back to your coding agent — copy-paste:"),
+        "  " + st.accent("hand back to your coding agent — copy-paste:"),
         *(f"    {ln}" for ln in prompt.splitlines()),
-        f"  re-dispatch: 3pwr run --resume --spec-id {spec_id}",
     ]
+    if spec_id:
+        lines.append("  " + st.accent(f"re-dispatch: 3pwr run --resume --spec-id {spec_id}"))
     return "\n".join(lines)

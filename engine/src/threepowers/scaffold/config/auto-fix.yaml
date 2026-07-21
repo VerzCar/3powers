@@ -1,0 +1,23 @@
+# Auto-fix — the harness's bounded, code-only remediation loop.
+#
+# When a `3pwr run` in auto mode hits a red Verify (or you invoke `3pwr gate fix` directly), the
+# harness hands the failed gates back to your coding agent, re-runs the deterministic gate suite,
+# and repeats until the verdict is green or the attempt budget runs out. On give-up it prints the
+# step-by-step human remediation summary.
+#
+# The loop is code-only and cannot produce a bypass: it ONLY edits code (via the coder) and re-runs
+# the gates. It never records a deviation or advisory, never weakens a check, never edits gate
+# configuration, and never mutates a verdict — it records an honest signed verdict on every
+# re-check. `gate_gaming` stays the backstop: a coder that tries to weaken a check trips it and the
+# loop hands off to you rather than trying again.
+
+# Turn the run-path auto-fix loop on or off. On by default for `3pwr run` in auto mode. A standalone
+# `3pwr gate run` never auto-fixes regardless of this setting — use `3pwr gate fix` for that.
+enabled: true
+
+# The most coder attempts before the loop gives up and prints the human remediation summary.
+max_attempts: 3
+
+# Scope each coder dispatch to the files the failed gates point at, when known. Off by default: the
+# coder sees the whole change, which is always safe.
+scope_to_failed: false

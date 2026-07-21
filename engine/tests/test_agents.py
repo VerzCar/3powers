@@ -160,19 +160,45 @@ def test_opencode_declares_no_hint_and_reads_unknown() -> None:
 
 # --------------------------------------------------------------------------- usage_mode (opt-in)
 def test_usage_mode_appends_the_manifest_declared_args_only_when_set() -> None:
-    """Plan 034 Track D: `usage_mode` appends the backend's own `usage_mode_args` (the engine
-    invents no flag); absent — the shipped default — the invocation is byte-identical to before,
-    preserving the live text stream."""
+    """Plan 034 Track D / plan 036 Track E: `usage_mode` appends the backend's own
+    `usage_mode_args` (the engine invents no flag). The shipped claude backend now enables it with
+    `--output-format stream-json --verbose` — a streaming event format that preserves the live
+    conversation while carrying the final usage/cost. A manifest with `usage_mode` cleared
+    dispatches byte-identically to the bare invocation, and a manifest that declares no args
+    appends nothing."""
     base = _manifest("claude")
-    assert not str(base.get("usage_mode") or "").strip()  # shipped default: off
-    argv_off, _ = agents.build_command(base, "PROMPT")
-    assert argv_off == ["claude", "--permission-mode", "acceptEdits", "-p", "PROMPT"]
-
-    on = dict(base, usage_mode="json")
-    argv_on, _ = agents.build_command(on, "PROMPT")
-    expected = ["claude", "--permission-mode", "acceptEdits", "--output-format", "json"]
+    assert str(base.get("usage_mode") or "").strip() == "json"  # shipped default: on (streaming)
+    argv_on, _ = agents.build_command(base, "PROMPT")
+    expected = [
+        "claude",
+        "--permission-mode",
+        "acceptEdits",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+    ]
     assert argv_on == [*expected, "-p", "PROMPT"]
+
+    off = dict(base, usage_mode="")
+    argv_off, _ = agents.build_command(off, "PROMPT")
+    assert argv_off == ["claude", "--permission-mode", "acceptEdits", "-p", "PROMPT"]
 
     # usage_mode set on a manifest that declares no args appends nothing
     bare = {"command": "x", "usage_mode": "json"}
     assert agents.build_command(bare, "P")[0] == ["x", "P"]
+
+
+def test_shipped_claude_is_stream_json_and_reads_cost_from_the_result_event() -> None:
+    """Plan 036 Track E: the shipped claude backend is dispatched in stream-json mode (so the live
+    echo renders assistant text deltas), and its `usage.cost_field` reads `total_cost_usd` from the
+    final `result` event — in step with the token hint. A backend without `usage_mode` set, or one
+    without a `cost_field`, reads as not-streaming / unknown-cost."""
+    claude = _manifest("claude")
+    assert agents.is_stream_json(claude) is True
+    assert agents.extract_cost(claude, _fixture("claude.json")) == pytest.approx(0.2913)
+    # a plain-JSON (non-streaming) usage_mode, and a manifest with no cost_field, both read false/None
+    plain = dict(claude, usage_mode_args=["--output-format", "json"])
+    assert agents.is_stream_json(plain) is False
+    no_cost = {"usage": {"strategy": "json", "fields": ["a"]}}
+    assert agents.extract_cost(no_cost, '{"a": 1, "total_cost_usd": 0.5}') is None
+    assert agents.is_stream_json({"command": "x"}) is False

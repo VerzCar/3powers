@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import threepowers.cli as _cli
 from .. import (
+    autofix,
     deviations,
     keys,
     orchestrate,
@@ -31,6 +32,7 @@ from ._common import (
     _detection_line,
     _effective_gates_or_none,
     _format_verdict,
+    _layout,
     _print,
     _resolve_spec,
     _settings,
@@ -96,6 +98,17 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             else:
                 raise
 
+    # The run's numeric feature-folder id (e.g. ``002``) — the prefix of the spec's
+    # ``specs-src/<NNN>-<slug>/`` folder — is the one identity a resume/inspect/re-dispatch command
+    # can resolve via ``workspace.resolve_feature_dir``. The verdict's own ``spec_id`` is the spec's
+    # front-matter prefix, which those commands cannot resolve; keep the two distinct. Empty when the
+    # spec lives outside a numbered feature folder (brownfield report-only), so no unresolvable hint
+    # is ever printed.
+    run_id = ""
+    if spec_path is not None:
+        prefix = workspace.feature_dir_of(spec_path).name.split("-")[0]
+        run_id = prefix if prefix.isdigit() else ""
+
     # The live per-gate pipeline: rows update in place on a capable TTY and
     # degrade to sequential plain rows off it. Never constructed under --json — the machine payload
     # is never routed through the rendering layer — and quiet keeps the result-only output.
@@ -155,7 +168,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
-    human = _format_verdict(verdict, appended, gst)
+    human = _format_verdict(verdict, appended, gst, run_id=run_id)
     # The auto-fixed announcement: one line per gate a fix turned green — human
     # output only, so the --json payload stays pure machine data.
     if not args.json:
@@ -173,6 +186,8 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             gst,
             verbose=v_level == "verbose",
             waivers=_waiver_annotations(verdict.to_dict(), s.ledger_path),
+            run_id=run_id,
+            layout=_layout(args),
         )
         if panels:
             human += "\n" + panels
@@ -203,7 +218,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             args,
             gst,
             title="gate run",
-            subject=f"{verdict.spec_id or '?'} · {verdict.tier} · {verdict.adapter}",
+            subject=f"{run_id or verdict.spec_id or '?'} · {verdict.tier} · {verdict.adapter}",
             rows=[human],
         ),
     )
@@ -212,6 +227,138 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
     if args.report_only:
         return EXIT_OK
     return EXIT_OK if verdict.result == STATUS_PASS else EXIT_FAIL
+
+
+def cmd_gate_fix(args: argparse.Namespace) -> int:
+    """Run the suite once, and on a red verdict drive the bounded, code-only auto-fix loop.
+
+    The standalone entry point to the same Track-C remediation the native ``run`` uses in auto mode:
+    it hands the failed gates back to the configured coder, re-runs the deterministic suite
+    (recording an honest signed verdict each pass), and loops until green or the attempt budget is
+    exhausted — on give-up it prints the step-by-step human remediation summary. It never records a
+    deviation/advisory, edits gate config, or mutates a verdict; ``gate_gaming`` stays the backstop.
+    Refuses with an actionable setup message when no coder integration is configured."""
+    from . import run as runmod  # local import: avoids a run<->gate import cycle at module load
+
+    s = _settings(args.root)
+    if getattr(args, "id", None):
+        try:
+            feature = workspace.resolve_feature_dir(s.root, args.id)
+        except (FileNotFoundError, LookupError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+        resolved = workspace.spec_path(feature)
+        if resolved is None:
+            print(
+                f"error: {feature.parent.name}/{feature.name} contains no spec.md — pass "
+                "--spec <path/to/spec.md>",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        spec_path = resolved
+    else:
+        try:
+            spec_path = _resolve_spec(s, args.spec)
+        except FileNotFoundError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+    # Bind the resolved spec + its feature folder so the loop's re-checks resolve the same spec.
+    args.spec = str(spec_path)
+    feature_dir = workspace.feature_dir_of(spec_path)
+    prefix = feature_dir.name.split("-")[0]
+    run_id = prefix if prefix.isdigit() else ""
+
+    gst = _styler(args)
+    tier = args.tier
+    kinds = list(getattr(args, "work_kind", None) or [])
+    try:
+        adapter_name = args.adapter or _cli.detect_adapter(s, s.root)
+        eff = _effective_gates_or_none(s, adapter_name, s.root)
+        verdict = _cli.run_gates(
+            s,
+            s.root,
+            tier=tier,
+            spec_path=spec_path,
+            adapter_name=adapter_name,
+            work_kind=kinds,
+            manifest=eff.manifest if eff is not None else None,
+        )
+    except PrerequisiteError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_SETUP
+    except (KeyError, LookupError, FileNotFoundError, ValueError, OSError) as exc:
+        print(f"error: gates could not run — {exc}", file=sys.stderr)
+        return EXIT_SETUP
+
+    s.verdicts_dir.mkdir(parents=True, exist_ok=True)
+    verdict.write(s.verdicts_dir / "latest.json")
+    ledger = Ledger(s.ledger_path)
+    sk = None
+    try:
+        sk = keys.resolve_signer(s.root)
+        ledger.append(
+            "verdict",
+            verdict.to_dict(),
+            sk,
+            spec_id=verdict.spec_id,
+            requirement_ids=verdict.requirement_ids(),
+        )
+    except FileNotFoundError as exc:
+        print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
+
+    if verdict.result == STATUS_PASS:
+        _print(
+            {"status": "green", "spec_id": verdict.spec_id, "verdict": verdict.to_dict()},
+            args.json,
+            gst.ok("✓") + " gates green — nothing to fix",
+        )
+        return EXIT_OK
+
+    # Red: hand the failing gates back to the coder. Refuse actionably when none is configured.
+    try:
+        coder, _agent = runmod.build_coder_runner(
+            s, args, spec_id=verdict.spec_id or run_id or "fix"
+        )
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_SETUP
+    if coder is None:
+        print(
+            "error: no coder integration configured — set roles.coder.integration in "
+            ".3powers/config/roles.yaml (or pass --integration <agent>) so `3pwr gate fix` can "
+            "dispatch a coding agent to remediate the failing gates",
+            file=sys.stderr,
+        )
+        return EXIT_SETUP
+
+    box: dict[str, Any] = {"verdict": verdict.to_dict()}
+    report = (lambda _m: None) if args.json else (lambda m: print(f"  ↳ {m}"))
+    fix = runmod._auto_fix_loop(
+        s,
+        args,
+        tier=tier,
+        kinds=kinds,
+        feature_dir=feature_dir,
+        ledger=ledger,
+        sk=sk,
+        coder=coder,
+        retries=runmod._dispatch_retries(s, args),
+        initial_verdict=verdict.to_dict(),
+        out=box,
+        report=report,
+    )
+    final = box.get("verdict") or {}
+    if fix.fixed:
+        _print(
+            {"status": "fixed", "spec_id": verdict.spec_id, "verdict": final},
+            args.json,
+            gst.ok("✓") + f" auto-fix reached green after {len(fix.attempts)} attempt(s)",
+        )
+        return EXIT_OK
+    if not args.json:
+        print(autofix.give_up_summary(fix, final, gst, run_id=run_id))
+    _print({"status": "gates_red", "spec_id": verdict.spec_id, "verdict": final}, args.json, "")
+    return EXIT_FAIL
 
 
 def cmd_gate_config_show(args: argparse.Namespace) -> int:
@@ -402,6 +549,37 @@ def _register_gate(sub: SubParsers, common: AddCommon) -> None:
         "re-check (opt-in; never the default)",
     )
     gr.set_defaults(func=cmd_gate_run)
+
+    gf = common(
+        gsub.add_parser(
+            "fix",
+            help="run the suite and, on red, drive the bounded code-only auto-fix loop "
+            "(hands failed gates back to the coder until green or budget-exhausted)",
+        )
+    )
+    gf.add_argument("--tier", default="Standard", help="risk tier (default: Standard)")
+    gf.add_argument("--adapter", help="language adapter (default: auto-detect)")
+    fix_src = gf.add_mutually_exclusive_group()
+    fix_src.add_argument("--spec", help="path to the governing spec.md")
+    fix_src.add_argument(
+        "--id",
+        metavar="NNN",
+        help="feature folder number — resolves the spec of specs-src/<NNN>-*/ (exactly one must match)",
+    )
+    gf.add_argument("--integration", help="coder agent backend (default: roles.coder.integration)")
+    gf.add_argument("--agent", help="coder agent name override (wins over --integration)")
+    gf.add_argument(
+        "--work-kind",
+        action="append",
+        choices=list(workkind.KINDS),
+        help="shape the gate set for an inferred kind (repeatable): defect adds a regression gate, "
+        "design adds the design oracles; never weakens a tier gate",
+    )
+    gf.add_argument(
+        "--retries", type=int, help="dispatch retry budget per attempt (default: configured)"
+    )
+    gf.add_argument("--timeout", type=int, help="per-dispatch timeout in seconds")
+    gf.set_defaults(func=cmd_gate_fix)
 
     gcp = gsub.add_parser("config", help="gate configuration")
     gcsub = gcp.add_subparsers(dest="gate_config_cmd", required=True)

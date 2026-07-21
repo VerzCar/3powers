@@ -40,6 +40,17 @@ _RICH_STYLES: dict[str, _RichStyle] = {
     "magenta": _RichStyle(color="magenta"),
     "cyan": _RichStyle(color="cyan"),
     "gray": _RichStyle(color="bright_black"),
+    # Semantic guidance/chrome roles layered over the base colors — the remediation-panel
+    # vocabulary. Named so the renderer never hard-codes a color for a guidance role: what a
+    # finding, its meaning, its fix, and the last-resort deviation look like all live here.
+    "guidance_meaning": _RichStyle(dim=True),
+    "guidance_fix": _RichStyle(color="green"),
+    "guidance_warn": _RichStyle(color="yellow"),
+    "guidance_waived": _RichStyle(color="yellow", dim=True),
+    "accent": _RichStyle(color="magenta", bold=True),
+    # Panel chrome — the border + title of a failure panel. Consumed as rich Style objects.
+    "panel_border": _RichStyle(dim=True),
+    "panel_title": _RichStyle(dim=True),
 }
 
 _STATUS_GLYPH: dict[str, str] = {
@@ -181,6 +192,37 @@ class Styler:
 
     def dim(self, text: str) -> str:
         return self.paint(text, "dim")
+
+    def accent(self, text: str) -> str:
+        """A distinct, scannable accent — used for the coder hand-back header + re-dispatch line."""
+        return self.paint(text, "accent")
+
+    # Remediation-panel guidance roles — a colored hierarchy that never carries meaning by color
+    # alone (each line keeps its ``↳`` label). Every one is a plain no-op when color is off, so
+    # the panel bytes stay identical off-TTY / under ``--json``.
+    def guidance_meaning(self, text: str) -> str:
+        """A ``↳ what it means`` line — dim, the least-emphasized guidance."""
+        return self.paint(text, "guidance_meaning")
+
+    def guidance_fix(self, text: str) -> str:
+        """A ``↳ fix`` / ``↳ auto-fix`` line — the success/accent-weighted honest action."""
+        return self.paint(text, "guidance_fix")
+
+    def guidance_warn(self, text: str) -> str:
+        """A ``↳ last resort`` label + its ``3pwr deviation`` command — a warning, never primary."""
+        return self.paint(text, "guidance_warn")
+
+    def guidance_waived(self, text: str) -> str:
+        """A ``↳ waived by active deviation`` annotation — a dimmed warning."""
+        return self.paint(text, "guidance_waived")
+
+    def panel_border(self) -> _RichStyle:
+        """The rich Style for a failure panel's border — the named chrome role, not a literal."""
+        return _RICH_STYLES["panel_border"]
+
+    def panel_title(self) -> _RichStyle:
+        """The rich Style for a failure panel's title — the named chrome role, not a literal."""
+        return _RICH_STYLES["panel_title"]
 
     def _glyph(self, status: str) -> str:
         table = _STATUS_GLYPH_ASCII if self.ascii_only else _STATUS_GLYPH

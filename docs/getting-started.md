@@ -88,12 +88,13 @@ agent, different-family oracle) plus a dependency summary, and exits 0 only when
 *skipped* otherwise), and the run stops exactly twice for you:
 
 1. **Spec approval** — read the generated spec, then
-   `3pwr run --resume --spec-id RUN --approver <you>`;
+   `3pwr run --resume --spec-id 001 --approver <you>` (the run's numeric id — the tracker prints it,
+   and it names the run's `specs-src/<NNN>-*/` folder);
 2. **Sign-off** — review the evidence, then resume the same way.
 
 After the second approval the run completes ("lifecycle complete — advanced to Ship") and exits `0`.
 Progress, verdicts, and any failure are recorded in the signed ledger: check anytime with
-`3pwr run --status --spec-id RUN`. Scripts can branch on the [documented exit
+`3pwr run --status --spec-id 001`. Scripts can branch on the [documented exit
 codes](cli-reference.md#run-exit-codes) — `0` done · `1` gates red · `2` usage · `3` paused at a human
 gate · `4` setup/dispatch failure.
 

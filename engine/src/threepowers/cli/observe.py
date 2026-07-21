@@ -193,7 +193,9 @@ def _register_observe(sub: SubParsers, common: AddCommon) -> None:
     osig = common(
         obsub.add_parser("signal", help="record a production signal → route to new intent")
     )
-    osig.add_argument("--spec-id", dest="spec_id", required=True)
+    osig.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     osig.add_argument("--kind", required=True, help="incident | missed-nfr | usage")
     osig.add_argument("--nfr", help="the NFR id the signal relates to (optional)")
     osig.add_argument("--note", help="the production lesson (required)")
@@ -211,7 +213,7 @@ def _register_observe(sub: SubParsers, common: AddCommon) -> None:
     )
     olog.add_argument("--agent", required=True, help="the acting agent's identity")
     olog.add_argument("--action", required=True, help="the action taken")
-    olog.add_argument("--spec-id", dest="spec_id")
+    olog.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     olog.set_defaults(func=cmd_observe_log_action)
     over = common(obsub.add_parser("verify-actions", help="verify the runtime agent-action log"))
     over.set_defaults(func=cmd_observe_verify_actions)

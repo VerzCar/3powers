@@ -177,7 +177,11 @@ def _register_deviation(sub: SubParsers, common: AddCommon) -> None:
     dvp.add_argument("--note", help="recorded reason")
     dvp.add_argument("--until", help="auto-expiry, ISO-8601 (the way back); else use --revoke")
     dvp.add_argument("--revoke", type=int, help="revoke the deviation at this ledger seq")
-    dvp.add_argument("--spec-id", dest="spec_id", help="scope to a spec (default: global)")
+    dvp.add_argument(
+        "--spec-id",
+        dest="spec_id",
+        help="the run's numeric id to scope to, e.g. 002 (default: global)",
+    )
     dvp.set_defaults(func=cmd_deviation)
 
 
@@ -186,5 +190,5 @@ def _register_emergency(sub: SubParsers, common: AddCommon) -> None:
     emp.add_argument("--approver", help="human who opens the emergency path")
     emp.add_argument("--note", help="recorded reason")
     emp.add_argument("--cleanup-hours", dest="cleanup_hours", type=int, help="cleanup window (24)")
-    emp.add_argument("--spec-id", dest="spec_id")
+    emp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     emp.set_defaults(func=cmd_emergency)

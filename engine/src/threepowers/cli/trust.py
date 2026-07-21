@@ -588,7 +588,7 @@ def _register_signoff(sub: SubParsers, common: AddCommon) -> None:
     sp.add_argument("--approver", required=True, help="approver identity (a person)")
     sp.add_argument("--stage", default="review")
     sp.add_argument("--note")
-    sp.add_argument("--spec-id", dest="spec_id")
+    sp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     sp.add_argument(
         "--spec",
         help="path to the approved spec.md — its hash is sealed into a Spec-stage sign-off "
@@ -600,7 +600,7 @@ def _register_signoff(sub: SubParsers, common: AddCommon) -> None:
 def _register_advance(sub: SubParsers, common: AddCommon) -> None:
     ap = common(sub.add_parser("advance", help="enforce gate+ledger+sign-off before advancing"))
     ap.add_argument("--stage", required=True)
-    ap.add_argument("--spec-id", dest="spec_id")
+    ap.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     ap.set_defaults(func=cmd_advance)
 
 
@@ -627,6 +627,8 @@ def _register_spec(sub: SubParsers, common: AddCommon) -> None:
             help="read-only: does the spec still match its approval hash? (never writes)",
         )
     )
-    spd.add_argument("--spec-id", dest="spec_id", required=True)
+    spd.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     spd.add_argument("--spec", help="path to the spec.md (default: the path recorded at approval)")
     spd.set_defaults(func=cmd_spec_diff)

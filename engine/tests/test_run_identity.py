@@ -20,11 +20,21 @@ from pathlib import Path
 import pytest
 import yaml
 
-from threepowers import keys, notify, prompts, runner, runpreflight, scaffold
-from threepowers.cli import EXIT_PAUSED, main
+from threepowers import (
+    cli,
+    keys,
+    notify,
+    orchestrate,
+    prompts,
+    runner,
+    runpreflight,
+    scaffold,
+    workspace,
+)
+from threepowers.cli import EXIT_FAIL, EXIT_PAUSED, main
 from threepowers.conformance import run_conformance
 from threepowers.ledger import Ledger
-from threepowers.verdict import STATUS_FAIL, Verdict
+from threepowers.verdict import STATUS_FAIL, GateResult, Verdict
 
 
 # --------------------------------------------------------------------------- fixtures (fake agent, no network)
@@ -261,3 +271,120 @@ def test_run_oracle_stage_prompt_names_the_concrete_destination(tmp_path):
     # a run without a bound folder substitutes nothing rather than a placeholder
     assert _oracle_destination_value(None) == ""
     assert _feature_folder_value(s, None) == ""
+
+
+# ----------------------------------------------------- Track A (plan 036): the numeric id in every hint
+_CMD_ID_RE = re.compile(r"3pwr\b[^\n]*?--(?:spec-id|id)[= ]+(\S+)")
+
+
+def _emitted_command_ids(text: str) -> list[str]:
+    """Every ``--spec-id`` / ``--id`` argument of a rendered ``3pwr …`` command in ``text``."""
+    return [m.strip("`\"'").rstrip(".,)") for m in _CMD_ID_RE.findall(text)]
+
+
+def _assert_emitted_command_ids_numeric(text: str) -> None:
+    """Guard: every ``--spec-id`` / ``--id`` argument of a rendered ``3pwr`` command is the numeric
+    feature-folder id (or a documentation placeholder) — never a non-numeric front-matter prefix a
+    resume/inspect/re-dispatch command cannot resolve via ``resolve_feature_dir``."""
+    for val in _emitted_command_ids(text):
+        if val.startswith("<") or val in {"SPEC_ID", "NNN", "ID"}:
+            continue  # an argparse metavar / documentation token, not an emitted value
+        assert val.isdigit(), f"non-numeric id emitted in a 3pwr command: {val!r}"
+
+
+def _gate_repo(tmp_path: Path) -> Path:
+    """A rooted repo with one numbered feature folder whose spec front-matter prefix (FEAT) is
+    deliberately NOT the numeric id — so a leaked prefix in any hint is caught."""
+    (tmp_path / ".3powers" / "config").mkdir(parents=True)
+    feature = tmp_path / "specs-src" / "042-widget"
+    feature.mkdir(parents=True)
+    (feature / "spec.md").write_text(
+        "**Spec ID**: FEAT\n\n- **FEAT-FR-001**: shall.\n", encoding="utf-8"
+    )
+    return tmp_path
+
+
+def _failing_verdict() -> Verdict:
+    """A finalized red verdict whose ``spec_id`` is the front-matter prefix FEAT (never the id)."""
+    v = Verdict(spec_id="FEAT", tier="Standard", adapter="a")
+    v.add(
+        GateResult(
+            gate="tests",
+            status=STATUS_FAIL,
+            tool="pytest",
+            findings=["1 test failed"],
+            details={"class": "test_failed"},
+        )
+    )
+    return v.finalize()
+
+
+def test_gate_run_id_output_uses_numeric_id_never_front_matter_prefix(
+    tmp_path, monkeypatch, capsys
+):
+    """Track A: a standalone `gate run --id 042` on a spec whose front-matter prefix is FEAT shows
+    the numeric id as the copy-pasteable identity everywhere — header `id=042`, the panel subject,
+    and the coder hand-back `re-dispatch: … --spec-id 042` — with FEAT surfacing only as a clearly
+    labelled secondary `spec=FEAT`. No `--spec-id FEAT` / `--id FEAT` command is ever emitted, and
+    every emitted id resolves back to the feature folder via ``resolve_feature_dir``."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.setattr(cli, "run_gates", lambda *a, **kw: _failing_verdict())
+    rc = main(["--root", str(root), "gate", "run", "--adapter", "a", "--no-ledger", "--id", "042"])
+    out = capsys.readouterr().out
+    assert rc == EXIT_FAIL
+    assert "id=042" in out  # the numeric id is the primary, copy-pasteable identity
+    assert "spec=FEAT" in out  # the front-matter prefix appears only as a labelled secondary
+    assert "re-dispatch: 3pwr run --resume --spec-id 042" in out
+    assert "042 ·" in out  # the panel subject leads with the numeric id
+    assert "--spec-id FEAT" not in out and "--id FEAT" not in out
+    _assert_emitted_command_ids_numeric(out)
+    for val in _emitted_command_ids(out):
+        assert workspace.resolve_feature_dir(root, val).name == "042-widget"
+
+
+def test_gate_run_id_json_payload_has_no_new_required_id_field(tmp_path, monkeypatch, capsys):
+    """Track A byte-stability: the `--json` machine payload is unchanged — exactly the top-level
+    keys ``{"verdict", "ledger_seq"}`` with no run-id field grafted onto the payload or the
+    verdict; the numeric-id remediation is human output only."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.setattr(cli, "run_gates", lambda *a, **kw: _failing_verdict())
+    rc = main(
+        [
+            "--root",
+            str(root),
+            "gate",
+            "run",
+            "--adapter",
+            "a",
+            "--no-ledger",
+            "--id",
+            "042",
+            "--json",
+        ]
+    )
+    obj = json.loads(capsys.readouterr().out)
+    assert rc == EXIT_FAIL
+    assert set(obj.keys()) == {"verdict", "ledger_seq"}
+    assert "run_id" not in obj and "id" not in obj
+    assert obj["verdict"]["spec_id"] == "FEAT"  # the verdict field is untouched
+    assert "run_id" not in obj["verdict"]  # no new id field grafted onto the verdict
+
+
+def test_failure_panels_omit_redispatch_when_no_resolvable_id():
+    """Track A: with neither a run id nor a verdict spec id, the coder hand-back omits the
+    re-dispatch line entirely rather than printing a non-resolving `<spec-id>` placeholder."""
+    v = Verdict(spec_id="", tier="Standard", adapter="a")
+    v.add(GateResult(gate="tests", status=STATUS_FAIL, tool="pytest", findings=["x"]))
+    out = orchestrate.failure_panels(v.finalize().to_dict(), run_id="")
+    assert "hand back to your coding agent" in out  # the prompt still renders
+    assert "re-dispatch:" not in out  # but no non-resolving command is printed
+
+
+def test_run_pause_hints_never_leak_the_front_matter_prefix(run_repo, capsys):
+    """Track A: the run-path pause screen resume hint carries the numeric NNN and never the spec's
+    `**Spec ID**: FEAT` front-matter prefix, which a resume command cannot resolve."""
+    assert main(["--root", str(run_repo), "run", "add x", "--no-input"]) == EXIT_PAUSED
+    out = capsys.readouterr().out
+    assert "3pwr run --resume --spec-id 030" in out
+    assert "--spec-id FEAT" not in out and "--id FEAT" not in out
+    _assert_emitted_command_ids_numeric(out)

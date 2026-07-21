@@ -19,6 +19,20 @@ THREEPOWERS_DIRNAME = ".3powers"
 _SCAN_TOOLS = ("secret_scan", "dependency_scan", "sast")
 
 
+@dataclass(frozen=True)
+class AutoFixPrefs:
+    """The resolved auto-fix loop preferences (``auto-fix.yaml``).
+
+    ``enabled`` gates the run-path loop (a red Verify in ``3pwr run`` auto mode); a standalone
+    ``3pwr gate fix`` runs the loop regardless. ``max_attempts`` bounds the coder attempts before
+    the loop gives up to the human summary. ``scope_to_failed`` optionally narrows each coder
+    dispatch to the failed gates' files. Never a gate, verdict, or ledger input."""
+
+    enabled: bool
+    max_attempts: int
+    scope_to_failed: bool
+
+
 @dataclass
 class Settings:
     root: Path
@@ -130,6 +144,15 @@ class Settings:
         malformed file falls back to the shipped catalog defaults plus free-form entry."""
         return self.dir / "config" / "models.yaml"
 
+    @property
+    def auto_fix_config_path(self) -> Path:
+        """The auto-fix loop preferences (``auto-fix.yaml``).
+
+        Governs the harness's bounded, code-only remediation loop — whether the run-path loop is on,
+        the coder-attempt budget, and whether to scope a dispatch to the failed gates' files. A
+        missing or malformed file falls back to the shipped defaults; never a gate or ledger input."""
+        return self.dir / "config" / "auto-fix.yaml"
+
     def context_budget(self, model: str = "") -> int:
         """The advisory context budget in tokens for ``model``.
 
@@ -168,6 +191,27 @@ class Settings:
         Advisory: it commits each successful lifecycle stage; it never touches the ledger or a gate."""
         v = (_load_yaml(self.onboarding_path).get("defaults") or {}).get("auto_commit")
         return True if v is None else bool(v)
+
+    def auto_fix(self) -> AutoFixPrefs:
+        """The resolved auto-fix loop preferences — tolerant, deterministic, never raises.
+
+        Read from ``auto-fix.yaml``: ``enabled`` (default True — the run-path loop is on for
+        ``3pwr run`` auto mode), ``max_attempts`` (default 3, clamped to at least 1), and
+        ``scope_to_failed`` (default False). A missing or malformed file, or an out-of-shape value,
+        falls back to the shipped default for that field. Advisory only — it steers the code-only
+        remediation loop and is never a gate, verdict, or ledger input."""
+        data = _load_yaml(self.auto_fix_config_path)
+        enabled = data.get("enabled")
+        raw_max = data.get("max_attempts")
+        try:
+            max_attempts = int(raw_max) if raw_max is not None else 3
+        except (TypeError, ValueError):
+            max_attempts = 3
+        return AutoFixPrefs(
+            enabled=True if enabled is None else bool(enabled),
+            max_attempts=max_attempts if max_attempts >= 1 else 3,
+            scope_to_failed=bool(data.get("scope_to_failed", False)),
+        )
 
     def dispatch_timeout(self) -> int:
         """The per-stage dispatch timeout in seconds. Defaults to 1800 (30 min).
@@ -371,6 +415,55 @@ class Settings:
             "integration": str(r.get("integration") or "").strip(),
             "label": str(r.get("label") or "").strip() or model,
         }
+
+    def subagent_models(self) -> dict[str, str]:
+        """The optional per-stage sub-agent model overrides — ``{step: model}``.
+
+        Additive and off by default: an absent (or non-mapping) ``subagent_models`` block yields an
+        empty map and changes nothing about dispatch. Each value is the model id the resolved
+        integration expects for that stage's *sub-agents*; the main stage agent keeps its role
+        model. Blank keys/values are dropped. A value absent from the ``models.yaml`` catalog stays
+        usable (BYOK), matching the role model-pin tolerance — :meth:`subagent_model_warnings`
+        surfaces the likely-typo case advisorily; it is never a gate."""
+        raw = self.load_roles().get("subagent_models")
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, str] = {}
+        for step, model in raw.items():
+            key = str(step or "").strip()
+            val = str(model or "").strip()
+            if key and val:
+                out[key] = val
+        return out
+
+    def subagent_model_warnings(self) -> list[str]:
+        """Advisory warnings for ``subagent_models`` entries whose model is not in the catalog.
+
+        A stage's dispatching integration is the oracle's for the ``oracle`` step, else the coder's.
+        When that integration has a curated catalog and the pinned sub-agent model is not listed, one
+        warning names the likely typo — the model is still used as-is (BYOK), never blocked. Empty
+        when every entry resolves, when no ``subagent_models`` block is set, or when the integration
+        is a free-form BYOK backend with no curated list. Never raises, never a gate."""
+        from . import catalog as _catalog  # local import avoids a config↔catalog import cycle
+
+        overrides = self.subagent_models()
+        if not overrides:
+            return []
+        cat = _catalog.load_catalog(self)
+        coder_intg = str(self.role("coder").get("integration") or "").strip()
+        oracle_intg = str(self.role("oracle").get("integration") or "").strip()
+        warnings: list[str] = []
+        for step, model in overrides.items():
+            integration = oracle_intg if step == "oracle" else coder_intg
+            if not integration:
+                continue
+            listed = {e["model"] for e in _catalog.models_for(cat, integration)}
+            if listed and model not in listed:
+                warnings.append(
+                    f"subagent_models.{step}: '{model}' is not in the {integration} catalog "
+                    f"(models.yaml) — used as-is (BYOK); check for a typo"
+                )
+        return warnings
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

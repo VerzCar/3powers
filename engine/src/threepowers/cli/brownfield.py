@@ -308,6 +308,7 @@ def _register_ready(sub: SubParsers, common: AddCommon) -> None:
     rdy.add_argument(
         "--spec-id",
         dest="spec_id",
-        help="consider deviations recorded for this spec id (e.g. a model-diversity deviation)",
+        help="consider deviations recorded for this run's numeric id, e.g. 002 "
+        "(e.g. a model-diversity deviation)",
     )
     rdy.set_defaults(func=cmd_ready)
