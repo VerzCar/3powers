@@ -327,7 +327,8 @@ configured fix, prints `↳ auto-fixed by <tool>`, and re-checks: a passing re-c
 green and the fixed files join the run's produced set, so a `3pwr run` stage commit picks them up;
 a failing re-check reports normally. Auto-fix is never the default — produced output is never
 silently mutated — and a `fix_cmd` on any other gate (types, tests, mutation, …) is discarded and
-never executed.
+never executed. This flag is the deterministic, tool-driven format/lint fix; the coder-driven,
+code-only remediation loop for *any* red gate is `gate fix` (see below).
 
 **Scanner exclusions (`.3powers/config/scan.yaml`).** The three scanner gates — `secret_scan`,
 `dependency_scan`, and `sast` — honor an auditable, committed per-tool ignore config. Each tool
@@ -378,6 +379,48 @@ excluded, in both the human output and `--json`.
 > advisory acceptance — like any other trust configuration. The engine's core `ed25519-priv`
 > private-key check **always runs** and cannot be disabled by this file: the `secret_scan` globs
 > only shape its directory walk, and it still fires on key material anywhere outside them.
+
+### `gate fix` — bounded, code-only auto-remediation
+Runs the gate suite and, on a **red** verdict, hands the failing gates back to the configured coding
+agent through the same structured hand-back prompt the run path uses, re-runs the suite, and loops
+until the verdict is green or the attempt budget is exhausted. It is **code-only**: it only dispatches
+the coder (which edits code) and re-runs the gates. It **never** records a deviation, edits gate
+configuration, or mutates a verdict — every re-check records an honest signed verdict, so the trust
+spine sees each attempt. `gate_gaming` stays the backstop: if a coder attempt trips it (a weakened
+check — a deleted assertion, an inline suppression), the loop stops at once and hands off to you.
+- `--tier TIER` — risk tier (default: `Standard`).
+- `--adapter ADAPTER` — language adapter (default: auto-detect).
+- `--spec SPEC` / `--id NNN` — the governing spec, by path or feature-folder number (mutually exclusive).
+- `--integration AGENT` / `--agent NAME` — the coder backend (default: `roles.coder.integration`).
+- `--work-kind KIND` — shape the gate set for an inferred kind (repeatable; same semantics as `gate run`).
+- `--retries N` — dispatch retry budget per attempt (default: configured).
+- `--timeout SECONDS` — per-dispatch timeout.
+
+```bash
+3pwr gate fix --id <NNN> --tier Standard
+```
+
+Exit `0` when the suite is already green (`nothing to fix`) or the loop reached green; `1` when it
+gave up on a still-red verdict — where it prints the step-by-step **human remediation summary** (the
+per-gate failure panels plus a "what I tried / what's left for you" block, ending with the labelled
+last-resort option of a human-authored signed deviation); `4` when no coder integration is configured
+(set `roles.coder.integration`, or pass `--integration`). The loop's attempt budget and whether it is
+enabled on the run path come from `.3powers/config/auto-fix.yaml` (see below).
+
+**Loop configuration (`.3powers/config/auto-fix.yaml`).** Governs the harness's code-only
+remediation loop. `enabled` (default `true`) gates the **run-path** loop — a red Verify in `3pwr run`
+auto mode is handed back to the coder automatically before the run pauses; a standalone `gate fix`
+runs the loop regardless. `max_attempts` (default `3`, clamped to at least 1) bounds the coder
+attempts before the loop gives up to the human summary. `scope_to_failed` (default `false`) optionally
+narrows each dispatch to the failed gates' files. A missing or malformed file falls back to these
+defaults; it is advisory config only — never a gate, verdict, or ledger input.
+
+```yaml
+# .3powers/config/auto-fix.yaml
+enabled: true          # run-path loop on/off (a red Verify in `3pwr run` auto mode)
+max_attempts: 3        # coder attempts before giving up to the human summary
+scope_to_failed: false # scope each dispatch to the failed gates' files
+```
 
 ### `gate config show` — the effective gate configuration
 Renders what the engine would actually run, per gate — the adapter defaults, the `gates.yaml`
@@ -695,6 +738,16 @@ line, followed by ready-to-run commands:
      Resume:  3pwr run --resume --spec-id 042
      Inspect: 3pwr gate run --id 042
 ```
+
+**Auto-fix at Verify (auto mode).** Before pausing on a red Verify, a `3pwr run` in `auto` mode
+runs the bounded, **code-only** auto-fix loop (unless disabled in `auto-fix.yaml`): it hands the
+failing gates back to the coder, re-runs the suite recording an honest signed verdict each pass, and
+loops until green or the attempt budget is exhausted. It never records a deviation, edits config, or
+mutates a verdict, and `gate_gaming` stays the backstop. If it reaches green the run continues; if it
+gives up it prints the step-by-step human remediation summary and stops at gate-red. It is the same
+loop as the standalone `gate fix` — see that command for the configuration and safety details. A
+signed deviation remains the human's last-resort waiver for a residual red, applied only after the
+loop gives up.
 
 **Active deviations are honoured at Verify.** When every red gate of the just-recorded verdict is
 covered by an active signed deviation (scoped to the run's spec id; a global deviation applies

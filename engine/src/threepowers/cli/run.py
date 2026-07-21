@@ -8,6 +8,7 @@ import hashlib
 import json
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -16,6 +17,7 @@ import threepowers.cli as _cli
 from .. import (
     agents,
     artifacts,
+    autofix,
     completion,
     deviations,
     gitflow,
@@ -453,6 +455,91 @@ def _native_verdict(
     return "pass" if verdict.result == STATUS_PASS else "fail"
 
 
+def _auto_fix_loop(
+    s: Settings,
+    args: argparse.Namespace,
+    *,
+    tier: str,
+    kinds: list[str],
+    feature_dir: Optional[Path],
+    ledger: Ledger,
+    sk,
+    coder,
+    retries: int,
+    initial_verdict: dict[str, Any],
+    out: dict[str, Any],
+    report: Callable[[str], None] = lambda _m: None,
+) -> autofix.AutoFixResult:
+    """Drive the bounded, code-only auto-fix loop over a red Verify verdict.
+
+    Wires the pure :func:`autofix.run_loop` to this run's collaborators: it dispatches the run's
+    already-constructed ``coder`` as a fresh session with the failed-gate hand-back prompt, and
+    re-runs the deterministic gate suite via :func:`_native_verdict` — which records an honest signed
+    verdict on every pass. It performs NO other action: it never records a deviation/advisory, edits
+    gate config, or mutates a verdict. ``out`` receives the latest verdict dict on each re-check so
+    the caller can read the final (green or still-red) verdict. Returns the loop's outcome."""
+    cfg = s.auto_fix()
+
+    def _dispatch(prompt: str, scope: Sequence[str]) -> bool:
+        spec_path = _resolve_run_spec(s, args, feature_dir)
+        spec_text = _dispatch_spec_text(s, "implement", spec_path)
+        result, _attempts = runnermod.dispatch_with_retry(
+            lambda: coder.dispatch(
+                "implement",
+                "Build",
+                spec_text=spec_text,
+                context=prompt,
+                file_scope="\n".join(scope),
+            ),
+            retries=retries,
+        )
+        return result.ok
+
+    def _recompute() -> tuple[str, dict[str, Any]]:
+        outcome = _native_verdict(
+            s, args, tier, kinds, ledger=ledger, sk=sk, feature_dir=feature_dir, out=out
+        )
+        return outcome, out.get("verdict") or {}
+
+    return autofix.run_loop(
+        verdict=initial_verdict,
+        max_attempts=cfg.max_attempts,
+        scope_to_failed=cfg.scope_to_failed,
+        dispatch=_dispatch,
+        recompute=_recompute,
+        snapshot=lambda: runnermod.worktree_state(s.root),
+        report=report,
+    )
+
+
+def build_coder_runner(
+    s: Settings, args: argparse.Namespace, *, spec_id: str, stream: bool = False
+):
+    """Build the coder backend exactly as a live run does — for the standalone ``3pwr gate fix``.
+
+    Resolves the coder integration (``--integration``/``--agent`` wins, else
+    ``roles.coder.integration``) and constructs its dispatch backend with a transcript sink keyed by
+    ``spec_id``. Returns ``(runner, agent_name)``; ``(None, "")`` when no coder integration is
+    configured, so the caller can refuse with an actionable message. Raises ``FileNotFoundError``
+    when the resolved agent has no manifest."""
+    coder_agent = _resolve_coder_agent(s, args)
+    if not coder_agent:
+        return None, ""
+    manifest = agents.load_agent(s, coder_agent)
+    timeout = _dispatch_timeout(s, args)
+    sink = transcripts.TranscriptSink(s.root, spec_id)
+    coder = _make_agent_runner(
+        s,
+        manifest,
+        model=str(s.role("coder").get("model") or ""),
+        intent=getattr(args, "intent", "") or "",
+        timeout=timeout,
+        stream=stream,
+        transcripts_sink=sink,
+    )
+    return coder, coder_agent
+
+
 def _deviation_proceed_notices(
     verdict_payload: dict[str, Any], entries: list[dict[str, Any]], spec_id: str
 ) -> Optional[list[str]]:
@@ -839,6 +926,7 @@ def _native_runner(
     on_progress: Optional[Callable[[orchestrate.Event], None]] = None,
     verdict_box: Optional[dict[str, Any]] = None,
     progress_reporter: Optional[progress.Reporter] = None,
+    mode: str = "auto",
 ) -> NativeRunner:
     """Build the native executive runner: dispatch each stage to the role's agent, verify
     its declared artifact, retry/timeout-bound the dispatch,
@@ -1199,6 +1287,64 @@ def _native_runner(
             feature_dir=feature_dir,
             out=box,
         )
+        if outcome == "fail" and mode == "auto":
+            # Bounded, code-only auto-remediation, tried FIRST — before the deviation-proceed check
+            # below and entirely independent of it: it only hands the red gates back to the coder and
+            # re-runs the suite (recording an honest signed verdict each pass), never a deviation, a
+            # config edit, or a verdict mutation. A signed deviation stays the human's last resort for
+            # a residual red. `gate_gaming` stays the backstop. Only entered when the verdict names
+            # failed gates to hand back and the loop is enabled in auto mode.
+            redv = box.get("verdict") or {}
+            if s.auto_fix().enabled and autofix.failed_gate_names(redv):
+                report = (
+                    (lambda m: None)
+                    if getattr(args, "json", False)
+                    else (lambda m: print(f"  ↳ {m}"))
+                )
+                fix = _auto_fix_loop(
+                    s,
+                    args,
+                    tier=tier,
+                    kinds=wk.kinds,
+                    feature_dir=feature_dir,
+                    ledger=ledger,
+                    sk=sk,
+                    coder=coder,
+                    retries=retries,
+                    initial_verdict=redv,
+                    out=box,
+                    report=report,
+                )
+                if fix.fixed:
+                    outcome = "pass"
+                    # The coder's remediation lands as the verify stage's commit on the run branch,
+                    # so no run-produced change is left uncommitted. Best-effort — a commit problem
+                    # warns, never fails the now-green run.
+                    code_fixed = sorted({p for a in fix.attempts for p in a.changed_files})
+                    if code_fixed and run_branch and not commit_relaxed:
+                        paths = list(code_fixed)
+                        if s.ledger_path.is_file():
+                            ledger_rel = str(s.ledger_path.relative_to(s.root))
+                            if ledger_rel not in paths:
+                                paths.append(ledger_rel)
+                        commit = gitflow.commit_stage(
+                            s.root,
+                            paths,
+                            message=gitflow.stage_commit_message(
+                                spec_id, "verify", "apply auto-fix code remediation"
+                            ),
+                            author_name=prefs.author_name,
+                            author_email=prefs.author_email,
+                        )
+                        if commit.error:
+                            print(
+                                f"warning: auto-fix remediation not committed — {commit.error}",
+                                file=sys.stderr,
+                            )
+                else:
+                    # Stash the given-up loop so the terminal gate-red branch can print the
+                    # step-by-step human remediation summary after the live bar has closed.
+                    box["auto_fix"] = fix
         if outcome == "fail":
             # The recorded verdict stays honestly red; only the PROCEED decision consults the
             # active signed deviations — the same shared coverage helper `advance` uses, so a
@@ -1281,6 +1427,7 @@ def _run_make_runner(
         on_progress=on_progress,
         verdict_box=verdict_box,
         progress_reporter=progress_reporter,
+        mode=mode,
     )
 
 
@@ -2106,6 +2253,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 f"`3pwr gate run --id {spec_id}`, fix the failing gate(s), then "
                 f"`3pwr run --resume --spec-id {spec_id}`."
             )
+            # When the auto-fix loop tried and gave up, print the step-by-step human remediation
+            # summary — the per-gate panels plus a "what I tried / what's left for you" block.
+            # Human output only; never in the --json payload.
+            fix = verdict_box.get("auto_fix")
+            if fix is not None and not args.json:
+                human += "\n" + autofix.give_up_summary(
+                    fix, verdict_box.get("verdict") or {}, rst, run_id=spec_id
+                )
             _print(
                 {"status": "gates_red", "stage": reached, "spec_id": spec_id, "stages": _stages()},
                 args.json,

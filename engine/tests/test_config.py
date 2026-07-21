@@ -52,6 +52,41 @@ def _write(path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def test_auto_fix_defaults_when_absent(tmp_path):
+    """A repo with no auto-fix.yaml resolves the shipped defaults: the run-path loop is on, the
+    budget is 3, and dispatch is not scoped to the failed gates' files."""
+    (tmp_path / ".3powers").mkdir()
+    prefs = Settings(root=tmp_path).auto_fix()
+    assert prefs.enabled is True
+    assert prefs.max_attempts == 3
+    assert prefs.scope_to_failed is False
+
+
+def test_auto_fix_reads_and_clamps_values(tmp_path):
+    """auto-fix.yaml values are honored; an out-of-range budget clamps to the default."""
+    _write(
+        tmp_path / ".3powers" / "config" / "auto-fix.yaml",
+        "enabled: false\nmax_attempts: 5\nscope_to_failed: true\n",
+    )
+    prefs = Settings(root=tmp_path).auto_fix()
+    assert prefs.enabled is False
+    assert prefs.max_attempts == 5
+    assert prefs.scope_to_failed is True
+
+    _write(
+        tmp_path / ".3powers" / "config" / "auto-fix.yaml",
+        "max_attempts: 0\n",
+    )
+    assert Settings(root=tmp_path).auto_fix().max_attempts == 3  # clamped away from < 1
+
+
+def test_auto_fix_tolerates_malformed_file(tmp_path):
+    """A malformed or wrong-shape auto-fix.yaml falls back to the defaults, never raises."""
+    _write(tmp_path / ".3powers" / "config" / "auto-fix.yaml", "max_attempts: not-a-number\n")
+    prefs = Settings(root=tmp_path).auto_fix()
+    assert prefs.enabled is True and prefs.max_attempts == 3
+
+
 def test_subagent_models_optional_and_additive(tmp_path):
     """Plan 036 Track D: an absent block yields {}; blank keys/values are dropped; declared entries
     parse — additive and off by default, so unset changes nothing."""
