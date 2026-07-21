@@ -187,11 +187,50 @@ def test_copilot_hint_sums_written_and_output_from_the_real_summary_line() -> No
 
 
 def test_claude_hint_reads_non_cached_input_plus_output_from_the_json_result() -> None:
-    """Plan 034 Track D: Claude Code's `--output-format json` result reports input_tokens
-    EXCLUDING cache reads; the hint sums it with output_tokens (312 + 9273), ignoring the
-    cache_read/cache_creation fields. Plain text output stays unknown (usage_mode off)."""
+    """Claude Code's `--output-format json` result reports input_tokens EXCLUDING cache reads; with
+    no `modelUsage` map present (an older CLI) the hint degrades to the flat top-level `usage`,
+    summing input + output (312 + 9273) and ignoring the cache_read/cache_creation fields. Plain
+    text output stays unknown (usage_mode off)."""
     assert agents.extract_usage(_manifest("claude"), _fixture("claude.json")) == 9585
     assert agents.extract_usage(_manifest("claude"), "plain text, no summary") is None
+
+
+def test_claude_token_total_is_the_whole_tree_model_usage_sum() -> None:
+    """A `result` event carrying a two-model `modelUsage` map (a main model + a sub-agent model)
+    yields the WHOLE-TREE token total — input + output summed across every model (312 + 9273 for
+    the main + 5000 + 2000 for the sub-agent = 16585) — strictly greater than the top-level `usage`
+    block alone (9585), so sub-agent tokens are no longer undercounted. Cache-read tokens are
+    excluded, consistent with the flat posture. Cost stays `total_cost_usd`, which already rolls up
+    the whole tree."""
+    claude = _manifest("claude")
+    body = _fixture("claude_stream_modelusage.jsonl")
+    top_level_only = 312 + 9273
+    whole_tree = agents.extract_usage(claude, body)
+    assert whole_tree == top_level_only + 5000 + 2000  # 16585
+    assert whole_tree is not None and whole_tree > top_level_only
+    assert agents.extract_cost(claude, body) == pytest.approx(0.2913)
+
+
+def test_claude_degrades_to_top_level_usage_when_model_usage_absent() -> None:
+    """Older-CLI back-compat: a stream-json transcript whose `result` event has no `modelUsage`
+    map degrades to the flat top-level `usage` block (312 + 9273 = 9585) rather than reading `—`."""
+    assert agents.extract_usage(_manifest("claude"), _fixture("claude_stream.jsonl")) == 9585
+
+
+def test_claude_wrong_model_usage_inner_path_degrades_not_crashes() -> None:
+    """Defensive: if the inner token field names do not match the real `modelUsage` schema, every
+    map value fails to resolve, so the resolver degrades to the flat top-level `usage` fallback
+    (never a crash, never a fabricated number)."""
+    manifest = {
+        "usage": {
+            "source": "inline-json",
+            "per_model_field": "modelUsage",
+            "per_model_tokens": ["nope_input", "nope_output"],
+            "fields": ["usage.input_tokens", "usage.output_tokens"],
+            "cost_field": "total_cost_usd",
+        }
+    }
+    assert agents.extract_usage(manifest, _fixture("claude_stream_modelusage.jsonl")) == 9585
 
 
 def test_codex_text_hint_still_reads_the_totals_line() -> None:

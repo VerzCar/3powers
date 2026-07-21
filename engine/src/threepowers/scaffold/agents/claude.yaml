@@ -13,12 +13,23 @@ prompt_via: arg
 # Session freshness: each `claude -p` invocation starts a NEW session by default; reuse is
 # opt-in only (`--continue` / `--resume`), which the engine never emits — no new-session flag needed.
 # Usage (advisory): with structured output enabled (usage_mode below), the final `result` event
-# carries usage.input_tokens (the non-cached input — cache reads are counted separately in
-# cache_read_input_tokens), usage.output_tokens, and total_cost_usd; the hints sum the tokens and
-# read the cost. Plain `-p` text output carries no token summary, so the hints read as unknown
-# until usage_mode is set.
+# carries a `modelUsage` map (model id -> that model's usage) and a `total_cost_usd`. The token
+# total is the WHOLE-TREE sum of input+output across every entry of `modelUsage`, so sub-agents
+# running on a different model (e.g. a cost-optimized helper) are counted too — the top-level
+# `usage` block omits them. `total_cost_usd` already rolls up the whole tree. When an older Claude
+# CLI emits no `modelUsage`, the hints fall back to the flat top-level `usage.input_tokens` +
+# `usage.output_tokens` (cache reads are counted separately in cache_read_input_tokens and excluded
+# both ways). Plain `-p` text output carries no token summary, so the hints read as unknown until
+# usage_mode is set.
 usage:
   source: inline-json
+  # Whole-tree token total: sum input+output across every model in the result event's `modelUsage`
+  # map (sub-agents included). NOTE: the inner camelCase field names below are modelled from a
+  # captured sample and pending real-output re-verification; a wrong path degrades to the flat
+  # `fields` fallback, never a crash.
+  per_model_field: modelUsage
+  per_model_tokens: [inputTokens, outputTokens]
+  # Older-CLI fallback (no `modelUsage`): the flat top-level per-run usage block.
   fields: [usage.input_tokens, usage.output_tokens]
   cost_field: total_cost_usd
 # Structured output for native token/cost accounting WITHOUT killing the live stream:

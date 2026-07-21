@@ -675,11 +675,16 @@ cached context; codex's plain-text total likewise), and a backend that reports n
 Where the backend supports it, a manifest opts into structured output for the exact non-cached count
 and cost: set `usage_mode: json` plus `usage_mode_args` — the backend's own flag. The shipped claude
 backend enables it with `--output-format stream-json --verbose`, an **event stream** that carries the
-final `usage` and `total_cost_usd` while preserving the live conversation: the engine renders the
-assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the transcript.
-(A note for older claude-code builds: versions before `v2.1.208` can truncate the final `result`
-line, so cost/tokens may read `—`; upgrade to capture them.) Pass `--raw-events` to echo the
-underlying NDJSON verbatim for debugging.
+final `modelUsage`, `usage`, and `total_cost_usd` while preserving the live conversation: the engine
+renders the assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the
+transcript. For the claude backend the reported token total is the **whole-tree** rollup: the final
+`result` event's `modelUsage` is a per-model map, and the engine sums input plus output tokens across
+every model, so tokens spent by sub-agents running on a different model (for example a cost-optimized
+helper) are included rather than dropped. When an older claude build emits no `modelUsage` map, the
+count falls back to the flat top-level `usage` block (main-agent tokens only). Cost comes from
+`total_cost_usd`, which already rolls up the whole tree. (A note for older claude-code builds:
+versions before `v2.1.208` can truncate the final `result` line, so cost/tokens may read `—`; upgrade
+to capture them.) Pass `--raw-events` to echo the underlying NDJSON verbatim for debugging.
 
 **Session-file backends (copilot, aider).** Some agents do not print usage inline but write it to an
 on-disk session artifact, so their `usage` block uses `source: session-file`. The Copilot backend

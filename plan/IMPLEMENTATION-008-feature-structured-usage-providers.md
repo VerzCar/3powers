@@ -205,12 +205,38 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-021 | In `engine/src/threepowers/agents.py`, for the Claude `inline-json` source compute tokens from `modelUsage` (the per-model map in the final `result` event): sum each model's input+output, excluding cache reads consistently with the manifest's existing posture. Fall back to the top-level `usage` block only when `modelUsage` is absent (older CLI back-compat). Keep cost from `total_cost_usd`. |  |  |
-| TASK-022 | Update `.3powers/agents/claude.yaml` **and** `engine/src/threepowers/scaffold/agents/claude.yaml` (same task): change the token field spec from the top-level `fields: [usage.input_tokens, usage.output_tokens]` to the `modelUsage`-aware spec, keep `cost_field: total_cost_usd`, and refresh the header comment to describe the whole-tree sub-agent rollup and the older-CLI fallback. No internal ids (GUD-001). |  |  |
-| TASK-023 | Update `docs/` to document that a Claude dispatch's token total is the whole-tree `modelUsage` rollup (sub-agents included) with an older-CLI fallback to the top-level `usage`, and that cost comes from `total_cost_usd`. No internal ids (GUD-001). |  |  |
-| TASK-024 | Confirm `engine/tests/test_oss_readiness.py` stays green for the refreshed `claude.yaml` header comment (GUD-001). |  |  |
-| TASK-025 | Tests: a `stream-json` fixture whose final `result` event has `modelUsage` for two models (a main + a sub-agent model) yields the **summed** token total, strictly greater than the top-level `usage` block alone, and cost equal to `total_cost_usd`; a fixture without `modelUsage` degrades to the top-level `usage` (older-CLI back-compat). Build on the existing `engine/tests/fixtures/usage/claude_stream.jsonl` / `claude.json`. |  |  |
-| TASK-026 | Guardrail: confirm the additive token/cost fields do not regress the High-risk trust-spine coverage floors (`canonical`, `keys`, `ledger`, `verify` ≥ 95%) and that no verdict/ledger/exit-code/`--json` behavior changes beyond additive fields (CON-001). Record this confirmation in the phase note. |  |  |
+| TASK-021 | In `engine/src/threepowers/agents.py`, for the Claude `inline-json` source compute tokens from `modelUsage` (the per-model map in the final `result` event): sum each model's input+output, excluding cache reads consistently with the manifest's existing posture. Fall back to the top-level `usage` block only when `modelUsage` is absent (older CLI back-compat). Keep cost from `total_cost_usd`. | ✅ | 2026-07-21 |
+| TASK-022 | Update `.3powers/agents/claude.yaml` **and** `engine/src/threepowers/scaffold/agents/claude.yaml` (same task): change the token field spec from the top-level `fields: [usage.input_tokens, usage.output_tokens]` to the `modelUsage`-aware spec, keep `cost_field: total_cost_usd`, and refresh the header comment to describe the whole-tree sub-agent rollup and the older-CLI fallback. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-023 | Update `docs/` to document that a Claude dispatch's token total is the whole-tree `modelUsage` rollup (sub-agents included) with an older-CLI fallback to the top-level `usage`, and that cost comes from `total_cost_usd`. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-024 | Confirm `engine/tests/test_oss_readiness.py` stays green for the refreshed `claude.yaml` header comment (GUD-001). | ✅ | 2026-07-21 |
+| TASK-025 | Tests: a `stream-json` fixture whose final `result` event has `modelUsage` for two models (a main + a sub-agent model) yields the **summed** token total, strictly greater than the top-level `usage` block alone, and cost equal to `total_cost_usd`; a fixture without `modelUsage` degrades to the top-level `usage` (older-CLI back-compat). Build on the existing `engine/tests/fixtures/usage/claude_stream.jsonl` / `claude.json`. | ✅ | 2026-07-21 |
+| TASK-026 | Guardrail: confirm the additive token/cost fields do not regress the High-risk trust-spine coverage floors (`canonical`, `keys`, `ledger`, `verify` ≥ 95%) and that no verdict/ledger/exit-code/`--json` behavior changes beyond additive fields (CON-001). Record this confirmation in the phase note. | ✅ | 2026-07-21 |
+
+> **Phase 4 note (2026-07-21).** Track D fixes the Claude sub-agent token undercount. **Map-sum
+> extraction:** added a dedicated inline-json mode for "sum a token field across all values of a map
+> field" rather than overloading the line/object-summing machinery — a manifest declares
+> `per_model_field` (dotted path to the per-model map, e.g. `modelUsage`) and `per_model_tokens` (the
+> inner token field names summed per map value). `_tokens_from_model_usage` walks to the map node,
+> and for each value sums the declared inner token fields via the shared `_sum_fields`; a new generic
+> `_last_over_json_lines` helper finds the newest resolving JSON object (the final `result` event),
+> which also de-duplicated the existing last-scan in `_usage_from_json`/`_cost_from_inline_json`
+> (behaviour-identical). **Older-CLI fallback:** `_usage_from_inline_json` tries the per-model map
+> first; when it resolves nothing (no `modelUsage` map — an older CLI, or a renamed/mismatched field)
+> it degrades to the flat `fields` (top-level `usage`), never `—` and never a crash. Cost is unchanged
+> (`total_cost_usd`, already whole-tree-correct). Cache-read tokens stay excluded (they are simply not
+> listed in `per_model_tokens`), consistent with the flat posture. **`modelUsage` inner field-name
+> assumption (flagged for Phase 5 real-output verification):** the inner token fields are modelled as
+> **camelCase** `inputTokens`/`outputTokens` (with cache reads under `cacheReadInputTokens`,
+> excluded), captured in the new `claude_stream_modelusage.jsonl` fixture — this is inferred from a
+> sample, not a live CLI capture, and must be re-verified against real `--output-format stream-json`
+> output in Phase 5 (a wrong path degrades to the flat fallback, so the risk is a silent undercount,
+> never a crash). **Guardrail (TASK-026):** strictly additive — the change lives entirely inside the
+> advisory `extract_usage` resolution; `extract_usage`/`extract_cost` keep their positional
+> signatures, the `DispatchResult → StageResult → progress.md` / ledger chain is byte-unchanged, no
+> verdict/exit-code/`--json` behaviour changes, and no trust-spine module (`canonical`/`keys`/
+> `ledger`/`verify`) was touched, so their High-risk coverage floors are unaffected. Targeted
+> `test_agents.py` (claude), `test_stream_usage.py`, `test_oss_readiness.py` green; ruff/mypy on
+> `agents.py` clean; full pytest/ruff/mypy/`3pwr gate run` batched to Phase 6.
 
 ### Phase 5
 

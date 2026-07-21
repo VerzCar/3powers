@@ -58,6 +58,17 @@ from .config import Settings
 #                            input + output reported separately)
 #                  subtract: list of dotted paths subtracted when present (inline-json;
 #                            e.g. a cached-input count folded into a total)
+#                  per_model_field: dotted path to a per-model usage MAP (inline-json; Claude
+#                            Code's `modelUsage` in the final `result` event — model id ->
+#                            per-model usage object). When declared, the whole-tree token total
+#                            (sub-agents on other models included) is summed across every value of
+#                            the map, tried BEFORE the flat `fields`; when the map is absent (an
+#                            older CLI, or a renamed field) the resolver degrades to the flat
+#                            `fields` (the top-level `usage` block) — never crashes, never fabricates.
+#                  per_model_tokens: the inner token field names summed for each map value
+#                            (inline-json; e.g. ["inputTokens", "outputTokens"]). A map value counts
+#                            only when every field resolves; cache-read fields are simply not listed,
+#                            so they are excluded consistently with the flat `fields` posture.
 #                  aggregate: "sum" | (default) "last" — how the inline-json resolver combines the
 #                            matching events. "last" reads the final matching JSON object (the usual
 #                            end-of-run summary line). "sum" totals EVERY matching event, for a
@@ -249,17 +260,29 @@ def _parse_count(raw: str) -> Optional[int]:
         return None
 
 
-def _json_field(obj: Any, dotted: str) -> Optional[int]:
-    """Walk a dotted path into a parsed JSON object and coerce the leaf to ``int``, else ``None``.
+def _walk_path(obj: Any, dotted: str) -> Any:
+    """Walk a dotted path into a parsed JSON object and return the leaf node, or ``None``.
 
-    Numeric leaves pass through; string leaves go through :func:`_parse_count`, so a service
-    reporting ``"629.8k"`` reads the same as one reporting ``629800``.
+    A missing key, or a non-mapping encountered mid-path, resolves to ``None``. The returned node is
+    the raw JSON value (dict, list, number, string, bool) — coercion is the caller's job. Shared by
+    the scalar coercions (:func:`_json_field`/:func:`_json_float`) and the per-model map reader
+    (:func:`_tokens_from_model_usage`), which needs the mapping node itself rather than a scalar.
     """
     node = obj
     for part in dotted.split("."):
         if not isinstance(node, dict) or part not in node:
             return None
         node = node[part]
+    return node
+
+
+def _json_field(obj: Any, dotted: str) -> Optional[int]:
+    """Walk a dotted path into a parsed JSON object and coerce the leaf to ``int``, else ``None``.
+
+    Numeric leaves pass through; string leaves go through :func:`_parse_count`, so a service
+    reporting ``"629.8k"`` reads the same as one reporting ``629800``.
+    """
+    node = _walk_path(obj, dotted)
     if isinstance(node, bool):
         return None
     if isinstance(node, int):
@@ -297,6 +320,31 @@ def _sum_over_json_lines(output: str, extract: Callable[[Any], Optional[_N]]) ->
     return total
 
 
+def _last_over_json_lines(output: str, extract: Callable[[Any], Optional[_N]]) -> Optional[_N]:
+    """The first ``extract(obj)`` that resolves scanning JSON-object lines last-to-first; else ``None``.
+
+    A run's usage/cost summary is typically the final JSON line an agent prints, so the newest
+    matching object wins; a whole-output JSON document is tried last (a single end-of-run blob). A
+    line that isn't a lone JSON object, or whose ``extract`` yields ``None``, is skipped. Generic
+    over ``int`` (tokens) and ``float`` (cost). Never raises.
+    """
+    for line in reversed(output.splitlines()):
+        line = line.strip()
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        value = extract(obj)
+        if value is not None:
+            return value
+    try:
+        return extract(json.loads(output))
+    except json.JSONDecodeError:
+        return None
+
+
 def _sum_fields(obj: Any, fields: list[str], subtract: list[str]) -> Optional[int]:
     """Sum ``fields`` from one JSON object, minus any resolvable ``subtract`` paths, else ``None``.
 
@@ -332,22 +380,7 @@ def _usage_from_json(
 
     if aggregate == "sum":
         return _sum_over_json_lines(output, from_obj)
-
-    for line in reversed(output.splitlines()):
-        line = line.strip()
-        if not (line.startswith("{") and line.endswith("}")):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        value = from_obj(obj)
-        if value is not None:
-            return value
-    try:
-        return from_obj(json.loads(output))
-    except json.JSONDecodeError:
-        return None
+    return _last_over_json_lines(output, from_obj)
 
 
 def _usage_from_regex(output: str, pattern: str) -> Optional[int]:
@@ -451,14 +484,71 @@ def _field_paths(spec: dict[str, Any]) -> tuple[list[str], list[str]]:
     return fields, subtract
 
 
-def _usage_from_inline_json(spec: dict[str, Any], output: str) -> Optional[int]:
-    """Sum the manifest's ``field``/``fields`` (minus ``subtract``) from the output's JSON usage.
+def _per_model_spec(spec: dict[str, Any]) -> Optional[tuple[str, list[str]]]:
+    """The manifest's per-model map spec: the map field and the inner token fields to sum per value.
 
-    The ``inline-json`` resolver: a single dotted ``field`` or a ``fields`` list is summed, and any
-    resolvable ``subtract`` paths (cached counts folded into a total) are removed. With
-    ``aggregate: sum`` the total is summed across every matching event rather than read from the
-    last one. Returns ``None`` when no usable field is declared or none resolves.
+    A backend whose usage is a *per-model map* (Claude Code's ``modelUsage`` in the final stream-json
+    ``result`` event — a mapping from model id to that model's usage object) declares
+    ``per_model_field`` (the dotted path to the map) and ``per_model_tokens`` (the inner token field
+    names summed for each map value, e.g. ``inputTokens``/``outputTokens``). Returns ``(map_field,
+    token_fields)`` when both are present and non-empty, else ``None`` (the backend has no per-model
+    map and the resolver reads the flat ``fields`` instead). Normalized (stripped, empties dropped).
     """
+    map_field = str(spec.get("per_model_field") or "").strip()
+    if not map_field:
+        return None
+    raw = spec.get("per_model_tokens")
+    token_fields = [str(f).strip() for f in raw if str(f).strip()] if isinstance(raw, list) else []
+    if not token_fields:
+        return None
+    return map_field, token_fields
+
+
+def _tokens_from_model_usage(obj: Any, map_field: str, token_fields: list[str]) -> Optional[int]:
+    """Sum ``token_fields`` across every value of the ``map_field`` per-model map in one JSON object.
+
+    Claude Code's stream-json ``result`` event carries a per-model map (``modelUsage``) keyed by
+    model id, whose values are per-model usage objects; the whole-tree token total — sub-agents on
+    other models included — is the sum of each model's ``token_fields`` (input + output). A map
+    value contributes only when *every* declared token field resolves to a number (via
+    :func:`_sum_fields`), so a mismatched inner schema yields no count for that entry rather than a
+    half-count. Returns ``None`` when the map field is absent or not a non-empty mapping (an older
+    CLI that emits no ``modelUsage``, or a renamed field), so the caller degrades to the flat
+    top-level ``usage`` fallback — never raises, never fabricates.
+    """
+    node = _walk_path(obj, map_field)
+    if not isinstance(node, dict) or not node:
+        return None
+    total: Optional[int] = None
+    for value in node.values():
+        entry = _sum_fields(value, token_fields, [])
+        if entry is not None:
+            total = entry if total is None else total + entry
+    return total
+
+
+def _usage_from_inline_json(spec: dict[str, Any], output: str) -> Optional[int]:
+    """Sum the manifest's token fields from the output's JSON usage (per-model map, then flat).
+
+    The ``inline-json`` resolver. When the manifest declares a **per-model map**
+    (``per_model_field`` + ``per_model_tokens`` — Claude Code's ``modelUsage``), the whole-tree
+    total is summed across every value of that map in the newest resolving JSON object (the final
+    ``result`` event); this is tried first so sub-agent tokens are included. When the map is absent —
+    an older CLI, or a renamed field — the resolver falls back to the flat ``field``/``fields`` list
+    (minus ``subtract``), i.e. the top-level ``usage`` block. A backend that declares no per-model
+    map simply reads the flat fields directly. With ``aggregate: sum`` the flat total is summed
+    across every matching event rather than read from the last one. Returns ``None`` when nothing
+    usable is declared or none resolves.
+    """
+    per_model = _per_model_spec(spec)
+    if per_model is not None:
+        map_field, token_fields = per_model
+        value = _last_over_json_lines(
+            output, lambda obj: _tokens_from_model_usage(obj, map_field, token_fields)
+        )
+        if value is not None:
+            return value
+        # Older-CLI back-compat: no `modelUsage` map present, fall to the flat top-level `usage`.
     fields, subtract = _field_paths(spec)
     if not fields:
         return None
@@ -662,10 +752,13 @@ def extract_usage(
     (see :func:`_resolve_source`; legacy ``strategy: json``/``regex`` maps to
     ``inline-json``/``regex``):
 
-    - ``inline-json`` reads a dotted ``field`` (or a ``fields`` list summed, minus optional
-      ``subtract`` paths for cached counts) from the run's JSON output — totaled across events when
-      ``aggregate: sum`` — and, if that resolves nothing but a ``pattern`` is also declared, falls
-      back to parsing that regex (structured-first: the regex fires only when the JSON is absent);
+    - ``inline-json`` reads, in order: a per-model usage MAP when declared (``per_model_field`` +
+      ``per_model_tokens`` — Claude Code's ``modelUsage``, summed across every model so sub-agent
+      tokens are included), then the flat dotted ``field`` (or a ``fields`` list summed, minus
+      optional ``subtract`` paths for cached counts) from the run's JSON output — totaled across
+      events when ``aggregate: sum`` — and, if all of those resolve nothing but a ``pattern`` is also
+      declared, falls back to parsing that regex (structured-first: the regex fires only when the
+      JSON is absent);
     - ``session-file`` reads the backend's on-disk JSONL session artifact (see
       :func:`_usage_from_session_file`);
     - ``regex`` sums the capture groups of the last ``pattern`` match — an explicit last-resort
@@ -696,11 +789,7 @@ def _json_float(obj: Any, dotted: str) -> Optional[float]:
 
     Accepts int/float leaves directly and human-formatted numeric strings (via
     :func:`_parse_count`); a boolean or any non-numeric leaf reads as ``None``."""
-    node = obj
-    for part in dotted.split("."):
-        if not isinstance(node, dict) or part not in node:
-            return None
-        node = node[part]
+    node = _walk_path(obj, dotted)
     if isinstance(node, bool):
         return None
     if isinstance(node, (int, float)):
@@ -725,21 +814,7 @@ def _cost_from_inline_json(spec: dict[str, Any], output: str) -> Optional[float]
         return None
     if _aggregate_mode(spec) == "sum":
         return _sum_over_json_lines(output, lambda obj: _json_float(obj, field))
-    for line in reversed(output.splitlines()):
-        line = line.strip()
-        if not (line.startswith("{") and line.endswith("}")):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        value = _json_float(obj, field)
-        if value is not None:
-            return value
-    try:
-        return _json_float(json.loads(output), field)
-    except json.JSONDecodeError:
-        return None
+    return _last_over_json_lines(output, lambda obj: _json_float(obj, field))
 
 
 def _cost_paths(spec: dict[str, Any]) -> list[str]:
