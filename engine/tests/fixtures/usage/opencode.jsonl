@@ -1,0 +1,4 @@
+{"type":"step_start","part":{"id":"step_1"}}
+{"type":"step_finish","part":{"tokens":{"input":1200,"output":300},"cost":0.0021}}
+{"type":"text","part":{"text":"Working on the change..."}}
+{"type":"step_finish","part":{"tokens":{"input":800,"output":150},"cost":0.0013}}

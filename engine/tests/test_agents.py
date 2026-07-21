@@ -225,12 +225,45 @@ def test_copilot_hosted_hint_reads_the_reference_total_tokens_field() -> None:
     assert agents.extract_usage(_manifest("copilot-hosted"), out) == 9876
 
 
-def test_opencode_declares_no_hint_and_reads_unknown() -> None:
-    """Plan 034 Track D: opencode exposes no documented machine-stable token summary — the
-    manifest ships no hint and usage reads as unknown."""
+def test_codex_json_turn_completed_yields_tokens_with_no_regex() -> None:
+    """Track B: the shipped codex backend now reads `codex exec --json` structured-first. Its
+    `turn.completed` event's `usage` object gives non-cached input + output (143265 + 8125 −
+    118400 = 32990) — and when both the JSON and the prose "tokens used:" line are present the
+    STRUCTURED value wins, proving the regex is not the primary path."""
+    assert agents.extract_usage(_manifest("codex"), _fixture("codex_json.jsonl")) == 32990
+    # JSON present alongside a (deliberately different) prose total → the JSON value wins, not 999
+    mixed = _fixture("codex_json.jsonl") + "tokens used: 999\n"
+    assert agents.extract_usage(_manifest("codex"), mixed) == 32990
+
+
+def test_codex_regex_fallback_fires_only_when_json_is_absent() -> None:
+    """Track B: the shipped codex regex `pattern` is a declared FALLBACK on the `inline-json`
+    source — it fires only when no structured usage resolves. Prose-only output (no JSON usage
+    event) falls back to the `tokens used:` total; the shipped `codex.txt` sample does the same."""
+    assert agents.extract_usage(_manifest("codex"), "tokens used: 5,000\n") == 5000
+    assert agents.extract_usage(_manifest("codex"), _fixture("codex.txt")) == 143265
+    # neither structured JSON nor a matching prose line → honest unknown
+    assert agents.extract_usage(_manifest("codex"), "no usage anywhere") is None
+
+
+def test_opencode_sums_multiple_step_finish_events() -> None:
+    """Track B: opencode's `run --format json` emits one `step_finish` per step with no cumulative
+    summary, so the shipped backend sums `part.tokens.{input,output}` (1200+300+800+150 = 2450)
+    and `part.cost` (0.0021+0.0013) across every event."""
     manifest = _manifest("opencode")
-    assert "usage" not in manifest
-    assert agents.extract_usage(manifest, "any run output") is None
+    assert manifest["usage"]["source"] == "inline-json"
+    assert manifest["usage"]["aggregate"] == "sum"
+    assert agents.extract_usage(manifest, _fixture("opencode.jsonl")) == 2450
+    assert agents.extract_cost(manifest, _fixture("opencode.jsonl")) == pytest.approx(0.0034)
+
+
+def test_opencode_with_no_step_finish_event_reads_unknown() -> None:
+    """Track B: the known "exits before the final event" case — output carrying no `step_finish`
+    event — yields no fabricated number; usage and cost both read as unknown (`—`)."""
+    manifest = _manifest("opencode")
+    no_event = '{"type":"step_start","part":{"id":"step_1"}}\n{"type":"text","part":{"text":"hi"}}\n'
+    assert agents.extract_usage(manifest, no_event) is None
+    assert agents.extract_cost(manifest, no_event) is None
 
 
 # --------------------------------------------------------------------------- usage_mode (opt-in)

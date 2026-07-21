@@ -11,4 +11,16 @@ prompt_flag: null
 prompt_via: arg
 # Session freshness: `opencode run` starts a NEW session per invocation; reuse is opt-in only
 # (`--session` / `--continue`), which the engine never emits.
-# Usage: the run output carries no machine-stable token summary — usage reads as unknown.
+# Usage (advisory, never in the verdict): `opencode run --format json` emits a JSONL event stream.
+# Each assistant step prints a `step_finish` event carrying `part.tokens.{input,output}` and
+# `part.cost` (USD); a run emits MULTIPLE such events with NO final cumulative summary, so the
+# per-run total is the SUM of every `step_finish` (aggregate: sum). Known bug: opencode can exit
+# before emitting the final event — when no `step_finish` is present, usage reads as unknown (`—`),
+# never a guess.
+usage:
+  source: inline-json
+  aggregate: sum
+  fields: [part.tokens.input, part.tokens.output]
+  cost_field: part.cost
+usage_mode: json
+usage_mode_args: ["--format", "json"]

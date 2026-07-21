@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import yaml
 
@@ -57,8 +57,15 @@ from .config import Settings
 #                            input + output reported separately)
 #                  subtract: list of dotted paths subtracted when present (inline-json;
 #                            e.g. a cached-input count folded into a total)
-#                  pattern:  a regex whose capture groups are summed over the LAST match
-#                            (regex source; one group keeps its plain single-count meaning)
+#                  aggregate: "sum" | (default) "last" — how the inline-json resolver combines the
+#                            matching events. "last" reads the final matching JSON object (the usual
+#                            end-of-run summary line). "sum" totals EVERY matching event, for a
+#                            backend that emits one usage event per step with no cumulative summary
+#                            (e.g. opencode's repeated `step_finish`); applies to both tokens and cost.
+#                  pattern:  a regex whose capture groups are summed over the LAST match. Primary
+#                            for the `regex` source (one group keeps its plain single-count meaning);
+#                            on an `inline-json` source it is an optional declared FALLBACK, tried
+#                            only when the structured read finds nothing (never ahead of the JSON).
 #                  cost_field: a dotted path to the backend's own reported run cost in USD
 #                            (inline-json; e.g. "total_cost_usd" in a stream-json result
 #                            event). Read by extract_cost; absent → cost reads as unknown.
@@ -242,14 +249,44 @@ def _json_field(obj: Any, dotted: str) -> Optional[int]:
     return None
 
 
-def _usage_from_json(output: str, fields: list[str], subtract: list[str]) -> Optional[int]:
-    """Sum ``fields`` (minus any resolvable ``subtract`` paths) from the output's JSON usage line.
+_N = TypeVar("_N", int, float)
+
+
+def _sum_over_json_lines(output: str, extract: Callable[[Any], Optional[_N]]) -> Optional[_N]:
+    """Total ``extract(obj)`` over every JSON-object line where it resolves; ``None`` when none do.
+
+    For a backend that emits one usage-bearing event per step (opencode's repeated ``step_finish``)
+    with no final cumulative summary, the per-run figure is the SUM across all matching events, not
+    the last match. A line that isn't a lone JSON object, or whose ``extract`` yields ``None``, is
+    skipped. Generic over ``int`` (tokens) and ``float`` (cost). Never raises.
+    """
+    total: Optional[_N] = None
+    for line in output.splitlines():
+        line = line.strip()
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        value = extract(obj)
+        if value is not None:
+            total = value if total is None else total + value
+    return total
+
+
+def _usage_from_json(
+    output: str, fields: list[str], subtract: list[str], *, aggregate: str = "last"
+) -> Optional[int]:
+    """Sum ``fields`` (minus any resolvable ``subtract`` paths) from the output's JSON usage.
 
     An object counts only when EVERY ``fields`` path resolves to a number — their sum, minus the
     ``subtract`` paths that resolve (a missing subtract path reads as 0, so an optional
-    cached-token field degrades gracefully). Output lines are scanned last-to-first — the usage
-    summary is typically the final JSON line an agent prints; a whole-output JSON document is
-    tried last.
+    cached-token field degrades gracefully). With ``aggregate="last"`` (the default) output lines
+    are scanned last-to-first — the usage summary is typically the final JSON line an agent prints
+    — and a whole-output JSON document is tried last. With ``aggregate="sum"`` the value is totaled
+    across EVERY matching line (a step-wise stream with no cumulative summary; the whole-output
+    fallback is inapplicable and skipped).
     """
 
     def from_obj(obj: Any) -> Optional[int]:
@@ -258,6 +295,9 @@ def _usage_from_json(output: str, fields: list[str], subtract: list[str]) -> Opt
             return None
         total = sum(v for v in values if v is not None)
         return total - sum(v for p in subtract if (v := _json_field(obj, p)) is not None)
+
+    if aggregate == "sum":
+        return _sum_over_json_lines(output, from_obj)
 
     for line in reversed(output.splitlines()):
         line = line.strip()
@@ -335,12 +375,23 @@ class _UsageContext:
     output: str
 
 
+def _aggregate_mode(spec: dict[str, Any]) -> str:
+    """The inline-json cross-event aggregation: ``"sum"`` totals every matching event, else last.
+
+    ``"sum"`` (declared by a backend that emits one usage event per step with no cumulative
+    summary, e.g. opencode's repeated ``step_finish``) totals the value across all matching events;
+    anything else — including an absent field — reads as ``"last"`` (the final matching object).
+    """
+    return "sum" if str(spec.get("aggregate") or "").strip().lower() == "sum" else "last"
+
+
 def _usage_from_inline_json(spec: dict[str, Any], output: str) -> Optional[int]:
     """Sum the manifest's ``field``/``fields`` (minus ``subtract``) from the output's JSON usage.
 
     The ``inline-json`` resolver: a single dotted ``field`` or a ``fields`` list is summed, and any
-    resolvable ``subtract`` paths (cached counts folded into a total) are removed. Returns ``None``
-    when no usable field is declared or none resolves.
+    resolvable ``subtract`` paths (cached counts folded into a total) are removed. With
+    ``aggregate: sum`` the total is summed across every matching event rather than read from the
+    last one. Returns ``None`` when no usable field is declared or none resolves.
     """
     single = str(spec.get("field") or "").strip()
     raw_fields = spec.get("fields")
@@ -357,7 +408,7 @@ def _usage_from_inline_json(spec: dict[str, Any], output: str) -> Optional[int]:
     subtract = (
         [str(p).strip() for p in raw_sub if str(p).strip()] if isinstance(raw_sub, list) else []
     )
-    return _usage_from_json(output, fields, subtract)
+    return _usage_from_json(output, fields, subtract, aggregate=_aggregate_mode(spec))
 
 
 def _usage_from_session_file(spec: dict[str, Any], ctx: _UsageContext) -> Optional[int]:
@@ -381,7 +432,9 @@ def extract_usage(manifest: dict[str, Any], output: str) -> Optional[int]:
     ``inline-json``/``regex``):
 
     - ``inline-json`` reads a dotted ``field`` (or a ``fields`` list summed, minus optional
-      ``subtract`` paths for cached counts) from the run's JSON output;
+      ``subtract`` paths for cached counts) from the run's JSON output — totaled across events when
+      ``aggregate: sum`` — and, if that resolves nothing but a ``pattern`` is also declared, falls
+      back to parsing that regex (structured-first: the regex fires only when the JSON is absent);
     - ``session-file`` reads the backend's on-disk session artifact (see
       :func:`_usage_from_session_file`);
     - ``regex`` sums the capture groups of the last ``pattern`` match — an explicit last-resort
@@ -397,7 +450,14 @@ def extract_usage(manifest: dict[str, Any], output: str) -> Optional[int]:
         return None
     source = _resolve_source(spec)
     if source == "inline-json":
-        return _usage_from_inline_json(spec, output)
+        value = _usage_from_inline_json(spec, output)
+        if value is not None:
+            return value
+        # Declared regex fallback: a backend that normally emits structured JSON but printed only
+        # its prose summary this run (structured output unavailable) may declare a `pattern`. It
+        # fires ONLY when the structured read found nothing — never ahead of the JSON.
+        pattern = str(spec.get("pattern") or "")
+        return _usage_from_regex(output, pattern) if pattern else None
     if source == "session-file":
         return _usage_from_session_file(spec, _UsageContext(output=output))
     if source == "regex":  # explicit last-resort fallback: parse the backend's prose summary
@@ -429,13 +489,17 @@ def _json_float(obj: Any, dotted: str) -> Optional[float]:
 def _cost_from_inline_json(spec: dict[str, Any], output: str) -> Optional[float]:
     """Read the manifest's ``cost_field`` (USD) from the output's JSON lines, else ``None``.
 
-    The ``inline-json`` cost resolver: the output's JSON lines are scanned last-to-first — the
-    result summary is typically the final line — and the first line whose ``cost_field`` resolves
-    to a number wins; a whole-output JSON document is tried last.
+    The ``inline-json`` cost resolver: with ``aggregate="last"`` (the default) the output's JSON
+    lines are scanned last-to-first — the result summary is typically the final line — and the
+    first line whose ``cost_field`` resolves to a number wins; a whole-output JSON document is
+    tried last. With ``aggregate: sum`` the cost is totaled across every matching event (a step-wise
+    stream with no cumulative summary), in step with the token resolver.
     """
     field = str(spec.get("cost_field") or "").strip()
     if not field:
         return None
+    if _aggregate_mode(spec) == "sum":
+        return _sum_over_json_lines(output, lambda obj: _json_float(obj, field))
     for line in reversed(output.splitlines()):
         line = line.strip()
         if not (line.startswith("{") and line.endswith("}")):

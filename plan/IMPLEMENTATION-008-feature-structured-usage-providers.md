@@ -118,12 +118,32 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-007 | Migrate **Codex** off regex: in `.3powers/agents/codex.yaml` **and** `engine/src/threepowers/scaffold/agents/codex.yaml` (same task), set `source: inline-json`, enable the currently commented-out `usage_mode: json` (`codex exec --json`), and set the field paths to the actual `turn.completed.usage.*` shape emitted by the current CLI — verify whether the tokens live at `usage.input_tokens`/`usage.output_tokens` nested under the `turn.completed` event vs bare. Retain the existing `pattern: 'tokens used[:\s]+([0-9][0-9,]*)'` as a declared `regex` fallback, not the primary. Refresh the header comment to stop teaching regex-first. |  |  |
-| TASK-008 | Confirm **opencode**: in `.3powers/agents/opencode.yaml` **and** the scaffold copy (same task), declare `source: inline-json` reading `opencode run --format json`; sum `step_finish.part.tokens.{input,output}` across the multiple `step_finish` events and read `part.cost` for cost. Note the known "exits before final event" bug in the header comment; fall back to `none` (`—`) if no `step_finish` event is present. |  |  |
-| TASK-009 | Confirm **Claude**: in `.3powers/agents/claude.yaml` **and** the scaffold copy (same task), confirm `source: inline-json` (its `fields: [usage.input_tokens, usage.output_tokens]` and `cost_field: total_cost_usd` are the current shape). The token-field change to `modelUsage` is Track D (Phase 4); this task only asserts the source classification, leaving the field paths for Phase 4. |  |  |
-| TASK-010 | Update `docs/` to record that Codex and opencode now read structured inline JSON (no Tier-1 regex), including the opencode multi-`step_finish` summing note. No internal ids (GUD-001). |  |  |
-| TASK-011 | Confirm `engine/tests/test_oss_readiness.py` stays green for the refreshed Codex/opencode/Claude manifest header comments (GUD-001). |  |  |
-| TASK-012 | Tests: in `engine/tests/test_agents.py` (and fixtures under `engine/tests/fixtures/usage/`), a Codex `--json` `turn.completed` transcript fixture yields the correct tokens (and cost if present) with **no** regex involved, and the regex fallback fires only when the JSON is absent; an opencode `--format json` fixture with multiple `step_finish` events sums correctly. (Codex fixture builds on the existing `codex.jsonl`; add/refresh an opencode fixture.) |  |  |
+| TASK-007 | Migrate **Codex** off regex: in `.3powers/agents/codex.yaml` **and** `engine/src/threepowers/scaffold/agents/codex.yaml` (same task), set `source: inline-json`, enable the currently commented-out `usage_mode: json` (`codex exec --json`), and set the field paths to the actual `turn.completed.usage.*` shape emitted by the current CLI — verify whether the tokens live at `usage.input_tokens`/`usage.output_tokens` nested under the `turn.completed` event vs bare. Retain the existing `pattern: 'tokens used[:\s]+([0-9][0-9,]*)'` as a declared `regex` fallback, not the primary. Refresh the header comment to stop teaching regex-first. | ✅ | 2026-07-21 |
+| TASK-008 | Confirm **opencode**: in `.3powers/agents/opencode.yaml` **and** the scaffold copy (same task), declare `source: inline-json` reading `opencode run --format json`; sum `step_finish.part.tokens.{input,output}` across the multiple `step_finish` events and read `part.cost` for cost. Note the known "exits before final event" bug in the header comment; fall back to `none` (`—`) if no `step_finish` event is present. | ✅ | 2026-07-21 |
+| TASK-009 | Confirm **Claude**: in `.3powers/agents/claude.yaml` **and** the scaffold copy (same task), confirm `source: inline-json` (its `fields: [usage.input_tokens, usage.output_tokens]` and `cost_field: total_cost_usd` are the current shape). The token-field change to `modelUsage` is Track D (Phase 4); this task only asserts the source classification, leaving the field paths for Phase 4. | ✅ | 2026-07-21 |
+| TASK-010 | Update `docs/` to record that Codex and opencode now read structured inline JSON (no Tier-1 regex), including the opencode multi-`step_finish` summing note. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-011 | Confirm `engine/tests/test_oss_readiness.py` stays green for the refreshed Codex/opencode/Claude manifest header comments (GUD-001). | ✅ | 2026-07-21 |
+| TASK-012 | Tests: in `engine/tests/test_agents.py` (and fixtures under `engine/tests/fixtures/usage/`), a Codex `--json` `turn.completed` transcript fixture yields the correct tokens (and cost if present) with **no** regex involved, and the regex fallback fires only when the JSON is absent; an opencode `--format json` fixture with multiple `step_finish` events sums correctly. (Codex fixture builds on the existing `codex.jsonl`; add/refresh an opencode fixture.) | ✅ | 2026-07-21 |
+
+> **Phase 2 note (2026-07-21).** Codex and opencode are migrated to `source: inline-json`; Claude's
+> source is now explicit (`strategy: json` → `source: inline-json`), field paths untouched (Track D
+> owns `modelUsage`). Two additive extensions to the Phase 1 seam, both structured-first and
+> back-compatible: (1) an optional `aggregate: sum` on the inline-json spec totals tokens **and**
+> cost across every matching JSON event (opencode emits one `step_finish` per step with no
+> cumulative summary) — implemented via a generic `_sum_over_json_lines` helper; default `last`
+> preserves the existing behavior. (2) On the `inline-json` source, a declared `pattern` now acts as
+> a regex **fallback** fired only when the structured read resolves nothing (never ahead of the
+> JSON) — this is how Codex keeps its old `tokens used:` prose line as a safety net. No `step_finish`
+> present → opencode reads `—`; unresolved codex JSON with no prose → `—`. **Field-path uncertainty
+> flagged for Phase 5 fixture verification (RISK-003):** the exact Codex `turn.completed.usage`
+> shape (whether `input_tokens` already excludes cached, and whether `usage` is nested under the
+> event) and the opencode `step_finish.part.tokens.{input,output}` / `part.cost` shape are modeled
+> from the source plan's stated shapes, not captured from a live CLI; fixtures (`codex_json.jsonl`,
+> `opencode.jsonl`) encode those assumptions and must be re-verified against real output in Phase 5.
+> The subtract of `usage.cached_input_tokens` preserves the codebase's non-cached-input posture and
+> degrades to 0 when absent. Claude's token fields deliberately left for Phase 4. Targeted
+> `test_agents.py` + `test_oss_readiness.py` (59) green; ruff/mypy on `agents.py` clean; full
+> pytest/gate batched into Phase 6.
 
 ### Phase 3
 

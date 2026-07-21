@@ -272,6 +272,13 @@ absent; the columns show `—`). Where a backend supports structured output a ma
 `usage_mode`/`usage_mode_args`: the shipped claude backend uses `--output-format stream-json --verbose`
 — an event stream carrying the final `usage` and `total_cost_usd` while the engine renders the live
 assistant text (never raw JSON) and tees every event byte-for-byte to the persisted transcript.
+The Codex and OpenCode reference backends read structured inline JSON too — no regex on the primary
+path: Codex runs `codex exec --json` and reads the final `turn.completed` event's `usage`
+(non-cached input + output), keeping the old prose `tokens used:` line only as a declared regex
+fallback for when the JSON is absent; OpenCode runs `opencode run --format json`, which emits one
+`step_finish` event per step with no cumulative summary, so the manifest declares `aggregate: sum`
+to total the per-step token counts (and cost) across every event — and honestly reads `—` when no
+`step_finish` event is present (a known case where OpenCode can exit before the final event).
 Neither tokens nor cost enter the gate suite, the verdict, or the verdict bytes — the deterministic
 verdict is byte-identical whether or not they were captured.
 

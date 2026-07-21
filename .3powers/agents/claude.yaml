@@ -21,7 +21,7 @@ prompt_via: arg             # arg | stdin
 # read the cost. Plain `-p` text output carries no token summary, so the hints read as unknown
 # until usage_mode is set.
 usage:
-  strategy: json
+  source: inline-json
   fields: [usage.input_tokens, usage.output_tokens]
   cost_field: total_cost_usd
 # Structured output for native token/cost accounting WITHOUT killing the live stream:
