@@ -13,7 +13,7 @@ error, and never enters the verdict (the byte-identity guard lives in test_nativ
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pytest
 import yaml
@@ -385,6 +385,191 @@ def test_opencode_with_no_step_finish_event_reads_unknown() -> None:
     no_event = '{"type":"step_start","part":{"id":"step_1"}}\n{"type":"text","part":{"text":"hi"}}\n'
     assert agents.extract_usage(manifest, no_event) is None
     assert agents.extract_cost(manifest, no_event) is None
+
+
+# --------------------------------------------------------------------------- per-backend drift guards (Track E)
+# Each supported backend ships a committed fixture of its CURRENT real output shape and a
+# parametrized extraction test that pins the number the shipped manifest reads from it. The
+# companion drift guards then prove a format/schema change cannot pass silently: the OLD copilot
+# summary resolves to a DIFFERENT number than the current fixture, and renaming a required field in
+# any structured fixture makes extraction read honest-unknown (`None`) rather than a zeroed count.
+#
+# Fixture provenance (see fixtures/usage/README.md): `copilot_summary.txt` is real-captured from the
+# live CLI; the structured shapes (claude `modelUsage`, codex `turn.completed`, opencode
+# `step_finish`, copilot `session.shutdown`, aider `message_send`) are MODELLED from vendor research
+# and pending live re-verification — the drift guard is what turns a future real-capture mismatch
+# into a red test rather than a silent wrong number.
+
+# The copilot session id used by the seeded-home fixtures (a strict UUID, per SEC-001).
+_COPILOT_SESSION_ID = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+
+
+def _copilot_session_ctx(tmp_path: Path) -> tuple[str, dict[str, Any]]:
+    """Seed the copilot session file under a fake home and return (output, extractor kwargs)."""
+    home = _copilot_home(tmp_path, _COPILOT_SESSION_ID)
+    return f"Done.\n\nResume copilot --resume={_COPILOT_SESSION_ID}\n", {"home": home}
+
+
+def _copilot_summary_ctx(tmp_path: Path) -> tuple[str, dict[str, Any]]:
+    """No session file: the current summary line alone, resolved via the hardened regex fallback."""
+    return _fixture("copilot_summary.txt"), {}
+
+
+def _aider_session_ctx(tmp_path: Path) -> tuple[str, dict[str, Any]]:
+    """Write aider's analytics log to a run-scoped path and return (stdout, extractor kwargs)."""
+    log = tmp_path / "analytics.jsonl"
+    log.write_text(_fixture("aider_analytics.jsonl"), encoding="utf-8")
+    return "aider stdout", {"session_log": log}
+
+
+def _inline_ctx(fixture: str) -> Callable[[Path], tuple[str, dict[str, Any]]]:
+    """An inline-json backend needs no extra context — just its fixture text."""
+    return lambda _tmp_path: (_fixture(fixture), {})
+
+
+@pytest.mark.parametrize(
+    ("backend", "ctx", "expected_tokens", "expected_cost"),
+    [
+        # Claude → whole-tree `modelUsage` sum (main + sub-agent) + `total_cost_usd`.
+        ("claude", _inline_ctx("claude_stream_modelusage.jsonl"), 16585, 0.2913),
+        # Codex → `turn.completed.usage` non-cached input + output.
+        ("codex", _inline_ctx("codex_json.jsonl"), 32990, None),
+        # opencode → summed `step_finish.part.tokens` + summed `part.cost`.
+        ("opencode", _inline_ctx("opencode.jsonl"), 2450, 0.0034),
+        # copilot → `session.shutdown` non-cached input + output (credits, not USD → no cost).
+        ("copilot", _copilot_session_ctx, 52100, None),
+        # copilot → the summary-line regex FALLBACK when the session file is absent.
+        ("copilot", _copilot_summary_ctx, 52100, None),
+        # aider → summed `message_send` prompt+completion tokens + summed USD cost.
+        ("aider", _aider_session_ctx, 22100, 0.0555),
+    ],
+)
+def test_each_backend_extracts_expected_usage_from_its_current_fixture(
+    backend: str,
+    ctx: Callable[[Path], tuple[str, dict[str, Any]]],
+    expected_tokens: int,
+    expected_cost: Optional[float],
+    tmp_path: Path,
+) -> None:
+    """TASK-028: every shipped backend's provider extracts the expected tokens/cost from its current
+    fixture — the single matrix that keeps each backend honest against its real output shape."""
+    manifest = _manifest(backend)
+    output, kwargs = ctx(tmp_path)
+    assert agents.extract_usage(manifest, output, **kwargs) == expected_tokens
+    cost = agents.extract_cost(manifest, output, **kwargs)
+    if expected_cost is None:
+        assert cost is None
+    else:
+        assert cost == pytest.approx(expected_cost)
+
+
+def test_drift_guard_old_copilot_summary_cannot_masquerade_as_the_current_count() -> None:
+    """TASK-029: the OLD copilot summary line must not silently succeed with a wrong number.
+
+    The current PRIMARY path is the session file; fed the old prose with no session file present it
+    resolves nothing via the structured source and only the declared regex fallback matches. Because
+    the old single-term `(… written)` line carries different numbers than the current
+    `(… cached, … written)` line, it resolves to a DIFFERENT total (38700) than the current fixture
+    (52100). A test pinned to the current fixture therefore goes red the moment the real output
+    drifts back to the old shape — the rot cannot pass silently."""
+    copilot = _manifest("copilot")
+    current = agents.extract_usage(copilot, _fixture("copilot_summary.txt"))
+    assert current == 52100  # the current real line, via the hardened fallback
+    old = agents.extract_usage(copilot, _fixture("copilot.txt"))
+    assert old == 38700 and old != current  # a drifted format yields a different, detectable number
+
+
+@pytest.mark.parametrize(
+    ("backend", "fixture", "renames", "ctx_kwargs"),
+    [
+        # Codex: rename the required `input_tokens` field in `turn.completed.usage`.
+        ("codex", "codex_json.jsonl", ['"input_tokens"'], {}),
+        # opencode: rename the required `input` field in `step_finish.part.tokens`.
+        ("opencode", "opencode.jsonl", ['"input"'], {}),
+        # Claude: rename BOTH the per-model `inputTokens` and the flat fallback `input_tokens`, so
+        # neither the whole-tree map nor the flat degradation resolves.
+        (
+            "claude",
+            "claude_stream_modelusage.jsonl",
+            ['"inputTokens"', '"input_tokens"'],
+            {},
+        ),
+    ],
+)
+def test_drift_guard_renamed_structured_field_reads_none_never_zero(
+    backend: str, fixture: str, renames: list[str], ctx_kwargs: dict[str, Any]
+) -> None:
+    """TASK-029: renaming a required token field in a structured fixture must make extraction read
+    honest-unknown (`None`), never a zeroed or partial count. `_sum_fields` disqualifies an object
+    when any required path is absent, so a schema drift surfaces as `—` and a test pinned to the
+    real value goes red — it never silently reports 0. The real fixture value is asserted first so
+    the mutation is proven to be the only thing that changes the outcome."""
+    manifest = _manifest(backend)
+    real = _fixture(fixture)
+    assert agents.extract_usage(manifest, real, **ctx_kwargs) is not None
+    drifted = real
+    for old_key in renames:
+        drifted = drifted.replace(old_key, '"__drifted__"')
+    result = agents.extract_usage(manifest, drifted, **ctx_kwargs)
+    assert result is None  # honest-unknown, not 0 and not the stale number
+
+
+def test_drift_guard_renamed_session_file_field_reads_none(tmp_path: Path) -> None:
+    """TASK-029 (session-file backends): renaming a required field in aider's analytics log — the
+    schema-drift case for an on-disk source — reads `None`, never a zeroed count. copilot's
+    `session.shutdown` drift likewise degrades (to the regex fallback, then honest-unknown when no
+    summary line is present)."""
+    log = tmp_path / "analytics.jsonl"
+    aider = _manifest("aider")
+    real = _fixture("aider_analytics.jsonl")
+    log.write_text(real, encoding="utf-8")
+    assert agents.extract_usage(aider, "out", session_log=log) == 22100
+    log.write_text(real.replace('"prompt_tokens"', '"__drifted__"'), encoding="utf-8")
+    assert agents.extract_usage(aider, "out", session_log=log) is None
+
+    copilot = _manifest("copilot")
+    drifted_events = _fixture("copilot_events.jsonl").replace('"input_tokens"', '"__drifted__"')
+    events_dir = tmp_path / ".copilot" / "session-state" / _COPILOT_SESSION_ID
+    events_dir.mkdir(parents=True)
+    (events_dir / "events.jsonl").write_text(drifted_events, encoding="utf-8")
+    # a drifted session file + no prose summary line → honest-unknown, never a fabricated number
+    output = f"Resume copilot --resume={_COPILOT_SESSION_ID}\nno token summary line\n"
+    assert agents.extract_usage(copilot, output, home=tmp_path) is None
+
+
+# --------------------------------------------------------------------------- honest unknown (Track E)
+def test_honest_unknown_source_none_renders_the_dash_never_a_value() -> None:
+    """TASK-031: a `source: none` backend yields `None` for both tokens and cost even when the
+    output plainly carries a parseable count/cost — and `None` renders as the `—` placeholder in
+    progress.md, never a fabricated number."""
+    from threepowers import progress
+
+    manifest = {"usage": {"source": "none", "field": "usage.total_tokens", "cost_field": "cost"}}
+    output = '{"usage": {"total_tokens": 9999}, "cost": 1.23}'
+    tokens = agents.extract_usage(manifest, output)
+    cost = agents.extract_cost(manifest, output)
+    assert tokens is None and cost is None
+    assert progress._tokens_cell(tokens) == "—"
+    assert progress._cost_cell(cost) == "—"
+
+
+def test_honest_unknown_unresolved_session_file_renders_the_dash(tmp_path: Path) -> None:
+    """TASK-031: an unresolved `session-file` source — no captured id and no file, or a valid id but
+    no file on disk — yields `None` (rendered `—`) rather than a guessed value. The copilot backend
+    is used with no summary line so the regex fallback also finds nothing."""
+    from threepowers import progress
+
+    copilot = _manifest("copilot")
+    # no `--resume` id at all AND no summary line → nothing to resolve
+    no_id = agents.extract_usage(copilot, "all done, no session id, no token line\n", home=tmp_path)
+    # a valid id but no file seeded for it, and no summary line → still unresolved
+    valid_id_no_file = agents.extract_usage(
+        copilot,
+        f"Resume copilot --resume={_COPILOT_SESSION_ID}\nno token line\n",
+        home=tmp_path,
+    )
+    assert no_id is None and valid_id_no_file is None
+    assert progress._tokens_cell(no_id) == "—" and progress._tokens_cell(valid_id_no_file) == "—"
 
 
 # --------------------------------------------------------------------------- usage_mode (opt-in)

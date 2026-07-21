@@ -1,0 +1,9 @@
+● Updated the rate limiter and its tests; the full suite is green.
+
+✓ All done. The change is ready for review.
+
+Total usage est:       1 premium request
+Total duration (API):  3m 58.1s
+Total duration (wall): 5m 44.7s
+
+Tokens     ↑ 241.6k (192.8k cached, 46.9k written) • ↓ 5.2k (1.2k reasoning)
