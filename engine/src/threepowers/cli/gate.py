@@ -31,6 +31,7 @@ from ._common import (
     _detection_line,
     _effective_gates_or_none,
     _format_verdict,
+    _layout,
     _print,
     _resolve_spec,
     _settings,
@@ -185,6 +186,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             verbose=v_level == "verbose",
             waivers=_waiver_annotations(verdict.to_dict(), s.ledger_path),
             run_id=run_id,
+            layout=_layout(args),
         )
         if panels:
             human += "\n" + panels

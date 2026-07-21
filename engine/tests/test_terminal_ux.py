@@ -171,3 +171,60 @@ def test_rich_backed_rendering_stays_deterministic():
     state = frame.FrameState(reached="Build", status="running", activity="implement")
     assert frame.frame_lines(state, 90, st, "X") == frame.frame_lines(state, 90, st, "X")
     assert st.table([["a", "1"]], headers=["h"]) == st.table([["a", "1"]], headers=["h"])
+
+
+# ----------------------------------------------------------------- Track B — colorized failure panels
+def _failed_gate() -> dict:
+    """A failed `types` gate dict in the Verdict.to_dict() shape the panel renderer consumes."""
+    return {
+        "gate": "types",
+        "status": "fail",
+        "tool": "tsc",
+        "duration_ms": 100,
+        "findings": ["error TS in a.ts"],
+        "details": {"fix_cmd": "tsc --noEmit"},
+    }
+
+
+def test_guidance_style_helpers_emit_the_expected_sgr_bytes():
+    """The new guidance/accent vocabulary paints the documented colors when enabled and is a plain
+    no-op when off, so the panel bytes stay identical off-TTY."""
+    on = style.Styler(enabled=True)
+    off = style.Styler(enabled=False)
+    assert on.guidance_meaning("x") == "\033[2mx\033[0m"  # dim
+    assert on.guidance_fix("x") == "\033[32mx\033[0m"  # green (success)
+    assert on.guidance_warn("x") == "\033[33mx\033[0m"  # yellow (warning)
+    assert on.accent("x") == "\033[1;35mx\033[0m"  # bold magenta (distinct)
+    for meth in (off.guidance_meaning, off.guidance_fix, off.guidance_warn, off.accent):
+        assert meth("x") == "x"
+
+
+def test_failure_panel_colors_guidance_and_deviation_on_a_tty():
+    """Track B: on a color TTY the panel body carries the guidance hierarchy — dim meaning, green
+    fix, yellow last-resort/deviation, an accented hand-back — and stripping the ANSI leaves the
+    guidance text intact (color is additive presentation, never a change to the words)."""
+    verdict = {"spec_id": "030", "gates": [_failed_gate()]}
+    on = orchestrate.failure_panels(verdict, style.Styler(enabled=True), run_id="030", width=80)
+    # the guidance roles carry their colors
+    assert "\033[32m↳ fix:" in on and "\033[32m↳ auto-fix:" in on  # green
+    assert "\033[2m↳ what it means:" in on  # dim
+    assert "\033[33m↳ last resort" in on  # yellow warning
+    assert "\033[33m    3pwr deviation --gate types" in on  # the deviation command reads as warning
+    assert "\033[1;35mhand back to your coding agent" in on  # accented hand-back header
+    assert "\033[1;35mre-dispatch:" in on  # accented re-dispatch line
+    # color is additive: the guidance words survive unchanged under the ANSI
+    plain = style.strip_ansi(on)
+    assert "↳ what it means: the type checker found real type errors" in plain
+    assert "3pwr deviation --gate types" in plain
+    assert "hand back to your coding agent — copy-paste:" in plain
+
+
+def test_failure_panel_layout_compact_drops_blank_separators():
+    """Track B: `layout: compact` tightens the failure surface — the blank separator lines inside
+    the hand-back prompt are dropped for a denser view, while `normal` is unchanged."""
+    verdict = {"spec_id": "030", "gates": [_failed_gate()]}
+    normal = orchestrate.failure_panels(verdict, style.Styler(), run_id="030", layout="normal")
+    compact = orchestrate.failure_panels(verdict, style.Styler(), run_id="030", layout="compact")
+    assert any(ln.strip() == "" for ln in normal.splitlines())  # normal keeps blank separators
+    assert not any(ln.strip() == "" for ln in compact.splitlines())  # compact drops them
+    assert len(compact.splitlines()) < len(normal.splitlines())  # measurably tighter

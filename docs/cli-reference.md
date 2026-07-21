@@ -206,6 +206,24 @@ The whole remediation surface is presentational and human output only: the deter
 verdict, the signed ledger entry, and the `--json` payload are byte-identical with or without
 it, and no model is ever called to produce it.
 
+**Colorized on a terminal.** On a color-capable TTY the verdict header and the failure panels
+render as a readable hierarchy: the verdict result reads `PASS` in bold green / `FAIL` in bold
+red; inside each panel the findings keep the default weight, `↳ what it means` is dimmed, the
+`↳ fix` / `↳ auto-fix` action is green, and the `↳ last resort` label and its `3pwr deviation`
+command are yellow — a warning, never the primary action. The coder hand-back header and the
+`re-dispatch:` line carry a distinct accent so the copy-paste block is easy to spot. Color is
+presentation only and centrally gated: it is forced off for `--json`, `--yes`, `NO_COLOR`, and any
+non-TTY (piped/CI) stream, so the machine payload and the plain-text bytes are unchanged. Set
+`color_mode: never` in `.3powers/config/ui.yaml` to keep human output plain everywhere, or
+`always` to force it on.
+
+**Denser output with `layout: compact`.** Setting `layout: compact` in
+`.3powers/config/ui.yaml` tightens the human output: the failure panels drop their surrounding
+padding and the blank separator lines inside the hand-back block are removed, so the panels and
+hand-back read as one dense block. `layout: normal` (the default) is unchanged. Like every
+`ui.yaml` preference it is presentation only — it never touches the verdict, the ledger, or the
+`--json` payload.
+
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
 section). When a required tool of a non-optional gate is missing, no gate runs: the command exits

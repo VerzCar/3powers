@@ -137,6 +137,16 @@ def _verbosity(args: argparse.Namespace) -> str:
     )
 
 
+def _layout(args: argparse.Namespace) -> str:
+    """The effective output layout for this command: ``normal`` | ``compact``.
+
+    Read from the ``ui.yaml`` ``layout`` preference (an unrecognized value falls back to
+    ``normal``). Presentation only — it never touches the ``--json`` payload or a verdict."""
+    prefs, _ = _resolve_ui(args)
+    lay = prefs.get("layout", "normal")
+    return lay if lay in ("normal", "compact") else "normal"
+
+
 def _compose(
     args: argparse.Namespace,
     st: style.Styler,
@@ -150,7 +160,9 @@ def _compose(
 
     ``title`` renders a self-identifying header (hidden at ``quiet``); ``rows`` are the core result
     lines (always shown); ``extra`` are verbose-only detail lines. Detail grows monotonically
-    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload."""
+    quiet ⊆ normal ⊆ verbose, and none of this touches the ``--json`` payload. Under a ``compact``
+    layout the whitespace-only separator lines are dropped for a denser view; ``normal`` keeps the
+    output byte-identical to before the layout knob existed."""
     v = _verbosity(args)
     out: list[str] = []
     if title and v != "quiet":
@@ -158,7 +170,10 @@ def _compose(
     out.extend(rows or [])
     if v == "verbose":
         out.extend(extra or [])
-    return "\n".join(out)
+    text = "\n".join(out)
+    if _layout(args) == "compact":
+        text = "\n".join(ln for ln in text.split("\n") if ln.strip())
+    return text
 
 
 def _git_out(root: Path, args: list[str]) -> str:
@@ -274,7 +289,11 @@ def _format_verdict(
     own panel after the pipeline view instead."""
     st = st or style.Styler()
     result = verdict.result.upper()
-    head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
+    head = "verdict " + (
+        st.paint(result, "bold", "green")
+        if verdict.result == "pass"
+        else st.paint(result, "bold", "red")
+    )
     ident_parts: list[str] = []
     if run_id:
         ident_parts.append(f"id={run_id}")
