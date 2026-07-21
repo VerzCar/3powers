@@ -104,6 +104,9 @@ class StageResult:
     warnings: list[str] = field(default_factory=list)
     # Per-phase results when the stage ran as context-sized phases, artifact order.
     phases: list[dict] = field(default_factory=list)
+    # The implement agent's authored completion report, combined across phases when phased. Carried
+    # for the changelog author-then-validate step; never serialized into ``as_dict``/``--json``.
+    report: str = ""
     # The agent-reported token usage for the stage (summed over phases when phased);
     # None when the backend does not report usage. Advisory — never enters the verdict.
     tokens: Optional[int] = None

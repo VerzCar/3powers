@@ -636,9 +636,16 @@ Given/When/Then criterion; the engine validates it names every requirement and l
 test framework, and writes a visible structural stub when it is absent — the machine record of the
 actual oracle test paths lives in the signed ledger entries, and the runnable tests land under
 `tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, the run's
-engine-generated change record — grouped by phase and traced to requirement ids, linking the real
-code outputs at their real repo paths — which never touches the project's top-level `CHANGELOG.md`
-(features written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
+**business-readable** change record. The implement agent authors it as plain-language
+Added/Changed/Fixed prose for a non-engineer reader — what shipped and why it matters, each entry
+tracing to a requirement id — and the engine validates it the way it validates `oracle.md`: every
+requirement the run addressed must be covered, no foreign/internal requirement id may leak
+(OSS-readiness), and the Added/Changed/Fixed structure must be present; a validation miss fails the
+step with an actionable message rather than emitting a bad changelog. The engine places the authored
+prose as the document body and appends a clearly-separated, **additive machine-readable
+requirement→files trace** (one row per requirement id, grouped by phase) so anything that consumed
+the old table keeps its data. It never touches the project's top-level `CHANGELOG.md` (features
+written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a

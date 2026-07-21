@@ -787,6 +787,10 @@ def _dispatch_phased(
     # collide. Feeds the additive ledger fields and the progress table — never the verdict.
     tokens_by_phase: dict[int, int] = {}
     cost_by_phase: dict[int, float] = {}
+    # Each phase's authored completion report, keyed by phase index — combined in phase order into
+    # the stage's business changelog prose so an N-phase run's changelog covers every phase's
+    # requirements (the collector below folds them into one record).
+    reports_by_phase: dict[int, str] = {}
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
         ctx = phases.handoff_context(
@@ -815,6 +819,9 @@ def _dispatch_phased(
             tokens_by_phase[ph.index] = res.tokens
         if res.cost is not None:
             cost_by_phase[ph.index] = res.cost
+        rep = _implement_report(s, res.transcript)
+        if rep:
+            reports_by_phase[ph.index] = rep
         _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
@@ -831,6 +838,9 @@ def _dispatch_phased(
             r["cost"] = pcost
     stage_tokens = sum(tokens_by_phase.values()) if tokens_by_phase else None
     stage_cost = sum(cost_by_phase.values()) if cost_by_phase else None
+    # The stage's business changelog prose: every phase's authored report in deterministic phase
+    # order, so the collected changelog covers all phases' requirements.
+    combined_report = "\n\n".join(reports_by_phase[i] for i in sorted(reports_by_phase))
     ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
@@ -853,6 +863,7 @@ def _dispatch_phased(
             transcript=sink.rel_dir if sink is not None else "",
             artifact_paths=paths or [],
             phases=results,
+            report=combined_report,
             tokens=stage_tokens,
             cost=stage_cost,
         )
@@ -1110,21 +1121,43 @@ def _native_runner(
                 if step == "implement":
                     # the record links the full produced change set
                     linked = produced_box.get("paths") or result.artifact_paths
+                    # The agent-authored business changelog prose: the phased collector's combined
+                    # per-phase reports, or the single session's report from its transcript.
+                    report = result.report or _implement_report(s, result.transcript)
                 else:
                     linked = result.artifact_paths  # the contract-matched oracle test paths
-                rel = completion.write_record(
-                    s.root,
-                    feature_dir,
-                    step,
-                    spec_id=spec_id,
-                    linked=linked,
-                    phases=result.phases or None,
-                    phase_scopes=scopes,
-                    phase_requirements={ph.index: phases.requirement_ids(ph) for ph in phase_list},
-                    work_kinds=wk.kinds,
-                    report=_implement_report(s, result.transcript) if step == "implement" else "",
-                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
-                )
+                    report = ""
+                try:
+                    rel = completion.write_record(
+                        s.root,
+                        feature_dir,
+                        step,
+                        spec_id=spec_id,
+                        linked=linked,
+                        phases=result.phases or None,
+                        phase_scopes=scopes,
+                        phase_requirements={
+                            ph.index: phases.requirement_ids(ph) for ph in phase_list
+                        },
+                        work_kinds=wk.kinds,
+                        report=report,
+                        on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
+                    )
+                except completion.ChangelogValidationError as exc:
+                    # A bad business changelog fails the step with a named, actionable class —
+                    # never silently emitted. The implement agent must re-author it.
+                    return runnermod.StageResult(
+                        step=step,
+                        stage=stage,
+                        ok=False,
+                        agent=agent_name,
+                        model=str(backend.model),
+                        attempts=result.attempts,
+                        duration_s=result.duration_s,
+                        outcome=completion.CLASS_CHANGELOG_INVALID,
+                        detail="changelog validation failed — " + "; ".join(exc.findings),
+                        transcript=result.transcript,
+                    )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)
                 if rel not in produced_box.get("paths", []):
