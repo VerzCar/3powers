@@ -308,10 +308,16 @@ target once at gate-run startup and picks up the project's native tooling (first
 
 | Gate | Signal | Tool |
 |---|---|---|
-| `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` | biome · prettier · gofmt |
+| `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` · `.eslintrc*`/`eslint.config.*` | biome · prettier · gofmt · eslint |
 | `lint` | `.eslintrc*`/`eslint.config.*` · `biome.json` | eslint · biome |
 | `types` | `tsconfig.json` · `pyproject.toml` with `[tool.pyright]` | tsc · pyright |
 | `tests` | `vitest.config.*` · `jest.config.*` · `playwright.config.*` · `go.mod` | vitest · jest · playwright · go test |
+
+The engine always prefers a project's own configured tooling and never overrides (or installs) a tool
+just because the adapter ships one. For `format`, a dedicated formatter (biome, prettier) wins; a
+project that formats with ESLint and has no dedicated formatter uses ESLint for `format` too. The
+TypeScript adapter's biome gates are a **last-resort default** — they apply only when a project
+configures no formatter/linter at all.
 
 When something was detected, one startup line names it — e.g.
 `auto-detected gates:  format=biome  tests=vitest` — on the human output only (never under

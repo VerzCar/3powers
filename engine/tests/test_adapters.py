@@ -131,3 +131,30 @@ def test_biome_only_repo_resolves_lint_to_biome_lint(tmp_path):
     assert found["lint"][0] == "biome"
     assert "biome lint" in found["lint"][1]["check_cmd"]
     assert "biome format" in found["format"][1]["check_cmd"]
+
+
+def test_eslint_only_repo_uses_eslint_for_format_and_lint_not_biome(tmp_path):
+    """A project that formats and lints with ESLint (no biome.json, no prettier config) resolves
+    BOTH `format` and `lint` to ESLint — the engine never imposes (or installs) biome over a
+    project's own native tooling; biome is only the adapter's last-resort default."""
+    proj = tmp_path / "eslint-only"
+    proj.mkdir()
+    (proj / "eslint.config.js").write_text("", encoding="utf-8")
+    found = adapters.detect_native_tools(proj)
+    assert found["format"][0] == "eslint"
+    assert "eslint" in found["format"][1]["check_cmd"]
+    assert found["lint"][0] == "eslint"
+    # biome is never imposed on a project that has its own tooling
+    assert not any("biome" in spec.get("check_cmd", "") for _tool, spec in found.values())
+
+
+def test_prettier_and_eslint_repo_formats_with_prettier_lints_with_eslint(tmp_path):
+    """A dedicated formatter outranks ESLint-as-formatter: prettier owns `format`, ESLint owns
+    `lint`. ESLint is used for `format` only when no dedicated formatter is configured."""
+    proj = tmp_path / "pretty"
+    proj.mkdir()
+    (proj / ".prettierrc").write_text("{}", encoding="utf-8")
+    (proj / "eslint.config.js").write_text("", encoding="utf-8")
+    found = adapters.detect_native_tools(proj)
+    assert found["format"][0] == "prettier"
+    assert found["lint"][0] == "eslint"

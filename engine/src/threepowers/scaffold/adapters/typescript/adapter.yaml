@@ -4,6 +4,11 @@
 # and the `lint` gate runs `biome lint` (linter only) — each gate checks exactly what
 # its name says, and lint findings never fail the format gate (no double-linting).
 # Both commands write nothing and exit non-zero on any issue.
+#
+# These biome gates are the adapter's LAST-RESORT DEFAULT. Auto-detection overrides them with a
+# project's own native tooling whenever it is configured — prettier or ESLint for `format`, ESLint
+# for `lint` — so a project that already formats/lints with its own tools keeps using them and biome
+# is never imposed or installed. Biome runs only when a project configures no formatter/linter at all.
 # Vitest emits LCOV which the core uses for diff-coverage. Stryker is wired for the
 # mutation gate but stays non-blocking until plan 002.
 language: typescript
