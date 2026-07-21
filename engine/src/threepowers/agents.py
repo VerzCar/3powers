@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import yaml
@@ -35,16 +36,31 @@ from .config import Settings
 #                invocation so each dispatch is guaranteed a clean session even on a backend
 #                that would otherwise restore prior conversation state (fresh-session hook)
 #   usage        dict | None — how the backend reports token usage in its output (advisory):
-#                  strategy: "json" | "regex"
-#                  field:    dotted path into a JSON output line (json strategy, single count)
-#                  fields:   list of dotted paths summed (json strategy; e.g. non-cached
+#                  source:   the resolution taxonomy — one of:
+#                              "inline-json"  usage rides the run's own structured output
+#                                             (a JSON line / stream-json event); read via
+#                                             field/fields/subtract below (structured-first)
+#                              "session-file" usage lives in an on-disk session artifact the
+#                                             backend writes; read after the run (populated in
+#                                             a later phase — see _usage_from_session_file)
+#                              "regex"        parse the backend's prose summary as an explicit
+#                                             last resort (fragile, vendor-specific)
+#                              "none"         the backend reports no reliable count → unknown
+#                            Structured-first: prefer inline-json/session-file; regex is only a
+#                            declared fallback; an unknown/absent source reads as "none" (honest
+#                            unknown — never a guessed number).
+#                  strategy: LEGACY, superseded by `source` — "json" maps to "inline-json" and
+#                            "regex" maps to "regex" during the transition (accepted, but `source`
+#                            wins when both are present).
+#                  field:    dotted path into a JSON output line (inline-json, single count)
+#                  fields:   list of dotted paths summed (inline-json; e.g. non-cached
 #                            input + output reported separately)
-#                  subtract: list of dotted paths subtracted when present (json strategy;
+#                  subtract: list of dotted paths subtracted when present (inline-json;
 #                            e.g. a cached-input count folded into a total)
 #                  pattern:  a regex whose capture groups are summed over the LAST match
-#                            (regex strategy; one group keeps its plain single-count meaning)
+#                            (regex source; one group keeps its plain single-count meaning)
 #                  cost_field: a dotted path to the backend's own reported run cost in USD
-#                            (json strategy; e.g. "total_cost_usd" in a stream-json result
+#                            (inline-json; e.g. "total_cost_usd" in a stream-json result
 #                            event). Read by extract_cost; absent → cost reads as unknown.
 #                Counts may be human-formatted ("29,500", "629.8k", "1.2M"). Absent,
 #                malformed, or unmatched → usage reads as unknown; never an error.
@@ -280,42 +296,114 @@ def _usage_from_regex(output: str, pattern: str) -> Optional[int]:
     return None
 
 
+# The declarative usage-source taxonomy (Track A): usage is resolved structured-first via an
+# explicit ``source``, with regex demoted to an explicit last resort and every other case reading
+# as honest-unknown. The public helpers below dispatch on the *resolved* source; the resolution is
+# the only thing this contract changes — the two-arg signatures and the downstream chain
+# (DispatchResult → StageResult → progress.md) are preserved.
+_USAGE_SOURCES = frozenset({"inline-json", "session-file", "regex", "none"})
+# Back-compat: the legacy ``strategy`` field maps onto the new taxonomy during the transition.
+_LEGACY_STRATEGY = {"json": "inline-json", "regex": "regex"}
+
+
+def _resolve_source(spec: dict[str, Any]) -> str:
+    """Resolve a manifest ``usage`` block to one normalized source in the taxonomy.
+
+    Prefers an explicit ``source`` (``inline-json`` | ``session-file`` | ``regex`` | ``none``);
+    when ``source`` is absent, maps the legacy ``strategy`` (``json`` → ``inline-json``, ``regex``
+    → ``regex``). Anything unrecognized — an explicit bogus ``source``, an unknown ``strategy``, or
+    no declaration at all — resolves to ``none`` (honest-unknown), never a guessed count.
+    """
+    source = str(spec.get("source") or "").strip().lower()
+    if source:
+        return source if source in _USAGE_SOURCES else "none"
+    strategy = str(spec.get("strategy") or "").strip().lower()
+    return _LEGACY_STRATEGY.get(strategy, "none")
+
+
+@dataclass(frozen=True)
+class _UsageContext:
+    """Extra dispatch context a source resolver may need beyond the manifest + output.
+
+    The public :func:`extract_usage`/:func:`extract_cost` helpers take only ``(manifest, output)``
+    (a contract the call sites in :mod:`threepowers.runner` depend on). This internal seam carries
+    whatever a source resolver needs on top of that: today only the captured ``output`` (from which
+    a future ``session-file`` resolver recovers the session id); a later phase extends it (e.g. the
+    home directory the session path resolves against) without touching the public signatures.
+    """
+
+    output: str
+
+
+def _usage_from_inline_json(spec: dict[str, Any], output: str) -> Optional[int]:
+    """Sum the manifest's ``field``/``fields`` (minus ``subtract``) from the output's JSON usage.
+
+    The ``inline-json`` resolver: a single dotted ``field`` or a ``fields`` list is summed, and any
+    resolvable ``subtract`` paths (cached counts folded into a total) are removed. Returns ``None``
+    when no usable field is declared or none resolves.
+    """
+    single = str(spec.get("field") or "").strip()
+    raw_fields = spec.get("fields")
+    fields = (
+        [single]
+        if single
+        else [str(f).strip() for f in raw_fields if str(f).strip()]
+        if isinstance(raw_fields, list)
+        else []
+    )
+    if not fields:
+        return None
+    raw_sub = spec.get("subtract")
+    subtract = (
+        [str(p).strip() for p in raw_sub if str(p).strip()] if isinstance(raw_sub, list) else []
+    )
+    return _usage_from_json(output, fields, subtract)
+
+
+def _usage_from_session_file(spec: dict[str, Any], ctx: _UsageContext) -> Optional[int]:
+    """Resolve tokens from the backend's on-disk session artifact — STUB (real logic is later).
+
+    The full resolver (recover the session id from ``ctx.output``, validate it as a strict UUID,
+    template the manifest ``path_template``, read the declared event, extract the token fields,
+    all defensively) lands in a later phase. Until then this always returns ``None`` so a
+    ``session-file`` backend degrades honestly to ``—`` rather than a fabricated count, honoring the
+    advisory "never raises; always Optional" contract.
+    """
+    del spec, ctx  # unused until the session-file resolver is implemented in a later phase
+    return None
+
+
 def extract_usage(manifest: dict[str, Any], output: str) -> Optional[int]:
     """The consumed token count one dispatch's agent output reports, or ``None`` when unknown.
 
-    Driven entirely by the manifest's optional ``usage`` hint — ``strategy: json`` reads a dotted
-    ``field`` (or a ``fields`` list summed, minus optional ``subtract`` paths for cached counts)
-    from the last JSON line of the output; ``strategy: regex`` sums the capture groups of the
-    last ``pattern`` match. Counts tolerate thousands separators and abbreviated units
-    (``629.8k``, ``1.2M``). A backend that declares no hint, a malformed hint, or output that
-    simply carries no usage all read as ``None`` — usage is strictly advisory and never fails a
-    dispatch. Never raises.
+    Driven by the manifest's optional ``usage`` block, dispatched on its resolved ``source``
+    (see :func:`_resolve_source`; legacy ``strategy: json``/``regex`` maps to
+    ``inline-json``/``regex``):
+
+    - ``inline-json`` reads a dotted ``field`` (or a ``fields`` list summed, minus optional
+      ``subtract`` paths for cached counts) from the run's JSON output;
+    - ``session-file`` reads the backend's on-disk session artifact (see
+      :func:`_usage_from_session_file`);
+    - ``regex`` sums the capture groups of the last ``pattern`` match — an explicit last-resort
+      *fallback* for backends with no structured output;
+    - ``none`` (and any unrecognized source) reads as ``None``.
+
+    Counts tolerate thousands separators and abbreviated units (``629.8k``, ``1.2M``). A backend
+    that declares no block, a malformed block, or output carrying no usage all read as ``None`` —
+    usage is strictly advisory and never fails a dispatch. Never raises.
     """
     spec = manifest.get("usage")
     if not isinstance(spec, dict) or not output:
         return None
-    strategy = str(spec.get("strategy") or "").strip().lower()
-    if strategy == "json":
-        single = str(spec.get("field") or "").strip()
-        raw_fields = spec.get("fields")
-        fields = (
-            [single]
-            if single
-            else [str(f).strip() for f in raw_fields if str(f).strip()]
-            if isinstance(raw_fields, list)
-            else []
-        )
-        if not fields:
-            return None
-        raw_sub = spec.get("subtract")
-        subtract = (
-            [str(p).strip() for p in raw_sub if str(p).strip()] if isinstance(raw_sub, list) else []
-        )
-        return _usage_from_json(output, fields, subtract)
-    if strategy == "regex":
+    source = _resolve_source(spec)
+    if source == "inline-json":
+        return _usage_from_inline_json(spec, output)
+    if source == "session-file":
+        return _usage_from_session_file(spec, _UsageContext(output=output))
+    if source == "regex":  # explicit last-resort fallback: parse the backend's prose summary
         pattern = str(spec.get("pattern") or "")
         return _usage_from_regex(output, pattern) if pattern else None
-    return None
+    return None  # source == "none" (or unrecognized) → honest unknown
 
 
 def _json_float(obj: Any, dotted: str) -> Optional[float]:
@@ -338,19 +426,13 @@ def _json_float(obj: Any, dotted: str) -> Optional[float]:
     return None
 
 
-def extract_cost(manifest: dict[str, Any], output: str) -> Optional[float]:
-    """The run cost in USD one dispatch's agent output reports, or ``None`` when unknown.
+def _cost_from_inline_json(spec: dict[str, Any], output: str) -> Optional[float]:
+    """Read the manifest's ``cost_field`` (USD) from the output's JSON lines, else ``None``.
 
-    Driven by the manifest's optional ``usage.cost_field`` (a dotted path, e.g. ``total_cost_usd``
-    in a stream-json ``result`` event): the output's JSON lines are scanned last-to-first — the
+    The ``inline-json`` cost resolver: the output's JSON lines are scanned last-to-first — the
     result summary is typically the final line — and the first line whose ``cost_field`` resolves
-    to a number wins; a whole-output JSON document is tried last. A backend that declares no
-    ``cost_field``, a malformed value, or output carrying no cost all read as ``None`` — cost is
-    strictly advisory, in step with :func:`extract_usage`, and never fails a dispatch. Never
-    raises."""
-    spec = manifest.get("usage")
-    if not isinstance(spec, dict) or not output:
-        return None
+    to a number wins; a whole-output JSON document is tried last.
+    """
     field = str(spec.get("cost_field") or "").strip()
     if not field:
         return None
@@ -369,3 +451,36 @@ def extract_cost(manifest: dict[str, Any], output: str) -> Optional[float]:
         return _json_float(json.loads(output), field)
     except json.JSONDecodeError:
         return None
+
+
+def _cost_from_session_file(spec: dict[str, Any], ctx: _UsageContext) -> Optional[float]:
+    """Resolve run cost from the backend's on-disk session artifact — STUB (real logic is later).
+
+    Companion to :func:`_usage_from_session_file`; the full resolver lands in a later phase. Until
+    then always ``None`` so a ``session-file`` backend degrades honestly to ``—`` rather than a
+    fabricated cost, honoring the advisory "never raises; always Optional" contract.
+    """
+    del spec, ctx  # unused until the session-file resolver is implemented in a later phase
+    return None
+
+
+def extract_cost(manifest: dict[str, Any], output: str) -> Optional[float]:
+    """The run cost in USD one dispatch's agent output reports, or ``None`` when unknown.
+
+    Driven by the manifest's optional ``usage`` block, dispatched on its resolved ``source`` in
+    step with :func:`extract_usage`: ``inline-json`` reads the dotted ``cost_field`` (e.g.
+    ``total_cost_usd`` in a stream-json ``result`` event) from the run's JSON output;
+    ``session-file`` reads the backend's on-disk session artifact (see
+    :func:`_cost_from_session_file`); ``regex`` and ``none`` carry no machine-stable cost and read
+    as ``None`` (a prose summary is not a trustworthy cost source). A backend that declares no
+    ``cost_field``, a malformed value, or output carrying no cost all read as ``None`` — cost is
+    strictly advisory and never fails a dispatch. Never raises."""
+    spec = manifest.get("usage")
+    if not isinstance(spec, dict) or not output:
+        return None
+    source = _resolve_source(spec)
+    if source == "inline-json":
+        return _cost_from_inline_json(spec, output)
+    if source == "session-file":
+        return _cost_from_session_file(spec, _UsageContext(output=output))
+    return None  # regex / none / unrecognized → no machine-stable cost

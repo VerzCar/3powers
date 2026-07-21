@@ -655,8 +655,11 @@ copy-pasteable helper commands, and the last verify attempt's failed gates — w
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
 **Token consumption and cost (advisory).** When an agent backend reports its token usage (declared
-per manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
-unit-aware parsing of `k`/`M`/comma-formatted counts), the run records the **real consumed** count —
+per manifest via a `usage` block whose `source` selects how it is read — `inline-json` from the run's
+structured output, `session-file` from an on-disk session artifact, `regex` over the agent's prose as
+an explicit last resort, or `none` — with unit-aware parsing of `k`/`M`/comma-formatted counts and
+honest-unknown resolution: an unresolvable or `none` source renders `—`, never a guessed number), the
+run records the **real consumed** count —
 non-cached input plus output tokens — per stage and per phase, **additively**: a **Tokens** column in
 both `progress.md` tables (showing `—` — unknown — when a backend does not report), a `tokens` field
 on the `--json` per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases`

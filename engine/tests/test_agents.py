@@ -59,6 +59,81 @@ def test_parse_count_handles_plain_separated_and_abbreviated(
     assert agents._parse_count(raw) == expected
 
 
+# --------------------------------------------------------------------------- source taxonomy (Track A)
+def test_source_dispatch_routes_each_source_to_the_right_resolver() -> None:
+    """The `usage.source` taxonomy dispatches to the matching resolver: `inline-json` reads the
+    JSON fields, `regex` parses the prose fallback, `session-file` is a stub (returns None until
+    its resolver lands), and `none` is honest-unknown."""
+    inline = {"usage": {"source": "inline-json", "field": "usage.total_tokens"}}
+    assert agents.extract_usage(inline, '{"usage": {"total_tokens": 4321}}') == 4321
+
+    rx = {"usage": {"source": "regex", "pattern": r"tokens used[:\s]+([0-9][0-9,]*)"}}
+    assert agents.extract_usage(rx, "tokens used: 1,000\ntokens used: 7,777\n") == 7777
+
+    session = {"usage": {"source": "session-file", "field": "usage.total_tokens"}}
+    assert agents.extract_usage(session, '{"usage": {"total_tokens": 4321}}') is None
+
+    nothing = {"usage": {"source": "none", "field": "usage.total_tokens"}}
+    assert agents.extract_usage(nothing, '{"usage": {"total_tokens": 4321}}') is None
+
+
+def test_legacy_strategy_maps_to_the_new_source_with_an_identical_result() -> None:
+    """Back-compat: a legacy `strategy: json` manifest resolves to `inline-json` and a legacy
+    `strategy: regex` manifest resolves to `regex`, each yielding exactly the same count as the
+    explicit `source:` form — so unmigrated manifests keep working during the transition."""
+    out_json = 'prose\n{"usage": {"total_tokens": 5150}}\n'
+    legacy_json = {"usage": {"strategy": "json", "field": "usage.total_tokens"}}
+    source_json = {"usage": {"source": "inline-json", "field": "usage.total_tokens"}}
+    assert (
+        agents.extract_usage(legacy_json, out_json)
+        == agents.extract_usage(source_json, out_json)
+        == 5150
+    )
+
+    out_rx = "tokens used: 3,003\n"
+    legacy_rx = {"usage": {"strategy": "regex", "pattern": r"tokens used[:\s]+([0-9][0-9,]*)"}}
+    source_rx = {"usage": {"source": "regex", "pattern": r"tokens used[:\s]+([0-9][0-9,]*)"}}
+    assert (
+        agents.extract_usage(legacy_rx, out_rx) == agents.extract_usage(source_rx, out_rx) == 3003
+    )
+
+    # `source` wins when both are present (prefer the explicit taxonomy over the legacy field)
+    both = {"usage": {"source": "none", "strategy": "json", "field": "usage.total_tokens"}}
+    assert agents.extract_usage(both, out_json) is None
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        {"source": "none", "field": "usage.total_tokens"},  # explicit none
+        {"field": "usage.total_tokens"},  # no source and no legacy strategy
+        {"source": "made-up", "field": "usage.total_tokens"},  # unrecognized source
+    ],
+)
+def test_no_usable_source_yields_none_never_a_guess(spec: dict[str, Any]) -> None:
+    """`source: none`, an absent source with no legacy `strategy`, and an unrecognized source all
+    resolve to honest-unknown — `None` (rendered `—`), never a fabricated number — even when the
+    output plainly carries a parseable count."""
+    out = '{"usage": {"total_tokens": 9999}}'
+    assert agents.extract_usage({"usage": spec}, out) is None
+    assert agents.extract_cost({"usage": {**spec, "cost_field": "total_cost_usd"}}, out) is None
+
+
+def test_cost_dispatch_matches_the_usage_source() -> None:
+    """`extract_cost` dispatches on the same resolved source: `inline-json` reads `cost_field`;
+    `session-file` is the stubbed resolver (None); `regex`/`none` carry no machine-stable cost."""
+    payload = '{"total_cost_usd": 0.25}'
+
+    def cost(**spec: Any) -> Optional[float]:
+        return agents.extract_cost({"usage": {**spec, "cost_field": "total_cost_usd"}}, payload)
+
+    assert cost(source="inline-json") == pytest.approx(0.25)
+    # legacy strategy: json maps to inline-json for cost too
+    assert cost(strategy="json") == pytest.approx(0.25)
+    assert cost(source="session-file") is None
+    assert cost(source="regex") is None
+
+
 # --------------------------------------------------------------------------- extended hint shapes
 def test_regex_hint_sums_all_capture_groups_of_the_last_match() -> None:
     """Plan 034 Track D: a multi-group pattern (non-cached input + output captured separately)

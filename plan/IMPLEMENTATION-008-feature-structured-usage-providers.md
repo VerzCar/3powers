@@ -89,12 +89,24 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-001 | In `engine/src/threepowers/agents.py`, add an explicit `usage.source` field to the manifest usage schema with the taxonomy `inline-json` \| `session-file` \| `regex` \| `none`. Add back-compat mapping so an existing `usage.strategy: json` maps to `inline-json` and `usage.strategy: regex` maps to `regex` (accept both during transition; prefer `source`). Keep `is_stream_json` (`agents.py:105`) semantics intact for the inline-json path. |  |  |
-| TASK-002 | Refactor `extract_usage` (`agents.py:283`) and `extract_cost` (`agents.py:341`) to dispatch on the resolved `source`: `inline-json` → today's `_usage_from_json` over the run's JSON lines (fields + optional `subtract`); `session-file` → a new resolver stub (populated in Phase 3); `regex` → today's `_usage_from_regex`, explicitly commented as a fallback; `none` → `None`. Keep the two-arg public signatures used at `runner.py:397` (`extract_usage`) / `runner.py:401` (`extract_cost`) unchanged; thread the additional context a `session-file` source needs (captured stdout, cwd/home) via a thin internal provider object or an internal overload, not by changing the public helpers (Decision 8). |  |  |
-| TASK-003 | Guardrail (no-op verification): confirm the downstream chain — `DispatchResult.tokens`/`cost` → `StageResult.tokens`/`cost` → `progress.md` — is byte-unchanged; the resolution *inside* the helpers is the only change (CON-002, Decision 8). Confirm the helpers still never raise and always return `Optional` (advisory contract, CON-001). Record this confirmation in the phase note. |  |  |
-| TASK-004 | Update `docs/` (the CLI/observability reference) to introduce the `usage.source` taxonomy at a high level and state the honest-`—` behavior; deeper per-backend detail is folded into Phase 6. No internal ids (GUD-001). |  |  |
-| TASK-005 | Confirm `engine/tests/test_oss_readiness.py` stays green for any new manifest-schema comment or user-facing string introduced by the contract (GUD-001). |  |  |
-| TASK-006 | Tests: in `engine/tests/test_agents.py`, assert the `source` dispatch table (each of `inline-json`/`session-file`/`regex`/`none` routes to the right resolver); a legacy `strategy: json`/`regex` manifest maps to the new source and yields the same result as today; a `source: none` (or no usable source) yields `None`. Confirm existing Track E extraction tests stay green (preserved chain). |  |  |
+| TASK-001 | In `engine/src/threepowers/agents.py`, add an explicit `usage.source` field to the manifest usage schema with the taxonomy `inline-json` \| `session-file` \| `regex` \| `none`. Add back-compat mapping so an existing `usage.strategy: json` maps to `inline-json` and `usage.strategy: regex` maps to `regex` (accept both during transition; prefer `source`). Keep `is_stream_json` (`agents.py:105`) semantics intact for the inline-json path. | ✅ | 2026-07-21 |
+| TASK-002 | Refactor `extract_usage` (`agents.py:283`) and `extract_cost` (`agents.py:341`) to dispatch on the resolved `source`: `inline-json` → today's `_usage_from_json` over the run's JSON lines (fields + optional `subtract`); `session-file` → a new resolver stub (populated in Phase 3); `regex` → today's `_usage_from_regex`, explicitly commented as a fallback; `none` → `None`. Keep the two-arg public signatures used at `runner.py:397` (`extract_usage`) / `runner.py:401` (`extract_cost`) unchanged; thread the additional context a `session-file` source needs (captured stdout, cwd/home) via a thin internal provider object or an internal overload, not by changing the public helpers (Decision 8). | ✅ | 2026-07-21 |
+| TASK-003 | Guardrail (no-op verification): confirm the downstream chain — `DispatchResult.tokens`/`cost` → `StageResult.tokens`/`cost` → `progress.md` — is byte-unchanged; the resolution *inside* the helpers is the only change (CON-002, Decision 8). Confirm the helpers still never raise and always return `Optional` (advisory contract, CON-001). Record this confirmation in the phase note. | ✅ | 2026-07-21 |
+| TASK-004 | Update `docs/` (the CLI/observability reference) to introduce the `usage.source` taxonomy at a high level and state the honest-`—` behavior; deeper per-backend detail is folded into Phase 6. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-005 | Confirm `engine/tests/test_oss_readiness.py` stays green for any new manifest-schema comment or user-facing string introduced by the contract (GUD-001). | ✅ | 2026-07-21 |
+| TASK-006 | Tests: in `engine/tests/test_agents.py`, assert the `source` dispatch table (each of `inline-json`/`session-file`/`regex`/`none` routes to the right resolver); a legacy `strategy: json`/`regex` manifest maps to the new source and yields the same result as today; a `source: none` (or no usable source) yields `None`. Confirm existing Track E extraction tests stay green (preserved chain). | ✅ | 2026-07-21 |
+
+> **Phase 1 note (2026-07-21).** TASK-003 guardrail confirmed: the `extract_usage`/`extract_cost`
+> call sites in `runner.py` (the two-arg `agents.extract_usage(self.manifest, …)` /
+> `agents.extract_cost(self.manifest, …)` invocations) are byte-unchanged, so the
+> `DispatchResult.tokens`/`cost` → `StageResult.tokens`/`cost` → `progress.md` chain is untouched —
+> only the resolution *inside* the helpers changed. Both helpers still return `Optional` and never
+> raise (advisory contract, CON-001). The `session-file` source is a **stub** that always returns
+> `None` (both `_usage_from_session_file` and `_cost_from_session_file`); its real resolver lands in
+> Phase 3. The internal `_UsageContext` seam carries the captured output today and can be extended
+> (home/cwd) in Phase 3 without changing the public two-arg signatures (Decision 8). All 28
+> `test_agents.py` tests and 28 `test_oss_readiness.py` tests pass; full pytest/ruff/mypy/gate are
+> batched into Phase 6 per the maintainer directive.
 
 ### Phase 2
 
