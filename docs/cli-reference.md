@@ -308,10 +308,16 @@ target once at gate-run startup and picks up the project's native tooling (first
 
 | Gate | Signal | Tool |
 |---|---|---|
-| `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` | biome · prettier · gofmt |
+| `format` | `biome.json` · `.prettierrc`/`prettier.config.*` · `go.mod` · `.eslintrc*`/`eslint.config.*` | biome · prettier · gofmt · eslint |
 | `lint` | `.eslintrc*`/`eslint.config.*` · `biome.json` | eslint · biome |
 | `types` | `tsconfig.json` · `pyproject.toml` with `[tool.pyright]` | tsc · pyright |
 | `tests` | `vitest.config.*` · `jest.config.*` · `playwright.config.*` · `go.mod` | vitest · jest · playwright · go test |
+
+The engine always prefers a project's own configured tooling and never overrides (or installs) a tool
+just because the adapter ships one. For `format`, a dedicated formatter (biome, prettier) wins; a
+project that formats with ESLint and has no dedicated formatter uses ESLint for `format` too. The
+TypeScript adapter's biome gates are a **last-resort default** — they apply only when a project
+configures no formatter/linter at all.
 
 When something was detected, one startup line names it — e.g.
 `auto-detected gates:  format=biome  tests=vitest` — on the human output only (never under
@@ -1020,6 +1026,31 @@ behavior as its oracle. Works without a pre-existing `.3powers/`. See [Brownfiel
 ---
 
 ## Config & quality
+
+### Config schemas — editor validation & autocomplete
+Every user-adaptable config under `.3powers/config/` and every agent-backend manifest under
+`.3powers/agents/` ships with a **JSON Schema** (draft 2020-12) so your editor validates keys and
+values and autocompletes them as you type. The schemas live next to the files they describe:
+
+- `.3powers/config/schema/<name>.schema.json` — one per config (`context`, `dependencies`,
+  `design-oracles`, `gates`, `git`, `models`, `notifications`, `observability`, `risk-tiers`,
+  `roles`, `scan`, `ui`, `auto-fix`).
+- `.3powers/agents/schema/<name>.schema.json` — one per agent manifest (`claude`, `codex`,
+  `copilot`, `copilot-hosted`, `opencode`, `aider`).
+
+Each YAML's first line binds it to its schema for editors that use the YAML language server:
+
+```yaml
+# yaml-language-server: $schema=./schema/ui.schema.json
+```
+
+`3pwr init` copies the `schema/` directories alongside the config it seeds, so validation works
+offline out of the box. The schemas describe the accepted keys, types, and allowed values (for
+example `ui.yaml`'s `color_mode: auto | always | never`, or `roles.yaml`'s
+`diversity_level: family | model`); they are intentionally permissive where the engine tolerates
+extra keys, so a schema never rejects a config the engine accepts. They are an authoring aid only —
+never a gate, verdict, or ledger input. (`semgrep-rules.yml` carries no schema: it is a semgrep
+ruleset, not 3Powers config.)
 
 ### `eval` — run the prompt/constitution eval set
 Treats prompts/commands/constitution as versioned software; blocks on regression.

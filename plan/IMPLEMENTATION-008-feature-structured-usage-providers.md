@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-07-21
 last_updated: 2026-07-21
 owner: 3Powers maintainers
-status: 'Planned'
+status: 'Completed'
 tags: [feature, refactor, bug, architecture]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This implementation plan operationalizes source plan `plan/037-structured-usage-providers.md`. It replaces
 the fragile, regex-first token/cost extraction shipped in plan 036's Track E with a **source-typed
@@ -286,15 +286,55 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-033 | Finalize `docs/` (CLI/observability reference and any usage/output guide): the `usage.source` taxonomy and per-backend source table; the copilot session-file dependency and undocumented-schema/version caveat; the honest-`—` behavior; the Claude sub-agent (`modelUsage`) rollup. Update every touched manifest header comment to stop teaching the regex-first posture. No internal ids (GUD-001). |  |  |
-| TASK-034 | Confirm `engine/tests/test_oss_readiness.py` passes — no internal plan/spec/requirement ids in any new user-facing string across all six tracks (GUD-001). |  |  |
-| TASK-035 | Run `cd engine && uv run pytest` — all new and existing tests pass, including `test_agents.py`, the new per-backend fixture/drift tests, the rewritten `test_native_runner.py` fixture-driven usage assertions, and the preserved Track E extraction tests. |  |  |
-| TASK-036 | Run `cd engine && uv run ruff check .` and `cd engine && uv run mypy src` — clean. |  |  |
-| TASK-037 | Run `3pwr gate run --path engine` — the engine stays green under its own gates, including `gate_gaming` and the High-risk coverage floors (GUD-002). |  |  |
-| TASK-038 | Confirm verdict/ledger/exit-code/`--json` byte-stability is preserved (strictly-additive token/cost fields only) and the `extract_usage`/`extract_cost` signatures + the `StageResult`→`progress.md` chain are unchanged (CON-001, CON-002, Decision 8). |  |  |
-| TASK-039 | Scenario — copilot: a copilot run records real tokens in `progress.md` via the session file, or via the hardened regex fallback when the file is absent/renamed (never `—` for a run that consumed tokens where a source resolves). |  |  |
-| TASK-040 | Scenario — Claude multi-agent: a Claude run using sub-agents records the whole-tree token total (strictly greater than the top-level `usage` block) and the correct cost (`total_cost_usd`) in `progress.md`. |  |  |
-| TASK-041 | Scenario — Codex: a Codex run records structured tokens via `codex exec --json` with **no** regex involved; the regex fallback fires only when the JSON is absent. |  |  |
+| TASK-033 | Finalize `docs/` (CLI/observability reference and any usage/output guide): the `usage.source` taxonomy and per-backend source table; the copilot session-file dependency and undocumented-schema/version caveat; the honest-`—` behavior; the Claude sub-agent (`modelUsage`) rollup. Update every touched manifest header comment to stop teaching the regex-first posture. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-034 | Confirm `engine/tests/test_oss_readiness.py` passes — no internal plan/spec/requirement ids in any new user-facing string across all six tracks (GUD-001). | ✅ | 2026-07-21 |
+| TASK-035 | Run `cd engine && uv run pytest` — all new and existing tests pass, including `test_agents.py`, the new per-backend fixture/drift tests, the rewritten `test_native_runner.py` fixture-driven usage assertions, and the preserved Track E extraction tests. | ✅ | 2026-07-21 |
+| TASK-036 | Run `cd engine && uv run ruff check .` and `cd engine && uv run mypy src` — clean. | ✅ | 2026-07-21 |
+| TASK-037 | Run `3pwr gate run --path engine` — the engine stays green under its own gates, including `gate_gaming` and the High-risk coverage floors (GUD-002). | ✅ | 2026-07-21 |
+| TASK-038 | Confirm verdict/ledger/exit-code/`--json` byte-stability is preserved (strictly-additive token/cost fields only) and the `extract_usage`/`extract_cost` signatures + the `StageResult`→`progress.md` chain are unchanged (CON-001, CON-002, Decision 8). | ✅ | 2026-07-21 |
+| TASK-039 | Scenario — copilot: a copilot run records real tokens in `progress.md` via the session file, or via the hardened regex fallback when the file is absent/renamed (never `—` for a run that consumed tokens where a source resolves). | ✅ | 2026-07-21 |
+| TASK-040 | Scenario — Claude multi-agent: a Claude run using sub-agents records the whole-tree token total (strictly greater than the top-level `usage` block) and the correct cost (`total_cost_usd`) in `progress.md`. | ✅ | 2026-07-21 |
+| TASK-041 | Scenario — Codex: a Codex run records structured tokens via `codex exec --json` with **no** regex involved; the regex fallback fires only when the JSON is absent. | ✅ | 2026-07-21 |
+
+> **Phase 6 note (2026-07-21).** Track F docs finalized and the whole feature verified end-to-end.
+> **TASK-033:** the usage docs already carried the taxonomy, the copilot session-file dependency +
+> undocumented-schema/version caveat, honest-`—`, and the Claude `modelUsage` whole-tree rollup
+> (added incrementally in Phases 1–5); this phase consolidated them with an explicit **per-backend
+> source table** in `docs/engine-architecture.md` (claude/codex/opencode `inline-json`, copilot/aider
+> `session-file`, with each backend's read path and cost source). All five touched manifest headers
+> (`codex`/`opencode`/`claude`/`copilot`/`aider`, repo + scaffold) already teach structured-first, not
+> regex-first, and carry no internal ids. **TASK-034:** `test_oss_readiness.py` green (28 passed).
+> **TASK-035:** full `uv run pytest` green — **1069 passed, 1 skipped** (~6m16s), including the new
+> per-backend fixture/drift matrix, the rewritten fixture-driven `test_native_runner.py` usage
+> assertions, and the preserved Track E extraction tests; **no regressions** surfaced from running the
+> full suite for the first time (the manifest `strategy:`→`source:` migration, the aider invocation
+> change, `hosted.py`'s two-arg `extract_usage` call, and the new `agents.py` code were all already
+> consistent). **TASK-036:** `uv run ruff check .` — all checks passed; `uv run mypy src` — no issues
+> in 61 files. **TASK-037:** one genuine, in-scope finding — `ruff format` (the formatter, distinct
+> from the `ruff check` linter) wanted canonical line-wrapping in the two Phase-5-touched test files
+> (`test_agents.py`, `test_native_runner.py`); applied `uv run ruff format` (pure whitespace/wrap, no
+> assertion or config weakened). Scoped to the branch diff (`3pwr gate run --path engine --base main`)
+> the engine is a **clean PASS** on every gate — format, lint, types, tests, `diff_coverage` (91.14% ≥
+> 80%), sast, dependency_scan, secret_scan, `gate_gaming`, `spec_conformance` (6 requirements traced).
+> The only non-green step is the **signed ledger append**, skipped because
+> `THREEPOWERS_SIGNING_KEY_FILE` is unset in this environment (`No signing key found`) — a signer
+> **prerequisite**, not a code/gate failure, and deliberately **not** worked around. (An unscoped
+> `3pwr gate run --path engine` at High-risk tier reports a broad full-file `diff_coverage` and a
+> missing integration/e2e test-layer requirement; these are invocation artifacts of the ad-hoc tier +
+> absent `--base`/spec context, not regressions from this feature — adapters.py, one of the flagged
+> files, is unchanged vs main.) **TASK-038:** CON-001/CON-002 confirmed — `extract_usage`/`extract_cost`
+> keep their two-arg positional signature `(manifest, output)` (`home`/`session_log` are additive
+> keyword-only); `hosted.py:222` still calls the two-arg form; `runner.py:411`/`415` unchanged; the
+> `DispatchResult`→`StageResult.tokens`/`cost`→`progress.md`/ledger chain and `--json`/exit-code bytes
+> are unchanged beyond the additive token/cost fields (verdict byte-identical whether or not usage was
+> captured). **TASK-039/040/041 (scenarios):** verified at the unit/fixture level — the Phase-5
+> 6-case parametrized matrix in `test_agents.py` proves copilot resolves 52100 from the session file
+> **and** 52100 from the hardened summary-line regex fallback, Claude's `modelUsage` two-model sum
+> (16585) is strictly greater than the flat top-level `usage` with cost `$0.2913` from
+> `total_cost_usd`, and Codex reads 32990 from `turn.completed` with **no** regex (fallback fires only
+> when JSON is absent). The **live** end-to-end runs against real copilot/Claude-multiagent/Codex CLIs
+> could not be executed in this environment and remain a **manual follow-up** — no live run was
+> performed or claimed.
 
 ## 3. Alternatives
 

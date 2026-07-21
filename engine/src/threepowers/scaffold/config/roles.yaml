@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/roles.schema.json
 # 3Powers role → agent-backend + model binding.
 #
 # Each role is dispatched to a headless coding-agent backend (a manifest in .3powers/agents/) and,

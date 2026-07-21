@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers auto-fix loop preferences (auto-fix.yaml)",
+  "description": "Governs the harness's bounded, code-only remediation loop. Advisory only: never a gate, verdict, or ledger input. A missing or malformed file falls back to the shipped defaults.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the run-path auto-fix loop is on (default true). A standalone `3pwr gate run` never auto-fixes regardless."
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Most coder attempts before the loop gives up (default 3, clamped to >=1)."
+    },
+    "scope_to_failed": {
+      "type": "boolean",
+      "description": "Scope each coder dispatch to the failed gates' files when known (default false)."
+    }
+  }
+}

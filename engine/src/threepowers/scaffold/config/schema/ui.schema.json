@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers CLI output preferences (ui.yaml)",
+  "description": "Presentation only: shapes human output. Never changes machine output (--json), exit codes, verdict bytes, or the ledger. A missing or malformed file falls back to the shipped defaults.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "color_mode": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "description": "auto (color only on an interactive TTY; default), always (force color), never (no color)."
+    },
+    "verbosity": {
+      "type": "string",
+      "enum": [
+        "quiet",
+        "normal",
+        "verbose"
+      ],
+      "description": "quiet (result + failures only), normal (structured summary; default), verbose (adds per-step detail)."
+    },
+    "layout": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "compact"
+      ],
+      "description": "normal (blank-line section separation; default) or compact (trimmed)."
+    }
+  }
+}

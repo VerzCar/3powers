@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/codex.schema.json
 # Agent backend manifest — OpenAI Codex CLI, headless.
 # Apache-2.0 coding agent; `codex exec` runs non-interactively. Route model access through the org's
 # OpenAI / Azure OpenAI entitlement or an OpenAI-compatible gateway via OPENAI_BASE_URL / OPENAI_API_KEY

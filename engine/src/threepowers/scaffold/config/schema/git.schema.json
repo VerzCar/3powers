@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers git-integration preferences (git.yaml)",
+  "description": "Tunes the run's git handling only: the dedicated run branch name, the base branch, and the 3pwr commit-author identity. Never a gate, verdict, or ledger input; it cannot disable a guard.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "branch_prefix": {
+      "type": "string",
+      "description": "Prefix of every run's dedicated branch (branch is <prefix><NNN>-<slug>)."
+    },
+    "base_branch": {
+      "type": "string",
+      "description": "The branch a fresh run's branch is created off (falls back to the current commit when it does not resolve)."
+    },
+    "author": {
+      "type": "object",
+      "description": "Author identity for commits 3pwr itself creates (applied per commit; the developer's own git config is never mutated).",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Commit author name."
+        },
+        "email": {
+          "type": "string",
+          "description": "Commit author email."
+        }
+      }
+    }
+  }
+}

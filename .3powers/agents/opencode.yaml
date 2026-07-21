@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/opencode.schema.json
 # Agent backend manifest — OpenCode, headless.
 # MIT, provider-agnostic; `opencode run "<prompt>"` runs non-interactively. Model/provider is chosen in
 # OpenCode's own config or via `--model`; the engine passes the environment through.

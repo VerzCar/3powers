@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers design oracles (design-oracles.yaml)",
+  "description": "Catalog of design-oracle gates unioned onto a design change's gate set. Each oracle names an adapter-supplied gate; a selected oracle whose tool is absent is quarantined, never passed.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "oracles": {
+      "type": "object",
+      "description": "Oracle kind -> its gate binding and optional thresholds. Trim the map to change which oracles a design change must face.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "gate": {
+            "type": "string",
+            "description": "The canonical design-oracle gate name (e.g. contract_check, component_contract, a11y_scan, visual_regression)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable note describing what the oracle asserts."
+          },
+          "standard": {
+            "type": "string",
+            "description": "For accessibility: the standard checked (e.g. WCAG-2.1-AA)."
+          },
+          "min_similarity": {
+            "type": "number",
+            "description": "For visual regression: the minimum similarity threshold."
+          }
+        },
+        "required": [
+          "gate"
+        ]
+      }
+    }
+  }
+}

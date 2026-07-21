@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/claude.schema.json
 # Agent backend manifest — Claude Code, headless. Seeded by `3pwr init`.
 # The engine makes no model call itself; the dispatched `claude` process does. Point it at
 # an enterprise gateway via env (ANTHROPIC_BASE_URL, CLAUDE_CODE_USE_BEDROCK/_VERTEX, HTTPS_PROXY) — the

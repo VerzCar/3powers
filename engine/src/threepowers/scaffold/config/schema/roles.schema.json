@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers role bindings (roles.yaml)",
+  "description": "Binds each lifecycle role to an agent-backend integration and (optionally) a pinned model. Roles are bound to model families for the diversity check; diversity is recommended, not forced.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "diversity_enforced": {
+      "type": "boolean",
+      "description": "Whether the diversity recommendation is surfaced."
+    },
+    "diversity_level": {
+      "type": "string",
+      "enum": [
+        "family",
+        "model"
+      ],
+      "description": "How 'diverse enough' is judged: family (different model families) or model (a different model in one family qualifies)."
+    },
+    "headless_integrations": {
+      "type": "array",
+      "description": "Agent-backend CLIs a live `3pwr run` may dispatch headlessly.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Role name (planner, coder, oracle, reviewer) -> its binding.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "model_family": {
+            "type": "string",
+            "description": "Model family for the diversity check (wins over id-derivation)."
+          },
+          "model": {
+            "type": "string",
+            "description": "Full model id pin (needed for model-level diversity)."
+          },
+          "integration": {
+            "type": "string",
+            "description": "Agent backend the role is dispatched to (a manifest under .3powers/agents/)."
+          },
+          "label": {
+            "type": "string",
+            "description": "Friendly display label."
+          },
+          "require_dispatch": {
+            "type": "boolean",
+            "description": "oracle only: require an isolated headless oracle dispatch attestation at High-risk (default false)."
+          }
+        }
+      }
+    },
+    "subagent_models": {
+      "type": "object",
+      "description": "Optional per-stage sub-agent model overrides (step -> model id). Unset changes nothing.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers agent backend \u2014 OpenAI Codex CLI (codex.yaml)",
+  "description": "Declarative manifest for the headless `codex exec` backend.",
+  "type": "object",
+  "properties": {
+    "agent": {
+      "type": "string",
+      "description": "Display name (defaults to the file stem)."
+    },
+    "family": {
+      "type": "string",
+      "description": "Model family for the diversity precheck; empty when it depends on the selected model (BYOK)."
+    },
+    "headless": {
+      "type": "boolean",
+      "description": "Whether the agent is dispatchable with no interactive IDE (default true)."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form maintainer notes."
+    },
+    "usage": {
+      "$ref": "#/$defs/usage"
+    },
+    "command": {
+      "type": "string",
+      "description": "The executable to invoke (required)."
+    },
+    "base_args": {
+      "type": "array",
+      "description": "Fixed arguments before the model/prompt.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "model_flag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Flag that pins a model (e.g. --model); omit when no model is configured."
+    },
+    "prompt_flag": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Flag that precedes the prompt (e.g. -p); null for a positional prompt."
+    },
+    "prompt_via": {
+      "type": "string",
+      "enum": [
+        "arg",
+        "stdin"
+      ],
+      "description": "How the assembled prompt reaches the agent (default arg)."
+    },
+    "new_session_args": {
+      "type": "array",
+      "description": "No-resume / new-session flag(s) appended so each dispatch is a clean session.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "usage_mode": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Opt-in structured output: when set (e.g. 'json') usage_mode_args are appended so usage is machine-readable."
+    },
+    "usage_mode_args": {
+      "type": "array",
+      "description": "The backend's structured-output flag(s) appended when usage_mode is set.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subagent_model": {
+      "type": "object",
+      "description": "Backend-neutral sub-agent model steering transport.",
+      "properties": {
+        "flag": {
+          "type": "string",
+          "description": "CLI flag carrying the sub-agent directive (e.g. --agents)."
+        },
+        "arg": {
+          "type": "string",
+          "description": "Template whose $MODEL is replaced with the resolved sub-agent model id."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "usage": {
+      "type": "object",
+      "description": "How the backend reports token usage/cost (advisory; never enters the verdict).",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "inline-json",
+            "session-file",
+            "regex",
+            "none"
+          ],
+          "description": "Resolution taxonomy: inline-json (usage rides the run's structured output), session-file (on-disk artifact), regex (parse prose; last resort), none."
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "json",
+            "regex"
+          ],
+          "description": "Legacy, superseded by `source` (json -> inline-json, regex -> regex)."
+        },
+        "field": {
+          "type": "string",
+          "description": "Single dotted path into a JSON usage object."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Dotted paths summed (e.g. input + output tokens).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "subtract": {
+          "type": "array",
+          "description": "Dotted paths subtracted when present (e.g. a cached-input count).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "aggregate": {
+          "type": "string",
+          "enum": [
+            "sum",
+            "last"
+          ],
+          "description": "How matching events combine: sum (total every event) or last (default)."
+        },
+        "per_model_field": {
+          "type": "string",
+          "description": "Dotted path to a per-model usage map (summed across every model)."
+        },
+        "per_model_tokens": {
+          "type": "array",
+          "description": "Inner token field names summed for each per-model map value.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cost_field": {
+          "description": "Dotted path to the backend's reported run cost in USD; a list tries each in order (first resolving wins).",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex whose summed capture groups yield the count (primary for regex source; a declared fallback for inline-json)."
+        },
+        "session_id_pattern": {
+          "type": "string",
+          "description": "session-file: regex whose first group recovers the session id (validated as a strict UUID before use)."
+        },
+        "path_template": {
+          "type": "string",
+          "description": "session-file: the session file path, with a {id} or {log} placeholder."
+        },
+        "event": {
+          "type": "string",
+          "description": "session-file: select the usage-bearing event by its event_field value."
+        },
+        "event_field": {
+          "type": "string",
+          "description": "session-file: the field naming an event's type (default 'type')."
+        },
+        "log_args": {
+          "type": "array",
+          "description": "session-file: args appended so the backend logs usage to an engine-owned {log} path.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "fallback": {
+          "$ref": "#/$defs/usage",
+          "description": "A nested usage spec tried when this source resolves nothing (chained)."
+        }
+      }
+    }
+  },
+  "required": [
+    "command"
+  ]
+}

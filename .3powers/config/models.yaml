@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/models.schema.json
 # 3Powers per-integration model/label catalog.
 #
 # Editable DATA, not code: `3pwr init` and `3pwr config roles setup` read this file to offer the

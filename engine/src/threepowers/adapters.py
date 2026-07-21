@@ -259,6 +259,20 @@ DETECT_RULES: tuple[DetectRule, ...] = (
         tool="gofmt",
         spec={"check_cmd": "gofmt -l .", "parser": "gofmt"},
     ),
+    # For `format`, a dedicated formatter (biome.json, prettier) is preferred; a project that
+    # formats with ESLint and configures no dedicated formatter uses ESLint for `format` too,
+    # rather than having biome imposed. The engine never overrides a project's native tooling —
+    # biome is only the adapter's last-resort default when a project configures no formatter at all.
+    DetectRule(
+        gate="format",
+        globs=(".eslintrc*", "eslint.config.*"),
+        tool="eslint",
+        spec={
+            "check_cmd": "npx --no-install eslint .",
+            "fix_cmd": "npx --no-install eslint --fix .",
+            "parser": "eslint",
+        },
+    ),
     # For `lint`, a dedicated linter config (ESLint) outranks biome's combined config:
     # a biome-formats-and-ESLint-lints repo gets `lint · eslint` with no double-linting.
     DetectRule(

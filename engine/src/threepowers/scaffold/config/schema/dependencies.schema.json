@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers supported dependency versions (dependencies.yaml)",
+  "description": "Supported third-party version ranges 3Powers is known-good against. `3pwr deps-check` probes installed versions and reports drift. A preflight check, never a verdict gate.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "components": {
+      "type": "array",
+      "description": "The probed components and their supported ranges.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Component display name."
+          },
+          "probe": {
+            "type": "string",
+            "description": "Shell command whose output carries the installed version."
+          },
+          "supported": {
+            "type": "string",
+            "description": "Supported version range (e.g. \">=1,<2\")."
+          },
+          "known_good": {
+            "type": "string",
+            "description": "A specific version known to work well (informational)."
+          },
+          "adapter": {
+            "type": "string",
+            "description": "Language adapter this component belongs to (e.g. python, go); omit for global tooling."
+          },
+          "on_drift": {
+            "type": "string",
+            "enum": [
+              "warn",
+              "block",
+              "ignore"
+            ],
+            "description": "Policy on drift/absence: warn (surface, default), block (fail deps-check), ignore (never blocks, still shown)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  }
+}

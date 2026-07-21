@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/ui.schema.json
 # 3Powers CLI output preferences.
 #
 # Presentation only: these settings shape *human* output. They NEVER change machine-readable output

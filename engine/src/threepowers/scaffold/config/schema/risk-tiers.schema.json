@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers risk tiers (risk-tiers.yaml)",
+  "description": "The single source of truth for every gate threshold. A gate is never satisfied by weakening a threshold here; raise a change's tier instead.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "tiers": {
+      "type": "object",
+      "description": "Tier name -> its thresholds and gate set.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "diff_coverage": {
+            "type": "integer",
+            "description": "Required diff-coverage percentage."
+          },
+          "mutation_score": {
+            "type": "integer",
+            "description": "Required mutation score percentage (0 disables)."
+          },
+          "model_diversity": {
+            "type": "boolean",
+            "description": "Whether oracle/coder model diversity is required."
+          },
+          "diff_mutation": {
+            "type": "boolean",
+            "description": "Opt-in: run mutation over changed files when a --base is given."
+          },
+          "required_layers": {
+            "type": "array",
+            "description": "Test layers required per requirement (e.g. unit, integration, e2e).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gates": {
+            "type": "array",
+            "description": "The gate names that run at this tier, cheapest-first.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Capability area -> the tier name it is held to.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/copilot-hosted.schema.json
 # Agent backend manifest — async HOSTED backend, GitHub Copilot coding agent shape.
 #
 # For enterprises whose only programmatic entry to their agent runtime is an ASYNCHRONOUS, HOSTED run

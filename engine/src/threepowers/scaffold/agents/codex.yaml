@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/codex.schema.json
 # Agent backend manifest — OpenAI Codex CLI, headless. Seeded by `3pwr init`.
 # Route model access via OPENAI_BASE_URL / OPENAI_API_KEY or an OpenAI-compatible gateway — the
 # engine passes the environment through untouched.
