@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/copilot.schema.json
 # Agent backend manifest — GitHub Copilot CLI, headless. Seeded by `3pwr init`.
 # For enterprise Copilot shops: uses the org's Copilot entitlement + Microsoft/GitHub policies. BYOK
 # (OpenAI/Azure/Anthropic keys) via Copilot config. `copilot -p "<prompt>"` non-interactive.

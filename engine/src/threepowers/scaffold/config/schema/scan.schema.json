@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers scanner exclusions (scan.yaml)",
+  "description": "Auditable, committed exclusions for the scanner gates (secret_scan, dependency_scan, sast). Exclusions shape what a scanner reads, never whether it runs; the core private-key check can never be disabled here.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "secret_scan": {
+      "type": "object",
+      "properties": {
+        "ignore": {
+          "type": "array",
+          "description": "Path globs excluded from the scan (relative to the scanned target).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ignore_rules": {
+          "type": "array",
+          "description": "Scanner rule ids to suppress.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "dependency_scan": {
+      "type": "object",
+      "properties": {
+        "ignore": {
+          "type": "array",
+          "description": "Path globs excluded from the scan (relative to the scanned target).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ignore_rules": {
+          "type": "array",
+          "description": "Scanner rule ids to suppress.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "advisories": {
+          "type": "array",
+          "description": "dependency_scan only: an auditable, expiring advisory allowlist. An entry with no reason, or past its expiry, suppresses nothing (fail-closed).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The accepted vulnerability id."
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why it is accepted (required, non-empty)."
+              },
+              "until": {
+                "type": "string",
+                "description": "Optional ISO expiry date."
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        }
+      }
+    },
+    "sast": {
+      "type": "object",
+      "properties": {
+        "ignore": {
+          "type": "array",
+          "description": "Path globs excluded from the scan (relative to the scanned target).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ignore_rules": {
+          "type": "array",
+          "description": "Scanner rule ids to suppress.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

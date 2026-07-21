@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/git.schema.json
 # 3Powers git-integration preferences.
 #
 # Applied to the run's git handling ONLY: the dedicated run branch, the clean-start guard, and the

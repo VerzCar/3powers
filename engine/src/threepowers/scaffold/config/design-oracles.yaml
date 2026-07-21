@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/design-oracles.schema.json
 # Design oracles — how *design* work is judged, beyond the code gates.
 #
 # When work-kind inference tags a change `design`, the gate engine unions these

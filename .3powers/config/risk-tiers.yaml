@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/risk-tiers.schema.json
 # 3Powers risk tiers — the SINGLE source of truth for every gate threshold.
 #
 # Risk tier is the one knob that drives coverage %, mutation score, model

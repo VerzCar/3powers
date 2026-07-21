@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/auto-fix.schema.json
 # Auto-fix — the harness's bounded, code-only remediation loop.
 #
 # When a `3pwr run` in auto mode hits a red Verify (or you invoke `3pwr gate fix` directly), the

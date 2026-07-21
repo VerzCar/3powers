@@ -92,12 +92,27 @@ def _copy_if_missing(src: Path, dst: Path) -> str:
     return "created"
 
 
+def _seed_schema_dir(src_dir: Path, dst_dir: Path) -> dict[str, str]:
+    """Copy every ``*.schema.json`` from ``src_dir`` into ``dst_dir``, never clobbering.
+
+    The JSON Schemas let a user's editor validate/autocomplete each adaptable config; they ship
+    alongside the config so ``3pwr init`` makes editor validation work offline out of the box.
+    A missing source directory yields no files (older bundles)."""
+    out: dict[str, str] = {}
+    if not src_dir.is_dir():
+        return out
+    for src in sorted(src_dir.glob("*.schema.json")):
+        out[src.name] = _copy_if_missing(src, dst_dir / src.name)
+    return out
+
+
 def seed_config(settings: Settings) -> dict[str, str]:
-    """Copy the baseline config into ``.3powers/config/``, never clobbering."""
+    """Copy the baseline config (and its JSON Schemas) into ``.3powers/config/``, never clobbering."""
     out: dict[str, str] = {}
     for src in sorted(_CONFIG_DIR.glob("*")):
         if src.is_file():
             out[src.name] = _copy_if_missing(src, settings.dir / "config" / src.name)
+    out.update(_seed_schema_dir(_CONFIG_DIR / "schema", settings.dir / "config" / "schema"))
     return out
 
 
@@ -136,6 +151,7 @@ def seed_agents(settings: Settings) -> dict[str, str]:
         return out
     for src in sorted(_AGENTS_SCAFFOLD_DIR.glob("*.yaml")):
         out[src.name] = _copy_if_missing(src, settings.agents_dir / src.name)
+    out.update(_seed_schema_dir(_AGENTS_SCAFFOLD_DIR / "schema", settings.agents_dir / "schema"))
     return out
 
 
@@ -196,6 +212,7 @@ def write_onboarding(
 # diversity stance stay explained WHERE THE CONFIG LIVES, even after yaml.safe_dump drops the
 # scaffold template's comments. Deterministic bytes — the same write always yields the same file.
 _ROLES_HEADER = (
+    "# yaml-language-server: $schema=./schema/roles.schema.json\n"
     "# 3Powers role \u2192 agent-backend + model binding (written by `3pwr init` /\n"
     "# `3pwr config roles setup`; safe to hand-edit).\n"
     "# Each role block: model_family, model, integration (an agent backend under\n"
@@ -334,6 +351,7 @@ def set_subagent_models(settings: Settings, models: dict[str, str]) -> None:
 # comments on the first rewrite, and the secret-safety rule is worth keeping WHERE
 # THE CONFIG LIVES.
 _NOTIFY_HEADER = (
+    "# yaml-language-server: $schema=./schema/notifications.schema.json\n"
     "# 3Powers run notifications. `3pwr run` fires on gate pauses, failures, and\n"
     "# completion. Channels: slack | teams | email | desktop.\n"
     "# SECRETS ARE NEVER STORED HERE: a slack/teams block names an env var\n"

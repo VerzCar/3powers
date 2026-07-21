@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/context.schema.json
 # Context budget for phase sizing — ADVISORY ONLY.
 #
 # The plan/tasks stages decompose work into phases, each sized so one fresh agent session

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers observability registry (observability.yaml)",
+  "description": "Declares which of a spec's non-functional requirements have a live production check. `3pwr observe coverage` flags every NFR in the spec with no registered check here.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "checks": {
+      "type": "array",
+      "description": "One entry per instrumented NFR.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "nfr": {
+            "type": "string",
+            "description": "The requirement id exactly as it appears in the spec."
+          },
+          "check": {
+            "type": "string",
+            "description": "How that NFR is verified in production (probe, SLO, alert, job)."
+          }
+        },
+        "required": [
+          "nfr"
+        ]
+      }
+    }
+  }
+}

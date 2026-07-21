@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers per-integration model catalog (models.yaml)",
+  "description": "Editable data (not code): the per-integration model/label choices `3pwr init` and `3pwr config roles setup` offer. A model not listed stays selectable via free-form entry.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "integrations": {
+      "type": "object",
+      "description": "Integration name -> its catalog of offered models.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "default": {
+            "type": "string",
+            "description": "Model id offered as the documented default (empty for any-model backends)."
+          },
+          "models": {
+            "type": "array",
+            "description": "The offered models for this integration.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "Model id the integration expects."
+                },
+                "family": {
+                  "type": "string",
+                  "description": "Model family (used by the diversity precheck)."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Friendly display label."
+                }
+              },
+              "required": [
+                "model"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

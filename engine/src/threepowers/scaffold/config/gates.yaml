@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/gates.schema.json
 # .3powers/config/gates.yaml — per-project gate TOOL overrides (committed, shared by the team).
 #
 # Keys match the adapter manifest's `gates:` section names. Only the keys you set here override

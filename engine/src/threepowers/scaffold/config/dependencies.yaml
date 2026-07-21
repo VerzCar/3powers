@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/dependencies.schema.json
 # Supported third-party versions 3Powers is known-good against.
 #
 # `3pwr deps-check` probes the INSTALLED versions and reports drift from the supported range.

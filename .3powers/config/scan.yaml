@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/scan.schema.json
 # 3Powers scanner-exclusion preferences (`secret_scan` / `dependency_scan` / `sast`).
 #
 # Auditable, committed exclusions for the scanner gates — the sanctioned way to carve build

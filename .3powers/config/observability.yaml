@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/observability.schema.json
 # Observability registry — the NFR-instrumentation registry read by `3pwr observe coverage`.
 #
 # Purpose: declare which of a spec's non-functional requirements (NFRs) have a LIVE check in

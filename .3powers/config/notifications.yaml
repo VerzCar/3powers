@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/notifications.schema.json
 # 3Powers run notifications.
 #
 # OPT-IN, best-effort channels fired when `3pwr run` pauses at a human gate, fails, or completes —

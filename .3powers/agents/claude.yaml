@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/claude.schema.json
 # Agent backend manifest — Claude Code, headless.
 #
 # Declarative, like a language adapter: the native executive builds the invocation from these

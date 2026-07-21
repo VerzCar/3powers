@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers per-project gate tool overrides (gates.yaml)",
+  "description": "Per-gate TOOL overrides shared by the team. Keys match the adapter manifest's gate names; only the keys you set override the adapter. Overrides replace the tool a gate runs, never which gates run (the risk tier alone decides that).",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "description": "One gate's tool override. Recognized keys vary by gate; unset keys keep the adapter value.",
+    "properties": {
+      "check_cmd": {
+        "type": "string",
+        "description": "Check command (format/lint gates)."
+      },
+      "fix_cmd": {
+        "type": "string",
+        "description": "Fix command; honored for format/lint and only under --auto-fix."
+      },
+      "cmd": {
+        "type": "string",
+        "description": "The command a gate runs (e.g. types, tests)."
+      },
+      "coverage_format": {
+        "type": "string",
+        "description": "Coverage report format the tests gate emits (e.g. lcov)."
+      },
+      "coverage_path": {
+        "type": "string",
+        "description": "Path to the coverage report, relative to the scanned target."
+      }
+    }
+  },
+  "properties": {}
+}

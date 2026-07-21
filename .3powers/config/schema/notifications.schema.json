@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers run notifications (notifications.yaml)",
+  "description": "Opt-in, best-effort channels fired when a run pauses at a human gate, fails, or completes. Never a trust or enforcement channel. Secrets come from the environment, never this file.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "channels": {
+      "type": "array",
+      "description": "Configured channels. An empty list disables notifications.",
+      "items": {
+        "type": "object",
+        "description": "One channel. Unknown keys are ignored with a warning (not rejected).",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "slack",
+              "teams",
+              "email",
+              "desktop"
+            ],
+            "description": "Channel type."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the channel is active."
+          },
+          "events": {
+            "type": "array",
+            "description": "Events this channel receives (default: all three).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "gate",
+                "failure",
+                "completion"
+              ]
+            }
+          },
+          "timeout_s": {
+            "type": "number",
+            "description": "Per-delivery timeout in seconds (bounded 0-30; default 5)."
+          },
+          "webhook_env": {
+            "type": "string",
+            "description": "slack/teams: env var name holding the webhook URL."
+          },
+          "host": {
+            "type": "string",
+            "description": "email: SMTP host."
+          },
+          "port": {
+            "type": "integer",
+            "description": "email: SMTP port (default 587)."
+          },
+          "to": {
+            "description": "email: recipient address or list.",
+            "type": [
+              "string",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "from": {
+            "type": "string",
+            "description": "email: sender address (optional)."
+          },
+          "user": {
+            "type": "string",
+            "description": "email: SMTP username (optional)."
+          },
+          "password_env": {
+            "type": "string",
+            "description": "email: env var name holding the SMTP password."
+          },
+          "starttls": {
+            "type": "boolean",
+            "description": "email: use STARTTLS (default true)."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      }
+    }
+  }
+}

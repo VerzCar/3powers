@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "3Powers context budget (context.yaml)",
+  "description": "Advisory per-model context budget used to size implementation phases. A phase whose estimated reload set exceeds the budget only gets a split warning; it is never a gate, verdict, or advance input.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Config schema version (currently 1)."
+    },
+    "budget_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Default budget in tokens when no per-model entry matches (default ~110000)."
+    },
+    "models": {
+      "type": "object",
+      "description": "Optional per-model overrides. The key is the role's configured model id (roles.yaml); the value is that model's budget in tokens.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  }
+}

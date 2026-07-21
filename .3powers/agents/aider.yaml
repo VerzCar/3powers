@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./schema/aider.schema.json
 # Agent backend manifest — Aider, headless.
 # Git-disciplined; `aider --message "<prompt>"` runs one non-interactive turn. Works against any
 # OpenAI-compatible API, so it slots cleanly behind an enterprise gateway (OPENAI_BASE_URL, etc.) —
