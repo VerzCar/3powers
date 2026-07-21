@@ -5,10 +5,11 @@ The first block covers every **mid-run failure class** `3pwr run` can print (eac
 exact phrase the CLI uses); setup problems follow. If your problem isn't here, check the
 [CLI reference](cli-reference.md) or open an issue.
 
-Two tools cover most run diagnoses before you read further: `3pwr run --status --spec-id <ID>` shows
+Two tools cover most run diagnoses before you read further: `3pwr run --status --spec-id <NNN>` shows
 *where* the run failed ("failed at <stage> (<class>)", from the signed ledger), and the failure message
-always names the persisted **agent transcript** under `.3powers/runs/<spec-id>/` — the agent's full
-stdout/stderr for each attempt, credential-redacted.
+always names the persisted **agent transcript** under `.3powers/runs/<NNN>/` — the agent's full
+stdout/stderr for each attempt, credential-redacted. `<NNN>` is the run's numeric feature-folder id
+(the tracker prints it; it names the run's `specs-src/<NNN>-*/` folder).
 
 ## "cannot start `3pwr run` — unmet prerequisites"
 
@@ -38,7 +39,7 @@ crashed, isn't authenticated with its provider, or was killed. This is never a j
 named cause (often: log in with the provider's CLI), then resume — completed stages are not re-run:
 
 ```bash
-3pwr run --resume --spec-id <ID>
+3pwr run --resume --spec-id <NNN>
 ```
 
 ## "agent timed out after <N>s"
@@ -53,7 +54,7 @@ this honestly; a hung CLI does too.
 and resume:
 
 ```bash
-3pwr run --resume --spec-id <ID> --timeout 3600
+3pwr run --resume --spec-id <NNN> --timeout 3600
 ```
 
 ## "artifact missing at <stage>"
@@ -68,7 +69,7 @@ met.
 rather than acting), then re-run the stage by resuming:
 
 ```bash
-3pwr run --resume --spec-id <ID>
+3pwr run --resume --spec-id <NNN>
 ```
 
 ## "gates red — the deterministic gate suite failed"
@@ -84,7 +85,7 @@ never satisfy a gate by weakening it:
 
 ```bash
 3pwr gate run --spec <spec.md> --tier <tier>     # re-run and read the failing gate
-3pwr run --resume --spec-id <ID>
+3pwr run --resume --spec-id <NNN>
 ```
 
 ## "verdict error at <stage> — the deterministic gate suite could not run"
@@ -98,13 +99,13 @@ an unknown risk tier.
 **Fix** — make the inputs resolvable, then resume:
 
 ```bash
-3pwr run --resume --spec-id <ID> --spec specs-src/<feature>/spec.md --tier Standard
+3pwr run --resume --spec-id <NNN> --spec specs-src/<feature>/spec.md --tier Standard
 ```
 
 ## "nothing to resume"
 
 **Symptom** — `nothing to resume for <ID> — no recorded progress; start fresh: 3pwr run "<intent>"
---spec-id <ID>`, exit `2`.
+--spec-id <ID>`, exit `2`. `<ID>` is the run's numeric feature-folder id.
 
 **Cause** — `--resume` was asked to continue a run that recorded no progress: no stage ever completed
 and no human gate is pending, so there is honestly nothing to continue from.
@@ -112,7 +113,7 @@ and no human gate is pending, so there is honestly nothing to continue from.
 **Fix** — start fresh with the command the message names:
 
 ```bash
-3pwr run "<intent>" --spec-id <ID> --mode auto
+3pwr run "<intent>" --spec-id <NNN> --mode auto
 ```
 
 ## Signing key not found

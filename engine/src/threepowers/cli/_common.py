@@ -260,17 +260,30 @@ def _ask_yesno(prompt: str, default: bool, *, interactive: bool) -> bool:
     return default if not ans else ans in ("y", "yes")
 
 
-def _format_verdict(verdict, appended: Optional[dict], st: Optional[style.Styler] = None) -> str:
+def _format_verdict(
+    verdict, appended: Optional[dict], st: Optional[style.Styler] = None, run_id: str = ""
+) -> str:
     """Human-readable verdict: failing gate, class, and offending item — no transcript needed.
 
     ``st`` colorizes the status markers consistently with the rest of the CLI; a disabled
-    styler (the default) leaves the plain ✓/✗/– glyphs — the text is identical byte-for-byte to before.
+    styler (the default) leaves the plain ✓/✗/– glyphs. ``run_id`` is the run's numeric
+    feature-folder id (e.g. ``002``) — the primary, copy-pasteable identity shown as ``id=``;
+    the spec's front-matter prefix, when it differs, appears only as a clearly-labelled secondary
+    ``spec=`` field (never as the ``--id``/``--spec-id`` value, which it cannot resolve).
     Failure detail is no longer summarized in a bottom "failures:" block: each failed gate gets its
     own panel after the pipeline view instead."""
     st = st or style.Styler()
     result = verdict.result.upper()
     head = "verdict " + (st.ok(result) if verdict.result == "pass" else st.err(result))
-    lines = [f"{head}  spec={verdict.spec_id or '?'} tier={verdict.tier} adapter={verdict.adapter}"]
+    ident_parts: list[str] = []
+    if run_id:
+        ident_parts.append(f"id={run_id}")
+    if verdict.spec_id and verdict.spec_id != run_id:
+        ident_parts.append(f"spec={verdict.spec_id}")
+    if not ident_parts:
+        ident_parts.append("spec=?")
+    ident = " ".join(ident_parts)
+    lines = [f"{head}  {ident} tier={verdict.tier} adapter={verdict.adapter}"]
     for g in verdict.gates:
         extra = ""
         if g.gate == "diff_coverage" and g.details:

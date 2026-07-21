@@ -672,8 +672,8 @@ def _register_oracle(sub: SubParsers, common: AddCommon) -> None:
     # name, defaulted from the feature workspace so the oracle files, records, and the run's
     # ledger all resolve under the id the user browses; an explicit --spec-id always wins.
     key_help = (
-        "the oracle key — the run's <NNN>-<slug> feature-folder name "
-        "(default: resolved from the feature workspace)"
+        "the oracle key — the run's feature-folder name <NNN>-<slug> (the folder the numeric run "
+        "id names); default: resolved from the feature workspace"
     )
     osl = common(osub.add_parser("seal", help="seal a spec-only oracle bundle"))
     osl.add_argument("--spec", help="path to the governing spec.md")

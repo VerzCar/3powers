@@ -354,15 +354,17 @@ def _gate_red_summary(ev: Event, st: style.Styler, g: dict[str, str]) -> str:
 
     Renders one row per failed gate — ``name · tool`` plus its first actionable error line — from
     the verdict dict the emitter attached under ``ev.data['verdict']``, then the filled-in
-    ``Resume:``/``Inspect:`` command hints carrying the run's resolved spec id. Returns ``""`` when
-    the event carries no verdict (the plain one-liner then applies), so a simulated or legacy
-    emitter renders exactly as before."""
+    ``Resume:``/``Inspect:`` command hints carrying the run's numeric feature-folder id (the value
+    ``workspace.resolve_feature_dir`` can resolve, which the emitter attaches under
+    ``ev.data['spec_id']``) — never the verdict's front-matter prefix, which a resume/inspect
+    command cannot resolve. Returns ``""`` when the event carries no verdict (the plain one-liner
+    then applies), so a simulated or legacy emitter renders exactly as before."""
     verdict = ev.data.get("verdict") or {}
     gates = verdict.get("gates") or []
     failed = [x for x in gates if x.get("status") == "fail"]
     if not failed:
         return ""
-    spec_id = str(ev.data.get("spec_id") or verdict.get("spec_id") or "").strip()
+    spec_id = str(ev.data.get("spec_id") or "").strip()
     header = st.err(f"gates failed ({len(failed)} of {len(gates)}):")
     lines = [f"  {st.err(g['fail'])}  {header}"]
     width = max(len(str(x.get("gate", ""))) for x in failed)
@@ -931,6 +933,7 @@ def failure_panels(
     verbose: bool = False,
     width: Optional[int] = None,
     waivers: Optional[Mapping[str, str]] = None,
+    run_id: str = "",
 ) -> str:
     """The post-run failure surface: one panel per FAILED gate of ``verdict``, followed by one
     coder hand-back block (a copy-pasteable prompt for the coding agent plus the re-dispatch
@@ -944,7 +947,9 @@ def failure_panels(
 
     ``waivers`` maps a failed gate's name to a pre-built waiver annotation line (a red gate
     covered by an active deviation); the annotation is human rendering only and never mutates
-    the verdict mapping."""
+    the verdict mapping. ``run_id`` is the run's numeric feature-folder id — the value the
+    re-dispatch command's ``--spec-id`` must carry so it resolves via
+    ``workspace.resolve_feature_dir``; empty falls back to the verdict's own id."""
     st = st or style.Styler()
     failed = [g for g in (verdict.get("gates") or []) if g.get("status") == "fail"]
     if not failed:
@@ -959,19 +964,25 @@ def failure_panels(
         )
         for g in failed
     )
-    return panels + "\n" + _handback_block(verdict, st)
+    return panels + "\n" + _handback_block(verdict, st, run_id)
 
 
-def _handback_block(verdict: Mapping[str, Any], st: style.Styler) -> str:
+def _handback_block(verdict: Mapping[str, Any], st: style.Styler, run_id: str = "") -> str:
     """The rendered coder hand-back section — the prompt indented under a dim header, then the
-    re-dispatch command. Presentation only; empty when nothing failed."""
+    re-dispatch command carrying the run's numeric feature-folder id.
+
+    ``run_id`` is that numeric id (the value ``workspace.resolve_feature_dir`` resolves); it wins
+    over the verdict's own front-matter prefix so the printed ``--spec-id`` actually resolves. The
+    re-dispatch line is omitted entirely when neither is known — never a non-resolving placeholder.
+    Presentation only; empty when nothing failed."""
     prompt = coder_handback(verdict)
     if not prompt:
         return ""
-    spec_id = str(verdict.get("spec_id") or "").strip() or "<spec-id>"
+    spec_id = run_id or str(verdict.get("spec_id") or "").strip()
     lines = [
         "  " + st.dim("hand back to your coding agent — copy-paste:"),
         *(f"    {ln}" for ln in prompt.splitlines()),
-        f"  re-dispatch: 3pwr run --resume --spec-id {spec_id}",
     ]
+    if spec_id:
+        lines.append(f"  re-dispatch: 3pwr run --resume --spec-id {spec_id}")
     return "\n".join(lines)

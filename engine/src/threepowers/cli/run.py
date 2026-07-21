@@ -2258,7 +2258,7 @@ def cmd_abort(args: argparse.Namespace) -> int:
 
 def _register_status(sub: SubParsers, common: AddCommon) -> None:
     stp = common(sub.add_parser("status", help="per-spec lifecycle stage from the ledger"))
-    stp.add_argument("--spec-id", dest="spec_id")
+    stp.add_argument("--spec-id", dest="spec_id", help="the run's numeric id, e.g. 002")
     stp.set_defaults(func=cmd_status)
 
 
@@ -2272,7 +2272,9 @@ def _register_git(sub: SubParsers, common: AddCommon) -> None:
             "(clean-start guarded)",
         )
     )
-    gits.add_argument("--spec-id", dest="spec_id", required=True)
+    gits.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     gits.add_argument(
         "--feature",
         help="the run's feature folder (specs-src/<NNN>-<slug>); default: the ledger's recorded binding",
@@ -2353,7 +2355,12 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         help="SUPERSEDED: the per-stage commit is mandatory; this flag only warns. "
         "Relax on the record: `3pwr deviation --gate git_stage_commit`",
     )
-    rnp.add_argument("--spec-id", dest="spec_id", help="run id (default: RUN)")
+    rnp.add_argument(
+        "--spec-id",
+        dest="spec_id",
+        help="the run's numeric id, e.g. 002 (default: derived from the allocated feature "
+        "folder; resolves to specs-src/<NNN>-*/)",
+    )
     rnp.add_argument(
         "--notify", help='command fired on gate/failure/completion: `<cmd> "<message>"`'
     )
@@ -2410,6 +2417,8 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
 
 def _register_abort(sub: SubParsers, common: AddCommon) -> None:
     abp = common(sub.add_parser("abort", help="record an abort for a spec's run"))
-    abp.add_argument("--spec-id", dest="spec_id", required=True)
+    abp.add_argument(
+        "--spec-id", dest="spec_id", required=True, help="the run's numeric id, e.g. 002"
+    )
     abp.add_argument("--reason")
     abp.set_defaults(func=cmd_abort)

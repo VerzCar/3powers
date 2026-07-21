@@ -194,7 +194,8 @@ block, and one coder hand-back section follows the panels:
   command, when one is configured, stays on its own `↳ auto-fix:` line above.
 - *Hand back to your coding agent* — a copy-pasteable prompt naming the failed gates and their
   findings and instructing an honest fix ("never weaken a gate: fix the code, not the check"),
-  followed by the re-dispatch command `3pwr run --resume --spec-id <id>`.
+  followed by the re-dispatch command `3pwr run --resume --spec-id <NNN>`, carrying the run's
+  numeric feature-folder id so it resolves to `specs-src/<NNN>-*/`.
 - *Last resort* — the pre-filled
   `3pwr deviation --gate <gate> --approver <you> --note "<why>" [--until <date>]` command, under
   an explicit label that a deviation is only for a deliberate, justified exception — an
@@ -649,8 +650,10 @@ proceed decision consults deviations. If any red gate is uncovered, the run stop
 uncovered gate(s) exactly as before.
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
-  `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (run id, default
-  `RUN`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) · `--auto-fix` (at the
+  `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (the run's
+  numeric id, e.g. `042`; default: derived from the allocated feature folder, resolving to
+  `specs-src/<NNN>-*/`) · `--spec SPEC` + `--tier TIER` (what the verify stage gates against) ·
+  `--auto-fix` (at the
   verify stage, let a failing format/lint check run its configured fix command and re-check —
   opt-in, never the default; see `gate run`) · `--discovery` / `--no-discovery` (force or skip the
   Discovery stage, overriding the work-kind default) · `--timeout N` /
@@ -666,9 +669,9 @@ uncovered gate(s) exactly as before.
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"
-3pwr run --resume --spec-id RUN --approver "$(git config user.name)"
-3pwr run --resume --spec-id RUN --revise "tighten the non-goals; leave out point 5"
-3pwr run --status --spec-id RUN
+3pwr run --resume --spec-id 042 --approver "$(git config user.name)"
+3pwr run --resume --spec-id 042 --revise "tighten the non-goals; leave out point 5"
+3pwr run --status --spec-id 042
 ```
 
 <a id="run-exit-codes"></a>

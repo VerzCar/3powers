@@ -96,6 +96,17 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             else:
                 raise
 
+    # The run's numeric feature-folder id (e.g. ``002``) — the prefix of the spec's
+    # ``specs-src/<NNN>-<slug>/`` folder — is the one identity a resume/inspect/re-dispatch command
+    # can resolve via ``workspace.resolve_feature_dir``. The verdict's own ``spec_id`` is the spec's
+    # front-matter prefix, which those commands cannot resolve; keep the two distinct. Empty when the
+    # spec lives outside a numbered feature folder (brownfield report-only), so no unresolvable hint
+    # is ever printed.
+    run_id = ""
+    if spec_path is not None:
+        prefix = workspace.feature_dir_of(spec_path).name.split("-")[0]
+        run_id = prefix if prefix.isdigit() else ""
+
     # The live per-gate pipeline: rows update in place on a capable TTY and
     # degrade to sequential plain rows off it. Never constructed under --json — the machine payload
     # is never routed through the rendering layer — and quiet keeps the result-only output.
@@ -155,7 +166,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as exc:
             print(f"⚠️  ledger entry skipped: {exc}", file=sys.stderr)
 
-    human = _format_verdict(verdict, appended, gst)
+    human = _format_verdict(verdict, appended, gst, run_id=run_id)
     # The auto-fixed announcement: one line per gate a fix turned green — human
     # output only, so the --json payload stays pure machine data.
     if not args.json:
@@ -173,6 +184,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             gst,
             verbose=v_level == "verbose",
             waivers=_waiver_annotations(verdict.to_dict(), s.ledger_path),
+            run_id=run_id,
         )
         if panels:
             human += "\n" + panels
@@ -203,7 +215,7 @@ def cmd_gate_run(args: argparse.Namespace) -> int:
             args,
             gst,
             title="gate run",
-            subject=f"{verdict.spec_id or '?'} · {verdict.tier} · {verdict.adapter}",
+            subject=f"{run_id or verdict.spec_id or '?'} · {verdict.tier} · {verdict.adapter}",
             rows=[human],
         ),
     )
