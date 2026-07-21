@@ -1155,6 +1155,34 @@ def test_run_stage_threads_tokens_into_the_stage_result_additively():
     assert prior_keys <= set(d_without) <= set(d_with)  # strictly additive (PAT-002)
 
 
+def test_dispatch_and_run_stage_thread_cost_additively(tmp_path):
+    """Plan 036 Track E: a stream-json backend's ``total_cost_usd`` (read via the manifest's
+    ``usage.cost_field``) reaches ``DispatchResult.cost`` and ``StageResult.cost``/``as_dict()`` in
+    step with the token count — present only when reported, always a superset of the prior keys."""
+    s = Settings(root=tmp_path)
+    reporting = {
+        "command": "claude",
+        "usage": {"strategy": "json", "field": "usage.output_tokens", "cost_field": "cost_usd"},
+    }
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None):
+        return (0, '{"usage": {"output_tokens": 9}, "cost_usd": 0.1234}', "")
+
+    res = CliAgentRunner(s, reporting, dispatcher=fake).dispatch("implement", "Build")
+    assert res.ok and res.tokens == 9 and res.cost == pytest.approx(0.1234)
+
+    with_cost = runner.run_stage(
+        "implement", "Build", attempt=lambda: DispatchResult(True, tokens=9, cost=0.12), retries=0
+    )
+    without = runner.run_stage(
+        "implement", "Build", attempt=lambda: DispatchResult(True, tokens=9), retries=0
+    )
+    assert with_cost.cost == pytest.approx(0.12) and without.cost is None
+    d_with, d_without = with_cost.as_dict(), without.as_dict()
+    assert d_with["cost"] == pytest.approx(0.12) and "cost" not in d_without
+    assert set(d_without) <= set(d_with)  # strictly additive (PAT-002)
+
+
 def _fixed_verdict_gates(monkeypatch, calls):
     """Patch the in-process gate suite to a FIXED verdict (stable id + timestamp) so two runs'
     verdict payload bytes are comparable; records every run_gates call's kwargs."""

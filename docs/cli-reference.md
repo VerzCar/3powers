@@ -604,20 +604,30 @@ completion times, per-phase detail during a phased build, the current state, the
 copy-pasteable helper commands, and the last verify attempt's failed gates — written atomically at
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
-**Token consumption (advisory).** When an agent backend reports its token usage (declared per
-manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
+**Token consumption and cost (advisory).** When an agent backend reports its token usage (declared
+per manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
 unit-aware parsing of `k`/`M`/comma-formatted counts), the run records the **real consumed** count —
 non-cached input plus output tokens — per stage and per phase, **additively**: a **Tokens** column in
 both `progress.md` tables (showing `—` — unknown — when a backend does not report), a `tokens` field
 on the `--json` per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases`
-(per phase result), and `run`/`checkpoint` ledger payloads. These fields appear only when usage was
-captured and are never renamed or removed; tokens never enter the gate suite or the deterministic
-verdict, whose bytes are identical whether or not usage was captured. Backends differ in what they
-can report: some text-mode totals are cache-inclusive (aider's "sent" includes the cached context;
-codex's plain-text total likewise), and a backend that reports nothing shows `—`. Where the backend
-supports it, a manifest can opt into structured output for the exact non-cached count: set
-`usage_mode: json` plus `usage_mode_args` — the backend's own flag, e.g. `--output-format json`
-(claude) or `--json` (codex). Off by default, preserving the live text stream.
+(per phase result), and `run`/`checkpoint` ledger payloads. A backend that also reports a run **cost**
+(declared via a `usage.cost_field` — a dotted path to the run's USD cost) records it the same way,
+in step: a **Cost** column beside Tokens in both `progress.md` tables (`—` when unknown, else
+`$0.0000`) and a `cost` field alongside `tokens` on the `--json` results and the signed `run`/`stage`,
+`run`/`phases`, and `run`/`checkpoint` payloads. These fields appear only when usage or cost was
+captured and are never renamed or removed; neither tokens nor cost enter the gate suite or the
+deterministic verdict, whose bytes are identical whether or not they were captured. Backends differ
+in what they can report: some text-mode totals are cache-inclusive (aider's "sent" includes the
+cached context; codex's plain-text total likewise), and a backend that reports nothing shows `—`.
+Where the backend supports it, a manifest opts into structured output for the exact non-cached count
+and cost: set `usage_mode: json` plus `usage_mode_args` — the backend's own flag. The shipped claude
+backend enables it with `--output-format stream-json --verbose`, an **event stream** that carries the
+final `usage` and `total_cost_usd` while preserving the live conversation: the engine renders the
+assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the transcript.
+(A note for older claude-code builds: versions before `v2.1.208` can truncate the final `result`
+line, so cost/tokens may read `—`; upgrade to capture them.) Pass `--raw-events` to echo the
+underlying NDJSON verbatim for debugging.
+
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
@@ -710,7 +720,10 @@ uncovered gate(s) exactly as before.
   return to the same gate) ·
   `--status` (print the stage tracker + the run branch and committed stages) · `--dry-run` (simulate
   offline; no git required) · `--simulate-fail` (force a
-  red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE`.
+  red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE` ·
+  `--stream` (echo the live agent conversation even when stdout is not a TTY — on by default on a
+  TTY) · `--raw-events` (for a stream-json backend, echo the underlying NDJSON events verbatim
+  instead of the rendered assistant text — debugging).
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"

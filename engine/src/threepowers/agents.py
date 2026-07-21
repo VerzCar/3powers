@@ -43,13 +43,21 @@ from .config import Settings
 #                            e.g. a cached-input count folded into a total)
 #                  pattern:  a regex whose capture groups are summed over the LAST match
 #                            (regex strategy; one group keeps its plain single-count meaning)
+#                  cost_field: a dotted path to the backend's own reported run cost in USD
+#                            (json strategy; e.g. "total_cost_usd" in a stream-json result
+#                            event). Read by extract_cost; absent → cost reads as unknown.
 #                Counts may be human-formatted ("29,500", "629.8k", "1.2M"). Absent,
 #                malformed, or unmatched → usage reads as unknown; never an error.
 #   usage_mode   str | None — opt-in structured output: when set (e.g. "json"), build_command
 #                appends `usage_mode_args` so the backend emits machine-readable usage; absent
-#                (the default) keeps the backend's live text stream untouched
+#                (the default) keeps the backend's live text stream untouched. When the appended
+#                args select a line-delimited event stream (``--output-format stream-json``), the
+#                dispatch/echo path renders the assistant text deltas live (see is_stream_json)
+#                while the final ``result`` event still carries the usage/cost the hints read
 #   usage_mode_args  list[str] — the backend's own structured-output flag(s) to append when
-#                `usage_mode` is set (e.g. ["--output-format", "json"]); inert otherwise
+#                `usage_mode` is set (e.g. ["--output-format", "stream-json", "--verbose"]); inert
+#                otherwise. Prefer a *streaming* event format over a single end-of-run JSON blob so
+#                the live conversation is preserved
 #   subagent_model  dict | None — backend-neutral sub-agent model steering: how a per-stage
 #                sub-agent model (roles.yaml `subagent_models`) is delivered on the command line.
 #                  flag: the CLI flag that carries the directive (e.g. "--agents")
@@ -92,6 +100,22 @@ def agent_family(manifest: dict[str, Any]) -> str:
 def is_headless(manifest: dict[str, Any]) -> bool:
     """Whether the agent can be dispatched with no interactive IDE (default True)."""
     return bool(manifest.get("headless", True))
+
+
+def is_stream_json(manifest: dict[str, Any]) -> bool:
+    """Whether the backend is dispatched in a line-delimited JSON *event stream* mode.
+
+    True only when ``usage_mode`` is set AND the appended ``usage_mode_args`` select
+    ``stream-json`` (Claude Code's ``--output-format stream-json``): the backend then emits one
+    JSON event per line, so the dispatch/echo path renders the assistant text deltas live instead
+    of the raw NDJSON, while the final ``result`` event still carries the usage/cost the hints
+    read. A backend without ``usage_mode`` set, or one whose structured output is a single
+    end-of-run blob (``--output-format json``), reads as False and streams its native text
+    untouched."""
+    if not str(manifest.get("usage_mode") or "").strip():
+        return False
+    args = manifest.get("usage_mode_args") or []
+    return any("stream-json" in str(a) for a in args)
 
 
 def build_command(
@@ -292,3 +316,56 @@ def extract_usage(manifest: dict[str, Any], output: str) -> Optional[int]:
         pattern = str(spec.get("pattern") or "")
         return _usage_from_regex(output, pattern) if pattern else None
     return None
+
+
+def _json_float(obj: Any, dotted: str) -> Optional[float]:
+    """Walk a dotted path into a parsed JSON object and coerce the leaf to ``float``, else ``None``.
+
+    Accepts int/float leaves directly and human-formatted numeric strings (via
+    :func:`_parse_count`); a boolean or any non-numeric leaf reads as ``None``."""
+    node = obj
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return None
+        node = node[part]
+    if isinstance(node, bool):
+        return None
+    if isinstance(node, (int, float)):
+        return float(node)
+    if isinstance(node, str):
+        parsed = _parse_count(node)
+        return float(parsed) if parsed is not None else None
+    return None
+
+
+def extract_cost(manifest: dict[str, Any], output: str) -> Optional[float]:
+    """The run cost in USD one dispatch's agent output reports, or ``None`` when unknown.
+
+    Driven by the manifest's optional ``usage.cost_field`` (a dotted path, e.g. ``total_cost_usd``
+    in a stream-json ``result`` event): the output's JSON lines are scanned last-to-first — the
+    result summary is typically the final line — and the first line whose ``cost_field`` resolves
+    to a number wins; a whole-output JSON document is tried last. A backend that declares no
+    ``cost_field``, a malformed value, or output carrying no cost all read as ``None`` — cost is
+    strictly advisory, in step with :func:`extract_usage`, and never fails a dispatch. Never
+    raises."""
+    spec = manifest.get("usage")
+    if not isinstance(spec, dict) or not output:
+        return None
+    field = str(spec.get("cost_field") or "").strip()
+    if not field:
+        return None
+    for line in reversed(output.splitlines()):
+        line = line.strip()
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        value = _json_float(obj, field)
+        if value is not None:
+            return value
+    try:
+        return _json_float(json.loads(output), field)
+    except json.JSONDecodeError:
+        return None

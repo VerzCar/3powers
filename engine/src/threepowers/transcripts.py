@@ -50,6 +50,15 @@ def _safe_id(spec_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", spec_id or "RUN") or "RUN"
 
 
+def run_dir_rel(spec_id: str) -> str:
+    """The repo-relative directory a run's per-attempt transcripts are written under.
+
+    Deterministic from the run's identity — ``.3powers/runs/<safe-spec-id>`` — so the CLI can
+    surface where the full agent output lands without constructing a :class:`TranscriptSink` (and
+    its credential scan)."""
+    return f".3powers/runs/{_safe_id(spec_id)}"
+
+
 def tail_text(path: Path, limit: int = 500) -> str:
     """The last ``limit`` bytes of a transcript, decoded leniently.
 

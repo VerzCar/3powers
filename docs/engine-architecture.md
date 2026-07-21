@@ -249,14 +249,19 @@ marked `[P]` must be executed via the agent's **own sub-agents** — the phase h
 implement agent template both mandate it — so intra-phase parallelism happens in the agent's runtime,
 never by the engine splitting a phase.
 
-**Token consumption is captured advisorily.** A manifest's optional `usage` hint declares how the
-backend reports usage in its output — `strategy: json` (a dotted field read from the last JSON output
-line) or `strategy: regex` (group 1 of a pattern match). The extracted per-stage/per-phase token
-counts ride as strictly **additive** fields: `tokens` on the `--json` per-stage results, on the signed
-`run`/`stage`, `run`/`phases` (per phase result), and `run`/`checkpoint` ledger payloads, and a Tokens
-column in `progress.md`. A backend that reports no usage reads as unknown (the fields stay absent; the
-column shows `—`). Tokens never enter the gate suite, the verdict, or the verdict bytes — the
-deterministic verdict is byte-identical whether or not usage was captured.
+**Token consumption and cost are captured advisorily.** A manifest's optional `usage` hint declares
+how the backend reports usage in its output — `strategy: json` (a dotted field read from the last
+JSON output line) or `strategy: regex` (group 1 of a pattern match) — and an optional `cost_field` (a
+dotted path to the run's USD cost). The extracted per-stage/per-phase token counts and cost ride as
+strictly **additive** fields: `tokens` and `cost` on the `--json` per-stage results, on the signed
+`run`/`stage`, `run`/`phases` (per phase result), and `run`/`checkpoint` ledger payloads, and Tokens +
+Cost columns in `progress.md`. A backend that reports nothing reads as unknown (the fields stay
+absent; the columns show `—`). Where a backend supports structured output a manifest opts in with
+`usage_mode`/`usage_mode_args`: the shipped claude backend uses `--output-format stream-json --verbose`
+— an event stream carrying the final `usage` and `total_cost_usd` while the engine renders the live
+assistant text (never raw JSON) and tees every event byte-for-byte to the persisted transcript.
+Neither tokens nor cost enter the gate suite, the verdict, or the verdict bytes — the deterministic
+verdict is byte-identical whether or not they were captured.
 
 ## Lifecycle, derived
 

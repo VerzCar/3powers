@@ -490,8 +490,15 @@ def _dispatch_retries(s: Settings, args: argparse.Namespace) -> int:
 
 
 def _run_stream(args: argparse.Namespace) -> bool:
-    """Stream agent output live only on a real TTY and not under --json."""
-    return bool(sys.stdout.isatty()) and not args.json
+    """Whether to echo agent output live.
+
+    On by default only on a real TTY and never under ``--json`` (pipes/JSON stay clean). An
+    explicit ``--stream`` opts in off a TTY as well — the persisted transcript is always written
+    either way — but ``--json`` still wins, so machine-readable output is never interleaved with
+    live event noise."""
+    if args.json:
+        return False
+    return bool(sys.stdout.isatty()) or bool(getattr(args, "stream", False))
 
 
 def _make_agent_runner(
@@ -505,6 +512,7 @@ def _make_agent_runner(
     transcripts_sink: Optional[transcripts.TranscriptSink] = None,
     echo: Optional[TextSink] = None,
     subagent_models: Optional[dict[str, str]] = None,
+    raw_events: bool = False,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI
     (:class:`CliAgentRunner`) or, when the manifest declares ``mode: async-hosted``, the async hosted
@@ -514,7 +522,9 @@ def _make_agent_runner(
     output; a hosted backend's output lives with its hosting service. ``echo`` routes the
     streamed agent conversation above the run's live bar instead of raw stdout.
     ``subagent_models`` (roles.yaml, keyed by step) threads a per-stage cheaper sub-agent model into
-    the local dispatch; a hosted backend has no such mechanism and ignores it (backend-neutral)."""
+    the local dispatch; a hosted backend has no such mechanism and ignores it (backend-neutral).
+    ``raw_events`` (from ``--raw-events``) shows a stream-json backend's underlying events verbatim
+    instead of the rendered assistant text deltas."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -531,6 +541,7 @@ def _make_agent_runner(
         echo_out=echo,
         echo_err=echo,
         subagent_models=subagent_models,
+        raw_events=raw_events,
     )
 
 
@@ -688,6 +699,7 @@ def _dispatch_phased(
     # Advisory per-phase usage: distinct keys per phase, so concurrent batch threads never
     # collide. Feeds the additive ledger fields and the progress table — never the verdict.
     tokens_by_phase: dict[int, int] = {}
+    cost_by_phase: dict[int, float] = {}
 
     def run_one(ph: phases.Phase) -> tuple[bool, str]:
         ctx = phases.handoff_context(
@@ -714,6 +726,8 @@ def _dispatch_phased(
         attempt_counts.append(attempts)
         if res.tokens is not None:
             tokens_by_phase[ph.index] = res.tokens
+        if res.cost is not None:
+            cost_by_phase[ph.index] = res.cost
         _warn_if_unanswered(s, ph, res.transcript, spec_id)
         return res.ok, ("" if res.ok else res.detail)
 
@@ -724,7 +738,12 @@ def _dispatch_phased(
         tok = tokens_by_phase.get(int(r["phase"]))
         if tok is not None:
             r["tokens"] = tok
+        # Additive per-phase cost field, in step with tokens — present only when reported.
+        pcost = cost_by_phase.get(int(r["phase"]))
+        if pcost is not None:
+            r["cost"] = pcost
     stage_tokens = sum(tokens_by_phase.values()) if tokens_by_phase else None
+    stage_cost = sum(cost_by_phase.values()) if cost_by_phase else None
     ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
@@ -748,6 +767,7 @@ def _dispatch_phased(
             artifact_paths=paths or [],
             phases=results,
             tokens=stage_tokens,
+            cost=stage_cost,
         )
 
     if not prun.ok:
@@ -848,6 +868,7 @@ def _native_runner(
     # One transcript sink per run, shared by both roles: every stage attempt's output is persisted
     # under .3powers/runs/<spec-id>/, credential-redacted.
     sink = transcripts.TranscriptSink(s.root, spec_id)
+    raw_events = bool(getattr(args, "raw_events", False))
     coder = _make_agent_runner(
         s,
         coder_manifest,
@@ -858,6 +879,7 @@ def _native_runner(
         transcripts_sink=sink,
         echo=echo,
         subagent_models=subagent_models,
+        raw_events=raw_events,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -873,6 +895,7 @@ def _native_runner(
         transcripts_sink=sink,
         echo=echo,
         subagent_models=subagent_models,
+        raw_events=raw_events,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
@@ -1035,6 +1058,10 @@ def _native_runner(
                 # Additive advisory field (never in the verdict): the stage's agent-reported
                 # token usage; absent when the backend does not report usage.
                 stage_payload["tokens"] = result.tokens
+            if result.cost is not None:
+                # Additive advisory field, in step with tokens: the stage's agent-reported run
+                # cost (USD); absent when the backend reports no cost.
+                stage_payload["cost"] = result.cost
             ledger.append("run", stage_payload, sk, spec_id=spec_id)
             if progress_reporter is not None:
                 # The stage-complete trigger, BEFORE the post-stage commit below,
@@ -1049,8 +1076,19 @@ def _native_runner(
                             }
                         )
                     )
+                    _progress_safe(
+                        lambda: progress_reporter.phase_costs(
+                            {
+                                int(ph["phase"]): float(ph["cost"])
+                                for ph in result.phases
+                                if ph.get("cost") is not None
+                            }
+                        )
+                    )
                 _progress_safe(
-                    lambda: progress_reporter.stage_completed(step, stage, tokens=result.tokens)
+                    lambda: progress_reporter.stage_completed(
+                        step, stage, tokens=result.tokens, cost=result.cost
+                    )
                 )
         if result.ok and run_branch and not commit_relaxed:
             # The mandatory POST-STAGE git hook (superseding the earlier
@@ -1118,6 +1156,10 @@ def _native_runner(
                     # The same additive advisory token field as the stage entry — never a
                     # verdict input.
                     payload["tokens"] = result.tokens
+                if result.cost is not None:
+                    # The same additive advisory cost field as the stage entry — never a
+                    # verdict input.
+                    payload["cost"] = result.cost
                 ledger.append("run", payload, sk, spec_id=spec_id)
         if result.ok and feature_dir is not None and completion.is_producing(step):
             # The deterministic completion gate: the stage's declared markdown must
@@ -1902,6 +1944,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             )
             print("  " + rst.dim("you still approve the spec"))
+            # Surface where the full per-attempt agent output lands: the persisted transcript is
+            # ground truth (always written, even when the live view is off), so the run is
+            # followable after the fact — especially off a TTY / without --stream.
+            print("  " + rst.dim(f"full agent output: {transcripts.run_dir_rel(spec_id)}/"))
         runner = _make_runner(0)
         _record_dispatch(0)  # provenance for the first segment (up to the spec-approval gate)
     first_resuming = False  # start_index already positions native/sim runners; resume==run for both
@@ -2359,6 +2405,19 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         default=None,
         help="retries for a failed dispatch before the stage is reported failed "
         "(default: the configured value, or 1)",
+    )
+    rnp.add_argument(
+        "--stream",
+        action="store_true",
+        help="echo the agent's live output even when stdout is not a TTY (still off under --json; "
+        "the full per-attempt transcript is always written under .3powers/runs/)",
+    )
+    rnp.add_argument(
+        "--raw-events",
+        dest="raw_events",
+        action="store_true",
+        help="show a stream-json backend's underlying events verbatim instead of the rendered "
+        "assistant text (diagnostic)",
     )
     rnp.add_argument(
         "--no-auto-commit",
