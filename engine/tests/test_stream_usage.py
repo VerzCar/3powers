@@ -37,7 +37,7 @@ class _Capture:
         self.text += s
         return len(s)
 
-    def flush(self) -> None:  # noqa: D401 - part of the sink protocol
+    def flush(self) -> None:
         pass
 
 
@@ -64,7 +64,10 @@ def test_render_event_line_suppresses_json_events_but_echoes_non_json_verbatim()
     assert render_event_line('{"type":"result","total_cost_usd":0.2913}') == ""
     assert render_event_line("") == ""
     assert render_event_line("plain warning") == "plain warning\n"
-    sub = '{"type":"assistant","parent_tool_use_id":"t1","message":{"content":[{"type":"text","text":"nested"}]}}'  # noqa: E501
+    sub = (
+        '{"type":"assistant","parent_tool_use_id":"t1",'
+        '"message":{"content":[{"type":"text","text":"nested"}]}}'
+    )
     assert render_event_line(sub) == "  ↳ nested\n"
 
 
