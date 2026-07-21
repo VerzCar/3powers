@@ -261,6 +261,16 @@ where the backend's real token/cost figures live, resolved by a declarative, str
   only a declared fallback, never the structured-first path.
 - `none` — the backend reports no reliable figure.
 
+The shipped reference backends resolve their usage as follows:
+
+| Backend  | `source`       | Where it reads                                                      | Cost |
+| -------- | -------------- | ------------------------------------------------------------------- | ---- |
+| claude   | `inline-json`  | `stream-json` final `result` — `modelUsage` per-model sum (whole-tree, sub-agents included), flat `usage` fallback on older builds | `total_cost_usd` (USD) |
+| codex    | `inline-json`  | `codex exec --json` final `turn.completed.usage`; prose `tokens used:` line kept only as a declared regex fallback | — |
+| opencode | `inline-json`  | `opencode run --format json` `step_finish` events, `aggregate: sum` across steps | `part.cost` (USD) |
+| copilot  | `session-file` | `~/.copilot/session-state/<uuid>/events.jsonl` → `session.shutdown`; drift-proof summary-line regex fallback | `—` (billed in credits, not USD) |
+| aider    | `session-file` | forced `--analytics --analytics-log <path>` → `message_send` events summed | `properties.cost` (USD) |
+
 Resolution is **honest-unknown**: an unresolvable, `none`, or unrecognized source reads as unknown and
 renders `—` — never a guessed number (a wrong cost is worse than an honest blank). The legacy
 `strategy: json`/`regex` field still works, mapped onto `inline-json`/`regex` during the transition.

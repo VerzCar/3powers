@@ -382,7 +382,9 @@ def test_opencode_with_no_step_finish_event_reads_unknown() -> None:
     """Track B: the known "exits before the final event" case — output carrying no `step_finish`
     event — yields no fabricated number; usage and cost both read as unknown (`—`)."""
     manifest = _manifest("opencode")
-    no_event = '{"type":"step_start","part":{"id":"step_1"}}\n{"type":"text","part":{"text":"hi"}}\n'
+    no_event = (
+        '{"type":"step_start","part":{"id":"step_1"}}\n{"type":"text","part":{"text":"hi"}}\n'
+    )
     assert agents.extract_usage(manifest, no_event) is None
     assert agents.extract_cost(manifest, no_event) is None
 

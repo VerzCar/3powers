@@ -1079,8 +1079,8 @@ _COPILOT_CURRENT_TOKENS = 52100
 
 def _copilot_summary_line() -> str:
     """The copilot CLI's current real token summary line, from the committed fixture."""
-    for line in _USAGE_FIXTURES.joinpath("copilot_summary.txt").read_text(encoding="utf-8").split(
-        "\n"
+    for line in (
+        _USAGE_FIXTURES.joinpath("copilot_summary.txt").read_text(encoding="utf-8").split("\n")
     ):
         if line.lstrip().startswith("Tokens"):
             return line
@@ -1372,7 +1372,9 @@ def test_cli_json_stage_result_carries_the_copilot_usage_integer(
     assert rc == 3
     obj = _json.loads(capsys.readouterr().out)
     spec_stage = next(st for st in obj["stages"] if st["step"] == "specify")
-    assert spec_stage["tokens"] == _COPILOT_CURRENT_TOKENS  # 46.9k written + 5.2k ↓, not the ↑ total
+    assert (
+        spec_stage["tokens"] == _COPILOT_CURRENT_TOKENS
+    )  # 46.9k written + 5.2k ↓, not the ↑ total
 
 
 def test_json_status_payload_keys_stay_a_superset_for_e2e_parsers(native_project, capsys):
