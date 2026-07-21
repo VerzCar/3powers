@@ -112,6 +112,27 @@ authoring the oracle in-IDE; enable it once the project adopts headless oracle a
 A judiciary role sharing the coder's model family only ever **warns** — diversity is recommended, never
 forced; proceed with `3pwr deviation --gate model_diversity …`.
 
+**Cheaper sub-agents per stage (`subagent_models`).** The setup also *optionally* offers a cheaper
+model for each stage's **sub-agents** — the research and fan-out sub-work a stage delegates — while the
+stage's **main** agent keeps its role model. Accepting pins the chosen model for the research-heavy
+stages (discovery, plan, implement) as an additive `subagent_models` map in `roles.yaml`, keyed by
+step (`discovery`, `specify`, `clarify`, `plan`, `tasks`, `oracle`, `implement`):
+```yaml
+# .3powers/config/roles.yaml  (additive; unset changes nothing)
+subagent_models:
+  discovery: anthropic/claude-haiku-4-5
+  plan:      anthropic/claude-haiku-4-5
+  implement: anthropic/claude-haiku-4-5
+```
+Delivery is **backend-neutral**: each stage's model is emitted only through the transport its agent
+manifest declares (`subagent_model` in `.3powers/agents/<name>.yaml`) — the engine never invents a
+flag. **Claude Code** carries it via `--agents` JSON (a per-sub-agent `model` field) and also honors the
+`CLAUDE_CODE_SUBAGENT_MODEL` environment variable. A backend whose manifest declares **no** such
+transport (e.g. the Codex reference manifest) simply **ignores** the entry and dispatches unchanged.
+Values are model ids from the integration's `models.yaml` catalog; an unlisted id still works (BYOK) and
+only prints an advisory typo warning. Leaving `subagent_models` unset makes every dispatch
+**byte-identical** to before the feature.
+
 ---
 
 ## Gates & verification
@@ -602,6 +623,12 @@ independent process with no conversation state carried between dispatches; the e
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
 one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
 sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
+**Cheaper sub-agents per stage (advisory, opt-in).** A stage's own sub-agents can be steered to a
+cheaper model per step via the additive `subagent_models` map in `roles.yaml` (see `config roles
+setup` above), while the stage's main agent keeps its role model. It is emitted only through the
+transport an agent manifest declares (`subagent_model`), so it is backend-neutral — Claude Code
+carries it (via `--agents`/`CLAUDE_CODE_SUBAGENT_MODEL`), a backend without the mechanism ignores it,
+and leaving the map unset keeps every dispatch byte-identical.
 **Editing the agent prompts.** Every dispatched stage prompt is assembled from markdown
 templates — the single source of the stage instructions; no prompt text lives inline in the engine.
 A repo-local template at `.3powers/templates/agents/<name>.agent.md` (seeded by `3pwr init`)

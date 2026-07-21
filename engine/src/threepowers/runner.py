@@ -273,6 +273,7 @@ class CliAgentRunner:
         transcripts: Optional["TranscriptSink"] = None,
         echo_out: Optional[TextSink] = None,
         echo_err: Optional[TextSink] = None,
+        subagent_models: Optional[dict[str, str]] = None,
     ) -> None:
         self.settings = settings
         self.manifest = manifest
@@ -289,6 +290,10 @@ class CliAgentRunner:
         # The per-run transcript sink: every attempt's output is persisted,
         # credential-redacted. None = no persistence (programmatic callers).
         self.transcripts = transcripts
+        # Optional per-stage sub-agent model overrides (roles.yaml `subagent_models`), keyed by
+        # step. `dispatch` looks up the current step and threads any hit into `build_command`; an
+        # empty map (the default) or a step with no entry changes nothing — byte-identical dispatch.
+        self.subagent_models = subagent_models or {}
         # Resolve the module-level default at construction time so a monkeypatched ``dispatch_agent``
         # (tests / a fake agent) is honored — the engine still issues no model call.
         self._dispatcher = dispatcher or dispatch_agent
@@ -323,7 +328,12 @@ class CliAgentRunner:
             templates_dir=self.settings.stage_templates_dir,
             variables=variables,
         )
-        argv, stdin = agents.build_command(self.manifest, prompt, model=self.model)
+        argv, stdin = agents.build_command(
+            self.manifest,
+            prompt,
+            model=self.model,
+            subagent_model=self.subagent_models.get(step, ""),
+        )
         # Persist this attempt's output to the run's transcript location: teed even
         # while streaming, so a streamed run no longer loses its output. The writer redacts
         # credential-shaped env values before any byte lands on disk.

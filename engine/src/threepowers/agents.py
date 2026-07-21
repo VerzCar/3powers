@@ -50,6 +50,17 @@ from .config import Settings
 #                (the default) keeps the backend's live text stream untouched
 #   usage_mode_args  list[str] — the backend's own structured-output flag(s) to append when
 #                `usage_mode` is set (e.g. ["--output-format", "json"]); inert otherwise
+#   subagent_model  dict | None — backend-neutral sub-agent model steering: how a per-stage
+#                sub-agent model (roles.yaml `subagent_models`) is delivered on the command line.
+#                  flag: the CLI flag that carries the directive (e.g. "--agents")
+#                  arg:  a template whose "$MODEL" is replaced with the resolved sub-agent model
+#                        id; when empty, the model id itself is passed as the flag's value
+#                When this block is declared AND a `subagent_models` entry applies to the dispatched
+#                stage, build_command appends `[flag, rendered_arg]` so that stage's *sub-agents*
+#                use the cheaper model while the main session keeps its role `model`. A backend
+#                whose manifest omits this block declares nothing and the feature no-ops
+#                (byte-identical dispatch). The engine never invents a flag — it only appends what
+#                the manifest declares.
 
 
 def load_agent(settings: Settings, name: str) -> dict[str, Any]:
@@ -84,13 +95,18 @@ def is_headless(manifest: dict[str, Any]) -> bool:
 
 
 def build_command(
-    manifest: dict[str, Any], prompt: str, *, model: str = ""
+    manifest: dict[str, Any], prompt: str, *, model: str = "", subagent_model: str = ""
 ) -> tuple[list[str], Optional[str]]:
     """Build the agent invocation from a manifest.
 
     Returns ``(argv, stdin)``: ``argv`` is the full argument vector (no shell), and ``stdin`` is the prompt
     text when the manifest passes the prompt via stdin, else ``None``. Deterministic given its inputs — the
-    same (manifest, prompt, model) always yields the same invocation.
+    same (manifest, prompt, model, subagent_model) always yields the same invocation.
+
+    ``subagent_model`` (empty by default) steers this stage's *sub-agents* to a cheaper model: it is
+    emitted only when it is non-empty AND the manifest declares a ``subagent_model`` transport
+    block; otherwise it changes nothing, so an unset stage or a backend without the block dispatches
+    byte-identically. The engine never invents a flag — it emits only the manifest-declared directive.
 
     Raises ``ValueError`` if the manifest declares no ``command``.
     """
@@ -113,6 +129,22 @@ def build_command(
     model_flag = manifest.get("model_flag")
     if model_flag and model:
         argv += [str(model_flag), model]
+
+    # Backend-neutral sub-agent model steering: when a `subagent_models` entry (roles.yaml) applies
+    # to the dispatched stage AND the manifest declares how to carry it, emit the declared directive
+    # so this stage's *sub-agents* use the cheaper model while the main session keeps its role
+    # `model`. A backend without a `subagent_model` block declares nothing and this no-ops — the
+    # engine never invents a flag, it only appends what the manifest declares.
+    if subagent_model:
+        directive = manifest.get("subagent_model")
+        if isinstance(directive, dict):
+            flag = str(directive.get("flag") or "").strip()
+            if flag:
+                arg_tmpl = str(directive.get("arg") or "")
+                rendered = (
+                    arg_tmpl.replace("$MODEL", subagent_model) if arg_tmpl else subagent_model
+                )
+                argv += [flag, rendered]
 
     via = str(manifest.get("prompt_via") or "arg").strip().lower()
     prompt_flag = manifest.get("prompt_flag")

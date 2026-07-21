@@ -118,6 +118,36 @@ def test_roles_flow_records_selected_headless_integrations(tmp_path, monkeypatch
     assert set(s.load_roles()["headless_integrations"]) >= {"claude", "copilot"}
 
 
+def test_roles_flow_offers_and_pins_a_cheaper_subagent_model(tmp_path, monkeypatch, capsys):
+    """Plan 036 Track D (TASK-021): the setup offers the catalog's cheaper models for per-stage
+    sub-agents (highlighted) and pins the chosen one for the research/fan-out stages; the main
+    stage agents keep their role models."""
+    s = _seeded(tmp_path)
+    st = style.Styler(enabled=False)
+    # claude only, every role model default, diversity default, then pick the (cheaper) haiku option.
+    _feed(monkeypatch, ["claude", "", "", "", "", "", "4"])
+    report = cli._roles_setup_flow(s, st, interactive=True)
+    out = capsys.readouterr().out
+    assert "haiku" in out.lower() and "(cheaper)" in out  # cheap models highlighted in the offer
+    pinned = s.subagent_models()
+    assert set(pinned) == {"discovery", "plan", "implement"}
+    assert all("haiku" in m for m in pinned.values())
+    assert report["subagent_models"] == pinned
+    # the main coder model is unchanged — sub-agent steering is additive
+    assert "haiku" not in str(s.role("coder").get("model") or "")
+
+
+def test_roles_flow_subagent_offer_declined_leaves_dispatch_unchanged(tmp_path, monkeypatch):
+    """Plan 036 Track D (REQ-D): declining the sub-agent offer (default) writes no `subagent_models`
+    block, so dispatch stays byte-identical."""
+    s = _seeded(tmp_path)
+    st = style.Styler(enabled=False)
+    _feed(monkeypatch, ["claude"])  # everything else defaults; the offer defaults to none
+    cli._roles_setup_flow(s, st, interactive=True)
+    assert s.subagent_models() == {}
+    assert "subagent_models" not in s.load_roles()
+
+
 # --------------------------------------------------------------------------- notifications flow
 def test_notifications_none_by_default_and_non_interactive(tmp_path):
     """STEER-FR-010: non-interactive writes nothing — notifications stay off."""

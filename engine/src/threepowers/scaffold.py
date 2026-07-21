@@ -310,6 +310,26 @@ def set_diversity_level(settings: Settings, level: str) -> None:
     _save_roles_doc(settings, data)
 
 
+def set_subagent_models(settings: Settings, models: dict[str, str]) -> None:
+    """Record the optional per-stage sub-agent model overrides in ``roles.yaml`` (additive).
+
+    Merges into the existing roles document, preserving every other field. Blank steps/models are
+    dropped. An empty (or all-blank) mapping removes the block entirely, so re-running the setup and
+    declining the offer restores byte-identical dispatch."""
+    cleaned: dict[str, str] = {}
+    for step, model in models.items():
+        key = str(step or "").strip()
+        val = str(model or "").strip()
+        if key and val:
+            cleaned[key] = val
+    data = _load_roles_doc(settings)
+    if cleaned:
+        data["subagent_models"] = cleaned
+    else:
+        data.pop("subagent_models", None)
+    _save_roles_doc(settings, data)
+
+
 # Notifications config keeps its own short header: yaml.safe_dump drops the scaffold template's
 # comments on the first rewrite, and the secret-safety rule is worth keeping WHERE
 # THE CONFIG LIVES.

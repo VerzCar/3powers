@@ -26,6 +26,16 @@ usage:
 # invocation, replacing the live text stream with the JSON result object the hint above reads.
 # usage_mode: json
 usage_mode_args: ["--output-format", "json"]
+# Sub-agent model steering (optional, backend-neutral): when a `subagent_models` entry in
+# .3powers/config/roles.yaml applies to the dispatched stage, the engine appends the directive below
+# so that stage's *sub-agents* run on the cheaper model while the main session keeps its role model.
+# `$MODEL` is replaced with the resolved sub-agent model id. Claude Code also honors the
+# CLAUDE_CODE_SUBAGENT_MODEL environment variable as an alternative — export it before the run if you
+# prefer env delivery. Absent this block (or when no `subagent_models` entry applies), the feature
+# no-ops: the dispatch is byte-identical.
+subagent_model:
+  flag: "--agents"
+  arg: '{"cost-optimized": {"description": "Cost-optimized helper for research and fan-out sub-work", "prompt": "You are a focused helper sub-agent.", "model": "$MODEL"}}'
 notes: >
   Reference backend. Verified present on PATH in this repo. For enterprise model access set the
   ANTHROPIC_* / CLAUDE_CODE_USE_BEDROCK / CLAUDE_CODE_USE_VERTEX env before running `3pwr run`.

@@ -45,3 +45,59 @@ def test_settings_paths_and_missing_yaml(tmp_path):
     assert s.ledger_path.name == "ledger.jsonl"
     assert s.pubkey_path.parent.name == "keys"
     assert s.load_risk_tiers() == {} and s.load_roles() == {}
+
+
+def _write(path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_subagent_models_optional_and_additive(tmp_path):
+    """Plan 036 Track D: an absent block yields {}; blank keys/values are dropped; declared entries
+    parse — additive and off by default, so unset changes nothing."""
+    (tmp_path / ".3powers").mkdir()
+    s = Settings(root=tmp_path)
+    assert s.subagent_models() == {}
+    _write(
+        s.roles_path,
+        "roles:\n  coder: {integration: claude}\n"
+        "subagent_models:\n  implement: anthropic/claude-haiku-4-5\n  plan: ''\n  '': x\n",
+    )
+    assert s.subagent_models() == {"implement": "anthropic/claude-haiku-4-5"}
+
+
+def test_subagent_model_warnings_reports_unknown_for_known_integration(tmp_path):
+    """Plan 036 Track D (REQ-D): a sub-agent model absent from a curated catalog for the dispatching
+    integration is reported (advisory); a catalog-listed model warns nothing."""
+    (tmp_path / ".3powers").mkdir()
+    s = Settings(root=tmp_path)
+    _write(
+        s.models_catalog_path,
+        "version: 1\nintegrations:\n  claude:\n    default: anthropic/claude-opus-4-8\n"
+        "    models:\n      - {model: anthropic/claude-opus-4-8, family: anthropic, label: Opus}\n"
+        "      - {model: anthropic/claude-haiku-4-5, family: anthropic, label: Haiku}\n",
+    )
+    _write(
+        s.roles_path,
+        "roles:\n  coder: {integration: claude}\n  oracle: {integration: claude}\n"
+        "subagent_models:\n  implement: anthropic/claude-haiku-4-5\n  plan: anthropic/typo-model\n",
+    )
+    warnings = s.subagent_model_warnings()
+    assert len(warnings) == 1
+    assert "plan" in warnings[0] and "typo-model" in warnings[0]
+
+
+def test_subagent_model_warnings_silent_for_byok_integration(tmp_path):
+    """Plan 036 Track D: a free-form BYOK integration (no curated catalog list) never warns — the
+    model is used as-is, matching the existing model-pin tolerance."""
+    (tmp_path / ".3powers").mkdir()
+    s = Settings(root=tmp_path)
+    _write(
+        s.models_catalog_path,
+        "version: 1\nintegrations:\n  opencode: {default: '', models: []}\n",
+    )
+    _write(
+        s.roles_path,
+        "roles:\n  coder: {integration: opencode}\nsubagent_models:\n  implement: whatever/model\n",
+    )
+    assert s.subagent_model_warnings() == []

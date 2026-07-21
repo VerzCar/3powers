@@ -372,6 +372,55 @@ class Settings:
             "label": str(r.get("label") or "").strip() or model,
         }
 
+    def subagent_models(self) -> dict[str, str]:
+        """The optional per-stage sub-agent model overrides — ``{step: model}``.
+
+        Additive and off by default: an absent (or non-mapping) ``subagent_models`` block yields an
+        empty map and changes nothing about dispatch. Each value is the model id the resolved
+        integration expects for that stage's *sub-agents*; the main stage agent keeps its role
+        model. Blank keys/values are dropped. A value absent from the ``models.yaml`` catalog stays
+        usable (BYOK), matching the role model-pin tolerance — :meth:`subagent_model_warnings`
+        surfaces the likely-typo case advisorily; it is never a gate."""
+        raw = self.load_roles().get("subagent_models")
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, str] = {}
+        for step, model in raw.items():
+            key = str(step or "").strip()
+            val = str(model or "").strip()
+            if key and val:
+                out[key] = val
+        return out
+
+    def subagent_model_warnings(self) -> list[str]:
+        """Advisory warnings for ``subagent_models`` entries whose model is not in the catalog.
+
+        A stage's dispatching integration is the oracle's for the ``oracle`` step, else the coder's.
+        When that integration has a curated catalog and the pinned sub-agent model is not listed, one
+        warning names the likely typo — the model is still used as-is (BYOK), never blocked. Empty
+        when every entry resolves, when no ``subagent_models`` block is set, or when the integration
+        is a free-form BYOK backend with no curated list. Never raises, never a gate."""
+        from . import catalog as _catalog  # local import avoids a config↔catalog import cycle
+
+        overrides = self.subagent_models()
+        if not overrides:
+            return []
+        cat = _catalog.load_catalog(self)
+        coder_intg = str(self.role("coder").get("integration") or "").strip()
+        oracle_intg = str(self.role("oracle").get("integration") or "").strip()
+        warnings: list[str] = []
+        for step, model in overrides.items():
+            integration = oracle_intg if step == "oracle" else coder_intg
+            if not integration:
+                continue
+            listed = {e["model"] for e in _catalog.models_for(cat, integration)}
+            if listed and model not in listed:
+                warnings.append(
+                    f"subagent_models.{step}: '{model}' is not in the {integration} catalog "
+                    f"(models.yaml) — used as-is (BYOK); check for a typo"
+                )
+        return warnings
+
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():

@@ -504,6 +504,7 @@ def _make_agent_runner(
     stream: bool,
     transcripts_sink: Optional[transcripts.TranscriptSink] = None,
     echo: Optional[TextSink] = None,
+    subagent_models: Optional[dict[str, str]] = None,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI
     (:class:`CliAgentRunner`) or, when the manifest declares ``mode: async-hosted``, the async hosted
@@ -511,7 +512,9 @@ def _make_agent_runner(
     DispatchResult`` contract, so the
     verdict is judged identically. The transcript sink persists each local attempt's
     output; a hosted backend's output lives with its hosting service. ``echo`` routes the
-    streamed agent conversation above the run's live bar instead of raw stdout."""
+    streamed agent conversation above the run's live bar instead of raw stdout.
+    ``subagent_models`` (roles.yaml, keyed by step) threads a per-stage cheaper sub-agent model into
+    the local dispatch; a hosted backend has no such mechanism and ignores it (backend-neutral)."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -527,6 +530,7 @@ def _make_agent_runner(
         transcripts=transcripts_sink,
         echo_out=echo,
         echo_err=echo,
+        subagent_models=subagent_models,
     )
 
 
@@ -835,6 +839,12 @@ def _native_runner(
     coder_agent = _resolve_coder_agent(s, args)
     oracle_agent = runpreflight.resolve_oracle_integration(s)
     coder_manifest = agents.load_agent(s, coder_agent)
+    # Optional per-stage cheaper sub-agent models (roles.yaml `subagent_models`); an empty map
+    # changes nothing. Surface a likely-typo model once here (advisory, never a gate) before the
+    # walk, then thread the map into both role runners keyed by step.
+    subagent_models = s.subagent_models()
+    for warning in s.subagent_model_warnings():
+        print(f"  ⚠ {warning}", file=sys.stderr)
     # One transcript sink per run, shared by both roles: every stage attempt's output is persisted
     # under .3powers/runs/<spec-id>/, credential-redacted.
     sink = transcripts.TranscriptSink(s.root, spec_id)
@@ -847,6 +857,7 @@ def _native_runner(
         stream=stream,
         transcripts_sink=sink,
         echo=echo,
+        subagent_models=subagent_models,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -861,6 +872,7 @@ def _native_runner(
         stream=stream,
         transcripts_sink=sink,
         echo=echo,
+        subagent_models=subagent_models,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
