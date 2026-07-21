@@ -1068,9 +1068,35 @@ def test_each_dispatch_is_an_independent_process_with_no_carried_session(tmp_pat
 
 
 # --------------------------------------------------------------------------- usage capture (plan 033 Track H / RUNVIS)
-# The real Copilot CLI summary shape (plan 034 Track D): ↑ total input (cache-inclusive),
-# "(… written)" non-cached input, ↓ output — the hint sums the written + output groups.
-_COPILOT_USAGE_PATTERN = r"Tokens ↑[^\n]*\(([0-9.,_kKmM]+) written\)[^\n]*↓\s*([0-9.,_kKmM]+)"
+# The usage assertions below are FIXTURE-DRIVEN off tests/fixtures/usage/, so no test exercises a
+# format the current CLI no longer emits. `copilot_summary.txt` is the copilot CLI's real current
+# summary block; the shipped copilot manifest's regex fallback sums its non-cached written + output
+# groups. Both the pattern and the sample come from the committed fixtures — nothing is hand-typed.
+_USAGE_FIXTURES = Path(__file__).parent / "fixtures" / "usage"
+# The current copilot summary line yields non-cached written (46.9k) + output (5.2k) = 52100.
+_COPILOT_CURRENT_TOKENS = 52100
+
+
+def _copilot_summary_line() -> str:
+    """The copilot CLI's current real token summary line, from the committed fixture."""
+    for line in _USAGE_FIXTURES.joinpath("copilot_summary.txt").read_text(encoding="utf-8").split(
+        "\n"
+    ):
+        if line.lstrip().startswith("Tokens"):
+            return line
+    raise AssertionError("copilot_summary.txt has no `Tokens` line")
+
+
+def _copilot_regex_usage() -> dict:
+    """The shipped copilot manifest's declared regex fallback, as a standalone `usage` block.
+
+    Sourcing the pattern from the shipped manifest (never a duplicated hand-typed constant) keeps
+    this test bound to the real hardened fallback: if the manifest's pattern drifts, so does this."""
+    import yaml
+
+    scaffold = Path(agents.__file__).parent / "scaffold" / "agents" / "copilot.yaml"
+    manifest = yaml.safe_load(scaffold.read_text(encoding="utf-8"))
+    return manifest["usage"]["fallback"]
 
 
 def test_extract_usage_json_strategy_reads_a_dotted_field():
@@ -1226,8 +1252,8 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
     """Plan 033 Track H / CON-003 (RUNVIS), extended by plan 034 Track D: the deterministic
     verdict payload is byte-identical whether or not usage is captured — tokens ride ONLY the
     additive run-entry fields, never run_gates, the verdict, or the verdict bytes; `3pwr verify`
-    stays green over the new payloads. The captured shape is the real Copilot summary line
-    (`Tokens ↑ … (… written) • ↓ …`) whose two groups sum to the non-cached count."""
+    stays green over the new payloads. The captured shape is the real current Copilot summary line
+    (fixture `copilot_summary.txt`) whose written + output groups sum to the non-cached count."""
     import yaml
 
     from threepowers.canonical import canonical_bytes
@@ -1251,16 +1277,17 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
                 "family": "anthropic",
                 "headless": True,
                 "prompt_flag": "-p",
-                "usage": {"strategy": "regex", "pattern": _COPILOT_USAGE_PATTERN},
+                "usage": _copilot_regex_usage(),
             }
         ),
         encoding="utf-8",
     )
     base = _artifact_writer()
+    summary_line = _copilot_summary_line()
 
     def with_usage(argv, **kw):
         rc, out, err = base(argv, **kw)
-        return rc, out + "\nTokens ↑ 629.8k (29.5k written) • ↓ 9.2k", err
+        return rc, out + "\n" + summary_line, err
 
     monkeypatch.setattr(runner, "dispatch_agent", with_usage)
     _drive_to_signoff(root_b)
@@ -1288,19 +1315,21 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
 
     b_stages = stage_payloads(root_b, "stage")
     coder_stages = [p for p in b_stages if p["step"] != "oracle"]
-    # 29.5k written + 9.2k output = 38700 — the non-cached count, never the ↑ cache total
-    assert coder_stages and all(p.get("tokens") == 38700 for p in coder_stages)
+    # 46.9k written + 5.2k output = 52100 — the non-cached count, never the ↑ cache total
+    assert coder_stages and all(p.get("tokens") == _COPILOT_CURRENT_TOKENS for p in coder_stages)
     # the oracle role runs under the codex manifest, which declares no usage hint → unknown
     assert all("tokens" not in p for p in b_stages if p["step"] == "oracle")
-    assert any(p.get("tokens") == 38700 for p in stage_payloads(root_b, "checkpoint"))
+    assert any(
+        p.get("tokens") == _COPILOT_CURRENT_TOKENS for p in stage_payloads(root_b, "checkpoint")
+    )
     # …while A's payloads are untouched (the field appears only when usage was captured).
     assert all("tokens" not in p for p in stage_payloads(root_a, "stage"))
     assert all("tokens" not in p for p in stage_payloads(root_a, "checkpoint"))
 
     # The run's progress.md shows the Tokens column with the accumulated per-stage counts
-    # (Spec = specify + clarify = 2 × 38700), and — (unknown) where nothing was reported.
+    # (Spec = specify + clarify = 2 × 52100), and — (unknown) where nothing was reported.
     prog = (root_b / "specs-src" / "010-add-x" / "progress.md").read_text(encoding="utf-8")
-    assert "| Tokens |" in prog and "77400" in prog
+    assert "| Tokens |" in prog and str(2 * _COPILOT_CURRENT_TOKENS) in prog
 
     # Ledger verification stays green over the new additive payloads.
     assert main(["--root", str(root_b), "verify"]) == 0
@@ -1310,16 +1339,14 @@ def test_verdict_bytes_identical_with_and_without_usage_capture(tmp_path, monkey
 def test_cli_json_stage_result_carries_the_copilot_usage_integer(
     native_project, monkeypatch, capsys
 ):
-    """Plan 034 Track D: a dispatch whose transcript tail carries the real Copilot token summary
-    line lands ONE advisory integer (non-cached written + output) in the stage --json result;
-    the surrounding prose changes nothing."""
+    """Plan 034 Track D: a dispatch whose transcript tail carries the real current Copilot token
+    summary line lands ONE advisory integer (non-cached written + output) in the stage --json
+    result; the surrounding prose changes nothing. Fixture-driven off `copilot_summary.txt`."""
     import json as _json
 
     import yaml
 
-    copilot_line = (Path(__file__).parent / "fixtures" / "usage" / "copilot.txt").read_text(
-        encoding="utf-8"
-    )
+    copilot_line = _copilot_summary_line()
     (native_project / ".3powers" / "agents" / "claude.yaml").write_text(
         yaml.safe_dump(
             {
@@ -1327,7 +1354,7 @@ def test_cli_json_stage_result_carries_the_copilot_usage_integer(
                 "family": "anthropic",
                 "headless": True,
                 "prompt_flag": "-p",
-                "usage": {"strategy": "regex", "pattern": _COPILOT_USAGE_PATTERN},
+                "usage": _copilot_regex_usage(),
             }
         ),
         encoding="utf-8",
@@ -1345,7 +1372,7 @@ def test_cli_json_stage_result_carries_the_copilot_usage_integer(
     assert rc == 3
     obj = _json.loads(capsys.readouterr().out)
     spec_stage = next(st for st in obj["stages"] if st["step"] == "specify")
-    assert spec_stage["tokens"] == 38700  # 29.5k written + 9.2k ↓ output, not the ↑ total
+    assert spec_stage["tokens"] == _COPILOT_CURRENT_TOKENS  # 46.9k written + 5.2k ↓, not the ↑ total
 
 
 def test_json_status_payload_keys_stay_a_superset_for_e2e_parsers(native_project, capsys):

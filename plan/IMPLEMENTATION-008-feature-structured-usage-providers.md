@@ -248,12 +248,33 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-027 | Under `engine/tests/fixtures/usage/`, commit a fixture per supported backend capturing the **current** real shape: Claude `stream-json` `result` (with `modelUsage`), Codex `--json` `turn.completed`, opencode `--format json` `step_finish`, copilot `events.jsonl` `session.shutdown` **and** a current summary-line sample, aider `--analytics-log` `message_send`. Refresh the existing partial set (`aider.txt`, `claude.json`, `claude_stream.jsonl`, `codex.jsonl`, `codex.txt`, `copilot.txt`) and add the missing shapes (copilot `events.jsonl`, opencode `step_finish`). |  |  |
-| TASK-028 | Add a parametrized test asserting each backend's provider extracts the expected tokens/cost from its fixture (Claude → `modelUsage` sum + `total_cost_usd`; Codex → `turn.completed.usage`; opencode → summed `step_finish.part.tokens`; copilot → `session.shutdown`; aider → `message_send`). |  |  |
-| TASK-029 | Add a companion drift-guard test asserting a **format-drift** sample does not silently succeed with a wrong number: the OLD copilot summary line (padded columns + `(… cached, … written)`) must NOT match the current provider path silently, and a renamed field in a structured fixture must fail the test rather than zero the value. Mutating a fixture field name must make the test fail (proving the guard). |  |  |
-| TASK-030 | Replace the synthetic old-format assertions at `engine/tests/test_native_runner.py:1073` (the duplicated old regex) and `engine/tests/test_native_runner.py:1263` (the hard-coded old-format line asserting `38700`) with fixture-driven assertions sourced from `engine/tests/fixtures/usage/`, so no test exercises a format the current CLI no longer emits. |  |  |
-| TASK-031 | Add tests asserting a `source: none` and an unresolved `session-file` (missing id/file) both yield `None` → `progress.md` shows `—`, never a fabricated value (Decision 6). |  |  |
-| TASK-032 | Confirm `engine/tests/test_oss_readiness.py` stays green for any fixture-adjacent comment or user-facing string introduced by the drift guards (GUD-001). |  |  |
+| TASK-027 | Under `engine/tests/fixtures/usage/`, commit a fixture per supported backend capturing the **current** real shape: Claude `stream-json` `result` (with `modelUsage`), Codex `--json` `turn.completed`, opencode `--format json` `step_finish`, copilot `events.jsonl` `session.shutdown` **and** a current summary-line sample, aider `--analytics-log` `message_send`. Refresh the existing partial set (`aider.txt`, `claude.json`, `claude_stream.jsonl`, `codex.jsonl`, `codex.txt`, `copilot.txt`) and add the missing shapes (copilot `events.jsonl`, opencode `step_finish`). | ✅ | 2026-07-21 |
+| TASK-028 | Add a parametrized test asserting each backend's provider extracts the expected tokens/cost from its fixture (Claude → `modelUsage` sum + `total_cost_usd`; Codex → `turn.completed.usage`; opencode → summed `step_finish.part.tokens`; copilot → `session.shutdown`; aider → `message_send`). | ✅ | 2026-07-21 |
+| TASK-029 | Add a companion drift-guard test asserting a **format-drift** sample does not silently succeed with a wrong number: the OLD copilot summary line (padded columns + `(… cached, … written)`) must NOT match the current provider path silently, and a renamed field in a structured fixture must fail the test rather than zero the value. Mutating a fixture field name must make the test fail (proving the guard). | ✅ | 2026-07-21 |
+| TASK-030 | Replace the synthetic old-format assertions at `engine/tests/test_native_runner.py:1073` (the duplicated old regex) and `engine/tests/test_native_runner.py:1263` (the hard-coded old-format line asserting `38700`) with fixture-driven assertions sourced from `engine/tests/fixtures/usage/`, so no test exercises a format the current CLI no longer emits. | ✅ | 2026-07-21 |
+| TASK-031 | Add tests asserting a `source: none` and an unresolved `session-file` (missing id/file) both yield `None` → `progress.md` shows `—`, never a fabricated value (Decision 6). | ✅ | 2026-07-21 |
+| TASK-032 | Confirm `engine/tests/test_oss_readiness.py` stays green for any fixture-adjacent comment or user-facing string introduced by the drift guards (GUD-001). | ✅ | 2026-07-21 |
+
+> **Phase 5 note (2026-07-21).** Fixtures now cover each backend's current shape. **Honesty
+> caveat (REQ-E / RISK-003):** `copilot_summary.txt` is the only **real-captured** fixture — its
+> line `Tokens     ↑ 241.6k (192.8k cached, 46.9k written) • ↓ 5.2k (1.2k reasoning)` is genuine
+> current CLI output (hardened fallback → 46.9k + 5.2k = 52100). The **structured** fixtures
+> (`claude_stream_modelusage.jsonl`, `codex_json.jsonl`, `opencode.jsonl`, `copilot_events.jsonl`,
+> `aider_analytics.jsonl`) are **modelled from research, not live-captured** in this environment;
+> `engine/tests/fixtures/usage/README.md` states this per fixture so the drift guard's meaning is
+> honest. TASK-028 is a 6-case parametrized matrix in `test_agents.py` (claude 16585/$0.2913, codex
+> 32990, opencode 2450/$0.0034, copilot session-file 52100, copilot summary-line fallback 52100,
+> aider 22100/$0.0555). TASK-029: the OLD `copilot.txt` resolves to 38700 (≠ the current 52100) so a
+> format regression goes red, and renaming a required field in any structured fixture reads `None`
+> (never a zeroed count) — `_sum_fields` disqualifies the object when any required path is absent,
+> proven for codex/opencode/claude (per-model + flat both renamed) and the aider/copilot session
+> files. TASK-030: the duplicated old-format regex constant and the hard-coded `38700`/`77400`
+> assertions in `test_native_runner.py` were replaced with fixture-driven ones (pattern sourced from
+> the shipped copilot manifest's fallback, sample from `copilot_summary.txt`, expected 52100 /
+> 104200). TASK-031 asserts `source: none` and an unresolved `session-file` both render `—` via
+> `progress._tokens_cell`/`_cost_cell`. All 51 `test_agents.py` + 46 `test_native_runner.py` + 28
+> `test_oss_readiness.py` tests pass; full pytest/ruff/mypy/gate are batched into Phase 6 per the
+> maintainer directive.
 
 ### Phase 6
 
