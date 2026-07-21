@@ -19,7 +19,6 @@ the law; these docs explain and operationalize it.
 
 ## Reference material
 
-- [`references/speckit.md`](references/speckit.md) — **historical**: how 3Powers once integrated GitHub Spec Kit, now removed (3Powers drives a native executive — see [migration](migration-remove-speckit.md)).
 - [`references/trust-spine-tooling.md`](references/trust-spine-tooling.md) — the free/OSS tool choices behind the gates and trust spine.
 - [`../.3powers/memory/constitution.md`](../.3powers/memory/constitution.md) — the supreme, normative law (the principles `concepts.md` explains).
 - [`../.3powers/adapters/CONTRACT.md`](../.3powers/adapters/CONTRACT.md) — the language-adapter manifest schema.

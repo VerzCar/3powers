@@ -26,10 +26,6 @@ to drift.
   exactly the two amber human gates; its caption carries the same qualification. The honesty invariant is
   now a **repeatable check**: `engine/tests/test_oss_readiness.py` fails on the audited unqualified
   claims, from the repo alone.
-- **Pin sourcing (OSSRD-FR-002).** README, AGENTS.md, and getting-started each source the pin to upstream
-  [`github/spec-kit`](https://github.com/github/spec-kit) and link the tagged-install command in
-  [`docs/references/speckit.md`](../docs/references/speckit.md) — the "is this a fork?" question is
-  answerable from every entry document.
 - **Tiered prerequisites (OSSRD-FR-003).** Getting-started opens, before any install command, with hard
   requirements (`uv`, `git`), conditional requirements per path (autonomous vs slash-command vs
   gates-only — the gates-only path needs no Spec Kit and no agent integration), and the optional scanners

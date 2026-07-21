@@ -561,7 +561,7 @@ Next, in priority order:
 
 - **Spec (law):** [`3Powers_Spec_v0.2.md`](../specs-src/3Powers_Spec_v0.2.md) · **Constitution:** [`.3powers/memory/constitution.md`](../.3powers/memory/constitution.md)
 - **Plans:** [`plan/`](../plan/) (001→027 done) · **Agent guidance:** [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md)
-- **References:** [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md); [`docs/references/speckit.md`](references/speckit.md) (historical — Spec Kit was removed by SLIM)
+- **References:** [`docs/references/trust-spine-tooling.md`](references/trust-spine-tooling.md);
 - **How to verify the claims here:** run the commands in §2; every plan doc ends with a Verification section.
 - **Git:** feature branches per spec — recent: `feature/016-stage-agents-and-role-setup`,
   `feature/017-run-artifact-workspace` (this pass — SRCX).
