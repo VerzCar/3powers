@@ -13,9 +13,21 @@ prompt_via: arg
 # opt-in (`--restore-chat-history`, default off) — the explicit no-restore flag makes every
 # dispatch a provably clean session regardless of local config.
 new_session_args: ["--no-restore-chat-history"]
-# Usage (advisory): aider's per-turn summary reads "Tokens: 12k sent, 1.2k received." — the two
-# capture groups (sent + received) are summed. Caveat: `sent` includes any cached/repeated
-# context aider resends, so this is a documented over-count of the truly non-cached input.
+# Usage (advisory): aider's prose summary is fragile, so usage is read from its structured
+# analytics log instead. Aider only writes analytics when asked, and sampling is off by default,
+# so the engine forces it: `log_args` injects `--analytics --analytics-log <path>` into the
+# invocation (this CHANGES the aider command line), pointing aider at a run-scoped temp file the
+# engine then reads back via the `{log}` `path_template` and deletes. Each `message_send` event
+# carries `properties.{prompt_tokens, completion_tokens}` (summed across every turn's event) and a
+# per-message USD `properties.cost` (the resolver falls back to `properties.total_cost`). The
+# analytics schema is undocumented; a missing field → the source is unresolved → `—` (never a run
+# failure). No prose regex fallback — the structured log is the only source, else honest-unknown.
 usage:
-  strategy: regex
-  pattern: 'Tokens:\s*([0-9.,_kKmM]+)\s*sent,\s*([0-9.,_kKmM]+)\s*received'
+  source: session-file
+  log_args: ["--analytics", "--analytics-log", "{log}"]
+  path_template: "{log}"
+  event_field: event
+  event: message_send
+  aggregate: sum
+  fields: [properties.prompt_tokens, properties.completion_tokens]
+  cost_field: [properties.cost, properties.total_cost]

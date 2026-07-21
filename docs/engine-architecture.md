@@ -249,10 +249,22 @@ marked `[P]` must be executed via the agent's **own sub-agents** — the phase h
 implement agent template both mandate it — so intra-phase parallelism happens in the agent's runtime,
 never by the engine splitting a phase.
 
-**Token consumption and cost are captured advisorily.** A manifest's optional `usage` hint declares
-how the backend reports usage in its output — `strategy: json` (a dotted field read from the last
-JSON output line) or `strategy: regex` (group 1 of a pattern match) — and an optional `cost_field` (a
-dotted path to the run's USD cost). The extracted per-stage/per-phase token counts and cost ride as
+**Token consumption and cost are captured advisorily.** A manifest's optional `usage` block declares
+where the backend's real token/cost figures live, resolved by a declarative, structured-first
+**`usage.source`** taxonomy:
+
+- `inline-json` — usage rides the run's own structured output (a JSON line or stream-json event);
+  read via a dotted `field`/`fields` (summed, minus optional `subtract` for cached counts) and an
+  optional `cost_field` (a dotted path to the run's USD cost).
+- `session-file` — usage lives in an on-disk session artifact the backend writes, read after the run.
+- `regex` — parse the backend's prose summary as an explicit last resort (fragile, vendor-specific);
+  only a declared fallback, never the structured-first path.
+- `none` — the backend reports no reliable figure.
+
+Resolution is **honest-unknown**: an unresolvable, `none`, or unrecognized source reads as unknown and
+renders `—` — never a guessed number (a wrong cost is worse than an honest blank). The legacy
+`strategy: json`/`regex` field still works, mapped onto `inline-json`/`regex` during the transition.
+The extracted per-stage/per-phase token counts and cost ride as
 strictly **additive** fields: `tokens` and `cost` on the `--json` per-stage results, on the signed
 `run`/`stage`, `run`/`phases` (per phase result), and `run`/`checkpoint` ledger payloads, and Tokens +
 Cost columns in `progress.md`. A backend that reports nothing reads as unknown (the fields stay
@@ -260,6 +272,13 @@ absent; the columns show `—`). Where a backend supports structured output a ma
 `usage_mode`/`usage_mode_args`: the shipped claude backend uses `--output-format stream-json --verbose`
 — an event stream carrying the final `usage` and `total_cost_usd` while the engine renders the live
 assistant text (never raw JSON) and tees every event byte-for-byte to the persisted transcript.
+The Codex and OpenCode reference backends read structured inline JSON too — no regex on the primary
+path: Codex runs `codex exec --json` and reads the final `turn.completed` event's `usage`
+(non-cached input + output), keeping the old prose `tokens used:` line only as a declared regex
+fallback for when the JSON is absent; OpenCode runs `opencode run --format json`, which emits one
+`step_finish` event per step with no cumulative summary, so the manifest declares `aggregate: sum`
+to total the per-step token counts (and cost) across every event — and honestly reads `—` when no
+`step_finish` event is present (a known case where OpenCode can exit before the final event).
 Neither tokens nor cost enter the gate suite, the verdict, or the verdict bytes — the deterministic
 verdict is byte-identical whether or not they were captured.
 

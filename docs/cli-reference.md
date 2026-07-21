@@ -655,8 +655,11 @@ copy-pasteable helper commands, and the last verify attempt's failed gates — w
 every lifecycle event (stage start/complete, gate verdict, human-gate pause, failure) and committed
 with each producing stage, so the run's state is readable at a glance even mid-run.
 **Token consumption and cost (advisory).** When an agent backend reports its token usage (declared
-per manifest via a `usage` extraction hint — JSON fields or a regex over the agent's output, with
-unit-aware parsing of `k`/`M`/comma-formatted counts), the run records the **real consumed** count —
+per manifest via a `usage` block whose `source` selects how it is read — `inline-json` from the run's
+structured output, `session-file` from an on-disk session artifact, `regex` over the agent's prose as
+an explicit last resort, or `none` — with unit-aware parsing of `k`/`M`/comma-formatted counts and
+honest-unknown resolution: an unresolvable or `none` source renders `—`, never a guessed number), the
+run records the **real consumed** count —
 non-cached input plus output tokens — per stage and per phase, **additively**: a **Tokens** column in
 both `progress.md` tables (showing `—` — unknown — when a backend does not report), a `tokens` field
 on the `--json` per-stage results, and a `tokens` field on the signed `run`/`stage`, `run`/`phases`
@@ -672,11 +675,32 @@ cached context; codex's plain-text total likewise), and a backend that reports n
 Where the backend supports it, a manifest opts into structured output for the exact non-cached count
 and cost: set `usage_mode: json` plus `usage_mode_args` — the backend's own flag. The shipped claude
 backend enables it with `--output-format stream-json --verbose`, an **event stream** that carries the
-final `usage` and `total_cost_usd` while preserving the live conversation: the engine renders the
-assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the transcript.
-(A note for older claude-code builds: versions before `v2.1.208` can truncate the final `result`
-line, so cost/tokens may read `—`; upgrade to capture them.) Pass `--raw-events` to echo the
-underlying NDJSON verbatim for debugging.
+final `modelUsage`, `usage`, and `total_cost_usd` while preserving the live conversation: the engine
+renders the assistant text deltas live (never raw JSON) and persists every event byte-for-byte to the
+transcript. For the claude backend the reported token total is the **whole-tree** rollup: the final
+`result` event's `modelUsage` is a per-model map, and the engine sums input plus output tokens across
+every model, so tokens spent by sub-agents running on a different model (for example a cost-optimized
+helper) are included rather than dropped. When an older claude build emits no `modelUsage` map, the
+count falls back to the flat top-level `usage` block (main-agent tokens only). Cost comes from
+`total_cost_usd`, which already rolls up the whole tree. (A note for older claude-code builds:
+versions before `v2.1.208` can truncate the final `result` line, so cost/tokens may read `—`; upgrade
+to capture them.) Pass `--raw-events` to echo the underlying NDJSON verbatim for debugging.
+
+**Session-file backends (copilot, aider).** Some agents do not print usage inline but write it to an
+on-disk session artifact, so their `usage` block uses `source: session-file`. The Copilot backend
+recovers the session id from the CLI's `Resume copilot --resume=<uuid>` exit line and reads the
+`session.shutdown` event from `~/.copilot/session-state/<uuid>/events.jsonl` for the real consumed
+(non-cached input + output) count. That event schema is **undocumented and version-dependent** (older
+builds wrote the log under `history-session-state/`), so the read is defensive — a missing file, id,
+or field silently falls back to a drift-proof summary-line regex and then to `—`, never a run
+failure. The captured id is validated as a strict UUID before it is used in a path, so a malformed or
+crafted id is refused rather than read. Copilot bills usage in premium requests / credits, not US
+dollars, so its **cost stays `—`** unless a USD field becomes available. The Aider backend reads its
+structured analytics log rather than its prose summary: because aider only writes analytics on
+request (sampling is off by default), the engine **changes the aider invocation**, injecting
+`--analytics --analytics-log <path>` pointed at a run-scoped temporary file it then reads back (summing
+each turn's `message_send` prompt/completion tokens and per-message USD cost) and deletes. If the log
+is absent or a field is renamed, usage reads `—`.
 
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
