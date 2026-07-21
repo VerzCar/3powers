@@ -156,14 +156,45 @@ unresolvable source renders `—` rather than a fabricated number (Decisions 6, 
 
 | Task     | Description | Completed | Date |
 | -------- | ----------- | --------- | ---- |
-| TASK-013 | Add the `session-file` resolver in `engine/src/threepowers/agents.py`: given the dispatch's captured output and a manifest `usage` block declaring `source: session-file`, a `session_id_pattern` (regex capturing the id from CLI output), a `path_template` (e.g. `~/.copilot/session-state/{id}/events.jsonl`), an `event` selector, and token/cost field paths — recover the id, resolve+read the file, select the event, extract usage. Missing file/id/fields → `None` (never raises), honoring PAT-002. Wire it into the Phase 1 dispatcher stub. |  |  |
-| TASK-014 | SEC-001 hardening: before templating the captured session id into `path_template`, validate it against a strict UUID pattern; reject any id containing path separators or `..` traversal. An id that fails validation → treat the session-file source as unresolved (fall to the declared fallback, then `—`); never read an attacker-influenced path. |  |  |
-| TASK-015 | Wire **copilot**: in `.3powers/agents/copilot.yaml` **and** `engine/src/threepowers/scaffold/agents/copilot.yaml` (same task), set `source: session-file`; capture the id from the CLI's `Resume copilot --resume=<uuid>` output line via `session_id_pattern`; read the `session.shutdown` event from `~/.copilot/session-state/{id}/events.jsonl`; note the legacy `history-session-state/` path and the version path change in the header comment. Keep a declared `regex` fallback with the drift-proof pattern `Tokens[^\n]*?↑[^\n]*?([0-9][0-9.,_kKmM]*)\s+written\)[^\n]*?↓[^\n]*?([0-9][0-9.,_kKmM]*)`. Copilot cost is premium-request/credits, not USD — record tokens; leave cost `—` unless a USD field is present. |  |  |
-| TASK-016 | Wire **aider**: in `.3powers/agents/aider.yaml` **and** the scaffold copy (same task), set `source: session-file` reading `--analytics --analytics-log <file>` (force `--analytics`, which is sampled off by default; the engine passes a run-scoped temp `--analytics-log <path>`) — `message_send` events → `properties.{prompt_tokens, completion_tokens}` summed and `properties.{cost|total_cost}` (USD). Document in the header comment that this changes the aider invocation. |  |  |
-| TASK-017 | Update `docs/` to document the copilot session-file dependency (the `~/.copilot/session-state/<id>/events.jsonl` → `session.shutdown` source, the `--resume=<uuid>` id capture, and the undocumented-schema/version caveat), the aider `--analytics-log` source and the invocation change, and the copilot USD-cost caveat. No internal ids (GUD-001). |  |  |
-| TASK-018 | Confirm `engine/tests/test_oss_readiness.py` stays green for the copilot/aider manifest header comments and any new user-facing strings (GUD-001). |  |  |
-| TASK-019 | Tests (copilot): in `engine/tests/` (fixtures under `engine/tests/fixtures/usage/`), a copilot `events.jsonl` fixture with a `session.shutdown` event yields the correct tokens; a run whose output carries the `--resume=<uuid>` line resolves the right file; a missing/renamed file falls back to the hardened regex, and if that also fails, `—`; the current live summary line (`Tokens … (192.8k cached, 46.9k written) … ↓ 5.2k …`) yields `52100` via the fallback regex; a path-traversal attempt in the captured id is rejected (SEC-001). |  |  |
-| TASK-020 | Tests (aider): an aider `--analytics-log` `message_send` fixture yields tokens **and** USD cost; a missing/renamed field degrades to `None` (never raises). |  |  |
+| TASK-013 | Add the `session-file` resolver in `engine/src/threepowers/agents.py`: given the dispatch's captured output and a manifest `usage` block declaring `source: session-file`, a `session_id_pattern` (regex capturing the id from CLI output), a `path_template` (e.g. `~/.copilot/session-state/{id}/events.jsonl`), an `event` selector, and token/cost field paths — recover the id, resolve+read the file, select the event, extract usage. Missing file/id/fields → `None` (never raises), honoring PAT-002. Wire it into the Phase 1 dispatcher stub. | ✅ | 2026-07-21 |
+| TASK-014 | SEC-001 hardening: before templating the captured session id into `path_template`, validate it against a strict UUID pattern; reject any id containing path separators or `..` traversal. An id that fails validation → treat the session-file source as unresolved (fall to the declared fallback, then `—`); never read an attacker-influenced path. | ✅ | 2026-07-21 |
+| TASK-015 | Wire **copilot**: in `.3powers/agents/copilot.yaml` **and** `engine/src/threepowers/scaffold/agents/copilot.yaml` (same task), set `source: session-file`; capture the id from the CLI's `Resume copilot --resume=<uuid>` output line via `session_id_pattern`; read the `session.shutdown` event from `~/.copilot/session-state/{id}/events.jsonl`; note the legacy `history-session-state/` path and the version path change in the header comment. Keep a declared `regex` fallback with the drift-proof pattern `Tokens[^\n]*?↑[^\n]*?([0-9][0-9.,_kKmM]*)\s+written\)[^\n]*?↓[^\n]*?([0-9][0-9.,_kKmM]*)`. Copilot cost is premium-request/credits, not USD — record tokens; leave cost `—` unless a USD field is present. | ✅ | 2026-07-21 |
+| TASK-016 | Wire **aider**: in `.3powers/agents/aider.yaml` **and** the scaffold copy (same task), set `source: session-file` reading `--analytics --analytics-log <file>` (force `--analytics`, which is sampled off by default; the engine passes a run-scoped temp `--analytics-log <path>`) — `message_send` events → `properties.{prompt_tokens, completion_tokens}` summed and `properties.{cost|total_cost}` (USD). Document in the header comment that this changes the aider invocation. | ✅ | 2026-07-21 |
+| TASK-017 | Update `docs/` to document the copilot session-file dependency (the `~/.copilot/session-state/<id>/events.jsonl` → `session.shutdown` source, the `--resume=<uuid>` id capture, and the undocumented-schema/version caveat), the aider `--analytics-log` source and the invocation change, and the copilot USD-cost caveat. No internal ids (GUD-001). | ✅ | 2026-07-21 |
+| TASK-018 | Confirm `engine/tests/test_oss_readiness.py` stays green for the copilot/aider manifest header comments and any new user-facing strings (GUD-001). | ✅ | 2026-07-21 |
+| TASK-019 | Tests (copilot): in `engine/tests/` (fixtures under `engine/tests/fixtures/usage/`), a copilot `events.jsonl` fixture with a `session.shutdown` event yields the correct tokens; a run whose output carries the `--resume=<uuid>` line resolves the right file; a missing/renamed file falls back to the hardened regex, and if that also fails, `—`; the current live summary line (`Tokens … (192.8k cached, 46.9k written) … ↓ 5.2k …`) yields `52100` via the fallback regex; a path-traversal attempt in the captured id is rejected (SEC-001). | ✅ | 2026-07-21 |
+| TASK-020 | Tests (aider): an aider `--analytics-log` `message_send` fixture yields tokens **and** USD cost; a missing/renamed field degrades to `None` (never raises). | ✅ | 2026-07-21 |
+
+> **Phase 3 note (2026-07-21).** The `session-file` resolver is now real. It is a generic pipeline
+> in `agents.py`: recover a session id (`session_id_pattern`), **SEC-001-validate it as a strict
+> UUID** (`_valid_session_id`, which inherently rejects separators/`..`), template the
+> `path_template` (`{id}` from the validated id with `~` expanded against the injected home, or
+> `{log}` from an engine-provided path), read the JSONL (`_read_jsonl_events`, never raises), select
+> the usage event (`event`/`event_field`, default field `type`), and fold the `fields`/`subtract`
+> (tokens) and `cost_field` (a string or a list of alternatives) over the selected events —
+> `aggregate: sum` totals them (aider's per-turn `message_send`), else the last resolving event
+> (copilot's single `session.shutdown`). Two additive, back-compatible extensions to the Phase 1/2
+> seam: (1) `_UsageContext` gains `home` and `session_log`, threaded from the runner via **new
+> keyword-only** `home`/`session_log` args on `extract_usage`/`extract_cost` — the two-arg positional
+> contract (CON-002) is preserved and the private dataclass never leaks into the signature. (2) A
+> **generic `fallback` block**: `_usage_for_spec`/`_cost_for_spec` resolve a source and, on `None`,
+> chain to a nested `fallback` spec (which may itself declare a fallback). Copilot uses it to keep
+> the drift-proof summary-line regex under its `session-file` source; the pre-existing inline-json
+> top-level `pattern` fallback (codex) still works. **Aider invocation change:** aider writes
+> analytics only on request, so the engine injects `--analytics --analytics-log <run-scoped temp>`
+> (manifest `log_args` with a `{log}` placeholder; `needs_session_log`/`session_log_args` in
+> `agents.py`, wired at the `runner.py` dispatch site which mkstemps the path, appends the flags,
+> reads it back via the `{log}` `path_template`, then deletes it). No prose fallback for aider — the
+> log is the only source, else `—`. **Uncertainty flagged for Phase 5 real-output verification
+> (RISK-001/003):** the copilot `session.shutdown` field shape (`usage.input_tokens` /
+> `usage.cached_input_tokens` / `usage.output_tokens`) and the aider `message_send` shape
+> (`properties.{prompt_tokens,completion_tokens,cost,total_cost}`, event keyed by `event`) are
+> **modeled defensively from the source plan, not captured from a live CLI**; the `copilot_events.jsonl`
+> / `aider_analytics.jsonl` fixtures encode those assumptions and must be re-verified against real
+> output in Phase 5 — a wrong path fails a test and degrades a run to the fallback/`—`, never crashes
+> it. Targeted `test_agents.py` (35), `test_oss_readiness.py` (28), `test_stream_usage.py` and the
+> `test_native_runner.py` usage tests pass; ruff/mypy clean on the changed files; full
+> pytest/ruff/mypy/gate batched into Phase 6 per the maintainer directive.
 
 ### Phase 4
 

@@ -681,6 +681,22 @@ assistant text deltas live (never raw JSON) and persists every event byte-for-by
 line, so cost/tokens may read `—`; upgrade to capture them.) Pass `--raw-events` to echo the
 underlying NDJSON verbatim for debugging.
 
+**Session-file backends (copilot, aider).** Some agents do not print usage inline but write it to an
+on-disk session artifact, so their `usage` block uses `source: session-file`. The Copilot backend
+recovers the session id from the CLI's `Resume copilot --resume=<uuid>` exit line and reads the
+`session.shutdown` event from `~/.copilot/session-state/<uuid>/events.jsonl` for the real consumed
+(non-cached input + output) count. That event schema is **undocumented and version-dependent** (older
+builds wrote the log under `history-session-state/`), so the read is defensive — a missing file, id,
+or field silently falls back to a drift-proof summary-line regex and then to `—`, never a run
+failure. The captured id is validated as a strict UUID before it is used in a path, so a malformed or
+crafted id is refused rather than read. Copilot bills usage in premium requests / credits, not US
+dollars, so its **cost stays `—`** unless a USD field becomes available. The Aider backend reads its
+structured analytics log rather than its prose summary: because aider only writes analytics on
+request (sampling is off by default), the engine **changes the aider invocation**, injecting
+`--analytics --analytics-log <path>` pointed at a run-scoped temporary file it then reads back (summing
+each turn's `message_send` prompt/completion tokens and per-message USD cost) and deletes. If the log
+is absent or a field is renamed, usage reads `—`.
+
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where

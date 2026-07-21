@@ -27,8 +27,10 @@ A dispatch failure, an exhausted retry, or a missing artifact returns
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -351,6 +353,17 @@ class CliAgentRunner:
             model=self.model,
             subagent_model=self.subagent_models.get(step, ""),
         )
+        # Session-log injection (advisory usage): a backend that writes its usage artifact only when
+        # pointed at a log file (aider's `--analytics-log`, which is sampled off by default) has the
+        # engine create a run-scoped path and inject the manifest-declared flags. The same path is
+        # read back through the `{log}` `path_template` after the run, then removed. A backend that
+        # writes its own session file (copilot) declares no `log_args` and this no-ops.
+        session_log: Optional[Path] = None
+        if agents.needs_session_log(self.manifest):
+            fd, tmp = tempfile.mkstemp(prefix="3pwr-usage-", suffix=".jsonl")
+            os.close(fd)
+            session_log = Path(tmp)
+            argv = argv + agents.session_log_args(self.manifest, session_log)
         # Persist this attempt's output to the run's transcript location: teed even
         # while streaming, so a streamed run no longer loses its output. The writer redacts
         # credential-shaped env values before any byte lands on disk.
@@ -394,11 +407,18 @@ class CliAgentRunner:
         # Advisory usage capture: the manifest's `usage` hint extracts the agent-reported token
         # count from the attempt's output; an unreporting backend reads as None. Never enters
         # the verdict — it rides only the additive result/ledger/progress fields.
-        tokens = agents.extract_usage(self.manifest, f"{out}\n{err}")
+        combined = f"{out}\n{err}"
+        tokens = agents.extract_usage(self.manifest, combined, session_log=session_log)
         # Advisory cost capture, in step with tokens: the manifest's `usage.cost_field` extracts
         # the agent-reported run cost (USD) from the final result event; unknown when the backend
         # reports none. Additive-only, never a verdict input.
-        cost = agents.extract_cost(self.manifest, f"{out}\n{err}")
+        cost = agents.extract_cost(self.manifest, combined, session_log=session_log)
+        # The injected session log is a temp artifact read only for usage; remove it once read.
+        if session_log is not None:
+            try:
+                session_log.unlink()
+            except OSError:
+                pass
         if rc != 0:
             detail = (err.strip() or out.strip() or f"agent exited {rc}")[:400]
             if self.transcripts is not None:

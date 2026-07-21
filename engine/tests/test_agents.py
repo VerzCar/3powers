@@ -62,8 +62,8 @@ def test_parse_count_handles_plain_separated_and_abbreviated(
 # --------------------------------------------------------------------------- source taxonomy (Track A)
 def test_source_dispatch_routes_each_source_to_the_right_resolver() -> None:
     """The `usage.source` taxonomy dispatches to the matching resolver: `inline-json` reads the
-    JSON fields, `regex` parses the prose fallback, `session-file` is a stub (returns None until
-    its resolver lands), and `none` is honest-unknown."""
+    JSON fields, `regex` parses the prose fallback, `session-file` reads an on-disk artifact (here
+    with no `path_template`, so it is unresolved → None), and `none` is honest-unknown."""
     inline = {"usage": {"source": "inline-json", "field": "usage.total_tokens"}}
     assert agents.extract_usage(inline, '{"usage": {"total_tokens": 4321}}') == 4321
 
@@ -121,7 +121,8 @@ def test_no_usable_source_yields_none_never_a_guess(spec: dict[str, Any]) -> Non
 
 def test_cost_dispatch_matches_the_usage_source() -> None:
     """`extract_cost` dispatches on the same resolved source: `inline-json` reads `cost_field`;
-    `session-file` is the stubbed resolver (None); `regex`/`none` carry no machine-stable cost."""
+    `session-file` reads it from the on-disk artifact (unresolved here — no `path_template` — so
+    None); `regex`/`none` carry no machine-stable cost."""
     payload = '{"total_cost_usd": 0.25}'
 
     def cost(**spec: Any) -> Optional[float]:
@@ -212,10 +213,91 @@ def test_codex_json_alternative_separates_cached_input() -> None:
     assert agents.extract_usage(m, _fixture("codex.jsonl")) == 32990
 
 
-def test_aider_hint_sums_sent_and_received_abbreviated_counts() -> None:
-    """Plan 034 Track D: aider's `Tokens: 12k sent, 1.2k received.` summary yields
-    12000 + 1200 (sent may include cached context — the documented over-count)."""
-    assert agents.extract_usage(_manifest("aider"), _fixture("aider.txt")) == 13200
+def _copilot_home(tmp_path: Path, session_id: str) -> Path:
+    """Seed a fake home with the copilot session log for ``session_id`` and return the home dir."""
+    events_dir = tmp_path / ".copilot" / "session-state" / session_id
+    events_dir.mkdir(parents=True)
+    (events_dir / "events.jsonl").write_text(_fixture("copilot_events.jsonl"), encoding="utf-8")
+    return tmp_path
+
+
+def test_copilot_session_file_reads_tokens_from_the_shutdown_event(tmp_path: Path) -> None:
+    """Track C: the copilot backend reads the `session.shutdown` event from
+    `~/.copilot/session-state/<uuid>/events.jsonl`, recovering the id from the `--resume=<uuid>`
+    output line. Tokens are non-cached input (input_tokens − cached_input_tokens) + output_tokens =
+    239700 − 192800 + 5200 = 52100. Copilot bills credits, not USD, so cost stays unknown."""
+    session_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
+    home = _copilot_home(tmp_path, session_id)
+    output = f"Done.\n\nResume copilot --resume={session_id}\n"
+    assert agents.extract_usage(_manifest("copilot"), output, home=home) == 52100
+    assert agents.extract_cost(_manifest("copilot"), output, home=home) is None
+
+
+def test_copilot_falls_back_to_the_hardened_regex_when_the_file_is_absent(tmp_path: Path) -> None:
+    """Track C: a run whose session file is missing/renamed falls back to the drift-proof summary
+    regex. The current live line `Tokens ↑ 629.8k (192.8k cached, 46.9k written) • ↓ 5.2k` yields
+    non-cached written (46900) + output (5200) = 52100 — and with neither the file nor a summary
+    line, usage is honest-unknown (`—`), never a fabricated number."""
+    session_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"  # a valid id, but no file seeded for it
+    summary = "Tokens ↑ 629.8k (192.8k cached, 46.9k written) • ↓ 5.2k"
+    with_summary = f"Resume copilot --resume={session_id}\n{summary}\n"
+    assert agents.extract_usage(_manifest("copilot"), with_summary, home=tmp_path) == 52100
+    # the summary line alone (no --resume id at all) still resolves via the fallback
+    assert agents.extract_usage(_manifest("copilot"), summary) == 52100
+    # missing file AND no summary line → honest unknown
+    no_summary = f"Resume copilot --resume={session_id}\nall done, no token line\n"
+    assert agents.extract_usage(_manifest("copilot"), no_summary, home=tmp_path) is None
+
+
+def test_copilot_rejects_a_path_traversal_session_id(tmp_path: Path) -> None:
+    """Track C / SEC-001: a captured session id that is not a strict UUID (here a path-traversal
+    attempt) is rejected before it is templated into a path — the session file is never read at an
+    attacker-influenced location. The source is left unresolved, so it falls to the regex fallback
+    and then honest-unknown, never a file read."""
+    malicious = "../../../../etc/passwd"
+    output = f"Resume copilot --resume={malicious}\nno summary line here\n"
+    assert agents.extract_usage(_manifest("copilot"), output, home=tmp_path) is None
+    # the raw id is captured but fails strict-UUID validation, so no path is resolved from it
+    assert agents._valid_session_id(malicious) is False
+    assert agents._valid_session_id("3f2504e0-4f89-41d3-9a0c-0305e82c3301") is True
+
+
+def test_aider_session_file_sums_tokens_and_cost_from_message_send(tmp_path: Path) -> None:
+    """Track C: aider's usage comes from its `--analytics-log` JSONL, not prose. The engine points
+    aider at a run-scoped log (the `{log}` path_template / session_log); each `message_send` event
+    contributes `properties.{prompt_tokens, completion_tokens}` and a per-message USD
+    `properties.cost`, summed across turns: tokens 12000+1200+8000+900 = 22100, cost 0.0345+0.0210
+    = 0.0555. The prose `aider.txt` summary is no longer a usage source."""
+    log = tmp_path / "analytics.jsonl"
+    log.write_text(_fixture("aider_analytics.jsonl"), encoding="utf-8")
+    manifest = _manifest("aider")
+    assert manifest["usage"]["source"] == "session-file"
+    assert agents.extract_usage(manifest, "aider stdout", session_log=log) == 22100
+    assert agents.extract_cost(manifest, "aider stdout", session_log=log) == pytest.approx(0.0555)
+    # the old prose summary line is not a source any more → honest unknown
+    assert agents.extract_usage(manifest, _fixture("aider.txt"), session_log=None) is None
+
+
+def test_aider_missing_field_degrades_to_none_never_raises(tmp_path: Path) -> None:
+    """Track C / PAT-002: a `message_send` event missing the token fields (a schema drift) yields
+    `None` rather than raising or fabricating a value; a missing cost field likewise reads `None`.
+    The manifest also declares that the engine must inject the analytics-log flags."""
+    manifest = _manifest("aider")
+    assert agents.needs_session_log(manifest) is True
+    assert agents.session_log_args(manifest, tmp_path / "x.jsonl") == [
+        "--analytics",
+        "--analytics-log",
+        str(tmp_path / "x.jsonl"),
+    ]
+    renamed = tmp_path / "renamed.jsonl"
+    renamed.write_text(
+        '{"event": "message_send", "properties": {"input": 100, "output": 5}}\n',
+        encoding="utf-8",
+    )
+    assert agents.extract_usage(manifest, "out", session_log=renamed) is None
+    assert agents.extract_cost(manifest, "out", session_log=renamed) is None
+    # a session_log the engine never provided (None) leaves the source unresolved, never a read
+    assert agents.extract_usage(manifest, "out", session_log=None) is None
 
 
 def test_copilot_hosted_hint_reads_the_reference_total_tokens_field() -> None:

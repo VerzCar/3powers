@@ -1,0 +1,4 @@
+{"event": "cli session", "properties": {"main_model": "gpt-4o"}, "user_id": "anon", "time": 1}
+{"event": "message_send", "properties": {"prompt_tokens": 12000, "completion_tokens": 1200, "cost": 0.0345, "total_cost": 0.0345}, "user_id": "anon", "time": 2}
+{"event": "message_send", "properties": {"prompt_tokens": 8000, "completion_tokens": 900, "cost": 0.0210, "total_cost": 0.0555}, "user_id": "anon", "time": 3}
+{"event": "exit", "properties": {"reason": "message sent"}, "user_id": "anon", "time": 4}
