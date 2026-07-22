@@ -32,7 +32,8 @@ Authoritative pinned versions live in the lockfiles (`engine/uv.lock`, the e2e h
 `e2e/harness/uv.lock`, and the per-adapter sample lockfiles under `e2e/<name>/project/`).
 
 ```bash
-uv tool install ./engine            # install the `3pwr` command (reinstall with --force after engine changes)
+uv tool install ./engine            # install the `3pwr` command from this clone (reinstall with --force after engine changes)
+                                    # released users install the published engine instead: `uv tool install 3powers`
 (cd engine && uv sync --extra dev && uv run pytest)   # engine dev env + tests
 (cd engine && uv run ruff check . && uv run mypy src) # engine lint + types
 
@@ -45,8 +46,17 @@ independence, brownfield Stage Zero, deviations/emergency, observe — is docume
 [docs/cli-reference.md](docs/cli-reference.md). Consult it there; it is not duplicated in this file.
 
 **`3pwr run "<intent>"` drives the whole lifecycle**: the native executive
-dispatches each stage to a headless coding agent, streams a stage tracker, runs the gate suite in-process,
-and in `auto` mode stops only at the two human gates (spec approval, sign-off). A conditional
+dispatches each stage to a headless coding agent (per-stage `subagent_models` selectable in
+`roles.yaml`), streams a stage tracker, runs the gate suite in-process, and in `auto` mode stops only at
+the two human gates (spec approval, sign-off). A **fresh run is always isolated**: its numeric run id is
+the next-free number over the union of on-disk `specs-src/` folders, git branches, and the signed
+ledger, and it opens a dedicated `3pwr/<NNN>-<slug>` branch off `base_branch` after a best-effort
+`origin/<base>` fetch (`git.yaml` `fetch_base`/`remote`), guarded by an advisory per-working-tree run
+lock (`3pwr run --resume --spec-id <NNN>` continues an existing run). A **red verdict feeds a bounded
+auto-remediation loop** (hands the failure back to the coder and re-runs the gates until they pass or the
+attempt budget is spent; `3pwr gate fix` runs it standalone), and per-stage token/cost usage is captured
+through source-typed **usage providers** (inline-json / session-file / regex / none — no fragile regex
+scraping) into `progress.md`, the ledger, and `--json`. A conditional
 **Discovery** stage opens feature/design runs (skipped for defect/docs/chore/refactor;
 `--discovery`/`--no-discovery` override) and its `discovery.md` feeds Specify. Every stage prompt is
 assembled from markdown templates — repo-local `.3powers/templates/agents/*.agent.md` overriding the

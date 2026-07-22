@@ -110,6 +110,12 @@ path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an 
 phrase, and `3pwr run --resume` continues from the last completed stage — completed stages never
 re-run.
 
+**When gates go red:** Verify doesn't just stop — it runs a **bounded auto-remediation loop** that
+hands the failing verdict back to the coder to fix, re-running the gates until they pass or the
+attempt budget is spent, all recorded in the ledger. You can also run it by hand on a red verdict
+with [`3pwr gate fix`](cli-reference.md#gate-fix--bounded-code-only-auto-remediation); each gate's failure panel prints the exact fix
+command.
+
 **Working alongside your team.** Every `3pwr run` does its work on its **own dedicated
 `3pwr/<NNN>-<slug>` branch** with a brand-new run id, committing stage by stage and recording each step
 in the signed ledger — so many developers and their agents can drive 3Powers concurrently without
@@ -158,6 +164,9 @@ Everything below through §7 is the **gates-only path**: it reaches a signed gre
 the conditional or optional tools installed.
 
 ## 1. Install the engine
+
+This walkthrough drives **this repository's** bundled sample, so it installs `3pwr` from the clone
+you already have. (To install the released engine anywhere else, use `uv tool install 3powers`.)
 
 ```bash
 uv tool install ./engine
