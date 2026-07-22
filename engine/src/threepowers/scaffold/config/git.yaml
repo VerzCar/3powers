@@ -21,6 +21,16 @@ branch_prefix: "3pwr/"
 # current commit instead — never forced, never clobbering.
 base_branch: main
 
+# Whether a fresh run first does a best-effort fetch of the base branch from the remote and branches
+# off the up-to-date remote tip. Best-effort only: offline, no remote, a detached HEAD, an unborn
+# repo, or a failed fetch all fall back to the local base then the current commit, with at most a
+# one-line warning. The local base ref is NEVER fast-forwarded or otherwise mutated.
+fetch_base: true
+
+# The remote a fresh run fetches the base branch from (only when fetch_base is on). An unknown or
+# unreachable remote simply falls back — it never fails the run.
+remote: origin
+
 # The author identity for commits 3pwr itself creates. Applied PER COMMIT via
 # `git -c user.name=… -c user.email=…` — the developer's own git config is never mutated;
 # a commit a human makes by hand keeps the human's own author.

@@ -29,6 +29,7 @@ logic — no network, no model, no ledger.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 # The run-artifact base folder every new run writes under, and the legacy base folder name —
@@ -186,32 +187,86 @@ def slugify(text: str, max_len: int = SLUG_MAX_LEN) -> str:
     return slug or SLUG_FALLBACK
 
 
-def next_feature_number(specs_root: Path) -> int:
-    """The next ``<NNN>`` under the base folder: the maximum existing ``NNN-`` prefix plus one."""
-    nums = [0]
+def _ondisk_numbers(specs_root: Path) -> list[int]:
+    """Every ``NNN-`` prefix number of a folder directly under ``specs_root`` (empty when absent)."""
+    nums: list[int] = []
     if specs_root.is_dir():
         for d in specs_root.iterdir():
             m = re.match(r"(\d+)-", d.name)
             if m:
                 nums.append(int(m.group(1)))
+    return nums
+
+
+def next_run_number(
+    specs_root: Path,
+    *,
+    branch_numbers: Iterable[int] = (),
+    ledger_numbers: Iterable[int] = (),
+) -> int:
+    """The next-free ``<NNN>`` over the UNION of on-disk folders, git branches, and the ledger.
+
+    A fresh run's number is ``max(union) + 1`` over three sources: the on-disk ``NNN-`` prefixes
+    directly under ``specs_root``, plus the caller-supplied ``branch_numbers`` (git run-branch
+    numbers) and ``ledger_numbers`` (signed-ledger run ids). Taking the union means a fresh run
+    always clears a prior run that lives ONLY on an unmerged branch or ONLY in the ledger — never
+    reusing its number, so it never adopts the stale run's folder or branch.
+
+    Purity is load-bearing (the caller gathers the git and ledger inputs): this function imports no
+    git and no ledger, so it stays deterministic and unit-testable with plain lists. An empty union
+    of ``branch_numbers`` and ``ledger_numbers`` degrades to the on-disk-only number, keeping the
+    historical single-source behaviour (``next_feature_number``) exact.
+    """
+    nums = [0, *_ondisk_numbers(specs_root), *branch_numbers, *ledger_numbers]
     return max(nums) + 1
 
 
-def feature_folder_name(specs_root: Path, intent: str) -> str:
-    """The ``<NNN>-<slug>`` folder name a new run allocates — a pure function of the
-    ``specs-src/`` directory listing and the intent string, byte-identical on any machine."""
-    return f"{next_feature_number(specs_root):03d}-{slugify(intent)}"
+def next_feature_number(specs_root: Path) -> int:
+    """The next ``<NNN>`` under the base folder: the maximum existing ``NNN-`` prefix plus one.
+
+    The on-disk-only case of :func:`next_run_number` (empty git/ledger union), kept for callers
+    that only see the working tree."""
+    return next_run_number(specs_root)
 
 
-def allocate_feature_dir(root: Path, intent: str) -> Path:
+def feature_folder_name(
+    specs_root: Path,
+    intent: str,
+    *,
+    branch_numbers: Iterable[int] = (),
+    ledger_numbers: Iterable[int] = (),
+) -> str:
+    """The ``<NNN>-<slug>`` folder name a new run allocates.
+
+    A pure function of the ``specs-src/`` directory listing, the caller-supplied git/ledger union
+    inputs, and the intent string — byte-identical on any machine for the same inputs. With an
+    empty union it reproduces the on-disk-only number (back-compat)."""
+    number = next_run_number(
+        specs_root, branch_numbers=branch_numbers, ledger_numbers=ledger_numbers
+    )
+    return f"{number:03d}-{slugify(intent)}"
+
+
+def allocate_feature_dir(
+    root: Path,
+    intent: str,
+    *,
+    branch_numbers: Iterable[int] = (),
+    ledger_numbers: Iterable[int] = (),
+) -> Path:
     """Allocate the new run's feature folder ``specs-src/<NNN>-<slug>/``.
 
     New runs always write under the canonical base (``specs-src/``); the legacy ``specs/`` base is
-    read-only. Creates the folder, failing fast with :class:`FileExistsError` when the target
-    already exists (e.g. two concurrent runs picked the same number) — a folder allocated for a
+    read-only. The ``<NNN>`` is the next-free over the union of on-disk folders and the
+    caller-supplied ``branch_numbers`` / ``ledger_numbers`` (see :func:`next_run_number`), so a
+    fresh run never reuses a number that survives only on a branch or in the ledger. Creates the
+    folder, failing fast with :class:`FileExistsError` when the target already exists (e.g. two
+    concurrent runs picked the same number) — the final race backstop; a folder allocated for a
     different run is never overwritten. Cross-process locking is an explicit non-goal."""
     specs_root = root / SPECS_DIR
-    target = specs_root / feature_folder_name(specs_root, intent)
+    target = specs_root / feature_folder_name(
+        specs_root, intent, branch_numbers=branch_numbers, ledger_numbers=ledger_numbers
+    )
     specs_root.mkdir(parents=True, exist_ok=True)
     target.mkdir(exist_ok=False)
     return target

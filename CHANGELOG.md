@@ -6,7 +6,34 @@ All notable changes to 3Powers are documented here. The format is based on
 3Powers entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in the
 spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
 plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the current
-release is the first stable release candidate, **v1.0.0-rc.1**.
+release is the first stable release, **v1.0.0**.
+
+## [1.0.0] — v1.0: first stable release
+
+First stable release. Published to PyPI as **3powers** (`uv tool install 3powers`, or `uvx 3powers`
+to run it once without installing; the installed command is `3pwr`) via tokenless GitHub Actions
+Trusted Publishing (OIDC) — no stored API token.
+
+### Fixed
+
+- **Fresh-run isolation.** A fresh `3pwr run "<intent>"` no longer silently continues a prior run's
+  branch and feature folder. Its run id is now the next-free number over the **union** of on-disk
+  `specs-src/` folders, git branches, and the signed ledger, so it always gets a brand-new id even
+  when a prior run lives only on an unmerged branch or only in the ledger; it opens a **dedicated
+  branch off the latest base** — a best-effort `origin/<base>` fetch controlled by the new `git.yaml`
+  keys `fetch_base` and `remote`, never mutating the local base ref; and it refuses to adopt an
+  existing branch, pointing at `3pwr run --resume --spec-id <NNN>` instead. Resume is unchanged.
+  (plan/038)
+
+### Added
+
+- **PyPI distribution.** The engine is installable from PyPI as **3powers** with
+  `uv tool install 3powers` / `uvx 3powers`; the from-source `uv tool install ./engine` path still
+  works. (plan/038)
+- **Advisory per-working-tree run lock.** `3pwr run` acquires `.3powers/run.lock` for both the fresh
+  and resume paths; a second concurrent run in the same working tree fails fast naming the other run,
+  separate clones/worktrees never contend, a stale lock self-heals, and a lock-write failure degrades
+  to a warning rather than blocking the run. (plan/038)
 
 ## [1.0.0-rc.1] — v1.0: lifecycle & ecosystem (release candidate)
 
@@ -254,5 +281,6 @@ release is the first stable release candidate, **v1.0.0-rc.1**.
 - Two reference language adapters (TypeScript, Python), self-application of the engine on its own code, and
   supply-chain scanners. (plans 001–003)
 
+[1.0.0]: https://github.com/VerzCar/3powers/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/VerzCar/3powers/releases/tag/v1.0.0-rc.1
 [0.5.0]: https://github.com/VerzCar/3powers/releases/tag/v0.5.0

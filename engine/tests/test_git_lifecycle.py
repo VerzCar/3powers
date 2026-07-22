@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from threepowers import deviations, gitflow, prompts, runner, runpreflight
+from threepowers import deviations, gitflow, prompts, runner, runpreflight, workspace
 from threepowers.cli import EXIT_FAIL, EXIT_PAUSED, EXIT_SETUP, main
 from threepowers.ledger import Ledger
 from threepowers.verdict import STATUS_PASS, Verdict
@@ -30,6 +30,11 @@ def _git(root: Path, *args: str) -> str:
         ["git", *args], cwd=str(root), capture_output=True, text=True, check=False
     )
     return proc.stdout.strip()
+
+
+def _git_ok(cwd: Path, *args: str) -> None:
+    """Run a git subcommand that must succeed, discarding output (test setup helper)."""
+    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
 
 
 def _git_init(root: Path) -> None:
@@ -233,6 +238,267 @@ def test_branch_name_is_deterministic():
     b = gitflow.run_branch_name("3pwr/", "017-run-artifact-workspace")
     assert a == b == "3pwr/017-run-artifact-workspace"
     assert gitflow.run_branch_name("wip/", "017-x") == "wip/017-x"
+
+
+def test_run_branch_numbers_scans_local_and_remote_refs(tmp_path):
+    """Covers: REQ-A — run_branch_numbers parses <branch_prefix><NNN>-* from local refs (and, with
+    a remote given, refs/remotes/<remote>/*), scopes to the prefix, and returns [] on a git error /
+    non-repo without raising."""
+    # a non-repo directory: no refs, no crash, no raise
+    assert gitflow.run_branch_numbers(tmp_path, "3pwr/") == []
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+    _git_init(root)  # branch main, one commit
+    head = _git(root, "rev-parse", "HEAD")
+    for br in ("3pwr/020-alpha", "3pwr/007-beta", "wip/099-ignored"):
+        subprocess.run(["git", "branch", br, head], cwd=str(root), check=True, capture_output=True)
+    # a remote-tracking ref planted locally — no network, no remote configured
+    subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/3pwr/044-remote", head],
+        cwd=str(root),
+        check=True,
+        capture_output=True,
+    )
+    # local-only scan: the run branches, ignoring the other-prefix branch and the remote-tracking ref
+    assert sorted(gitflow.run_branch_numbers(root, "3pwr/")) == [7, 20]
+    # remote-aware scan: folds in the remote-tracking run branch
+    assert sorted(gitflow.run_branch_numbers(root, "3pwr/", remote="origin")) == [7, 20, 44]
+    # a different prefix scopes the scan
+    assert gitflow.run_branch_numbers(root, "wip/") == [99]
+    # an unknown remote is not a crash — its tracking refs simply do not exist
+    assert sorted(gitflow.run_branch_numbers(root, "3pwr/", remote="nope")) == [7, 20]
+
+
+def _seed_repo(tmp_path) -> Path:
+    """A throwaway git repo on ``main`` with a single commit — the base for the intent tests."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "seed.txt").write_text("seed\n", encoding="utf-8")
+    _git_init(root)
+    return root
+
+
+def test_ensure_run_branch_fresh_refuses_an_existing_branch_without_checkout(tmp_path):
+    """Covers: REQ-B — mode='fresh' on a branch that already exists returns the distinct refusal
+    sentinel and performs NO checkout: the working tree stays on its current branch, so a fresh run
+    never adopts a prior run's branch."""
+    root = _seed_repo(tmp_path)
+    head = _git(root, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "branch", "3pwr/001-x", head], cwd=str(root), check=True, capture_output=True
+    )
+    assert gitflow.current_branch(root) == "main"
+    err = gitflow.ensure_run_branch(root, "3pwr/001-x", "main", mode="fresh")
+    assert err == gitflow.FRESH_BRANCH_EXISTS
+    assert gitflow.current_branch(root) == "main"  # never switched to the stale branch
+
+
+def test_ensure_run_branch_fresh_creates_a_new_branch_off_base(tmp_path):
+    """Covers: REQ-B — mode='fresh' on a branch that does not exist creates it off the base and
+    switches to it, exactly as a fresh run's happy path does."""
+    root = _seed_repo(tmp_path)
+    base_tip = _git(root, "rev-parse", "main")
+    err = gitflow.ensure_run_branch(root, "3pwr/002-y", "main", mode="fresh")
+    assert err == ""
+    assert gitflow.current_branch(root) == "3pwr/002-y"
+    assert _git(root, "rev-parse", "3pwr/002-y") == base_tip  # branched off the base tip
+
+
+def test_ensure_run_branch_resume_reenters_an_existing_branch(tmp_path):
+    """Covers: REQ-B — mode='resume' re-enters an existing branch (never a second one) and returns
+    no error: the resume re-entry contract is unchanged."""
+    root = _seed_repo(tmp_path)
+    head = _git(root, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "branch", "3pwr/003-z", head], cwd=str(root), check=True, capture_output=True
+    )
+    assert gitflow.current_branch(root) == "main"
+    err = gitflow.ensure_run_branch(root, "3pwr/003-z", "main", mode="resume")
+    assert err == ""
+    assert gitflow.current_branch(root) == "3pwr/003-z"
+
+
+def test_ensure_run_branch_resume_pre_stage_hook_keeps_the_run_on_its_branch(tmp_path):
+    """Covers: REQ-B — the mid-run pre-stage hook re-invokes ensure_run_branch(mode='resume'): a
+    run that strayed to another branch is switched back to its dedicated branch without tripping the
+    fresh guard."""
+    root = _seed_repo(tmp_path)
+    assert gitflow.ensure_run_branch(root, "3pwr/004-w", "main", mode="fresh") == ""
+    assert gitflow.current_branch(root) == "3pwr/004-w"
+    subprocess.run(["git", "checkout", "-q", "main"], cwd=str(root), check=True)  # user wanders off
+    assert gitflow.ensure_run_branch(root, "3pwr/004-w", "main", mode="resume") == ""
+    assert gitflow.current_branch(root) == "3pwr/004-w"  # the hook re-entered the run branch
+
+
+def _seed_repo_with_remote(tmp_path) -> Path:
+    """A work repo cloned from a bare ``origin`` whose ``main`` has since advanced.
+
+    The remote's ``main`` is one commit ahead of both the work repo's local ``main`` and its stale
+    remote-tracking ref, so only a fresh fetch reveals the newer tip — the setup for asserting a
+    fresh run branches off ``origin/main`` while leaving the local base untouched."""
+    origin = tmp_path / "origin.git"
+    _git_ok(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "seed.txt").write_text("seed\n", encoding="utf-8")
+    _git_init(work)  # branch main, commit C1
+    _git_ok(work, "remote", "add", "origin", str(origin))
+    _git_ok(work, "push", "-q", "-u", "origin", "main")
+    other = tmp_path / "other"
+    _git_ok(tmp_path, "clone", "-q", str(origin), str(other))
+    _git_ok(other, "config", "user.email", "o@e.st")
+    _git_ok(other, "config", "user.name", "o")
+    (other / "more.txt").write_text("more\n", encoding="utf-8")
+    _git_ok(other, "add", "-A")
+    _git_ok(other, "commit", "-q", "-m", "c2")
+    _git_ok(other, "push", "-q", "origin", "main")
+    return work
+
+
+def test_ensure_run_branch_fresh_branches_off_remote_base_after_a_best_effort_fetch(tmp_path):
+    """Covers: REQ-C — with fetch_base on, a fresh run best-effort fetches the base and branches off
+    the up-to-date ``origin/<base>`` tip; the local base ref is never fast-forwarded."""
+    work = _seed_repo_with_remote(tmp_path)
+    local_main_before = _git(work, "rev-parse", "main")
+    err = gitflow.ensure_run_branch(
+        work, "3pwr/001-x", "main", mode="fresh", remote="origin", fetch_base=True
+    )
+    assert err == ""
+    origin_tip = _git(work, "rev-parse", "refs/remotes/origin/main")
+    assert origin_tip != local_main_before  # the remote was genuinely ahead
+    assert (
+        _git(work, "rev-parse", "3pwr/001-x") == origin_tip
+    )  # branched off the fetched remote tip
+    assert _git(work, "rev-parse", "main") == local_main_before  # local base NEVER fast-forwarded
+
+
+def test_ensure_run_branch_fresh_fetch_failure_falls_back_to_local_base(tmp_path):
+    """Covers: REQ-C — fetch_base on but no reachable remote (unknown remote / offline): the
+    best-effort fetch fails silently, the branch is created off the LOCAL base with no error, and
+    the local base ref is unchanged."""
+    root = _seed_repo(tmp_path)  # no remote configured — the fetch cannot resolve one
+    base_tip = _git(root, "rev-parse", "main")
+    err = gitflow.ensure_run_branch(
+        root, "3pwr/002-y", "main", mode="fresh", remote="origin", fetch_base=True
+    )
+    assert err == ""
+    assert gitflow.current_branch(root) == "3pwr/002-y"
+    assert _git(root, "rev-parse", "3pwr/002-y") == base_tip  # fell back to the local base tip
+    assert _git(root, "rev-parse", "main") == base_tip  # local base untouched
+
+
+def test_ensure_run_branch_fresh_detached_and_unborn_fall_back_without_error(tmp_path):
+    """Covers: REQ-C — a detached HEAD (base still resolves locally) and an unborn repo (no base at
+    all) both fall back cleanly with no error even when fetch_base is on and no remote is reachable."""
+    root = _seed_repo(tmp_path)
+    head = _git(root, "rev-parse", "HEAD")
+    _git_ok(root, "checkout", "-q", "--detach", head)
+    err = gitflow.ensure_run_branch(
+        root, "3pwr/003-a", "main", mode="fresh", remote="origin", fetch_base=True
+    )
+    assert err == "" and gitflow.current_branch(root) == "3pwr/003-a"
+    assert _git(root, "rev-parse", "3pwr/003-a") == head  # off the resolved local base
+    # an unborn repo: no commits, no base ref → the empty start-point, still no error
+    unborn = tmp_path / "unborn"
+    unborn.mkdir()
+    _git_ok(tmp_path, "init", "-q", "-b", "main", str(unborn))
+    _git_ok(unborn, "config", "user.email", "h@e.st")
+    _git_ok(unborn, "config", "user.name", "h")
+    err2 = gitflow.ensure_run_branch(
+        unborn, "3pwr/001-x", "main", mode="fresh", remote="origin", fetch_base=True
+    )
+    assert err2 == "" and gitflow.current_branch(unborn) == "3pwr/001-x"
+
+
+def test_ensure_run_branch_fresh_honors_a_non_main_base_branch(tmp_path):
+    """Covers: REQ-C — base_branch: develop is honored both without a fetch and with fetch_base on
+    when no remote-tracking develop exists (it falls back to the local develop)."""
+    root = _seed_repo(tmp_path)
+    head = _git(root, "rev-parse", "HEAD")
+    _git_ok(root, "branch", "develop", head)
+    _git_ok(root, "checkout", "-q", "develop")
+    (root / "d.txt").write_text("d\n", encoding="utf-8")
+    _git_ok(root, "add", "-A")
+    _git_ok(root, "commit", "-q", "-m", "d")
+    develop_tip = _git(root, "rev-parse", "develop")
+    _git_ok(root, "checkout", "-q", "main")
+    # without a fetch
+    err = gitflow.ensure_run_branch(root, "3pwr/005-a", "develop", mode="fresh")
+    assert err == "" and _git(root, "rev-parse", "3pwr/005-a") == develop_tip
+    _git_ok(root, "checkout", "-q", "main")
+    # with fetch on but no remote develop → falls back to the local develop
+    err2 = gitflow.ensure_run_branch(
+        root, "3pwr/006-b", "develop", mode="fresh", remote="origin", fetch_base=True
+    )
+    assert err2 == "" and _git(root, "rev-parse", "3pwr/006-b") == develop_tip
+
+
+def test_fresh_run_refuses_to_adopt_an_existing_branch_and_points_at_resume(
+    run_repo, monkeypatch, capsys
+):
+    """Covers: REQ-B — defense-in-depth at the CLI: when a fresh run still computes a branch that
+    already exists (the branch-number scan missed it — a remote-only ref, a race), it refuses on
+    the setup path WITHOUT a checkout and points the user at an explicit resume, never continuing
+    the prior run's branch."""
+    # Plant the branch the fresh allocation will compute, then blind the branch-number scan to it so
+    # the union reuses id 001 and only the fresh guard can catch the collision.
+    head = _git(run_repo, "rev-parse", "HEAD")
+    subprocess.run(
+        ["git", "branch", "3pwr/001-add-x", head],
+        cwd=str(run_repo),
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.setattr(gitflow, "run_branch_numbers", lambda *a, **k: [])
+    rc = main(["--root", str(run_repo), "run", "add x", "--no-input"])
+    err = capsys.readouterr().err
+    assert rc == EXIT_SETUP
+    assert "3pwr run --resume --spec-id 001" in err
+    assert "already" in err
+    assert gitflow.current_branch(run_repo) == "main"  # never checked out the stale branch
+
+
+def test_fresh_run_isolation_regression_new_id_and_branch_off_base(tmp_path):
+    """Covers: REQ-A, REQ-B, REQ-F — the cross-cutting fresh-run isolation regression.
+
+    A prior run survives ONLY on an unmerged branch (its feature folder absent from the working
+    tree) and in the signed ledger. A fresh run must NOT re-enter it: the union allocator
+    (:func:`workspace.next_run_number`) clears the stale id over folders + branches + ledger, and
+    :func:`gitflow.ensure_run_branch` in ``mode="fresh"`` then creates a genuinely NEW branch off
+    the base — never adopting the stale one.
+
+    This fails without the fix: revert the union (drop ``branch_numbers``/``ledger_numbers`` from
+    ``next_run_number``) and the id collapses back to ``1``, so the fresh path would recompute the
+    stale branch name — which already exists — and ``ensure_run_branch(mode="fresh")`` would refuse
+    with :data:`gitflow.FRESH_BRANCH_EXISTS` instead of starting clean. Exercises the union
+    allocator and the fresh-vs-resume guard together, as the fresh path wires them (REQ-A + REQ-B).
+    """
+    root = _seed_repo(tmp_path)  # git repo on main, one commit; no specs-src/ on the checkout
+    base_tip = _git(root, "rev-parse", "HEAD")
+    # A prior run's branch lives only here, unmerged; its feature folder is NOT on this checkout.
+    _git_ok(root, "branch", "3pwr/001-add-feature", base_tip)
+    specs_root = root / workspace.SPECS_DIR
+    assert not specs_root.exists()  # the stale run's folder survives only on the unmerged branch
+
+    # Gather the union inputs exactly as the fresh path does: the branch scan sees the stale branch,
+    # and the ledger still records the prior run's id even though its folder is otherwise gone.
+    branch_numbers = gitflow.run_branch_numbers(root, "3pwr/")
+    assert branch_numbers == [1]
+    ledger_numbers = [1]  # the prior run also survives in the signed ledger
+
+    new_num = workspace.next_run_number(
+        specs_root, branch_numbers=branch_numbers, ledger_numbers=ledger_numbers
+    )
+    assert new_num == 2  # the union clears the stale id — WITHOUT the fix this collapses to 1
+
+    new_branch = gitflow.run_branch_name("3pwr/", f"{new_num:03d}-add-feature")
+    assert new_branch == "3pwr/002-add-feature"
+    err = gitflow.ensure_run_branch(root, new_branch, "main", mode="fresh")
+    assert err == ""  # a genuinely new branch is created — WITHOUT the fix this would refuse
+    assert gitflow.current_branch(root) == "3pwr/002-add-feature"  # never the stale 3pwr/001-*
+    assert _git(root, "rev-parse", "3pwr/002-add-feature") == base_tip  # branched off the base tip
+    assert gitflow.branch_exists(root, "3pwr/001-add-feature")  # the stale branch is left untouched
 
 
 def test_resume_reuses_the_existing_branch_never_a_new_one(run_repo, monkeypatch, capsys):

@@ -23,7 +23,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import yaml
 
@@ -41,9 +41,18 @@ GIT_GUARDS: tuple[str, ...] = (GATE_CLEAN_START, GATE_STAGE_COMMIT, GATE_RUN_BRA
 CLASS_COMMIT_FAILED = "git_commit_failed"
 CLASS_BRANCH_FAILED = "git_branch_failed"
 
+# The distinct sentinel `ensure_run_branch(mode="fresh")` returns when the branch it would create
+# already exists. A fresh run never adopts a prior run's branch — the caller matches this exact
+# value to surface the actionable "resume explicitly" guidance on the setup path, never a checkout.
+FRESH_BRANCH_EXISTS = "fresh-run branch already exists"
+
 # The documented `git.yaml` defaults: a missing or malformed file falls back to these.
 DEFAULT_BRANCH_PREFIX = "3pwr/"
 DEFAULT_BASE_BRANCH = "main"
+DEFAULT_FETCH_BASE = (
+    True  # a fresh run best-effort fetches the base off the remote before branching
+)
+DEFAULT_REMOTE = "origin"  # the remote a fresh run fetches the base from
 DEFAULT_AUTHOR_NAME = "3pwr"
 DEFAULT_AUTHOR_EMAIL = "3pwr@3powers.local"
 
@@ -70,6 +79,8 @@ class GitPrefs:
 
     branch_prefix: str = DEFAULT_BRANCH_PREFIX
     base_branch: str = DEFAULT_BASE_BRANCH
+    fetch_base: bool = DEFAULT_FETCH_BASE
+    remote: str = DEFAULT_REMOTE
     author_name: str = DEFAULT_AUTHOR_NAME
     author_email: str = DEFAULT_AUTHOR_EMAIL
     malformed: bool = False  # the file existed but was not a valid mapping — warn once, never crash
@@ -96,9 +107,14 @@ def load_prefs(path: Path) -> GitPrefs:
         malformed = True
         data = {}
     author = data.get("author") if isinstance(data.get("author"), dict) else {}
+    # A non-boolean `fetch_base` (a stray string, a number) is tolerated like the whole-file
+    # fallback: it reverts to the shipped default rather than coercing surprising truthiness.
+    fetch_base = data.get("fetch_base")
     return GitPrefs(
         branch_prefix=str(data.get("branch_prefix") or DEFAULT_BRANCH_PREFIX),
         base_branch=str(data.get("base_branch") or DEFAULT_BASE_BRANCH),
+        fetch_base=fetch_base if isinstance(fetch_base, bool) else DEFAULT_FETCH_BASE,
+        remote=str(data.get("remote") or DEFAULT_REMOTE),
         author_name=str(author.get("name") or DEFAULT_AUTHOR_NAME),
         author_email=str(author.get("email") or DEFAULT_AUTHOR_EMAIL),
         malformed=malformed,
@@ -141,26 +157,121 @@ def branch_exists(cwd: Path, name: str) -> bool:
 
 
 def base_tip(cwd: Path, base: str) -> str:
-    """The base branch's tip SHA, or ``""`` when the base does not resolve."""
+    """The local base branch's tip SHA, or ``""`` when the base does not resolve."""
     rc, out, _ = _git(cwd, ["rev-parse", "--verify", "--quiet", f"refs/heads/{base}"])
     return out.strip() if rc == 0 else ""
 
 
-def ensure_run_branch(cwd: Path, branch: str, base: str) -> str:
+def _fetch_base(cwd: Path, remote: str, base: str) -> None:
+    """Best-effort fetch of ``base`` from ``remote`` on the fresh-create path — never fatal.
+
+    A fresh run branches off the up-to-date remote tip, so this refreshes the remote-tracking base
+    ref before the start-point is resolved. Best-effort and offline-safe: any failure (no network,
+    an unknown or unreachable remote, a non-repo, git absent) is swallowed — the low-level runner
+    never raises and a non-zero result is ignored, so the caller silently falls back to the local
+    base then the current commit. It updates only the remote-tracking ref
+    (``refs/remotes/<remote>/<base>``); the local ``<base>`` ref is NEVER fast-forwarded or
+    otherwise mutated, and nothing is forced."""
+    if not remote or not base:
+        return
+    _git(cwd, ["fetch", "--quiet", "--no-tags", remote, base])
+
+
+def _base_start_point(cwd: Path, base: str, *, remote: str | None) -> list[str]:
+    """The commit-ish a run branch is created off, as ``git checkout -b`` start-point args.
+
+    Read-only resolution — no fetch, no mutation. When a ``remote`` is given, prefers the
+    remote-tracking base ``refs/remotes/<remote>/<base>`` (the up-to-date tip after a fresh run's
+    best-effort fetch); falls back to the local ``<base>`` ref, then to the current commit (an empty
+    list — the detached-HEAD / unborn-repo / no-base edge). Never fast-forwards the local base."""
+    if not base:
+        return []
+    if remote:
+        remote_ref = f"refs/remotes/{remote}/{base}"
+        if _git(cwd, ["rev-parse", "--verify", "--quiet", remote_ref])[0] == 0:
+            return [remote_ref]
+    if base_tip(cwd, base):
+        return [base]
+    return []
+
+
+def ensure_run_branch(
+    cwd: Path,
+    branch: str,
+    base: str,
+    *,
+    mode: Literal["fresh", "resume"],
+    remote: str | None = None,
+    fetch_base: bool = False,
+) -> str:
     """Create-or-switch to the run's dedicated branch; ``""`` on success, else the error detail.
 
-    An existing branch is re-entered (a resume never creates a second one); a missing
-    one is created off the configured base when it resolves, else off the current commit (the
-    detached-HEAD / unborn-repo / no-base edge). Never forced: a switch git refuses (it would
-    clobber changes) is surfaced, not overridden, and no history is rewritten."""
-    if current_branch(cwd) == branch:
+    The explicit ``mode`` fixes the intent at the call site so re-entry of an existing branch never
+    happens by accident:
+
+    * ``"resume"`` re-enters an existing branch (a resume, an already-established manual drive, or a
+      mid-run pre-stage hook never creates a second one) and creates a missing one off the
+      configured base — today's behavior, unchanged.
+    * ``"fresh"`` never adopts a pre-existing branch: when the computed branch already exists it
+      REFUSES, returning the distinct :data:`FRESH_BRANCH_EXISTS` sentinel with **no checkout and no
+      mutation**, so the caller can point the user at an explicit resume; only a genuinely new
+      branch is created off the base.
+
+    Base resolution is remote-aware on the fresh-create path only. When ``fetch_base`` is on and a
+    ``remote`` is given, a genuinely new branch is preceded by a **best-effort, offline-safe** fetch
+    of the base and is then created off the up-to-date remote-tracking tip
+    (``refs/remotes/<remote>/<base>``), falling back to the local ``<base>`` ref, then to the
+    current commit. The fetch and preference are skipped entirely for a re-entry and for resume (the
+    pre-stage hook never re-fetches mid-run). The local base ref is never fast-forwarded and no
+    history is rewritten.
+
+    A missing branch is created off the resolved start-point when it exists, else off the current
+    commit (the detached-HEAD / unborn-repo / no-base edge). Never forced: a switch git refuses (it
+    would clobber changes) is surfaced, not overridden, and no history is rewritten."""
+    already_on = current_branch(cwd) == branch
+    exists = already_on or branch_exists(cwd, branch)
+    if mode == "fresh" and exists:
+        return FRESH_BRANCH_EXISTS
+    if already_on:
         return ""
-    if branch_exists(cwd, branch):
+    if exists:  # mode == "resume" with the branch present but not checked out — re-enter it
         rc, _, err = _git(cwd, ["checkout", "-q", branch])
         return "" if rc == 0 else f"cannot switch to run branch '{branch}': {err.strip()}"
-    start_point = [base] if base and base_tip(cwd, base) else []
+    # A genuinely new branch: on the fresh-create path a best-effort fetch refreshes the
+    # remote-tracking base so the branch starts from the up-to-date remote tip; offline / no remote
+    # / fetch failure all fall back silently to the local base then the current commit.
+    if fetch_base and remote and base:
+        _fetch_base(cwd, remote, base)
+    start_point = _base_start_point(cwd, base, remote=remote if fetch_base else None)
     rc, _, err = _git(cwd, ["checkout", "-q", "-b", branch, *start_point])
     return "" if rc == 0 else f"cannot create run branch '{branch}': {err.strip()}"
+
+
+def run_branch_numbers(cwd: Path, branch_prefix: str, *, remote: str | None = None) -> list[int]:
+    """The ``<NNN>`` numbers of existing run branches ``<branch_prefix><NNN>-*`` (empty on any error).
+
+    Read-only reconnaissance for fresh-run id isolation: scans local ``refs/heads/`` and \u2014 when a
+    ``remote`` is given and its tracking refs are cheaply available \u2014 ``refs/remotes/<remote>/``,
+    returning every number that follows the configured branch prefix. This never fetches (it reads
+    only the tracking refs already on disk), never mutates anything, and is not a gate, verdict, or
+    ledger input; it only widens the union a fresh run's number must clear.
+
+    Offline-, non-repo-, detached-HEAD-, and unborn-repo-safe: it delegates to the low-level git
+    runner and returns ``[]`` on ANY git failure rather than raising, so a caller can fold it into
+    the id union unconditionally."""
+    namespaces = ["refs/heads/"]
+    if remote:
+        namespaces.append(f"refs/remotes/{remote}/")
+    rc, out, _ = _git(cwd, ["for-each-ref", "--format=%(refname:short)", *namespaces])
+    if rc != 0:
+        return []
+    pattern = re.compile(re.escape(branch_prefix) + r"(\d+)-")
+    numbers: list[int] = []
+    for line in out.splitlines():
+        m = pattern.search(line.strip())
+        if m:
+            numbers.append(int(m.group(1)))
+    return numbers
 
 
 def branch_from_ledger(entries: Iterable[dict], spec_id: str) -> str:

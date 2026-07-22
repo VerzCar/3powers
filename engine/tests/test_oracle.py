@@ -393,9 +393,7 @@ def test_absent_oracle_md_yields_the_visible_stub(tmp_path):
         "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: shall work.\n- **DEMO-NFR-001**: ≤ 200 ms.\n",
         encoding="utf-8",
     )
-    rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="030"
-    )
+    rel = completion.write_record(tmp_path, f, "oracle", spec_id="030")
     assert rel == "specs-src/030-demo/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
     assert completion.ORACLE_STUB_MARKER in text  # visibly a stub, never silently passed
@@ -420,9 +418,7 @@ def test_authored_oracle_md_is_validated_and_left_in_place(tmp_path):
     authored = ORACLE_MD_OK + "\nImplemented in src/service.py.\n"  # covers FR-001, leaks a path
     (f / "oracle.md").write_text(authored, encoding="utf-8")
     findings: list[str] = []
-    rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="030", on_finding=findings.append
-    )
+    rel = completion.write_record(tmp_path, f, "oracle", spec_id="030", on_finding=findings.append)
     assert rel == "specs-src/030-demo/oracle.md"
     assert (f / "oracle.md").read_text(encoding="utf-8") == authored  # left in place
     assert any("does not name requirement DEMO-FR-002" in x for x in findings)

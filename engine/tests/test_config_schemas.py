@@ -199,9 +199,7 @@ def test_the_minimal_validator_rejects_a_known_bad_instance() -> None:
 def test_shipped_config_validates_against_its_schema(yaml_path: Path, schema_name: str) -> None:
     """(d) Every shipped config validates against its schema (a schema must never reject a config
     the engine accepts)."""
-    schema = json.loads(
-        (yaml_path.parent / "schema" / schema_name).read_text(encoding="utf-8")
-    )
+    schema = json.loads((yaml_path.parent / "schema" / schema_name).read_text(encoding="utf-8"))
     data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
     if data is None:  # an all-comments file (e.g. gates.yaml) is a valid empty config
         return

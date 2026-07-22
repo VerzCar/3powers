@@ -29,6 +29,7 @@ from .. import (
     phases,
     progress,
     prompts,
+    runlock,
     runner as runnermod,
     runpreflight,
     steering,
@@ -221,7 +222,9 @@ def cmd_git_start(args: argparse.Namespace) -> int:
         if unrelated:
             print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
             return EXIT_FAIL
-    b_err = gitflow.ensure_run_branch(s.root, branch, prefs.base_branch)
+    # Idempotent manual drive: re-enter the run's already-recorded branch (or create it off base
+    # the first time) — the same re-entering intent a resume uses, never the fresh guard.
+    b_err = gitflow.ensure_run_branch(s.root, branch, prefs.base_branch, mode="resume")
     if b_err:
         print(f"error: {b_err}", file=sys.stderr)
         return EXIT_FAIL
@@ -270,6 +273,27 @@ def _run_feature_dir_from_ledger(s: Settings, entries: list[dict], spec_id: str)
         if payload.get("kind") == "start" and payload.get("feature_dir"):
             rel = str(payload["feature_dir"])
     return (s.root / rel) if rel else None
+
+
+def _ledger_run_numbers(entries: list[dict]) -> list[int]:
+    """The ``<NNN>`` run numbers recorded in the signed ledger's ``run`` entries (read-only).
+
+    Every ``run`` entry's ``spec_id`` with its leading digits parsed to an int \u2014 the ledger side of
+    the fresh-run id union, so a fresh run never reuses a number that survives only in the ledger
+    (its folder and branch long gone). Read-only over ``Ledger.entries()``: never a ledger write,
+    gate, or verdict input (notifications-style isolation)."""
+    numbers: list[int] = []
+    for e in entries:
+        if e.get("type") != "run":
+            continue
+        digits = ""
+        for ch in str(e.get("spec_id") or ""):
+            if not ch.isdigit():
+                break
+            digits += ch
+        if digits:
+            numbers.append(int(digits))
+    return numbers
 
 
 def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
@@ -1056,9 +1080,11 @@ def _native_runner(
             )
         # The mandatory PRE-STAGE git hook: every stage of a live run happens on the
         # run's dedicated branch — strayed mid-run (e.g. the user switched away), it switches back
-        # before dispatching; a switch git refuses is a named failure, never forced.
+        # before dispatching; a switch git refuses is a named failure, never forced. Once a run is
+        # under way its branch legitimately exists, so this re-enters it (mode="resume") rather than
+        # tripping the fresh guard.
         if run_branch:
-            b_err = gitflow.ensure_run_branch(s.root, run_branch, prefs.base_branch)
+            b_err = gitflow.ensure_run_branch(s.root, run_branch, prefs.base_branch, mode="resume")
             if b_err:
                 return runnermod.StageResult(
                     step=step,
@@ -1740,6 +1766,42 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return EXIT_OK
 
+    # Advisory per-working-tree run lock (`.3powers/run.lock`): a second concurrent `3pwr run` in
+    # the SAME checkout fails fast; separate clones / `git worktree` checkouts each hold their own
+    # and never contend. A stale lock (a crashed run — a dead pid, or an mtime past a generous TTL)
+    # self-heals; a lock-write failure degrades to a warning and never wedges the run. Held across
+    # BOTH the fresh and resume paths — before the clean-start guard and any side effect — and
+    # released in the `finally`. Filesystem-only: never a gate, a verdict, or a ledger entry. The
+    # `--status` query above never takes it, so status stays available while a run is live.
+    run_lock_path = s.root / gitflow.ENGINE_STATE_PREFIX / runlock.LOCK_FILENAME
+    try:
+        run_lock = runlock.acquire(run_lock_path)
+    except runlock.RunLockHeld as exc:
+        print(f"cannot start `3pwr run` — {exc}", file=sys.stderr)
+        return EXIT_SETUP
+    if run_lock.warning and not args.json:
+        print(run_lock.warning, file=sys.stderr)
+    try:
+        return _cmd_run_locked(args, s, ledger, mode, spec_id, rst)
+    finally:
+        runlock.release(run_lock)
+
+
+def _cmd_run_locked(
+    args: argparse.Namespace,
+    s: Settings,
+    ledger: Ledger,
+    mode: str,
+    spec_id: str,
+    rst: style.Styler,
+) -> int:
+    """Drive the run's lifecycle under the advisory run lock — every path with a side effect.
+
+    Split out of :func:`cmd_run` so the per-working-tree run lock is taken once at the top and
+    released in the caller's ``finally`` across BOTH the fresh and resume paths, while a lock-free
+    ``--status`` query stays available even while a run is live. The pre-computed run context
+    (settings, ledger, mode, resolved spec id, output styler) is threaded in unchanged.
+    """
     # File-based intent: resolve --file (+ the optional inline instruction)
     # BEFORE any side effect — a bad file fails fast with the setup exit code and no ledger entry
     # is written; every downstream consumer sees ONLY the resolved intent.
@@ -2012,7 +2074,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                 if unrelated:
                     print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
                     return EXIT_SETUP
-            b_err = gitflow.ensure_run_branch(s.root, run_branch, git_prefs.base_branch)
+            # Resume re-enters the EXISTING ledger-recorded branch — never a new one.
+            b_err = gitflow.ensure_run_branch(
+                s.root, run_branch, git_prefs.base_branch, mode="resume"
+            )
             if b_err:
                 print(b_err, file=sys.stderr)
                 return EXIT_SETUP
@@ -2063,11 +2128,28 @@ def cmd_run(args: argparse.Namespace) -> int:
             spec_arg = Path(args.spec)
             feature_dir = workspace.feature_dir_of(spec_arg) if spec_arg.exists() else None
         elif _resolve_runner_kind(args) != "sim":
+            # The fresh-run id is the next-free over the UNION of on-disk folders, existing run
+            # branches, and the signed ledger's run ids \u2014 so a fresh run always gets a brand-new
+            # folder AND branch even when a prior run survives only on an unmerged branch or only in
+            # the ledger. `workspace` stays pure: the git/ledger inputs are gathered here (read-only,
+            # notifications-style isolation) and passed in as plain lists.
+            branch_numbers = gitflow.run_branch_numbers(
+                s.root, git_prefs.branch_prefix, remote=git_prefs.remote
+            )
+            ledger_numbers = _ledger_run_numbers(ledger.entries())
             try:
-                feature_dir = workspace.allocate_feature_dir(s.root, args.intent or "")
+                feature_dir = workspace.allocate_feature_dir(
+                    s.root,
+                    args.intent or "",
+                    branch_numbers=branch_numbers,
+                    ledger_numbers=ledger_numbers,
+                )
             except FileExistsError:
                 target = workspace.feature_folder_name(
-                    s.root / workspace.SPECS_DIR, args.intent or ""
+                    s.root / workspace.SPECS_DIR,
+                    args.intent or "",
+                    branch_numbers=branch_numbers,
+                    ledger_numbers=ledger_numbers,
                 )
                 print(
                     f"cannot start `3pwr run` — the feature folder {workspace.SPECS_DIR}/{target} "
@@ -2099,7 +2181,27 @@ def cmd_run(args: argparse.Namespace) -> int:
             # on the base branch. Detached HEAD / unborn repo: created off the current commit.
             identity = feature_dir.name if feature_dir is not None else workspace.slugify(spec_id)
             run_branch = gitflow.run_branch_name(git_prefs.branch_prefix, identity)
-            b_err = gitflow.ensure_run_branch(s.root, run_branch, git_prefs.base_branch)
+            # A fresh run never adopts a prior run's branch: if the computed branch already exists
+            # (defense-in-depth — the union id allocation makes this unreachable in the happy path)
+            # the guard refuses and we point the user at an explicit resume, never a stale checkout.
+            # A fresh create branches off the up-to-date base after a best-effort, offline-safe
+            # fetch (opt-in via git.yaml `fetch_base`/`remote`); the local base is never mutated.
+            b_err = gitflow.ensure_run_branch(
+                s.root,
+                run_branch,
+                git_prefs.base_branch,
+                mode="fresh",
+                remote=git_prefs.remote,
+                fetch_base=git_prefs.fetch_base,
+            )
+            if b_err == gitflow.FRESH_BRANCH_EXISTS:
+                print(
+                    f"cannot start a fresh `3pwr run` — the run branch '{run_branch}' already "
+                    "exists, so a fresh run would continue prior work; a fresh run always starts "
+                    f"clean. To continue that run instead: 3pwr run --resume --spec-id {spec_id}",
+                    file=sys.stderr,
+                )
+                return EXIT_SETUP
             if b_err:
                 print(b_err, file=sys.stderr)
                 return EXIT_SETUP
