@@ -53,6 +53,20 @@ LIFECYCLE_STEPS: list[tuple[str, str, str]] = [
     ("advance", "action", "Ship"),
 ]
 
+# The producing steps a ``--redo`` may rewind to — the earliest producing step of each rewind-able
+# stage (Discovery/Spec/Plan/Build) plus ``implement``. ``advance`` (Ship) is deliberately excluded:
+# a shipped run is reversed with ``revert``, never rewound. Gate and verdict steps are not producing.
+REDO_ELIGIBLE_STEPS: list[str] = ["discovery", "specify", "plan", "oracle", "implement"]
+
+# Stage label → the *earliest* producing step of that stage, so ``--redo build`` rewinds to ``oracle``
+# (the first Build action), not to a later step within the stage.
+_STAGE_EARLIEST_STEP: dict[str, str] = {
+    "Discovery": "discovery",
+    "Spec": "specify",
+    "Plan": "plan",
+    "Build": "oracle",
+}
+
 
 @dataclass
 class Event:
@@ -177,6 +191,80 @@ def resume_start_index(entries: list[dict], spec_id: str, pending_gate: str = ""
     one, while a gate approval still advances past the gate."""
     start = resume_index(pending_gate) if pending_gate else 0
     done = last_completed_step(entries, spec_id)
+    if done:
+        start = max(start, step_index(done) + 1)
+    return start
+
+
+def producing_steps() -> list[str]:
+    """The action-kind step ids of the lifecycle, in order.
+
+    These are the executive/judiciary *producing* steps — the ones that emit an artifact — as opposed
+    to the human ``gate`` steps and the deterministic ``verdict`` step. Not every producing step is
+    redo-eligible; see :data:`REDO_ELIGIBLE_STEPS` for the rewind-able subset."""
+    return [sid for sid, kind, _stage in LIFECYCLE_STEPS if kind == "action"]
+
+
+def resolve_redo_target(name: str) -> tuple[str, str]:
+    """Resolve a ``--redo`` argument to its ``(step, stage)``, or ``("", "")`` when not redo-able.
+
+    ``name`` is accepted as either a stage label (``discovery``/``spec``/``plan``/``build``, any
+    casing) or a lifecycle step id. A stage label resolves to the **earliest producing step** of that
+    stage (``spec``→``specify``, ``plan``→``plan``, ``build``→``oracle``, ``discovery``→``discovery``);
+    a bare step id resolves to itself when it is a redo-eligible producing step
+    (:data:`REDO_ELIGIBLE_STEPS`). Unknown input, a gate step, and any non-redo-eligible producing step
+    (notably ``advance``/Ship — a shipped run is reversed with ``revert``) return ``("", "")``. Pure:
+    it consults only the static lifecycle tables."""
+    raw = (name or "").strip()
+    if not raw:
+        return ("", "")
+    stage = canonical_stage(raw)
+    if stage is not None and stage in _STAGE_EARLIEST_STEP:
+        return (_STAGE_EARLIEST_STEP[stage], stage)
+    key = raw.lower()
+    if key in REDO_ELIGIBLE_STEPS:
+        for sid, _kind, sstage in LIFECYCLE_STEPS:
+            if sid == key:
+                return (key, sstage)
+    return ("", "")
+
+
+def last_redo_target(entries: list[dict], spec_id: str) -> tuple[int, str]:
+    """The ledger seq and ``target_step`` of the LATEST ``kind: "redo"`` run entry, else ``(-1, "")``.
+
+    Read from the signed ledger's ``run`` entries for ``spec_id`` — the append-only rewind marker a
+    ``--redo`` writes — so resume math can honor the most recent rewind. The latest such entry wins;
+    earlier redo markers remain in the ledger as history. Iterated the same way as
+    :func:`last_completed_step`; reconstructed offline from the repo alone."""
+    seq = -1
+    target = ""
+    for e in entries:
+        if e.get("spec_id") != spec_id or e.get("type") != "run":
+            continue
+        payload = e.get("payload", {})
+        if payload.get("kind") == "redo" and payload.get("target_step"):
+            seq = int(e.get("seq", -1))
+            target = str(payload["target_step"])
+    return seq, target
+
+
+def redo_start_index(entries: list[dict], spec_id: str, pending_gate: str = "") -> int:
+    """Where a run re-enters the lifecycle after a ``--redo`` rewind.
+
+    When no ``kind: "redo"`` marker exists for ``spec_id`` this defers to
+    :func:`resume_start_index` unchanged. When a marker exists (:func:`last_redo_target`), the rewind
+    target becomes the completion floor: completions of the target step and every later step that were
+    recorded *before* the redo marker no longer count, so a fresh rewind with no post-marker progress
+    re-enters exactly at ``step_index(target)``. Only completions recorded *after* the marker advance
+    the re-entry point, so the re-flow resumes past a stage it has already re-run. Pure: reads only the
+    entries list."""
+    redo_seq, target = last_redo_target(entries, spec_id)
+    target_idx = step_index(target) if target else -1
+    if redo_seq < 0 or target_idx < 0:
+        return resume_start_index(entries, spec_id, pending_gate)
+    post = [e for e in entries if int(e.get("seq", -1)) > redo_seq]
+    start = target_idx
+    done = last_completed_step(post, spec_id)
     if done:
         start = max(start, step_index(done) + 1)
     return start

@@ -108,7 +108,9 @@ gate · `4` setup/dispatch failure.
 **If something fails:** the message names the stage, the failure class, and the persisted transcript
 path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an entry for each failure
 phrase, and `3pwr run --resume` continues from the last completed stage — completed stages never
-re-run.
+re-run. If the real fix is upstream — an earlier stage was ambiguous or wrong — rewind the run to that
+stage with `3pwr run --redo <stage>` (optionally `--revise "<clarification>"`) and it re-flows the
+lifecycle from there through the human gates.
 
 **When gates go red:** Verify doesn't just stop — it runs a **bounded auto-remediation loop** that
 hands the failing verdict back to the coder to fix, re-running the gates until they pass or the
