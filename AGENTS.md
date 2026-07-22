@@ -34,7 +34,7 @@ e2e/                        # per-adapter notebook kit — real-world CLI testin
 
 ## Setup commands
 
-- Install the engine as a CLI: `uv tool install ./engine` (provides `3pwr`; after engine changes reinstall with `uv tool install --force ./engine` — the installed tool can go stale against the source)
+- Install the engine as a CLI: `uv tool install ./engine` (provides `3pwr`; after engine changes reinstall with `uv tool install --force ./engine` — the installed tool can go stale against the source). Released users install the published engine instead: `uv tool install 3powers` (or `uvx 3powers`).
 - Engine dev environment: `cd engine && uv sync --extra dev`
 - End-to-end kit prerequisites: `uv`, plus the toolchains for the languages you drive — Node.js + npm (TypeScript), Go + `gcov2lcov` (Go); a smoke of the whole kit is `./e2e/run.sh <typescript|python|go> --check` (deterministic, no agent). See [e2e/README.md](e2e/README.md).
 - One-time signer setup for gate/ledger commands: `3pwr keygen`, then `export THREEPOWERS_SIGNING_KEY_FILE="$HOME/.config/3powers/<repo>.key"` (the private key lives **outside** the repo)

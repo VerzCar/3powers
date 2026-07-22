@@ -218,14 +218,17 @@ def test_gate_names_match_the_verdicts_canonical_identifiers():
 
 # --------------------------------------------------------------------------- FR-008
 def test_install_story_documents_only_working_paths():
-    """OSSRD-FR-008: no 'coming soon' install promise; clone-and-install is the first command."""
+    """OSSRD-FR-008: no 'coming soon' install promise; the quickstart's first command is a real,
+    working install of the published engine (`uv tool install 3powers`)."""
     t = _read(README)
     assert "coming soon" not in t.lower()
     first_block = t.split("```bash", 1)[1].split("```", 1)[0]
     first_cmd = next(
         ln for ln in first_block.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
     )
-    assert first_cmd.strip().startswith("git clone"), f"quickstart's first command is {first_cmd!r}"
+    assert first_cmd.strip().startswith("uv tool install 3powers"), (
+        f"quickstart's first command is {first_cmd!r}"
+    )
 
 
 # --------------------------------------------------------------------------- FR-009

@@ -294,6 +294,7 @@ Trusted Publishing (OIDC) — no stored API token.
 - Two reference language adapters (TypeScript, Python), self-application of the engine on its own code, and
   supply-chain scanners. (plans 001–003)
 
+[1.0.1]: https://github.com/VerzCar/3powers/releases/tag/v1.0.1
 [1.0.0]: https://github.com/VerzCar/3powers/releases/tag/v1.0.0
 [1.0.0-rc.1]: https://github.com/VerzCar/3powers/releases/tag/v1.0.0-rc.1
 [0.5.0]: https://github.com/VerzCar/3powers/releases/tag/v0.5.0

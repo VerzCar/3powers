@@ -97,8 +97,10 @@ Two properties matter:
 
 Every run emits **one normalized verdict** whose every failure is **actionable** — it
 names the failing gate, the failure class, and the offending requirement or file, so a human can act on
-it without opening an agent transcript. See
-[Engine Architecture](engine-architecture.md) for how each gate works.
+it without opening an agent transcript. When the verdict is red, the run doesn't stop cold: it feeds a
+**bounded auto-remediation loop** that hands the failure back to the coder and re-runs the gates until
+they pass or the attempt budget is spent — so a human is asked only when the code genuinely can't be made
+to comply. See [Engine Architecture](engine-architecture.md) for how each gate works.
 
 ### The suite adapts to the kind of change
 
