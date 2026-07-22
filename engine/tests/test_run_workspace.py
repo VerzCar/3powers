@@ -116,7 +116,7 @@ def test_records_link_real_outputs_without_moving_them(tmp_path):
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_o.py").write_text("def test_o(): ...\n", encoding="utf-8")
     rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="X", linked=["tests/oracle/017-x/test_o.py"]
+        tmp_path, f, "oracle", spec_id="X"
     )
     assert rel == "specs-src/017-x/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
@@ -130,157 +130,88 @@ def test_records_link_real_outputs_without_moving_them(tmp_path):
         f,
         "implement",
         spec_id="X",
-        linked=["src/a.py", "src/b.py"],
-        report="## Business changelog\n\n### Added\n\n- Users can now work. [DEMO-FR-001]\n",
+        report="### Added\n\n- Users can now work.\n",
     )
     text2 = (f / "changelog.md").read_text(encoding="utf-8")
     assert rel2 == "specs-src/017-x/changelog.md"
-    assert "src/a.py" in text2 and "src/b.py" in text2  # trace appendix ⊇ the produced change set
-    assert "Users can now work." in text2  # the authored business prose is the body
+    assert "Users can now work." in text2  # the authored prose is the body
+    assert "Requirement trace" not in text2  # no machine-readable requirement→files appendix
 
 
-def test_phased_implement_yields_one_record_enumerating_phases(tmp_path):
-    """SRCX-FR-006: an N-phase implement yields exactly ONE changelog.md enumerating each phase and
-    linking its scoped changes in deterministic artifact order; SRCX-NFR-006: identical inputs
-    render byte-identical records (written after collection, one record — never one per phase)."""
+def test_phased_implement_yields_one_record(tmp_path):
+    """SRCX-FR-006: a phased implement yields exactly ONE changelog.md, written after collection —
+    never one per phase; SRCX-NFR-006: identical inputs render byte-identical records."""
     f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
-    phases = [
-        {"phase": 1, "name": "core", "ok": True, "detail": ""},
-        {"phase": 2, "name": "alpha", "ok": True, "detail": ""},
-    ]
-    scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
-    produced = ["src/alpha.py", "src/core.py"]
-    a = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
-    b = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
-    assert a == b  # deterministic (SRCX-NFR-001/006)
-    assert a.index("Phase 1: core") < a.index("Phase 2: alpha")  # artifact order
-    completion.write_record(
-        tmp_path, f, "implement", spec_id="X", linked=produced, phases=phases, phase_scopes=scopes
-    )
+    report = "### Added\n\n- A new capability shipped.\n"
+    a = completion.render_changelog("X", report=report)
+    b = completion.render_changelog("X", report=report)
+    assert a.encode("utf-8") == b.encode("utf-8")  # deterministic (SRCX-NFR-001/006)
+    completion.write_record(tmp_path, f, "implement", spec_id="X", report=report)
     records = [p.name for p in f.glob("*.md")]
     assert records == ["changelog.md"]  # exactly one, not one per phase
     text = (f / "changelog.md").read_text(encoding="utf-8")
-    assert "src/core.py" in text.split("Phase 2")[0]  # phase 1's scoped change under phase 1
-    # a phaseless implement still yields one record for the single session
-    solo = completion.render_changelog("X", ["src/one.py"])
-    assert "single implement session" in solo.lower() and "src/one.py" in solo
+    assert "A new capability shipped." in text
 
 
-def test_changelog_body_is_authored_prose_with_an_additive_machine_trace(tmp_path):
-    """SRCX-FR-006 (changelog, Track F): the changelog body is the implement agent's authored
-    business prose (validated, not an engine table); a clearly-separated, additive machine-readable
-    requirement→files trace appendix carries each phase's requirement ids with its changed files, so
-    nothing that consumed the old table loses data. Structural/coverage, not byte-golden — the prose
-    body is non-deterministic across runs; render stays deterministic for identical inputs."""
-    phases = [
-        {"phase": 1, "name": "core", "ok": True, "detail": ""},
-        {"phase": 2, "name": "alpha", "ok": False, "detail": "boom"},
-    ]
-    scopes = {1: ("src/core.py",), 2: ("src/alpha.py",)}
-    reqs = {1: ("DEMO-FR-001", "DEMO-FR-002"), 2: ("DEMO-FR-003",)}
-    produced = ["src/alpha.py", "src/core.py"]
+def test_changelog_is_a_nonblocking_keep_a_changelog_note(tmp_path):
+    """SRCX-FR-006 (changelog): the per-run changelog is a simple Keep-a-Changelog release note. The
+    body is the implement agent's authored prose, wrapped by the engine's fixed header under
+    ``## Specification <spec-id>``; there is no requirement→files appendix and no validation. When
+    the agent authored nothing the body degrades to a single work-kind-chosen section with a visible
+    note (defect → Fixed, feature → Added, else Changed)."""
     report = (
-        "## Business changelog\n\n### Fixed\n\n"
-        "- The importer no longer drops rows. [DEMO-FR-001] [DEMO-FR-002]\n"
-        "- Exports round-trip correctly again. [DEMO-FR-003]\n"
+        "### Fixed\n\n"
+        "- The importer no longer drops rows.\n"
+        "- Exports round-trip correctly again.\n"
     )
-    kwargs = dict(
-        phases=phases,
-        phase_scopes=scopes,
-        phase_requirements=reqs,
-        work_kinds=["defect"],
-        report=report,
-    )
-    a = completion.render_changelog("X", produced, **kwargs)
-    b = completion.render_changelog("X", produced, **kwargs)
+    a = completion.render_changelog("X", work_kinds=["defect"], report=report)
+    b = completion.render_changelog("X", work_kinds=["defect"], report=report)
     assert a.encode("utf-8") == b.encode("utf-8")  # deterministic for identical inputs
-    # the authored prose is the body — no engine-invented table headings above it
-    assert "The importer no longer drops rows." in a
-    body, _, appendix = a.partition("## Requirement trace (machine-readable)")
-    assert "### Fixed" in body and "importer no longer drops rows" in body
-    # the additive machine-readable appendix keeps the requirement→files trace
-    assert "| Requirement | Files changed | Phase |" in appendix
-    assert "| DEMO-FR-001 | src/core.py | Phase 1: core — completed |" in appendix
-    assert "| DEMO-FR-003 | src/alpha.py | Phase 2: alpha — failed — boom |" in appendix
-    assert "failed — boom" in appendix  # a failed phase stays visible, never silently green
-    # with no authored prose the body degrades to a visible, work-kind-chosen "not authored" note
-    stub = completion.render_changelog("X", produced, phase_requirements=reqs)
-    assert "## Changed" in stub and "authored no business changelog" in stub
-    assert "## Added" in completion.render_changelog("X", produced, work_kinds=["feature"])
-    # an untraced phase stays visibly untraced in the appendix
-    solo = completion.render_changelog("X", produced, phases=phases, phase_scopes=scopes)
-    assert "(untraced)" in solo
+    assert a.startswith("# Changelog\n")  # the fixed Keep-a-Changelog header
+    assert "All notable changes from this run session X will be documented in this file." in a
+    assert "The format is based on Keep a Changelog" in a
+    assert "## Specification X" in a
+    assert "The importer no longer drops rows." in a  # the authored prose is the body
+    assert "Requirement trace" not in a and "machine-readable" not in a  # no appendix
+    # no authored prose → a single work-kind-chosen section with a visible note
+    stub = completion.render_changelog("X", work_kinds=["defect"])
+    assert "### Fixed" in stub and "No changelog entries were recorded for this run." in stub
+    assert "### Added" in completion.render_changelog("X", work_kinds=["feature"])
+    assert "### Changed" in completion.render_changelog("X")
 
 
-def test_changelog_validation_rejects_uncovered_requirement_and_leaked_id(tmp_path):
-    """SRCX-FR-006 (Track F): the engine validates the agent-authored changelog the way it validates
-    oracle.md — every requirement the run addressed must be covered, no foreign/internal requirement
-    id may leak, and an Added/Changed/Fixed section must be present. A miss fails the step
-    (ChangelogValidationError), never silently emitting a bad changelog; a clean changelog places."""
-    # pure validator: coverage, structure, and the OSS-readiness leaked-id check
-    assert (
-        completion.validate_changelog(
-            "### Added\n- Shipped it. [DEMO-FR-001] [DEMO-FR-002]\n", ["DEMO-FR-001", "DEMO-FR-002"]
-        )
-        == []
-    )
-    miss = completion.validate_changelog(
-        "### Added\n- Half of it. [DEMO-FR-001]\n", ["DEMO-FR-001", "DEMO-FR-002"]
-    )
-    assert miss == ["changelog.md does not name requirement DEMO-FR-002"]
-    leak = completion.validate_changelog(
-        "### Fixed\n- Fixed it. [DEMO-FR-001] [3PWR-FR-099]\n", ["DEMO-FR-001"]
-    )
-    assert leak == ["changelog.md leaks a foreign requirement id: 3PWR-FR-099"]
-    no_section = completion.validate_changelog("- Just a bullet. [DEMO-FR-001]\n", ["DEMO-FR-001"])
-    assert any("no Added/Changed/Fixed section" in m for m in no_section)
-
-    # write_record fails the step on a validation miss (uncovered requirement) ...
+def test_changelog_missing_a_requirement_does_not_fail_the_run(tmp_path):
+    """SRCX-FR-006 (regression): the per-run changelog is informational and NEVER gates the run. An
+    implement record whose authored changelog names no requirement still succeeds — write_record
+    returns the path, changelog.md is written, and nothing raises. The former changelog-validation
+    failure surface is gone entirely."""
     f = tmp_path / "specs-src" / "017-x"
     f.mkdir(parents=True)
     (f / "spec.md").write_text(
         "**Spec ID**: DEMO\n\n- **DEMO-FR-001**: shall a.\n- **DEMO-FR-002**: shall b.\n",
         encoding="utf-8",
     )
-    with pytest.raises(completion.ChangelogValidationError) as ei:
-        completion.write_record(
-            tmp_path,
-            f,
-            "implement",
-            spec_id="X",
-            linked=["src/a.py"],
-            report="## Business changelog\n\n### Added\n- Only half. [DEMO-FR-001]\n",
-        )
-    assert "DEMO-FR-002" in str(ei.value)
-    assert not (f / "changelog.md").exists()  # nothing bad was written
-    # ... and on a leaked foreign id ...
-    with pytest.raises(completion.ChangelogValidationError):
-        completion.write_record(
-            tmp_path,
-            f,
-            "implement",
-            spec_id="X",
-            linked=["src/a.py"],
-            report="### Added\n- Both. [DEMO-FR-001] [DEMO-FR-002] [3PWR-FR-001]\n",
-        )
-    # ... but a covered, section-shaped, leak-free changelog places cleanly.
+    # names neither DEMO-FR-001 nor DEMO-FR-002 — under the old rule this failed the Build step
     rel = completion.write_record(
         tmp_path,
         f,
         "implement",
         spec_id="X",
-        linked=["src/a.py"],
-        report="## Business changelog\n\n### Added\n- Both. [DEMO-FR-001] [DEMO-FR-002]\n",
+        report="### Added\n- Something helpful shipped.\n",
     )
     assert rel == "specs-src/017-x/changelog.md"
-    assert "Both." in (f / "changelog.md").read_text(encoding="utf-8")
+    text = (f / "changelog.md").read_text(encoding="utf-8")
+    assert "Something helpful shipped." in text
+    # the changelog-validation failure surface is gone: no error class, no failure class, no validator
+    assert not hasattr(completion, "ChangelogValidationError")
+    assert not hasattr(completion, "CLASS_CHANGELOG_INVALID")
+    assert not hasattr(completion, "validate_changelog")
 
 
 def test_write_record_never_touches_top_level_changelog(tmp_path):
-    """SRCX-FR-006 (Track F): the run's business changelog is placed at
-    specs-src/<NNN>-<slug>/changelog.md; the project's hand-maintained top-level CHANGELOG.md is
-    out of scope and byte-untouched by a run."""
+    """SRCX-FR-006: the run's changelog is placed at specs-src/<NNN>-<slug>/changelog.md; the
+    project's hand-maintained top-level CHANGELOG.md is out of scope and byte-untouched by a run."""
     top = tmp_path / "CHANGELOG.md"
     original = "# Changelog\n\nHand-maintained by humans.\n"
     top.write_text(original, encoding="utf-8")
@@ -294,8 +225,7 @@ def test_write_record_never_touches_top_level_changelog(tmp_path):
         f,
         "implement",
         spec_id="X",
-        linked=["src/a.py"],
-        report="## Business changelog\n\n### Added\n- It works. [DEMO-FR-001]\n",
+        report="### Added\n- It works.\n",
     )
     assert (f / "changelog.md").is_file()  # the run's record landed in the feature folder
     assert top.read_text(encoding="utf-8") == original  # the top-level CHANGELOG.md is untouched
@@ -664,7 +594,9 @@ def test_full_run_leaves_one_flat_ledger_tracked_folder(run_repo, monkeypatch, c
     oracle_md = (fdir / "oracle.md").read_text(encoding="utf-8")
     assert "Tests Specification — 001-add-x" in oracle_md
     assert "tests/oracle/" not in oracle_md  # path-free: the machine record lives in the ledger
-    assert "src/impl.py" in (fdir / "changelog.md").read_text(encoding="utf-8")
+    changelog_text = (fdir / "changelog.md").read_text(encoding="utf-8")
+    assert changelog_text.startswith("# Changelog\n")  # the fixed Keep-a-Changelog header
+    assert "## Specification RUN" in changelog_text  # the run's release note, non-blocking
     assert (run_repo / "tests" / "oracle" / "001-add-x" / "test_oracle.py").is_file()
     # the top-level project CHANGELOG.md is untouched by a run
     changelog_after = (

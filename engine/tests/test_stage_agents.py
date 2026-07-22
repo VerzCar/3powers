@@ -228,21 +228,27 @@ def test_implement_template_makes_the_coding_gate_mandatory():
         assert "Change summary" in text, base
 
 
-def test_implement_template_authors_the_business_changelog(tmp_path):
-    """Track F: both implement.agent.md copies instruct the coder to AUTHOR the run's
-    business-readable changelog (a `## Business changelog` section grouped Added/Changed/Fixed,
-    written for a non-engineer and traced to requirement ids) which the engine then validates and
-    places as changelog.md — no longer merely handing the engine a report to fold into a table."""
+def test_implement_template_authors_a_nonblocking_changelog(tmp_path):
+    """Both implement.agent.md copies instruct the coder to AUTHOR the run's changelog as a
+    `## Changelog` section grouped under Keep-a-Changelog headings (Added/Changed/Fixed/Security),
+    written for a non-engineer in plain language — no requirement ids, no engine validation. The
+    changelog is informational and never gates the run."""
     for base in (BUNDLED, REPO / ".3powers" / "templates" / "agents"):
         text = (base / "implement.agent.md").read_text(encoding="utf-8")
-        assert "## Business changelog" in text, base
+        assert "## Changelog" in text, base
         assert "non-engineer" in text, base
-        for section in ("### Added", "### Changed", "### Fixed"):
+        for section in ("### Added", "### Changed", "### Fixed", "### Security"):
             assert section in text, (base, section)
-        # the agent authors it; the engine validates coverage + places it (author-then-validate)
-        assert "validates" in text and "covered" in text, base
+        # the changelog is informational and never gates the run
+        assert "never gates the run" in text, base
+        # the changelog section forbids [REQ-ID] tags rather than requiring them, and the old
+        # "business changelog" / engine-validation framing is gone
+        section = text.split("\n## Changelog\n", 1)[1]
+        assert "`[REQ-ID]` tags" in section, base  # prohibition wording ("no `[REQ-ID]` tags")
+        assert "Business changelog" not in text, base
+        assert "engine validates" not in text, base
         # the hand-maintained top-level CHANGELOG.md stays out of scope
-        assert "top-level `CHANGELOG.md`" in text and "never touch it" in text, base
+        assert "top-level `CHANGELOG.md`" in text and "hand-maintained" in text, base
 
 
 def test_plan_surfaces_carry_no_judicial_label_or_model_family_table():

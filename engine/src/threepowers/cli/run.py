@@ -1149,52 +1149,27 @@ def _native_runner(
             )
         if result.ok:
             if step in completion.RECORD_STEPS and feature_dir is not None:
-                # The oracle/implement stages leave a markdown *record* in the feature folder linking
-                # their real outputs at their real repo paths. For a phased
-                # implement this runs on the collecting thread AFTER all phases completed, one record
-                # in deterministic order. The implement record is the engine-generated changelog.md
-                # (grouped by phase, requirement-traced); the top-level CHANGELOG.md is untouched.
-                scopes = {ph.index: ph.file_scope for ph in phase_list}
+                # The oracle/implement stages leave a markdown *record* in the feature folder. For a
+                # phased implement this runs on the collecting thread AFTER all phases completed, one
+                # record in deterministic order. The implement record is the agent-authored
+                # changelog.md — a simple, non-blocking Keep-a-Changelog release note for the run
+                # (informational, never a gate); the top-level CHANGELOG.md is hand-maintained and
+                # untouched.
                 if step == "implement":
-                    # the record links the full produced change set
-                    linked = produced_box.get("paths") or result.artifact_paths
-                    # The agent-authored business changelog prose: the phased collector's combined
-                    # per-phase reports, or the single session's report from its transcript.
+                    # The agent-authored changelog prose: the phased collector's combined per-phase
+                    # reports, or the single session's report from its transcript.
                     report = result.report or _implement_report(s, result.transcript)
                 else:
-                    linked = result.artifact_paths  # the contract-matched oracle test paths
                     report = ""
-                try:
-                    rel = completion.write_record(
-                        s.root,
-                        feature_dir,
-                        step,
-                        spec_id=spec_id,
-                        linked=linked,
-                        phases=result.phases or None,
-                        phase_scopes=scopes,
-                        phase_requirements={
-                            ph.index: phases.requirement_ids(ph) for ph in phase_list
-                        },
-                        work_kinds=wk.kinds,
-                        report=report,
-                        on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
-                    )
-                except completion.ChangelogValidationError as exc:
-                    # A bad business changelog fails the step with a named, actionable class —
-                    # never silently emitted. The implement agent must re-author it.
-                    return runnermod.StageResult(
-                        step=step,
-                        stage=stage,
-                        ok=False,
-                        agent=agent_name,
-                        model=str(backend.model),
-                        attempts=result.attempts,
-                        duration_s=result.duration_s,
-                        outcome=completion.CLASS_CHANGELOG_INVALID,
-                        detail="changelog validation failed — " + "; ".join(exc.findings),
-                        transcript=result.transcript,
-                    )
+                rel = completion.write_record(
+                    s.root,
+                    feature_dir,
+                    step,
+                    spec_id=spec_id,
+                    work_kinds=wk.kinds,
+                    report=report,
+                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
+                )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)
                 if rel not in produced_box.get("paths", []):

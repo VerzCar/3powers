@@ -60,13 +60,12 @@ over. No other input channel exists.
 This stage must produce a non-empty implementation change within the declared file scope — code
 plus the coder's tests. A stage that produces nothing, or only an off-target change, has failed.
 If the engine asks this stage for a markdown note, write it to the destination the engine has
-given in this prompt's run-context blocks. You author the run's **business changelog** as the
-`## Business changelog` section of your completion report (below); the engine validates it (every
-requirement the run addressed is covered, no foreign requirement id leaks, the Added/Changed/Fixed
-structure is present) and places it as the run's `changelog.md` (flat in the feature folder,
-alongside an additive machine-readable requirement→files trace the engine appends). The project's
-top-level `CHANGELOG.md` is hand-maintained — never touch it. Do not commit, tag, push, or advance
-the lifecycle; the executive records the verdict and the human gate does the rest.
+given in this prompt's run-context blocks. You author the run's **changelog** as the `## Changelog`
+section of your completion report (below); the engine wraps a Keep-a-Changelog header around it and
+places it as the run's `changelog.md` (flat in the feature folder). The changelog is informational
+and **never gates the run**. The project's top-level `CHANGELOG.md` is hand-maintained — never touch
+it. Do not commit, tag, push, or advance the lifecycle; the executive records the verdict and the
+human gate does the rest.
 
 ## Completion report
 
@@ -76,8 +75,7 @@ identically no matter which model ran it):
 - **Stage**: Implement (phase `<N>`) — `done` | `blocked`
 - **Tasks**: `<done>/<total>` marked `[X]` this phase; any left undone, with why
 - **Files changed**: the paths touched — all MUST be inside the declared FILE SCOPE
-- **Change summary**: one concise line per change — what changed and why, naming the `[REQ-ID]`
-  it traces to; the engine folds these into the run's changelog.md record
+- **Change summary**: one concise line per change — what changed and why
 - **Coder tests added**: the test files/cases, each with the `[REQ-ID]` it exercises
 - **Validation**: the coding gate and test/check commands you ran and their final result
 - **Out-of-scope needs**: any file you needed but could not touch (a STOP-and-re-spec signal), or `none`
@@ -85,27 +83,28 @@ identically no matter which model ran it):
   and what a human must decide — or `none`
 - **Gate-integrity note**: confirm no oracle test was changed and no gate was gamed
 
-Then author the run's business changelog — the artifact the engine validates and places as
-`changelog.md`:
+Then author the run's changelog — the artifact the engine places as `changelog.md`:
 
-## Business changelog
+## Changelog
 
-Write for a **non-engineer** reader: what shipped and why it matters, in plain language — no file
-paths, no gate/tool names, no framework jargon. Group the entries under the Keep-a-Changelog
-headings that apply, and name the `[REQ-ID]` each entry traces to so **every requirement the run
-addressed is covered by at least one entry**:
+Write for a **non-engineer** reader: what this run changed, in plain language — no file paths, no
+`[REQ-ID]` tags, no gate/tool/framework jargon. Group the entries under the Keep-a-Changelog
+headings that apply:
 
 ### Added
 
-- New capability a user or operator now has, and the value it delivers — `[REQ-ID]`.
+- A new capability a user or operator now has, and the value it delivers.
 
 ### Changed
 
-- Behavior that now works differently, and why the change matters — `[REQ-ID]`.
+- Behavior that now works differently, and why the change matters.
 
 ### Fixed
 
-- A defect that is now resolved, in terms of the impact it had — `[REQ-ID]`.
+- A defect that is now resolved, in terms of the impact it had.
 
-Omit any heading with no entries, but include at least one of Added/Changed/Fixed. Trace only to
-this spec's own requirement ids — never reference another project's or the harness's internal ids.
+### Security
+
+- A security-relevant change, in terms of what it protects.
+
+Omit any heading with no entries. This changelog is informational and never gates the run.
