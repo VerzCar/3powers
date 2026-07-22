@@ -99,15 +99,21 @@ def _print(obj: dict, as_json: bool, human: str) -> None:
         print(human)
 
 
-def _resolve_ui(args: argparse.Namespace) -> tuple[dict[str, str], bool]:
-    """Resolve ui.yaml preferences (color_mode / verbosity / layout) + a malformed flag, once per run.
+def _resolve_ui(args: argparse.Namespace) -> tuple[dict[str, str | bool], bool]:
+    """Resolve ui.yaml preferences (color_mode / verbosity / layout / show_prompts) + a malformed
+    flag, once per run.
 
     Tolerant of a not-yet-initialized repo: when no ``.3powers/`` is found (e.g. before ``3pwr init``)
     the shipped defaults are used. Cached on ``args`` so the file is read at most once."""
     cached = getattr(args, "_ui_cache", None)
     if cached is not None:
         return cached
-    prefs: dict[str, str] = {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+    prefs: dict[str, str | bool] = {
+        "color_mode": "auto",
+        "verbosity": "normal",
+        "layout": "normal",
+        "show_prompts": False,
+    }
     malformed = False
     try:
         prefs, malformed = _settings(getattr(args, "root", None)).load_ui()
@@ -125,7 +131,7 @@ def _styler(args: argparse.Namespace, stream: Any = None) -> style.Styler:
         stream if stream is not None else sys.stdout,
         as_json=getattr(args, "json", False),
         assume_yes=getattr(args, "yes", False),
-        color_mode=prefs["color_mode"],
+        color_mode=str(prefs["color_mode"]),
     )
 
 
@@ -133,7 +139,7 @@ def _verbosity(args: argparse.Namespace) -> str:
     """The effective verbosity for this command: ``quiet`` | ``normal`` | ``verbose``."""
     prefs, _ = _resolve_ui(args)
     return style.resolve_verbosity(
-        getattr(args, "quiet", False), getattr(args, "verbose", False), prefs["verbosity"]
+        getattr(args, "quiet", False), getattr(args, "verbose", False), str(prefs["verbosity"])
     )
 
 
@@ -143,7 +149,7 @@ def _layout(args: argparse.Namespace) -> str:
     Read from the ``ui.yaml`` ``layout`` preference (an unrecognized value falls back to
     ``normal``). Presentation only — it never touches the ``--json`` payload or a verdict."""
     prefs, _ = _resolve_ui(args)
-    lay = prefs.get("layout", "normal")
+    lay = str(prefs.get("layout", "normal"))
     return lay if lay in ("normal", "compact") else "normal"
 
 

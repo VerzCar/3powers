@@ -219,6 +219,119 @@ def test_cli_agent_runner_reports_dispatch_failure(tmp_path):
     assert not res.ok and "not found" in res.detail
 
 
+# --------------------------------------------------------------------------- show_prompts echo (display-only)
+class _Sink:
+    """A minimal write/flush sink collecting everything written, for the prompt-echo tests."""
+
+    def __init__(self) -> None:
+        self.chunks: list[str] = []
+
+    def write(self, s: str) -> object:
+        self.chunks.append(s)
+        return len(s)
+
+    def flush(self) -> None:
+        pass
+
+    @property
+    def text(self) -> str:
+        return "".join(self.chunks)
+
+
+def _prompt_echo_case(tmp_path, *, show_prompts):
+    """Dispatch one stage capturing both the echo sink text and the exact dispatched prompt."""
+    s = Settings(root=tmp_path)
+    manifest = {"command": "claude", "prompt_flag": "-p", "model_flag": "--model"}
+    seen: list[list[str]] = []
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None, **kwargs):
+        seen.append(argv)
+        return (0, "done", "")
+
+    sink = _Sink()
+    r = CliAgentRunner(
+        s,
+        manifest,
+        model="anthropic/opus",
+        intent="do it",
+        dispatcher=fake,
+        echo_out=sink,
+        echo_err=sink,
+        show_prompts=show_prompts,
+    )
+    r.dispatch("specify", "Specify")
+    dispatched_prompt = seen[0][-1]  # the assembled prompt is the final -p arg
+    return sink.text, dispatched_prompt
+
+
+def test_show_prompts_echoes_assembled_prompt_and_leaves_dispatch_unchanged(tmp_path):
+    """Enabled: the exact assembled prompt is echoed under a header — and the dispatched string is
+    byte-identical to what would be sent with the echo off (display only)."""
+    echoed_on, dispatched_on = _prompt_echo_case(tmp_path, show_prompts=True)
+    echoed_off, dispatched_off = _prompt_echo_case(tmp_path, show_prompts=False)
+    # Disabled echoes nothing; enabled echoes the header + the full assembled prompt verbatim.
+    assert echoed_off == ""
+    assert "▶ prompt · Specify" in echoed_on
+    assert dispatched_on.rstrip("\n") in echoed_on
+    assert "do it" in echoed_on  # the intent block is part of the mirrored prompt
+    # The dispatched prompt bytes are identical whether or not the echo is on.
+    assert dispatched_on == dispatched_off
+
+
+def _sp_args(tmp_path, **over):
+    import argparse
+
+    ns = argparse.Namespace(
+        root=str(tmp_path), json=False, quiet=False, verbose=False, show_prompts=None
+    )
+    for k, v in over.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_resolve_show_prompts_precedence(tmp_path):
+    """Precedence: flag > ui.yaml > off; forced off under --json and --quiet (display only)."""
+    from threepowers.cli.run import _resolve_show_prompts
+
+    (tmp_path / ".3powers" / "config").mkdir(parents=True)
+    s = Settings(root=tmp_path)
+
+    # Default off (no ui.yaml, no flag).
+    assert _resolve_show_prompts(s, _sp_args(tmp_path)) is False
+
+    # ui.yaml turns it on; no flag.
+    s.ui_config_path.write_text("show_prompts: true\n")
+    assert _resolve_show_prompts(s, _sp_args(tmp_path)) is True
+
+    # The flag wins over ui.yaml, both directions.
+    assert _resolve_show_prompts(s, _sp_args(tmp_path, show_prompts=False)) is False
+    s.ui_config_path.write_text("show_prompts: false\n")
+    assert _resolve_show_prompts(s, _sp_args(tmp_path, show_prompts=True)) is True
+
+    # Machine / silenced runs force it off regardless of ui.yaml or the flag.
+    s.ui_config_path.write_text("show_prompts: true\n")
+    assert _resolve_show_prompts(s, _sp_args(tmp_path, json=True, show_prompts=True)) is False
+    assert _resolve_show_prompts(s, _sp_args(tmp_path, quiet=True)) is False
+
+
+def test_show_prompts_no_echo_without_a_live_path(tmp_path, capsys):
+    """No echo_out and not streaming (the captured / --json shape): nothing is echoed anywhere."""
+    s = Settings(root=tmp_path)
+
+    def fake(argv, *, cwd, stdin, timeout, stream=False, tee=None, **kwargs):
+        return (0, "done", "")
+
+    r = CliAgentRunner(
+        s,
+        {"command": "claude", "prompt_flag": "-p"},
+        intent="do it",
+        dispatcher=fake,
+        show_prompts=True,  # requested, but there is no live-output path to route it through
+    )
+    r.dispatch("specify", "Specify")
+    assert "▶ prompt" not in capsys.readouterr().out
+
+
 # --------------------------------------------------------------------------- NativeRunner drive (EXEC-FR-001/006/007/008)
 def _fake_runner(verdict="pass", fail_step=""):
     def dispatch(step, stage):

@@ -245,6 +245,14 @@ hand-back read as one dense block. `layout: normal` (the default) is unchanged. 
 `ui.yaml` preference it is presentation only — it never touches the verdict, the ledger, or the
 `--json` payload.
 
+**See what each stage's agent was told with `show_prompts`.** Setting `show_prompts: true` in
+`.3powers/config/ui.yaml` — or passing `--show-prompts` for a single run — makes `3pwr run` echo
+each stage's fully-assembled agent prompt (the exact instructions dispatched to the coding agent)
+live, above the run bar, just before that stage runs. `--no-show-prompts` turns it off for one run;
+precedence is flag > `ui.yaml` > off. It is display only: the string sent to the agent, the
+persisted transcript, the verdict, and the `--json` payload are byte-identical whether or not it is
+on, and it is forced off under `--json` and `--quiet`.
+
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
 section). When a required tool of a non-optional gate is missing, no gate runs: the command exits
@@ -813,7 +821,9 @@ uncovered gate(s) exactly as before.
   red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE` ·
   `--stream` (echo the live agent conversation even when stdout is not a TTY — on by default on a
   TTY) · `--raw-events` (for a stream-json backend, echo the underlying NDJSON events verbatim
-  instead of the rendered assistant text — debugging).
+  instead of the rendered assistant text — debugging) · `--show-prompts` / `--no-show-prompts`
+  (echo each stage's fully-assembled agent prompt live, just before its dispatch — display only;
+  overrides `ui.yaml`'s `show_prompts`; forced off under `--json` / `--quiet`).
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"

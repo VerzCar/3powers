@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Callable, Optional, Protocol
 
-from . import agents, prompts, stream as streammod
+from . import agents, prompts, stream as streammod, style
 from .config import Settings
 from .orchestrate import Event, LIFECYCLE_STEPS, Outcome
 
@@ -290,6 +290,8 @@ class CliAgentRunner:
         echo_err: Optional[TextSink] = None,
         subagent_models: Optional[dict[str, str]] = None,
         raw_events: bool = False,
+        show_prompts: bool = False,
+        prompt_styler: Optional[style.Styler] = None,
     ) -> None:
         self.settings = settings
         self.manifest = manifest
@@ -313,6 +315,13 @@ class CliAgentRunner:
         # step. `dispatch` looks up the current step and threads any hit into `build_command`; an
         # empty map (the default) or a step with no entry changes nothing — byte-identical dispatch.
         self.subagent_models = subagent_models or {}
+        # Opt-in, display-only prompt echo: when set, ``dispatch`` mirrors the exact assembled
+        # prompt to the live-output path just before dispatching, so a reader sees what each stage's
+        # agent was instructed to do. Never alters the dispatched bytes, the transcript, or any
+        # machine surface. ``prompt_styler`` dims the echo; a disabled styler (the default) keeps it
+        # plain, so an off-TTY / ``NO_COLOR`` echo carries no escapes.
+        self.show_prompts = show_prompts
+        self._prompt_styler = prompt_styler or style.Styler()
         # Resolve the module-level default at construction time so a monkeypatched ``dispatch_agent``
         # (tests / a fake agent) is honored — the engine still issues no model call.
         self._dispatcher = dispatcher or dispatch_agent
@@ -376,6 +385,11 @@ class CliAgentRunner:
         # stdout echo to assistant text deltas (never raw JSON); the persisted transcript (`tee`)
         # keeps every raw byte regardless.
         stream_json = agents.is_stream_json(self.manifest)
+        if self.show_prompts:
+            # Mirror the EXACT prompt about to be dispatched — never re-assembled, so the echo can
+            # never drift from what the agent receives. Display only, routed through the same live
+            # path the agent's streamed output uses.
+            self._echo_prompt(stage, prompt)
         extra: dict = {}
         if self.echo_out is not None:
             extra["echo_out"] = (
@@ -431,6 +445,29 @@ class CliAgentRunner:
         return DispatchResult(
             True, detail=step, model=self.model, transcript=rel, tokens=tokens, cost=cost
         )
+
+    def _echo_prompt(self, stage: str, prompt: str) -> None:
+        """Echo the assembled stage prompt to the run's live-output path — display only.
+
+        Routed through the SAME sink the agent's streamed stdout uses: ``echo_out`` when the run's
+        live bar carries the output (rendered above the bar), else the process stdout while
+        streaming. When neither applies — a captured or ``--json`` run — nothing is echoed. The
+        dispatched prompt is never altered; this only mirrors it under a dim ``▶ prompt · <stage>``
+        header. Off a TTY / under ``NO_COLOR`` the styler is disabled, so the echo is plain text
+        with no escape bytes."""
+        target: Optional[TextSink] = (
+            self.echo_out if self.echo_out is not None else (sys.stdout if self.stream else None)
+        )
+        if target is None:
+            return
+        st = self._prompt_styler
+        lines = [st.dim(f"▶ prompt · {stage}")]
+        # Dim per line (never one render over the whole block): the echo sink emits line by line, so
+        # a single wrapping escape pair would lose its reset on every line but the last.
+        lines += [st.dim(line) if line else "" for line in prompt.rstrip("\n").split("\n")]
+        for line in lines:
+            target.write(line + "\n")
+        target.flush()
 
 
 # --------------------------------------------------------------------------- retry / artifact policy (pure)
