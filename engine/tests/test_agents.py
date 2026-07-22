@@ -263,8 +263,9 @@ def _copilot_home(tmp_path: Path, session_id: str) -> Path:
 def test_copilot_session_file_reads_tokens_from_the_shutdown_event(tmp_path: Path) -> None:
     """Track C: the copilot backend reads the `session.shutdown` event from
     `~/.copilot/session-state/<uuid>/events.jsonl`, recovering the id from the `--resume=<uuid>`
-    output line. Tokens are non-cached input (input_tokens − cached_input_tokens) + output_tokens =
-    239700 − 192800 + 5200 = 52100. Copilot bills credits, not USD, so cost stays unknown."""
+    output line. The real event nests counts under `data.tokenDetails`; the consumed total is
+    cache_write (46900, the summary's "written") + output (5200) = 52100. Copilot bills credits,
+    not USD, so cost stays unknown."""
     session_id = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
     home = _copilot_home(tmp_path, session_id)
     output = f"Done.\n\nResume copilot --resume={session_id}\n"
@@ -530,7 +531,8 @@ def test_drift_guard_renamed_session_file_field_reads_none(tmp_path: Path) -> No
     assert agents.extract_usage(aider, "out", session_log=log) is None
 
     copilot = _manifest("copilot")
-    drifted_events = _fixture("copilot_events.jsonl").replace('"input_tokens"', '"__drifted__"')
+    # rename a field the manifest actually reads (data.tokenDetails.cache_write.tokenCount)
+    drifted_events = _fixture("copilot_events.jsonl").replace('"cache_write"', '"__drifted__"')
     events_dir = tmp_path / ".copilot" / "session-state" / _COPILOT_SESSION_ID
     events_dir.mkdir(parents=True)
     (events_dir / "events.jsonl").write_text(drifted_events, encoding="utf-8")

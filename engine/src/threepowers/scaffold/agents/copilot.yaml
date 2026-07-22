@@ -14,24 +14,25 @@ prompt_via: arg
 # opt-in only (`--resume` / `--continue`), which the engine never emits.
 # Usage (advisory, never in the verdict): the CLI writes a per-session event log and prints its
 # session id on exit as `Resume copilot --resume=<uuid>`. The structured source reads the
-# `session.shutdown` event from `~/.copilot/session-state/<uuid>/events.jsonl` — non-cached input
-# (input_tokens minus cached_input_tokens) plus output_tokens. The `session.shutdown` schema is
-# UNDOCUMENTED and the field paths below are modeled defensively; a schema/path change fails a
-# fixture test, never a run (missing field → the source is unresolved → the regex fallback → `—`).
-# Version caveat: older builds wrote the log under `~/.copilot/history-session-state/<uuid>/`
-# instead of `session-state/`; if a future release moves it again the read simply falls back.
+# `session.shutdown` event from `~/.copilot/session-state/<uuid>/events.jsonl`. Its real shape
+# (verified against a live session) nests the token counts under `data.tokenDetails`:
+#   data.tokenDetails.{input,cache_read,cache_write,output}.tokenCount
+# — where the CLI summary's "(… written)" is `cache_write` and the "↓" is `output`. The consumed
+# count is the non-cache-read total: cache_write + output (cache_read is the cheap reused prefix,
+# excluded). A schema/path change fails a fixture test, never a run (missing field → the source is
+# unresolved → the regex fallback → `—`). Version caveat: older builds wrote the log under
+# `~/.copilot/history-session-state/<uuid>/` instead of `session-state/`.
 # The drift-proof regex fallback parses the final summary line
-#   Tokens ↑ 629.8k (192.8k cached, 46.9k written) • ↓ 5.2k
-# summing the non-cached "(… written)" input and the ↓ output (the real consumed count). Copilot
-# cost is billed in premium requests / credits, not USD, so no `cost_field` is declared — cost `—`.
+#   Tokens ↑ 241.6k (192.8k cached, 46.9k written) • ↓ 5.2k
+# summing the "(… written)" input and the ↓ output. Copilot cost is billed in premium requests /
+# credits (AI Units), not USD, so no `cost_field` is declared — cost `—`.
 usage:
   source: session-file
   session_id_pattern: '--resume=(\S+)'
   path_template: "~/.copilot/session-state/{id}/events.jsonl"
   event_field: type
   event: session.shutdown
-  fields: [usage.input_tokens, usage.output_tokens]
-  subtract: [usage.cached_input_tokens]
+  fields: [data.tokenDetails.cache_write.tokenCount, data.tokenDetails.output.tokenCount]
   fallback:
     source: regex
     pattern: 'Tokens[^\n]*?↑[^\n]*?([0-9][0-9.,_kKmM]*)\s+written\)[^\n]*?↓[^\n]*?([0-9][0-9.,_kKmM]*)'

@@ -30,7 +30,9 @@ the inner field names as provisional.
 - `opencode.jsonl` — opencode `run --format json` stream emitting one `step_finish` event per step
   (`part.tokens.{input,output}`, `part.cost`) with no cumulative summary.
 - `copilot_events.jsonl` — copilot `~/.copilot/session-state/<uuid>/events.jsonl` ending in a
-  `session.shutdown` event whose `usage` object mirrors the summary line's counts.
+  `session.shutdown` event. Shape verified against a live session: counts nest under
+  `data.tokenDetails.{input,cache_read,cache_write,output}.tokenCount` (the summary's "written" is
+  `cache_write`); consumed = `cache_write` + `output`.
 - `aider_analytics.jsonl` — aider `--analytics-log` JSONL with one `message_send` event per turn
   (`properties.{prompt_tokens,completion_tokens,cost,total_cost}`).
 

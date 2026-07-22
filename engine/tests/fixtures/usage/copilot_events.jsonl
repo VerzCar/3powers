@@ -1,3 +1,4 @@
-{"type": "session.start", "session_id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301", "model": "gpt-5"}
-{"type": "turn.completed", "turn": 1}
-{"type": "session.shutdown", "usage": {"input_tokens": 239700, "cached_input_tokens": 192800, "output_tokens": 5200}, "premium_requests": 1}
+{"type": "session.start", "data": {"model": "claude-opus-4.8"}, "id": "a1", "timestamp": "2026-07-22T05:53:00.000Z"}
+{"type": "assistant.turn_end", "data": {"turnId": "t1", "model": "claude-opus-4.8"}, "id": "a2", "timestamp": "2026-07-22T05:53:30.000Z"}
+{"type": "session.usage_checkpoint", "data": {"totalNanoAiu": 52100000000, "totalPremiumRequests": 15}, "id": "a3", "timestamp": "2026-07-22T05:53:59.000Z"}
+{"type": "session.shutdown", "data": {"shutdownType": "routine", "totalPremiumRequests": 15, "totalNanoAiu": 52100000000, "tokenDetails": {"input": {"tokenCount": 8}, "cache_read": {"tokenCount": 192800}, "cache_write": {"tokenCount": 46900}, "output": {"tokenCount": 5200}}, "modelMetrics": {"claude-opus-4.8": {"requests": {"count": 4, "cost": 15}, "usage": {"inputTokens": 239708, "outputTokens": 5200, "cacheReadTokens": 192800, "cacheWriteTokens": 46900, "reasoningTokens": 45}}}, "currentModel": "claude-opus-4.8"}, "id": "a4", "timestamp": "2026-07-22T05:54:21.622Z"}
