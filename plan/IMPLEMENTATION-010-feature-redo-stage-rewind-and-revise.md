@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-07-22
 last_updated: 2026-07-22
 owner: 3Powers maintainers
-status: 'Planned'
+status: 'Completed'
 tags: [feature, cli, ledger, orchestration, lifecycle, documentation]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-green)
 
 This implementation plan derives directly from the source plan `plan/039-redo-stage-rewind-and-revise.md`. It adds a new `3pwr run --redo <stage>` capability that lets a human (or a paused/failed run) deliberately **rewind** an in-flight run to any earlier *completed producing stage* (Discovery / Spec / Plan / Build), optionally attach revision feedback, and re-flow the lifecycle from that stage — while preserving the trust spine (append-only, signed, offline-reconstructable) and the existing gate discipline. The rewind is recorded by **appending** a signed `kind: "redo"` ledger entry (never by deleting or rewriting ledger history or git commits); resume math honors the latest redo entry so re-entry lands exactly at the target step; and a `--redo spec` re-run routes back through the `review-spec` gate so the amended spec is re-approved and re-sealed. All Python changes are executed later by the python-engineer agent; this document contains no code edits.
 
@@ -83,9 +83,9 @@ This implementation plan derives directly from the source plan `plan/039-redo-st
 
 | Task     | Description                                                                                                                                                                                                                                                                                                                                                          | Completed | Date |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ---- |
-| TASK-018 | Verify that a `--redo spec` re-run re-dispatches `specify`, then reaches the `review-spec` gate (`orchestrate.py:44`); on approval the spec is re-sealed through the same path as `signoff --stage spec` (`speclock.py` — `spec_approval` `speclock.py:57`, `integrity_gate` `speclock.py:136`), leaving no `spec_modified` state. Add/adjust logic only if the redo floor interferes. |           |      |
-| TASK-019 | Verify a `--redo plan` (or `--redo build`) does NOT disturb the existing spec seal (`speclock.spec_file_hash` unchanged); the `spec_integrity` gate stays green because the sealed spec is not re-dispatched.                                                                                                                                                          |           |      |
-| TASK-020 | Confirm `completion.resume_entry_index` (`completion.py:140`) treats the redo marker as the floor so the re-dispatched target stage is not skipped as "already complete" on its pre-rewind record; confirm no clean-start guard (`gitflow.unrelated_changes`, `run.py:2069`) falsely trips on the run's own recorded paths.                                             |           |      |
+| TASK-018 | Verify that a `--redo spec` re-run re-dispatches `specify`, then reaches the `review-spec` gate (`orchestrate.py:44`); on approval the spec is re-sealed through the same path as `signoff --stage spec` (`speclock.py` — `spec_approval` `speclock.py:57`, `integrity_gate` `speclock.py:136`), leaving no `spec_modified` state. Add/adjust logic only if the redo floor interferes. | Yes (no change) | 2026-07-22 |
+| TASK-019 | Verify a `--redo plan` (or `--redo build`) does NOT disturb the existing spec seal (`speclock.spec_file_hash` unchanged); the `spec_integrity` gate stays green because the sealed spec is not re-dispatched.                                                                                                                                                          | Yes (no change) | 2026-07-22 |
+| TASK-020 | Confirm `completion.resume_entry_index` (`completion.py:140`) treats the redo marker as the floor so the re-dispatched target stage is not skipped as "already complete" on its pre-rewind record; confirm no clean-start guard (`gitflow.unrelated_changes`, `run.py:2069`) falsely trips on the run's own recorded paths.                                             | Yes (no change) | 2026-07-22 |
 
 ### Phase 5
 

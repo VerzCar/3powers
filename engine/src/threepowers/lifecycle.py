@@ -47,6 +47,18 @@ class SpecState:
     failed_class: str = ""  # dispatch_failed | artifact_missing | artifact_absent | artifact_unrecorded | gates_red | verdict_error | git_commit_failed | git_branch_failed
     failed_at: str = ""  # the failure entry's timestamp
     failed_transcript: str = ""  # the persisted transcript path, when one was recorded
+    # The most recent deliberate rewind (`run`/`redo` record). Additive audit metadata: it
+    # records that the run was rewound to an earlier producing step by an approver; it never
+    # advances, gates, or fails the lifecycle on its own. The latest rewind wins; earlier ones
+    # remain in the append-only ledger as history.
+    redo_target: str = ""  # the step id the run was rewound to
+    redo_approver: str = ""  # the identity that approved the rewind
+    redo_seq: int = -1  # the redo entry's sequence, or -1 when no rewind was recorded
+
+    @property
+    def rewound(self) -> bool:
+        """True when a deliberate rewind marker has been recorded for this spec."""
+        return self.redo_seq >= 0
 
     @property
     def failed(self) -> bool:
@@ -102,6 +114,16 @@ def derive(entries: list[dict]) -> dict[str, SpecState]:
                 st.failed_class = str(payload.get("class") or "")
                 st.failed_at = str(e.get("timestamp") or "")
                 st.failed_transcript = str(payload.get("transcript") or "")
+                continue
+            if kind == "redo":
+                # A deliberate rewind marker (`3pwr run --redo`). Purely additive audit
+                # metadata: it records the target step + approver so status can surface the
+                # rewind, but it must NOT be misread as a failure, a gate pause, or a stage
+                # advance. The re-dispatched stage records appended after it drive the stage
+                # forward as usual, so we leave stage/pending_gate/failure state untouched.
+                st.redo_target = str(payload.get("target_step") or "")
+                st.redo_approver = str(payload.get("approver") or "")
+                st.redo_seq = e["seq"]
                 continue
             stage = canonical_stage(payload.get("stage"))
             if stage:

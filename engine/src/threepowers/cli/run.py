@@ -301,6 +301,30 @@ def _run_pending_gate(ledger: Ledger, spec_id: str) -> str:
     return st.pending_gate if st else ""
 
 
+# The reviewing gate whose artifact a ``--redo`` amendment shows the re-dispatched stage — used only
+# to resolve the artifact-under-review for the injected revise-context block. A target step without a
+# reviewing gate (discovery/oracle/implement) injects the feedback with a generic artifact reference.
+_REDO_REVIEW_GATE: dict[str, str] = {
+    "specify": "review-spec",
+    "plan": "review-plan",
+}
+
+
+def _redoable_stages(entries: list[dict], spec_id: str) -> list[str]:
+    """The stage labels a ``--redo`` can currently rewind ``spec_id`` to, in lifecycle order.
+
+    A stage is rewind-able when its earliest producing step is recorded complete in the signed
+    ledger — so the list names exactly the stages the run has already produced and can re-run.
+    Pure over the ledger entries; used to make a refusal actionable."""
+    completed = set(completion.recorded_stage_artifacts(entries, spec_id))
+    labels: list[str] = []
+    for label in ("discovery", "spec", "plan", "build"):
+        step, _stage = orchestrate.resolve_redo_target(label)
+        if step and step in completed:
+            labels.append(label)
+    return labels
+
+
 def _run_intent_from_ledger(entries: list[dict], spec_id: str) -> str:
     """The run's resolved intent, read back from the latest signed ``run``/``start`` entry.
 
@@ -1733,6 +1757,18 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             if st.failed_transcript:
                 rows.append("      " + rst.dim(f"agent transcript: {st.failed_transcript}"))
+        if st.rewound:
+            # A deliberate rewind marker (`3pwr run --redo`) — surfaced from the ledger as
+            # additive audit context, not a failure or a pause. Render the target stage (falling
+            # back to the raw step id) and the approver who authorized the rewind.
+            _step, redo_stage = orchestrate.resolve_redo_target(st.redo_target)
+            target_label = redo_stage or st.redo_target or "?"
+            rows.append(
+                rst.status_row(
+                    "info",
+                    f"rewound to {target_label} by {st.redo_approver or '?'}",
+                )
+            )
         # The run's git lifecycle state: its dedicated branch and the per-stage
         # committed indication — a deterministic function of the ledger and the local branches,
         # no model and no network.
@@ -1758,6 +1794,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "failed_class": st.failed_class,
                 "failed_at": st.failed_at,
                 "failed_transcript": st.failed_transcript,
+                "rewound": st.rewound,
+                "redo_target": st.redo_target,
+                "redo_approver": st.redo_approver,
                 "branch": run_branch_st,
                 "committed_steps": committed_st,
             },
@@ -1806,9 +1845,9 @@ def _cmd_run_locked(
     # BEFORE any side effect — a bad file fails fast with the setup exit code and no ledger entry
     # is written; every downstream consumer sees ONLY the resolved intent.
     if getattr(args, "file", None):
-        if args.resume:
+        if args.resume or getattr(args, "redo", None):
             print(
-                "error: --file feeds a fresh run's intent — to revise at a paused gate use "
+                "error: --file feeds a fresh run's intent — to amend an existing run use "
                 "--revise/--revise-file",
                 file=sys.stderr,
             )
@@ -1963,7 +2002,7 @@ def _cmd_run_locked(
                 spec_id=spec_id,
             )
 
-    def _make_runner(start_index: int):
+    def _make_runner(start_index: int, revise: str = ""):
         return _cli._run_make_runner(
             s,
             args,
@@ -1977,6 +2016,7 @@ def _cmd_run_locked(
             run_branch=run_branch,
             git_prefs=git_prefs,
             commit_relaxed=commit_relaxed,
+            revise=revise,
             # The streamed agent conversation prints ABOVE the live bar, into ordinary scrollback;
             # with no bar (off-TTY/degraded) the echo stays the process's stdout.
             echo=(tracker.echo_sink() if (stream and tracker.live) else None),
@@ -1994,7 +2034,172 @@ def _cmd_run_locked(
     # The run's bound feature folder — resolved per branch below.
     feature_dir: Optional[Path] = None
 
-    if args.resume:
+    redo_arg = getattr(args, "redo", None)
+    if redo_arg:
+        # A deliberate rewind of an in-flight run to an earlier completed producing stage,
+        # optionally amended, re-flowing the lifecycle from there. The rewind is recorded by
+        # APPENDING a signed marker — never rewriting ledger history or git commits; resume math
+        # honors the latest marker so re-entry lands exactly at the target step, and the run
+        # re-flows through the same human gates a first pass takes.
+        if not args.spec_id:
+            print("error: --redo rewinds an existing run — pass --spec-id", file=sys.stderr)
+            return EXIT_USAGE
+        if args.intent:
+            print(
+                "error: --redo rewinds an existing run and takes no fresh intent — drop the "
+                "intent argument (amend the stage with --revise/--revise-file instead)",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        approver = args.approver
+        reason = getattr(args, "reason", None)
+        if not approver or not reason:
+            print(
+                "error: --redo is a deliberate, audited act — pass --approver <you> and "
+                '--reason "<why>"',
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        entries_now = ledger.entries()  # one read serves resolution + the git/completion checks
+        target_step, target_stage = orchestrate.resolve_redo_target(redo_arg)
+        redoable = _redoable_stages(entries_now, spec_id)
+        if not target_step:
+            choices = ", ".join(redoable) or "none yet"
+            print(
+                f"error: '{redo_arg}' is not a stage this run can rewind to — "
+                f"redo-able stages: {choices}",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        completed_steps = set(completion.recorded_stage_artifacts(entries_now, spec_id))
+        if target_step not in completed_steps:
+            choices = ", ".join(redoable) or "none yet"
+            print(
+                f"error: {spec_id} has not completed {target_stage} yet, so it cannot be rewound "
+                f"there — redo-able stages: {choices}",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        # A shipped run is reversed, never rewound — direct the user to `revert` instead.
+        st_now = lifecycle.derive(entries_now).get(spec_id)
+        shipped = (st_now is not None and st_now.stage == "Ship") or (
+            orchestrate.last_completed_step(entries_now, spec_id) == "advance"
+        )
+        if shipped:
+            print(
+                f"error: {spec_id} has advanced to Ship — a shipped run is undone with "
+                f"`3pwr revert --spec-id {spec_id}`, not rewound",
+                file=sys.stderr,
+            )
+            return EXIT_USAGE
+        # Optional revision feedback resolved by the SAME rule as --file/--revise; a bad file or an
+        # empty message fails fast with the usage code, writing nothing.
+        redo_revising = bool(
+            getattr(args, "revise", None) is not None or getattr(args, "revise_file", None)
+        )
+        feedback = ""
+        if redo_revising:
+            feedback, ferr = steering.resolve_feedback(
+                getattr(args, "revise_file", None), getattr(args, "revise", None)
+            )
+            if ferr:
+                print(f"error: {ferr}", file=sys.stderr)
+                return EXIT_USAGE
+        # The run's original intent drives every re-dispatched stage — recovered from the ledger,
+        # never re-asked (a fresh intent argument was refused above).
+        args.intent = _run_intent_from_ledger(entries_now, spec_id)
+        # Resolve the EXISTING feature folder recorded for the run — never allocating a new one; a
+        # run recorded before folder binding falls back to the resolvable spec's folder.
+        feature_dir = _run_feature_dir_from_ledger(s, entries_now, spec_id)
+        if feature_dir is None:
+            legacy_spec = _resolve_run_spec(s, args)
+            feature_dir = workspace.feature_dir_of(legacy_spec) if legacy_spec else None
+        if git_on and feature_dir is not None:
+            # Rebind the run's progress file to the recorded workspace so the re-flowed
+            # segment's triggers keep updating specs-src/<NNN>-<slug>/progress.md.
+            progress_box["reporter"] = progress.Reporter(
+                feature_dir,
+                spec_id=spec_id,
+                tier=args.tier
+                or workkind.classify(args.intent or "").suggested_tier
+                or s.default_tier(),
+            )
+        if git_on:
+            # Re-enter the run's EXISTING ledger-recorded branch (mode="resume") — never a new
+            # branch, never a new run number; a run recorded before branch binding derives the same
+            # deterministic name from its workspace identity.
+            run_branch = gitflow.branch_from_ledger(entries_now, spec_id)
+            if not run_branch:
+                identity = (
+                    feature_dir.name if feature_dir is not None else workspace.slugify(spec_id)
+                )
+                run_branch = gitflow.run_branch_name(git_prefs.branch_prefix, identity)
+            if not clean_start_relaxed:
+                prefix = ""
+                if feature_dir is not None:
+                    try:
+                        prefix = feature_dir.relative_to(s.root).as_posix() + "/"
+                    except ValueError:
+                        prefix = ""
+                unrelated = gitflow.unrelated_changes(
+                    gitflow.uncommitted(s.root),
+                    gitflow.recorded_run_paths(entries_now, spec_id),
+                    prefix,
+                )
+                if unrelated:
+                    print(gitflow.clean_start_refusal(unrelated), file=sys.stderr)
+                    return EXIT_SETUP
+            b_err = gitflow.ensure_run_branch(
+                s.root, run_branch, git_prefs.base_branch, mode="resume"
+            )
+            if b_err:
+                print(b_err, file=sys.stderr)
+                return EXIT_SETUP
+        # Append the signed rewind marker BEFORE computing the re-entry index, so the marker is the
+        # completion floor: pre-rewind completions of the target step and every later step stop
+        # counting, and the re-flow lands exactly at the target. Feedback rides verbatim as
+        # `feedback_ref` so the amendment reproduces from the ledger alone — no new entry type, no
+        # signing change, `3pwr verify` unchanged.
+        ledger.append(
+            "run",
+            {
+                "kind": "redo",
+                "target_step": target_step,
+                "reason": reason,
+                "feedback_ref": feedback,
+                "approver": approver,
+            },
+            sk,
+            spec_id=spec_id,
+        )
+        entries_now = ledger.entries()  # re-read so the marker is in view for the resume math
+        pending = _run_pending_gate(ledger, spec_id)
+        # Re-enter at the rewind target, then intersect with the on-disk completion check: a stage
+        # whose artifact is broken becomes the re-entry point, never skipped on its record alone.
+        start_index = orchestrate.redo_start_index(entries_now, spec_id, pending)
+        start_index, broken = completion.resume_entry_index(
+            entries_now, spec_id, start_index, root=s.root, feature_dir=feature_dir
+        )
+        if broken is not None and not args.json:
+            print(f"  ⟲ redo re-enters at '{broken.step}' — {broken.message}", file=sys.stderr)
+        # When feedback was given, inject it — with the target stage's current artifact under review
+        # — into the re-dispatched stage's prompt via the same revise-context block a gate revise
+        # uses. The target producing step maps to its reviewing gate for artifact resolution.
+        redo_context = ""
+        if feedback:
+            review_gate = _REDO_REVIEW_GATE.get(target_step, "")
+            artifact = steering.gate_artifact(s.root, feature_dir, review_gate)
+            redo_context = steering.revise_context(
+                review_gate, artifact, feedback, templates_dir=s.stage_templates_dir
+            )
+        if not args.json and _verbosity(args) != "quiet":
+            print(
+                rst.header(f"3pwr run · rewind → {target_stage}", spec_id)
+                + f"\n  {rst.dim('re-flows through the human gates from ' + target_stage)}"
+            )
+        runner = _make_runner(start_index, revise=redo_context)
+        _record_dispatch(start_index)  # provenance for the re-entered segment only
+    elif args.resume:
         revising = bool(
             getattr(args, "revise", None) is not None or getattr(args, "revise_file", None)
         )
@@ -2761,6 +2966,22 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         dest="revise_file",
         default=None,
         help="read the revise feedback from a text file (same resolution rule as --file)",
+    )
+    rnp.add_argument(
+        "--redo",
+        dest="redo",
+        default=None,
+        metavar="STAGE",
+        help="rewind an in-flight run to an earlier completed stage (discovery, spec, plan, or "
+        "build) and re-flow the lifecycle from there; requires --spec-id, --approver, and "
+        "--reason. Compose with --revise/--revise-file to amend the stage. The run re-flows "
+        "through the human gates (a spec rewind re-approves and re-seals the spec).",
+    )
+    rnp.add_argument(
+        "--reason",
+        dest="reason",
+        default=None,
+        help="the reason recorded with a --redo rewind (required with --redo)",
     )
     rnp.add_argument(
         "--status", action="store_true", help="show the run's stage tracker from the ledger"

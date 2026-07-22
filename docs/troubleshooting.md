@@ -72,6 +72,10 @@ rather than acting), then re-run the stage by resuming:
 3pwr run --resume --spec-id <NNN>
 ```
 
+If the agent asked a question that really belongs to an earlier stage (an ambiguous spec or plan), a
+plain resume won't reopen that stage — instead go back to it and answer the question there; see
+[Going back to an earlier stage to fix or clarify it](#going-back-to-an-earlier-stage-to-fix-or-clarify-it).
+
 ## "gates red — the deterministic gate suite failed"
 
 **Symptom** — the run stops at Verify with `✗ gates red`, exit `1` — distinct from every setup failure.
@@ -115,6 +119,32 @@ and no human gate is pending, so there is honestly nothing to continue from.
 ```bash
 3pwr run "<intent>" --spec-id <NNN> --mode auto
 ```
+
+## Going back to an earlier stage to fix or clarify it
+
+**Symptom** — a stage keeps failing (commonly **"artifact missing at Build"** because the oracle wrote a
+question into `oracle.md` instead of authoring tests), and the real fix is upstream — the **spec or plan
+was ambiguous or wrong**. `--resume` only ever moves *forward* to the next unfinished stage, and
+`--revise` only works while the run is paused at a human gate, so neither lets you reopen an
+already-completed stage.
+
+**Cause** — the run recorded the earlier stage as complete, so 3Powers won't re-dispatch it on a plain
+resume. You need to explicitly *rewind* the run to that stage.
+
+**Fix** — rewind with `--redo`, optionally attaching the clarification as revision feedback. Naming the
+stage re-dispatches it and every stage after it (their inputs changed), re-flowing through the normal
+human gates:
+
+```bash
+# go back to the Spec stage and hand the agent the clarification the oracle asked for
+3pwr run --redo spec --revise "the user icon must be keyboard-focusable; specify its ARIA label" \
+         --spec-id 004 --approver "$(git config user.name)"
+```
+
+The run re-generates the spec, pauses at **spec approval** for you to approve the amended (and re-sealed)
+document, then continues Plan → Build → Verify … from there. To rewind to a different stage, name it
+(`--redo plan`, `--redo build`); the redo-able stages are the completed producing stages of the run. The
+rewind is recorded in the signed ledger (verifiable offline); nothing in git history is rewritten.
 
 ## Signing key not found
 
