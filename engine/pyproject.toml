@@ -1,7 +1,7 @@
 [project]
 name = "3powers"
-version = "1.0.0"
-description = "3Powers — judiciary kit engine (native provider-agnostic executive, gate runner, hash-chained verdict ledger, verify)."
+version = "1.0.1"
+description = "An open agent harness with a judiciary: drives coding agents through the whole lifecycle, then judges their work with an independent oracle, deterministic gates, and a signed verdict ledger you can verify offline."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

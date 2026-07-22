@@ -6,7 +6,20 @@ All notable changes to 3Powers are documented here. The format is based on
 3Powers entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in the
 spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
 plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the current
-release is the first stable release, **v1.0.0**.
+release is **v1.0.1**.
+
+## [1.0.1] — v1.0: packaging fix
+
+Patch release. Fixes the PyPI project page, which showed the engine's internal contributor README
+instead of a description of the package. No engine behaviour changed.
+
+### Fixed
+
+- **PyPI project description.** The published long description now describes what 3Powers is and
+  renders correctly on PyPI: the install command is the correct `uv tool install 3powers` (the
+  previous text showed the from-source `uv tool install ./engine`), all links are absolute so they
+  resolve off-repo, and the page opens with the project overview and quickstart rather than the
+  "working on the engine" module map. The one-line package summary was rewritten in plain language.
 
 ## [1.0.0] — v1.0: first stable release
 

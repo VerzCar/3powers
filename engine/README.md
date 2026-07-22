@@ -1,93 +1,85 @@
-# The `3pwr` engine
+<p align="center">
+  <img src="https://raw.githubusercontent.com/VerzCar/3powers/main/docs/assets/3powers-logo.png" alt="3Powers" width="140" />
+</p>
 
-This directory is the **3Powers engine** — the Python package (`threepowers`) that provides the `3pwr`
-command: the deterministic gate runner, the oracle-independence checks, and the signed trust spine. It is
-distributed as a [`uv`](https://docs.astral.sh/uv/) tool.
+# 3Powers
 
-New to 3Powers? Start with the top-level [README](../README.md) and [docs](../docs/). This file is for
-working *on the engine itself*.
+> **The spec is the law. Agents execute. An independent judiciary determines whether the implementation complies with the spec.**
 
-## Install & develop
+**3Powers is a portable, open agent harness with a judiciary** — it drives your coding agents through the whole agentic lifecycle at high autonomy, then does the one thing a bare harness never does: it refuses to take their word for it. Agents do the building. An *independent* judiciary — an oracle that never saw the code, a deterministic gate suite, and a signed, tamper-evident ledger — proves that what shipped matches the spec you approved.
 
-```bash
-# Install the CLI from source (from the repo root)
-uv tool install ./engine
+This package (`3powers` on PyPI) provides the **`3pwr` command**: the native provider-agnostic executive, the deterministic gate runner, the oracle-independence checks, and the hash-chained, Ed25519-signed verdict ledger you can verify offline. It is model-, language-, and provider-agnostic, uses Git as its substrate, and needs no CI/CD platform.
 
-# Engine dev environment + the checks it must always pass
-cd engine
-uv sync --extra dev
-uv run pytest                 # test suite
-uv run ruff check .           # lint
-uv run mypy src               # types
-```
+## Install
 
-Python 3.11+ is required. Entry point: `threepowers.cli:main`, exposed as the `3pwr` console script. Every
-command and flag is documented in [docs/cli-reference.md](../docs/cli-reference.md).
-
-## Module map
-
-```
-src/threepowers/
-  Trust spine (High-risk tier — held to ≥95% `diff_coverage` + mutation):
-    canonical.py     # deterministic hashing
-    keys.py          # Ed25519 key generation + loading
-    ledger.py        # append-only, hash-chained, signed verdict ledger
-    verify.py        # offline recompute of the chain + signatures
-
-  Verdict & gate engine:
-    verdict.py       # the normalized verdict + canonical gate order
-    gates.py         # the cheapest-first gate runner
-    adapters.py      # declarative per-language adapter loading/invocation
-    conformance.py   # the spec_conformance trace (+ defect regression, tier test-layers)
-    covdiff.py       # the diff_coverage gate
-    mutation.py      # mutation-testing gate
-    scanners.py      # SAST / dependency / secret scanners
-    gaming.py        # gate_gaming detection
-    design.py        # design-oracle gates (visual / a11y / contract)
-    scope.py         # task requirement-ID + file-scope discipline
-
-  Oracle independence:
-    oracle.py        # seal / record / verify / headless dispatch
-
-  Lifecycle, orchestration & feedback:
-    lifecycle.py     # per-spec stage, derived from the ledger
-    orchestrate.py   # `3pwr run` — the whole-lifecycle loop
-    workkind.py      # deterministic work-kind + tier inference
-    characterize.py  # brownfield: reconstruct a spec + characterization tests
-    deviations.py    # signed, reversible gate exceptions + emergency path
-    observe.py       # production signals, NFR coverage, agent-action log
-    provenance.py    # build provenance + SBOM signing, deploy gate
-    evals.py         # prompt/constitution eval set
-    deps.py          # third-party version drift check
-
-  CLI & config:
-    cli.py           # argparse command surface (see docs/cli-reference.md)
-    config.py        # settings, risk tiers, roles
-```
-
-Tests live in `tests/`, with `tests/integration/` and `tests/e2e/` layers alongside the unit tests.
-
-## Mutation testing (the High-risk proof)
-
-The trust-spine modules are held to the strictest tier. Mutation runs via `mutmut`, scoped to those
-modules:
+Install with [uv](https://docs.astral.sh/uv/) — the package is published as **`3powers`**, and the command it installs is **`3pwr`**:
 
 ```bash
-(cd .. && 3pwr gate run --path engine --adapter python \
-   --spec specs/002-engine-trust-spine/spec.md --tier High-risk --mutation --no-ledger \
-   --paths engine/src/threepowers/canonical.py engine/src/threepowers/keys.py \
-           engine/src/threepowers/ledger.py engine/src/threepowers/verify.py)
+uv tool install 3powers        # installs the `3pwr` command
 ```
 
-## Adding a language adapter
+Or run it once without installing:
 
-The core assumes no language. To add one, write a declarative `adapter.yaml` under
-[`../.3powers/adapters/<lang>/`](../.3powers/adapters/) per
-[`../.3powers/adapters/CONTRACT.md`](../.3powers/adapters/CONTRACT.md). The TypeScript, Python, and Go
-adapters are working references — no changes to this engine should be needed.
+```bash
+uvx 3powers --help
+```
 
-## Self-application
+Python 3.11+ is required.
 
-The engine gates its own code. Keep it green under its own gates (`ruff` + `mypy` + `pytest`, plus
-`3pwr gate run --path engine`), and hold the trust-spine modules to the High-risk bar. See
-[CONTRIBUTING.md](../CONTRIBUTING.md) and [docs/STATUS.md](../docs/STATUS.md).
+## Quickstart: the autonomous path
+
+```bash
+# 1. In YOUR project (new or existing), run the guided onboarding. It asks for the language,
+#    where to keep the signing key (always OUTSIDE the repo), and your default autonomy mode.
+cd /path/to/your/project && 3pwr init
+
+# 2. Describe what you want built, and let the lifecycle run:
+3pwr run "add rate limiting to the login endpoint" --mode auto
+```
+
+`3pwr run` streams a live stage tracker and in `auto` mode **stops only at the two human gates**: approving the spec, and the final sign-off. Every step lands in the signed, offline-verifiable ledger, so a run is resumable and auditable.
+
+The deterministic gates, ledger, and enforcement are pure `3pwr` and need no agent at all — the gates-only path works fully offline. Every run emits one normalized verdict a human can read without opening a single agent transcript:
+
+```
+verdict FAIL  spec=VUTIL tier=Standard adapter=typescript
+  ✓ format · biome          ✓ lint · biome        ✓ types · tsc
+  ✓ tests · vitest          ✓ diff_coverage · 3pwr-covdiff  (100.0% ≥ 80.0%)
+  ✗ dependency_scan · osv-scanner
+      - GHSA-4x5r-pxfx-6jf8 in @babel/core
+  ✓ secret_scan             ✓ gate_gaming         ✓ spec_conformance  (5 requirements traced)
+  failures:
+    • vulnerable_dependency: GHSA-4x5r-pxfx-6jf8 in @babel/core
+  ↳ ledger entry #0 signed by ed25519:4fd71c543b0f499c
+```
+
+## Why: when one model does everything, validation is a mirror
+
+Hand a capable agent a feature and it will happily write the spec, the code, the tests, *and* the review. They all agree, because they all came from the same mind. A passing build only proves the model agreed with itself. 3Powers calls this the **separation-of-powers collapse**, and restores three independent branches:
+
+- ⚖️ **Legislative — the spec is the law.** Versioned, testable requirements every later stage answers to.
+- 🛠️ **Executive — agents build against it.** They may write their own tests, but those never *replace* the independent check.
+- 👩‍⚖️ **Judicial — an independent judiciary decides.** An oracle authored from the spec by a *different model family*, a deterministic gate suite, and a human sign-off.
+
+The lifecycle runs in eight stages — Discovery → Spec → Plan → Build → Verify → Review → Ship → Observe — with a signed, hash-chained ledger recording every verdict and sign-off so the whole run is verifiable offline.
+
+## Documentation
+
+Full guides live in the repository:
+
+- **[Getting Started](https://github.com/VerzCar/3powers/blob/main/docs/getting-started.md)** — prerequisites, install, and the whole thing end-to-end.
+- **[Concepts](https://github.com/VerzCar/3powers/blob/main/docs/concepts.md)** — the three powers, the lifecycle, risk tiers, oracle independence, the trust spine.
+- **[CLI Reference](https://github.com/VerzCar/3powers/blob/main/docs/cli-reference.md)** — every `3pwr` command and flag.
+- **[Engine Architecture](https://github.com/VerzCar/3powers/blob/main/docs/engine-architecture.md)** — the gates, the verdict, and the ledger.
+- **[Glossary](https://github.com/VerzCar/3powers/blob/main/docs/glossary.md)** — every term of art, defined once.
+- **[STATUS](https://github.com/VerzCar/3powers/blob/main/docs/STATUS.md)** — implementation status, validated against the spec.
+
+Repository: **https://github.com/VerzCar/3powers**
+
+## Contributing
+
+Working *on* the engine itself? See **[CONTRIBUTING.md](https://github.com/VerzCar/3powers/blob/main/CONTRIBUTING.md)** for the dev environment and the checks it must always pass (`ruff` + `mypy` + `pytest`, plus the engine gating its own code at the strictest tier).
+
+## License
+
+[Apache-2.0](https://github.com/VerzCar/3powers/blob/main/LICENSE).
