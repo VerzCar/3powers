@@ -588,6 +588,28 @@ def _run_stream(args: argparse.Namespace) -> bool:
     return bool(sys.stdout.isatty()) or bool(getattr(args, "stream", False))
 
 
+def _resolve_show_prompts(s: Settings, args: argparse.Namespace) -> bool:
+    """Whether to echo each stage's assembled agent prompt live, before its dispatch.
+
+    Display only — it never changes what is sent to the agent, the persisted transcript, the
+    ``--json`` payload, the verdict, exit codes, or the ledger. Precedence: the
+    ``--show-prompts`` / ``--no-show-prompts`` flag wins, else the ``ui.yaml`` ``show_prompts``
+    preference, else the default (off). Forced off under ``--json`` and ``--quiet`` — a machine or
+    silenced run never carries the echo. Tolerant of a not-yet-initialized repo."""
+    if getattr(args, "json", False):
+        return False
+    if _verbosity(args) == "quiet":
+        return False
+    flag = getattr(args, "show_prompts", None)
+    if flag is not None:
+        return bool(flag)
+    try:
+        prefs, _ = s.load_ui()
+    except (FileNotFoundError, OSError):
+        return False
+    return bool(prefs.get("show_prompts", False))
+
+
 def _make_agent_runner(
     s: Settings,
     manifest: dict,
@@ -600,6 +622,8 @@ def _make_agent_runner(
     echo: Optional[TextSink] = None,
     subagent_models: Optional[dict[str, str]] = None,
     raw_events: bool = False,
+    show_prompts: bool = False,
+    prompt_styler: Optional[style.Styler] = None,
 ):
     """Build the backend that dispatches a role's stages: a local headless CLI
     (:class:`CliAgentRunner`) or, when the manifest declares ``mode: async-hosted``, the async hosted
@@ -611,7 +635,9 @@ def _make_agent_runner(
     ``subagent_models`` (roles.yaml, keyed by step) threads a per-stage cheaper sub-agent model into
     the local dispatch; a hosted backend has no such mechanism and ignores it (backend-neutral).
     ``raw_events`` (from ``--raw-events``) shows a stream-json backend's underlying events verbatim
-    instead of the rendered assistant text deltas."""
+    instead of the rendered assistant text deltas. ``show_prompts`` (from ``--show-prompts`` /
+    ``ui.yaml``) echoes each stage's assembled prompt above the live bar before its dispatch —
+    display only; a hosted backend has no live echo path and ignores it (backend-neutral)."""
     if hosted.is_hosted(manifest):
         return hosted.HostedAgentRunner(
             s, manifest, model=model, cwd=s.root, intent=intent, timeout=timeout
@@ -629,6 +655,8 @@ def _make_agent_runner(
         echo_err=echo,
         subagent_models=subagent_models,
         raw_events=raw_events,
+        show_prompts=show_prompts,
+        prompt_styler=prompt_styler,
     )
 
 
@@ -968,6 +996,11 @@ def _native_runner(
     # under .3powers/runs/<spec-id>/, credential-redacted.
     sink = transcripts.TranscriptSink(s.root, spec_id)
     raw_events = bool(getattr(args, "raw_events", False))
+    # Opt-in, display-only echo of each stage's assembled prompt (flag > ui.yaml > off). The styler
+    # is the run's own — enabled on a color TTY, disabled (plain, no escapes) off-TTY / NO_COLOR /
+    # --json — so the echo degrades exactly like the rest of the human output.
+    show_prompts = _resolve_show_prompts(s, args)
+    prompt_styler = _styler(args) if show_prompts else None
     coder = _make_agent_runner(
         s,
         coder_manifest,
@@ -979,6 +1012,8 @@ def _native_runner(
         echo=echo,
         subagent_models=subagent_models,
         raw_events=raw_events,
+        show_prompts=show_prompts,
+        prompt_styler=prompt_styler,
     )
     try:
         oracle_manifest = agents.load_agent(s, oracle_agent) if oracle_agent else coder_manifest
@@ -995,6 +1030,8 @@ def _native_runner(
         echo=echo,
         subagent_models=subagent_models,
         raw_events=raw_events,
+        show_prompts=show_prompts,
+        prompt_styler=prompt_styler,
     )
 
     # The prior accepted artifact's reference — injected into the next stage's prompt so each stage
@@ -1112,52 +1149,27 @@ def _native_runner(
             )
         if result.ok:
             if step in completion.RECORD_STEPS and feature_dir is not None:
-                # The oracle/implement stages leave a markdown *record* in the feature folder linking
-                # their real outputs at their real repo paths. For a phased
-                # implement this runs on the collecting thread AFTER all phases completed, one record
-                # in deterministic order. The implement record is the engine-generated changelog.md
-                # (grouped by phase, requirement-traced); the top-level CHANGELOG.md is untouched.
-                scopes = {ph.index: ph.file_scope for ph in phase_list}
+                # The oracle/implement stages leave a markdown *record* in the feature folder. For a
+                # phased implement this runs on the collecting thread AFTER all phases completed, one
+                # record in deterministic order. The implement record is the agent-authored
+                # changelog.md — a simple, non-blocking Keep-a-Changelog release note for the run
+                # (informational, never a gate); the top-level CHANGELOG.md is hand-maintained and
+                # untouched.
                 if step == "implement":
-                    # the record links the full produced change set
-                    linked = produced_box.get("paths") or result.artifact_paths
-                    # The agent-authored business changelog prose: the phased collector's combined
-                    # per-phase reports, or the single session's report from its transcript.
+                    # The agent-authored changelog prose: the phased collector's combined per-phase
+                    # reports, or the single session's report from its transcript.
                     report = result.report or _implement_report(s, result.transcript)
                 else:
-                    linked = result.artifact_paths  # the contract-matched oracle test paths
                     report = ""
-                try:
-                    rel = completion.write_record(
-                        s.root,
-                        feature_dir,
-                        step,
-                        spec_id=spec_id,
-                        linked=linked,
-                        phases=result.phases or None,
-                        phase_scopes=scopes,
-                        phase_requirements={
-                            ph.index: phases.requirement_ids(ph) for ph in phase_list
-                        },
-                        work_kinds=wk.kinds,
-                        report=report,
-                        on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
-                    )
-                except completion.ChangelogValidationError as exc:
-                    # A bad business changelog fails the step with a named, actionable class —
-                    # never silently emitted. The implement agent must re-author it.
-                    return runnermod.StageResult(
-                        step=step,
-                        stage=stage,
-                        ok=False,
-                        agent=agent_name,
-                        model=str(backend.model),
-                        attempts=result.attempts,
-                        duration_s=result.duration_s,
-                        outcome=completion.CLASS_CHANGELOG_INVALID,
-                        detail="changelog validation failed — " + "; ".join(exc.findings),
-                        transcript=result.transcript,
-                    )
+                rel = completion.write_record(
+                    s.root,
+                    feature_dir,
+                    step,
+                    spec_id=spec_id,
+                    work_kinds=wk.kinds,
+                    report=report,
+                    on_finding=lambda msg: print(f"  ⚠ {msg}", file=sys.stderr),
+                )
                 if rel not in result.artifact_paths:
                     result.artifact_paths.append(rel)
                 if rel not in produced_box.get("paths", []):
@@ -2606,6 +2618,14 @@ def _register_run(sub: SubParsers, common: AddCommon) -> None:
         action="store_true",
         help="show a stream-json backend's underlying events verbatim instead of the rendered "
         "assistant text (diagnostic)",
+    )
+    rnp.add_argument(
+        "--show-prompts",
+        dest="show_prompts",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="echo each stage's assembled agent prompt live before its dispatch (display only; "
+        "overrides ui.yaml show_prompts; off under --json/--quiet)",
     )
     rnp.add_argument(
         "--no-auto-commit",

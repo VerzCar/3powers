@@ -147,12 +147,22 @@ def test_load_ui_defaults_valid_and_malformed(tmp_path):
     (tmp_path / ".3powers" / "config").mkdir(parents=True)
     s = Settings(root=tmp_path)
     prefs, malformed = s.load_ui()
-    assert prefs == {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+    assert prefs == {
+        "color_mode": "auto",
+        "verbosity": "normal",
+        "layout": "normal",
+        "show_prompts": False,
+    }
     assert malformed is False
 
     s.ui_config_path.write_text("color_mode: never\nverbosity: verbose\nlayout: compact\n")
     prefs, malformed = s.load_ui()
-    assert prefs == {"color_mode": "never", "verbosity": "verbose", "layout": "compact"}
+    assert prefs == {
+        "color_mode": "never",
+        "verbosity": "verbose",
+        "layout": "compact",
+        "show_prompts": False,
+    }
     assert malformed is False
 
     s.ui_config_path.write_text("color_mode: [unterminated\n")  # not valid YAML
@@ -168,12 +178,41 @@ def test_load_ui_defaults_valid_and_malformed(tmp_path):
     assert prefs["color_mode"] == "auto"
 
 
+def test_load_ui_show_prompts_bool_and_tolerant(tmp_path):
+    """`show_prompts` parses as a real bool, defaults False, and tolerates a non-bool value."""
+    (tmp_path / ".3powers" / "config").mkdir(parents=True)
+    s = Settings(root=tmp_path)
+
+    # Absent → default False.
+    prefs, malformed = s.load_ui()
+    assert prefs["show_prompts"] is False and malformed is False
+
+    # A real YAML bool is honored.
+    s.ui_config_path.write_text("show_prompts: true\n")
+    prefs, malformed = s.load_ui()
+    assert prefs["show_prompts"] is True and malformed is False
+
+    s.ui_config_path.write_text("show_prompts: false\n")
+    prefs, _ = s.load_ui()
+    assert prefs["show_prompts"] is False
+
+    # A non-bool value falls back to the default without flagging the whole file malformed.
+    s.ui_config_path.write_text("show_prompts: maybe\n")
+    prefs, malformed = s.load_ui()
+    assert prefs["show_prompts"] is False and malformed is False
+
+
 def test_init_seeds_documented_ui_yaml(repo):
     """CLIUX-FR-015: `3pwr init` seeds ui.yaml, and its defaults reproduce today's behavior."""
     s = Settings(root=repo)
     assert s.ui_config_path.exists()
     prefs, malformed = s.load_ui()
-    assert prefs == {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+    assert prefs == {
+        "color_mode": "auto",
+        "verbosity": "normal",
+        "layout": "normal",
+        "show_prompts": False,
+    }
     assert malformed is False
 
 

@@ -245,6 +245,14 @@ hand-back read as one dense block. `layout: normal` (the default) is unchanged. 
 `ui.yaml` preference it is presentation only — it never touches the verdict, the ledger, or the
 `--json` payload.
 
+**See what each stage's agent was told with `show_prompts`.** Setting `show_prompts: true` in
+`.3powers/config/ui.yaml` — or passing `--show-prompts` for a single run — makes `3pwr run` echo
+each stage's fully-assembled agent prompt (the exact instructions dispatched to the coding agent)
+live, above the run bar, just before that stage runs. `--no-show-prompts` turns it off for one run;
+precedence is flag > `ui.yaml` > off. It is display only: the string sent to the agent, the
+persisted transcript, the verdict, and the `--json` payload are byte-identical whether or not it is
+on, and it is forced off under `--json` and `--quiet`.
+
 **Missing prerequisites stop the run up front.** Before any gate command executes, the engine
 probes every tool the run's required gates declare (via the adapter manifest's `toolchain:`
 section). When a required tool of a non-optional gate is missing, no gate runs: the command exits
@@ -641,17 +649,16 @@ Specification the oracle agent authors from the sealed spec (one section per req
 Given/When/Then criterion; the engine validates it names every requirement and leaks no file path or
 test framework, and writes a visible structural stub when it is absent — the machine record of the
 actual oracle test paths lives in the signed ledger entries, and the runnable tests land under
-`tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, the run's
-**business-readable** change record. The implement agent authors it as plain-language
-Added/Changed/Fixed prose for a non-engineer reader — what shipped and why it matters, each entry
-tracing to a requirement id — and the engine validates it the way it validates `oracle.md`: every
-requirement the run addressed must be covered, no foreign/internal requirement id may leak
-(OSS-readiness), and the Added/Changed/Fixed structure must be present; a validation miss fails the
-step with an actionable message rather than emitting a bad changelog. The engine places the authored
-prose as the document body and appends a clearly-separated, **additive machine-readable
-requirement→files trace** (one row per requirement id, grouped by phase) so anything that consumed
-the old table keeps its data. It never touches the project's top-level `CHANGELOG.md` (features
-written by older versions keep their `tasks.md`/`implement.md` names, which stay readable).
+`tests/oracle/<NNN>-<slug>/`, keyed by the same folder id), and **`changelog.md`**, a simple,
+non-blocking **Keep-a-Changelog release note** for the run. The implement agent authors it as
+plain-language Added/Changed/Fixed/Security entries for a non-engineer reader — what this run
+changed, in plain language, with no file paths, requirement ids, or tool jargon — and the engine
+wraps a fixed Keep-a-Changelog header around them under a `## Specification <spec-id>` heading and
+places the record. It is **informational only**: the engine does not validate requirement coverage
+or trace requirement ids, and the changelog **never blocks or fails a run**. When the agent authored
+nothing, the record degrades to a single work-kind-chosen section with a visible note. It never
+touches the project's top-level `CHANGELOG.md` (features written by older versions keep their
+`tasks.md`/`implement.md` names, which stay readable).
 A producing stage is complete only when its markdown exists on disk AND a signed `run`/`stage` entry
 lists it (the completion gate); `--resume` re-checks the disk and re-runs the earliest stage whose
 artifact is broken — never skipping it on the ledger record alone. The engine also maintains a
@@ -813,7 +820,9 @@ uncovered gate(s) exactly as before.
   red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE` ·
   `--stream` (echo the live agent conversation even when stdout is not a TTY — on by default on a
   TTY) · `--raw-events` (for a stream-json backend, echo the underlying NDJSON events verbatim
-  instead of the rendered assistant text — debugging).
+  instead of the rendered assistant text — debugging) · `--show-prompts` / `--no-show-prompts`
+  (echo each stage's fully-assembled agent prompt live, just before its dispatch — display only;
+  overrides `ui.yaml`'s `show_prompts`; forced off under `--json` / `--quiet`).
 ```bash
 3pwr run "add IBAN validation to the address form" --mode auto
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"

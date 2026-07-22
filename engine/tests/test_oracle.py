@@ -394,7 +394,7 @@ def test_absent_oracle_md_yields_the_visible_stub(tmp_path):
         encoding="utf-8",
     )
     rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="030", linked=["tests/oracle/030-demo/test_x.py"]
+        tmp_path, f, "oracle", spec_id="030"
     )
     assert rel == "specs-src/030-demo/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
@@ -421,7 +421,7 @@ def test_authored_oracle_md_is_validated_and_left_in_place(tmp_path):
     (f / "oracle.md").write_text(authored, encoding="utf-8")
     findings: list[str] = []
     rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="030", linked=[], on_finding=findings.append
+        tmp_path, f, "oracle", spec_id="030", on_finding=findings.append
     )
     assert rel == "specs-src/030-demo/oracle.md"
     assert (f / "oracle.md").read_text(encoding="utf-8") == authored  # left in place

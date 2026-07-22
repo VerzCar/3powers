@@ -27,3 +27,11 @@ verbosity: normal
 #   normal  — headers with blank-line separation between sections.
 #   compact — trims blank lines for dense terminals.
 layout: normal
+
+# show_prompts: true | false
+#   When true, `3pwr run` echoes each stage's fully-assembled agent prompt — the exact instructions
+#   dispatched to the coding agent — live, above the run bar, just before that stage runs. Display
+#   only: it never changes what is sent to the agent, the transcript, the verdict, or `--json`, and
+#   it stays off under `--json` / `--quiet`. Override per run with `--show-prompts` /
+#   `--no-show-prompts`.
+show_prompts: false

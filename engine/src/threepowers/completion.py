@@ -4,17 +4,16 @@ Two run-workspace concerns live here, both pure given injected inputs:
 
 * **Stage records**: the two producing stages whose real outputs live elsewhere in
   the repository — ``oracle`` (the authored Tests Specification + test files) and ``implement``
-  (code changes) — each leave a markdown record in the run's feature folder. Both follow the same
-  author-then-validate-then-place shape. The implement record is the **agent-authored**
-  ``changelog.md``: the implement agent writes a business-readable account of what the run changed
-  and why it matters (grouped Added/Changed/Fixed, traced to requirement ids), and the engine
-  *validates* it — every requirement the run addressed is covered, no foreign/internal requirement
-  id leaks, and the Added/Changed/Fixed structure is present — then places it as the changelog's
-  prose body, appending a clearly-separated, additive machine-readable requirement→files trace so
-  nothing that consumed the old table loses data. A validation miss fails the step
-  (:class:`ChangelogValidationError`) — a bad changelog is never silently emitted (the legacy record
-  name ``implement.md`` stays read-resolvable; the top-level project ``CHANGELOG.md`` is
-  hand-maintained and never touched by a run). The oracle record is the **implementation-agnostic**
+  (code changes) — each leave a markdown record in the run's feature folder. The implement record is
+  the **agent-authored** ``changelog.md``: a simple, non-blocking Keep-a-Changelog release note for
+  the run. The implement agent writes plain-language Added/Changed/Fixed/Security entries a
+  non-engineer can read; the engine wraps a fixed Keep-a-Changelog header around them under a
+  ``## Specification <spec-id>`` heading and places the record. It is **informational only** — the
+  engine neither validates its requirement coverage nor traces requirement ids, and the changelog
+  **never blocks or fails a run**. When the agent authored nothing the record degrades gracefully to
+  a single work-kind-chosen section with a visible "no entries recorded" note (the legacy record name
+  ``implement.md`` stays read-resolvable; the top-level project ``CHANGELOG.md`` is hand-maintained
+  and never touched by a run). The oracle record is the **implementation-agnostic**
   ``oracle.md`` Tests Specification: when the oracle agent authored it, the engine *validates* it
   (every spec requirement id named; no leaked file path or test framework token) and leaves it in
   place; when it is absent, the engine writes a structural stub from the spec's acceptance criteria
@@ -42,7 +41,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence
 
-from .conformance import _iter_req_ids, requirement_namespaces
 from .oracle import extract_criteria
 from .orchestrate import LIFECYCLE_STEPS
 from .workspace import PRODUCING_STEPS, find_artifact, stage_artifact_path
@@ -51,10 +49,6 @@ from .workspace import PRODUCING_STEPS, find_artifact, stage_artifact_path
 # existing run/failure handling; distinct from dispatch-time ``artifact_missing``.
 CLASS_ABSENT = "artifact_absent"
 CLASS_UNRECORDED = "artifact_unrecorded"
-# The implement stage's business changelog failed validation (missing requirement coverage, a
-# leaked foreign requirement id, or no Added/Changed/Fixed section). The step fails with this
-# class rather than silently emitting a bad changelog — distinct from the completion-gate classes.
-CLASS_CHANGELOG_INVALID = "changelog_invalid"
 
 # The producing steps whose feature-folder markdown is an engine-written *record*.
 RECORD_STEPS: tuple[str, ...] = ("oracle", "implement")
@@ -298,99 +292,25 @@ def _changelog_section(work_kinds: Sequence[str]) -> str:
     return "Changed"
 
 
-# The three Keep-a-Changelog sections a business changelog groups its entries under. The validator
-# requires at least one to head an entry so the record reads as a changelog, not a raw report.
-_CHANGELOG_SECTIONS: tuple[str, ...] = ("Added", "Changed", "Fixed")
+def render_changelog(spec_id: str, *, work_kinds: Sequence[str] = (), report: str = "") -> str:
+    """Assemble the run's ``changelog.md`` — a simple, non-blocking Keep-a-Changelog release note.
 
-
-class ChangelogValidationError(ValueError):
-    """Raised when the implement agent's authored business changelog fails validation.
-
-    Carries the sorted, actionable ``findings`` — a missing requirement coverage entry, a leaked
-    foreign/internal requirement id, or a missing Added/Changed/Fixed section. The run turns these
-    into a named stage failure (:data:`CLASS_CHANGELOG_INVALID`) so a bad changelog is never
-    silently emitted."""
-
-    def __init__(self, findings: Sequence[str]) -> None:
-        self.findings: list[str] = list(findings)
-        super().__init__("; ".join(self.findings))
-
-
-def validate_changelog(text: str, requirement_ids: Sequence[str]) -> list[str]:
-    """Validate an implement-agent-authored business changelog — pure, deterministic.
-
-    Mirrors :func:`validate_oracle_spec`'s author-then-validate shape with three checks:
-
-    * **coverage** — the prose names every requirement id the run addressed;
-    * **OSS-readiness** — no requirement id from a *foreign* namespace leaks (an internal 3Powers
-      id, or any id whose namespace is not one this run's requirements use); the changelog traces
-      only to this spec's own requirements;
-    * **structure** — at least one Keep-a-Changelog section (Added/Changed/Fixed) heads an entry,
-      so the record reads as a business changelog rather than a raw report.
-
-    Returns the sorted, actionable findings; an empty list means the changelog holds. Unlike the
-    advisory oracle findings, the caller treats a non-empty result as a hard step failure."""
-    findings = [
-        f"changelog.md does not name requirement {rid}"
-        for rid in sorted(set(requirement_ids))
-        if rid not in text
-    ]
-    allowed = requirement_namespaces(set(requirement_ids))
-    leaked = sorted(
-        {f"{sid}-{kind}-{num}" for sid, kind, num in _iter_req_ids(text) if sid not in allowed}
-    )
-    findings += [f"changelog.md leaks a foreign requirement id: {tok}" for tok in leaked]
-    if not any(re.search(rf"(?im)^#{{1,6}}\s+{sec}\b", text) for sec in _CHANGELOG_SECTIONS):
-        findings.append(
-            "changelog.md has no Added/Changed/Fixed section — the business changelog is required"
-        )
-    return sorted(findings)
-
-
-def _requirement_rows(
-    requirement_ids: Sequence[str], files: Sequence[str], summary: str
-) -> list[str]:
-    """The machine-parseable trace rows for one phase: one row per requirement id.
-
-    Each row carries the requirement id, the phase's changed files, and the phase label.
-    A phase tracing to no id gets a single ``(untraced)`` row so the gap stays visible."""
-    listed = ", ".join(files) if files else "(no scoped change linked)"
-    ids = list(requirement_ids) or ["(untraced)"]
-    return [f"| {rid} | {listed} | {summary} |" for rid in ids]
-
-
-def render_changelog(
-    spec_id: str,
-    produced: Sequence[str],
-    phases: Sequence[dict] | None = None,
-    phase_scopes: Mapping[int, Sequence[str]] | None = None,
-    *,
-    phase_requirements: Mapping[int, Sequence[str]] | None = None,
-    work_kinds: Sequence[str] = (),
-    report: str = "",
-) -> str:
-    """Assemble the run's ``changelog.md`` — an agent-authored prose body + a machine-trace appendix.
-
-    The **body** is the implement agent's authored business changelog (``report``): plain-language
-    Added/Changed/Fixed entries a non-engineer can read, each tracing to a requirement id. The
-    engine neither writes nor rewrites that prose — it validates it (see :func:`validate_changelog`)
-    and places it here. A clearly-separated, **additive** machine-readable appendix carries the
-    deterministic requirement→files trace (one row per requirement id, grouped by phase in
-    deterministic artifact order) so nothing that consumed the old table loses data. The changed
-    files live at their real repository paths; nothing is relocated or duplicated, and the project's
-    top-level ``CHANGELOG.md`` is hand-maintained and untouched. When no prose was authored the body
-    degrades to a visible "not authored" note under the work-kind's section. Byte-deterministic:
-    identical inputs always render identical bytes."""
-    all_changes = sorted(set(produced))
-    section = _changelog_section(work_kinds)
-    reqs = phase_requirements or {}
+    The **body** is the implement agent's authored changelog (``report``): plain-language
+    Added/Changed/Fixed/Security entries a non-engineer can read. The engine neither validates nor
+    rewrites that prose — it wraps a fixed Keep-a-Changelog header around it under a
+    ``## Specification <spec_id>`` heading and places it. The record is **informational only** and
+    **never gates the run**; the project's top-level ``CHANGELOG.md`` is hand-maintained and
+    untouched. When no prose was authored the body degrades to a single work-kind-chosen section
+    (``defect`` → Fixed, ``feature`` → Added, else Changed) with a visible "no entries recorded"
+    note. Byte-deterministic: identical inputs always render identical bytes."""
     lines = [
-        f"# Changelog — {spec_id}",
+        "# Changelog",
         "",
-        "Business-readable record of what this run changed and why it matters — authored by the",
-        "implement agent and validated by the engine for requirement coverage. The changed files",
-        "live at their real repository paths; the project's top-level CHANGELOG.md is",
-        "hand-maintained and untouched by runs.",
+        f"All notable changes from this run session {spec_id} will be documented in this file.",
+        "",
+        "The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.",
+        "",
+        f"## Specification {spec_id}",
         "",
     ]
     body = report.strip()
@@ -398,37 +318,11 @@ def render_changelog(
         lines += [body, ""]
     else:
         lines += [
-            f"## {section}",
+            f"### {_changelog_section(work_kinds)}",
             "",
-            "> The implement agent authored no business changelog for this run.",
+            "- No changelog entries were recorded for this run.",
             "",
         ]
-    # The additive, clearly-separated machine-readable appendix — the deterministic
-    # requirement→files trace that consumers of the old table still read.
-    lines += [
-        "<!-- machine-readable trace: requirement → files (additive appendix; the body above is the"
-        " authored business changelog) -->",
-        "## Requirement trace (machine-readable)",
-        "",
-        "| Requirement | Files changed | Phase |",
-        "|---|---|---|",
-    ]
-    if phases:
-        scopes = phase_scopes or {}
-        for ph in phases:  # deterministic artifact order, as collected
-            idx = int(ph.get("phase", 0))
-            status = (
-                "completed" if ph.get("ok") else f"failed — {ph.get('detail', '')}".rstrip(" —")
-            )
-            name = str(ph.get("name", ""))
-            scope = set(scopes.get(idx, ()))
-            scoped = [p for p in all_changes if p in scope]
-            label = f"Phase {idx}: {name} — {status}"
-            lines += _requirement_rows(list(reqs.get(idx, ())), scoped, label)
-    else:
-        lines += _requirement_rows(list(reqs.get(0, ())), all_changes, "single implement session")
-    lines += ["", "## All changes", ""]
-    lines += [f"- {p}" for p in all_changes] or ["- (none linked)"]
     return "\n".join(lines) + "\n"
 
 
@@ -438,15 +332,11 @@ def write_record(
     step: str,
     *,
     spec_id: str,
-    linked: Sequence[str],
-    phases: Sequence[dict] | None = None,
-    phase_scopes: Mapping[int, Sequence[str]] | None = None,
-    phase_requirements: Mapping[int, Sequence[str]] | None = None,
     work_kinds: Sequence[str] = (),
     report: str = "",
     on_finding: Callable[[str], None] | None = None,
 ) -> str:
-    """Write (or validate) the ``oracle.md`` / ``changelog.md`` record flat in the feature folder.
+    """Write the ``oracle.md`` / ``changelog.md`` record flat in the feature folder.
 
     Returns the record's repo-relative POSIX path — the caller adds it to the stage's artifact paths
     so the signed ``run``/``stage`` entry records it and the completion gate can hold. For a
@@ -458,16 +348,13 @@ def write_record(
     is checked against the spec's requirement ids and the path/framework leak heuristics — each
     finding goes to ``on_finding`` (advisory, never a blocker) — and the authored file is left in
     place byte-for-byte. An absent (or engine-stubbed) ``oracle.md`` is (re)written as the
-    structural stub keyed by the feature-folder id. ``linked`` — the actual oracle test paths —
-    is recorded by the caller's signed ledger entry only, keeping ``oracle.md`` path-free.
+    structural stub keyed by the feature-folder id.
 
-    The implement step likewise follows author-then-validate-then-place: ``report`` is the implement
-    agent's authored business changelog prose. When the run addressed any requirement (or the agent
-    authored prose), it is validated by :func:`validate_changelog` against the spec's requirement
-    ids reachable from ``feature_dir``; a non-empty finding set raises
-    :class:`ChangelogValidationError` so the caller fails the step rather than emit a bad changelog.
-    The validated prose becomes the changelog's body, followed by the additive machine-readable
-    requirement→files trace."""
+    The implement step simply places the run's changelog: ``report`` is the implement agent's
+    authored Keep-a-Changelog prose, wrapped by :func:`render_changelog` under the fixed header. It
+    is informational only — never validated, never a blocker — so this branch **never raises** for
+    the changelog. When the agent authored nothing the record degrades to a work-kind-chosen
+    section with a visible note."""
     target = stage_artifact_path(feature_dir, step)
     if step == "oracle":
         criteria = _spec_criteria(feature_dir)
@@ -488,27 +375,10 @@ def write_record(
                 return target.as_posix()
         text = render_oracle_stub(feature_dir.name, criteria)
     else:
-        # Implement: validate the agent-authored business changelog before placing it. Coverage is
-        # judged against the spec's requirement ids (extract_criteria, reachable from feature_dir),
-        # mirroring the oracle branch. A miss is a hard step failure, not an advisory note.
-        requirement_ids = sorted(_spec_criteria(feature_dir))
-        prose = report.strip()
-        if requirement_ids or prose:
-            findings = validate_changelog(prose, requirement_ids)
-            if on_finding is not None:
-                for finding in findings:
-                    on_finding(finding)
-            if findings:
-                raise ChangelogValidationError(findings)
-        text = render_changelog(
-            spec_id,
-            linked,
-            phases=phases,
-            phase_scopes=phase_scopes,
-            phase_requirements=phase_requirements,
-            work_kinds=work_kinds,
-            report=report,
-        )
+        # Implement: place the agent-authored changelog as a non-blocking release note. It is
+        # informational only — never validated for requirement coverage and never a blocker — so
+        # this branch never raises for the changelog.
+        text = render_changelog(spec_id, work_kinds=work_kinds, report=report)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     try:

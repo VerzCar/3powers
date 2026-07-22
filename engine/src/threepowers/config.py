@@ -251,15 +251,25 @@ class Settings:
         ).strip()
         return tier or "Standard"
 
-    def load_ui(self) -> tuple[dict[str, str], bool]:
+    def load_ui(self) -> tuple[dict[str, str | bool], bool]:
         """Resolved UI preferences from ``ui.yaml`` + whether the file was malformed.
 
         Human-output presentation only — never a gate or ledger input. Tolerant and never raises: a
         missing file yields the shipped defaults with ``malformed=False``; a file that is not valid
         YAML (or not a mapping) yields the defaults with ``malformed=True`` so the caller can warn
         once. Deterministic and pure in the file bytes. Only recognized keys/values are honored;
-        anything else falls back to its default."""
-        defaults = {"color_mode": "auto", "verbosity": "normal", "layout": "normal"}
+        anything else falls back to its default.
+
+        The string choice prefs (``color_mode``, ``verbosity``, ``layout``) are joined by the
+        boolean ``show_prompts`` (default ``False``) — whether ``3pwr run`` echoes each stage's
+        assembled agent prompt live. A non-boolean ``show_prompts`` value falls back to the default
+        exactly as an out-of-choice string pref does."""
+        defaults: dict[str, str | bool] = {
+            "color_mode": "auto",
+            "verbosity": "normal",
+            "layout": "normal",
+            "show_prompts": False,
+        }
         allowed = {
             "color_mode": ("auto", "always", "never"),
             "verbosity": ("quiet", "normal", "verbose"),
@@ -267,7 +277,7 @@ class Settings:
         }
         path = self.ui_config_path
         if not path.exists():
-            return defaults, False
+            return dict(defaults), False
         data: Any = {}
         malformed = False
         try:
@@ -280,14 +290,18 @@ class Settings:
         elif not isinstance(data, dict):
             malformed = True  # a scalar/list is not a preferences mapping
             data = {}
-        prefs = dict(defaults)
+        prefs: dict[str, str | bool] = dict(defaults)
         for key, choices in allowed.items():
             val = str(data.get(key) or "").strip().lower()
             if val in choices:
                 prefs[key] = val
+        # A genuine boolean pref: honor it only when the file gives a real YAML bool; any other
+        # shape (string, number, absent) falls back to the default, like an out-of-choice string.
+        raw = data.get("show_prompts")
+        prefs["show_prompts"] = raw if isinstance(raw, bool) else False
         return prefs, malformed
 
-    def ui_preferences(self) -> dict[str, str]:
+    def ui_preferences(self) -> dict[str, str | bool]:
         """The resolved UI preferences; shorthand for ``load_ui()[0]``."""
         return self.load_ui()[0]
 

@@ -33,6 +33,10 @@
         "compact"
       ],
       "description": "normal (blank-line section separation; default) or compact (trimmed)."
+    },
+    "show_prompts": {
+      "type": "boolean",
+      "description": "When true, `3pwr run` echoes each stage's fully-assembled agent prompt live before its dispatch (display only; default false; off under --json/--quiet; override with --show-prompts / --no-show-prompts)."
     }
   }
 }
