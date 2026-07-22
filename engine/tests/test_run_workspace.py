@@ -115,9 +115,7 @@ def test_records_link_real_outputs_without_moving_them(tmp_path):
     tests_dir = tmp_path / "tests" / "oracle" / "017-x"
     tests_dir.mkdir(parents=True)
     (tests_dir / "test_o.py").write_text("def test_o(): ...\n", encoding="utf-8")
-    rel = completion.write_record(
-        tmp_path, f, "oracle", spec_id="X"
-    )
+    rel = completion.write_record(tmp_path, f, "oracle", spec_id="X")
     assert rel == "specs-src/017-x/oracle.md"
     text = (f / "oracle.md").read_text(encoding="utf-8")
     assert "Tests Specification — 017-x" in text  # keyed by the feature-folder id
@@ -161,9 +159,7 @@ def test_changelog_is_a_nonblocking_keep_a_changelog_note(tmp_path):
     the agent authored nothing the body degrades to a single work-kind-chosen section with a visible
     note (defect → Fixed, feature → Added, else Changed)."""
     report = (
-        "### Fixed\n\n"
-        "- The importer no longer drops rows.\n"
-        "- Exports round-trip correctly again.\n"
+        "### Fixed\n\n- The importer no longer drops rows.\n- Exports round-trip correctly again.\n"
     )
     a = completion.render_changelog("X", work_kinds=["defect"], report=report)
     b = completion.render_changelog("X", work_kinds=["defect"], report=report)
@@ -262,7 +258,7 @@ def test_allocation_is_deterministic_max_plus_one(tmp_path, monkeypatch):
     # two concurrent runs both observing max=017 pick 018: the loser's mkdir fails fast — a folder
     # allocated for a different run is never overwritten (the SRCX concurrency edge case)
     (specs / "018-boom").mkdir()
-    monkeypatch.setattr(workspace, "next_feature_number", lambda p: 18)
+    monkeypatch.setattr(workspace, "next_run_number", lambda *a, **k: 18)
     with pytest.raises(FileExistsError):
         workspace.allocate_feature_dir(tmp_path, "boom")
     # an empty specs-src/ starts at 001
@@ -270,6 +266,36 @@ def test_allocation_is_deterministic_max_plus_one(tmp_path, monkeypatch):
     fresh = tmp_path / "other"
     (fresh / "specs-src").mkdir(parents=True)
     assert workspace.feature_folder_name(fresh / "specs-src", "x") == "001-x"
+
+
+def test_next_run_number_is_union_over_folders_branches_and_ledger(tmp_path):
+    """Covers: REQ-A — a fresh run's <NNN> is max(union)+1 over on-disk folders + git branch
+    numbers + signed-ledger run ids, so a run living only on a branch or only in the ledger is
+    still cleared."""
+    specs = tmp_path / "specs-src"
+    specs.mkdir()
+    (specs / "016-old-feature").mkdir()  # on-disk max is 016
+    # the union folds in a branch-only prior id (020) and a ledger-only prior id (031)
+    n = workspace.next_run_number(specs, branch_numbers=[3, 20], ledger_numbers=[31, 7])
+    assert n == 32
+    # the branch-only id is respected even when it exceeds every on-disk and ledger number
+    assert workspace.next_run_number(specs, branch_numbers=[40]) == 41
+    # the ledger-only id is respected even when it exceeds every on-disk and branch number
+    assert workspace.next_run_number(specs, ledger_numbers=[55]) == 56
+
+
+def test_next_run_number_empty_union_degrades_to_on_disk_only(tmp_path):
+    """Covers: REQ-A — empty/offline git+ledger inputs degrade to today's on-disk-only number, and
+    next_feature_number stays the on-disk-only case (back-compat)."""
+    specs = tmp_path / "specs-src"
+    specs.mkdir()
+    (specs / "016-old-feature").mkdir()
+    assert workspace.next_run_number(specs, branch_numbers=[], ledger_numbers=[]) == 17
+    assert workspace.next_run_number(specs) == 17
+    assert workspace.next_feature_number(specs) == 17
+    # allocation threads the union number through to the created folder
+    d = workspace.allocate_feature_dir(tmp_path, "x", branch_numbers=[40], ledger_numbers=[7])
+    assert d == specs / "041-x" and d.is_dir()
 
 
 def test_slugify_rules_idempotent_bounded_fallback():

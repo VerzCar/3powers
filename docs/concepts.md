@@ -206,6 +206,39 @@ Roles bind to model *families* in config so you can swap models without touching
 workflow; languages plug in via the adapter contract with **zero core changes**. The executive is
 **native and provider-agnostic**, and **Git** is its substrate.
 
+## Many hands, no collisions
+
+3Powers is built for a team where **many developers and many agents** work on the same codebase at
+once — and where every one of them goes through 3Powers rather than editing by hand. Isolation is by
+construction, at two levels:
+
+- **Each unit of work gets its own branch.** A fresh `3pwr run` allocates a brand-new run id — the
+  next-free number over the *union* of the on-disk feature folders, the existing run branches, **and**
+  the signed ledger — and creates a **dedicated `3pwr/<NNN>-<slug>` branch** off the latest base for
+  it. Because the id is unique across all three, two runs never land on the same branch or folder, even
+  when a teammate's earlier run lives only on an unmerged branch or only in the ledger. Every change a
+  run makes is committed to that branch stage by stage and recorded in the signed ledger, so who did
+  what — human or agent — stays attributable and reconstructs offline.
+- **Concurrent runs in one checkout are serialized.** Two people (or scripts) can each work in their
+  **own clone or `git worktree`** with no contention — separate working trees never interfere. Within a
+  *single* working tree, a second `3pwr run` while one is active **fails fast**, naming the run that
+  holds the tree, so two runs never race on the shared branch and index. That guard is a lightweight,
+  **advisory** per-working-tree lock — it self-heals after a crash and never becomes a trust fact.
+
+The result: a large team can point all its people and all its agents at 3Powers concurrently and trust
+that each change stays on its own branch, tracked in the signed ledger, without stepping on another.
+
+### What "isolation" means for a run — and what it doesn't
+
+A `3pwr run`'s isolation is exactly that trio: a **dedicated branch**, **per-stage commits**, and the
+**signed ledger**. It does *not* run each stage in a throwaway filesystem sandbox — the run edits the
+working tree directly on its branch. The one place 3Powers uses a **sanitized Git worktree** is
+**oracle dispatch**: to prove the oracle never saw the implementation, `3pwr oracle dispatch` authors
+the acceptance tests inside a worktree where the implementation files are physically absent. A fully
+worktree-isolated *run* mode — one throwaway worktree per run — is **future work**; today the dedicated
+branch, per-stage commits, signed ledger, and the per-working-tree lock already deliver the concurrency
+guarantee a team needs.
+
 ## Self-application
 
 3Powers is **built using 3Powers**. The `3pwr` engine gates its own code, and its

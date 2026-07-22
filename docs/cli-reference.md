@@ -640,9 +640,12 @@ runs skip it — the tracker shows the stage's outcome as *skipped* and nothing 
 `--discovery` forces the stage and `--no-discovery` skips it, whatever the inferred work kind.
 
 **The run's feature folder (SRCX).** A fresh run (no `--resume`, no `--spec`) deterministically
-allocates `specs-src/<NNN>-<slug>/` (`<NNN>` = the highest existing `NNN-` prefix + 1; the slug derives
-from the intent) and binds it into the signed `run`/`start` entry, so a resume finds it from the ledger
-alone. Every producing stage leaves its markdown FLAT in that folder — `discovery.md` (when the
+allocates `specs-src/<NNN>-<slug>/` (the slug derives from the intent) and binds it into the signed
+`run`/`start` entry, so a resume finds it from the ledger alone. Its `<NNN>` is the next-free number
+over the **union** of the on-disk `NNN-` folders, the existing run branches, and the signed ledger's
+recorded run ids — so a fresh run's id is unique across all three and it always gets a brand-new
+folder AND branch, even when a prior run survives only on an unmerged branch or only in the ledger.
+Every producing stage leaves its markdown FLAT in that folder — `discovery.md` (when the
 Discovery stage ran), `spec.md`, `plan.md`,
 `implementation-plan.md`, plus two records: **`oracle.md`**, the implementation-agnostic Tests
 Specification the oracle agent authors from the sealed spec (one section per requirement id with its
@@ -741,15 +744,37 @@ instruction body only.
 git-absent start is refused in preflight). A fresh run creates and switches to a dedicated branch
 `<prefix><NNN>-<slug>` (default prefix `3pwr/`, reusing the SRCX run identity) off the configured base
 before any commit; a resume re-enters that same branch, recovered from the signed `run`/`start` entry's
-additive `branch` field. The run **refuses to start** when the working tree carries uncommitted changes
-not produced by the run (naming the paths and the `git_clean_start` deviation — the edits are never
-touched). After each producing stage, the post-stage hook commits exactly one commit staging only the
+additive `branch` field. **A fresh run never adopts an existing branch:** its `<NNN>` is always new —
+the union id above (on-disk folders + run branches + signed ledger) — so the branch it creates is new
+too; in the defense-in-depth case where a fresh run still computes a branch
+that already exists, it **refuses on the setup path** rather than continuing that prior work, pointing
+at `3pwr run --resume --spec-id <NNN>` to continue the existing run explicitly. Re-entry of an existing
+branch happens only on the explicit resume path. The run **refuses to start** when the working tree
+carries uncommitted changes not produced by the run (naming the paths and the `git_clean_start`
+deviation — the edits are never touched). After each producing stage, the post-stage hook commits exactly one commit staging only the
 run's produced paths, whose message is the agent's `COMMIT:` description (deterministic
 `3pwr(<spec-id>): <step>` fallback) and whose author is the configured `3pwr` identity — applied
 per-commit, never mutating the developer's git config, never force-pushing or rewriting history.
 Preferences (branch prefix, base branch, 3pwr author) live in `.3powers/config/git.yaml`; the
 discipline itself is mandatory and relaxable only via the signed deviations
-(`git_clean_start` / `git_stage_commit` / `git_run_branch`).
+(`git_clean_start` / `git_stage_commit` / `git_run_branch`). A fresh run branches off the **latest
+`origin/<base>`**: with `fetch_base: true` (the default) and `remote: origin` (the default) it does a
+best-effort, offline-safe fetch of the base and creates the run branch off the up-to-date remote tip.
+The fetch is never fatal and the local base ref is **never fast-forwarded or otherwise mutated** —
+offline, no remote, an unknown remote, a detached HEAD, an unborn repo, or a failed fetch all fall
+back to the local base then the current commit. Set `fetch_base: false` to branch off the local base
+only, or `remote:` to fetch from a non-`origin` remote; a non-`main` base (e.g. `base_branch: develop`)
+is honored with and without the fetch.
+**One run per working tree (LOCK).** A run takes an **advisory lock** on its own working tree
+(`.3powers/run.lock`) before any side effect, on both the fresh and resume paths, and releases it when
+it finishes. A second `3pwr run` in the **same checkout** while one is active **fails fast**, naming
+the other run (its pid, host, and start time) — so two runs never race on the shared branch and index.
+The lock's scope is the working tree, not the repository: two clones or two `git worktree` checkouts
+each hold their own and never contend. A **stale lock self-heals** — a crashed run's lock (a dead
+process, or one older than a generous timeout) is reclaimed automatically, so a crash never wedges the
+next run. The lock is **advisory and never load-bearing**: it is filesystem-only, never a gate, a
+verdict, or a ledger fact, and if it cannot be written (a read-only filesystem, say) the run proceeds
+with a one-line warning. A lock-free `3pwr run --status` query always works, even while a run is live.
 **Steering the run (STEER).** The intent can come from a **file**: `3pwr run --file my-intent.md`
 uses the file's contents as the intent, and `3pwr run --file my-intent.md "<inline>"` appends the
 inline text as an instruction — resolved deterministically (file first) and recorded verbatim in the

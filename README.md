@@ -67,11 +67,11 @@ flowchart LR
 
 ## Quickstart: the autonomous path
 
-Install the engine, make your project 3Powers-ready with the guided setup, then let one command drive the whole lifecycle. The autonomous path drives a headless **coding-agent integration** (such as Claude Code or the GitHub Copilot CLI) through 3Powers' own native executive — no external orchestration substrate. The deterministic gates, ledger, and enforcement are pure `3pwr` and need no agent at all: the [gates-only path](docs/getting-started.md#prerequisites) works fully offline.
+Install `3pwr` with [uv](https://docs.astral.sh/uv/) — `uv tool install 3powers` (published on PyPI as **3powers**; the command it installs is `3pwr`), or `uvx 3powers` to run it once without installing. To work from a clone of this repository instead, use the from-source install in step 1 below. Then make your project 3Powers-ready with the guided setup and let one command drive the whole lifecycle. The autonomous path drives a headless **coding-agent integration** (such as Claude Code or the GitHub Copilot CLI) through 3Powers' own native executive — no external orchestration substrate. The deterministic gates, ledger, and enforcement are pure `3pwr` and need no agent at all: the [gates-only path](docs/getting-started.md#prerequisites) works fully offline.
 
 ```bash
-# 1. Install the engine from a clone (provides the `3pwr` command).
-#    Needs uv (https://docs.astral.sh/uv/) and git.
+# 1. From source: install the engine from a clone (provides the `3pwr` command).
+#    Needs uv (https://docs.astral.sh/uv/) and git. Released users: `uv tool install 3powers`.
 git clone https://github.com/VerzCar/3powers.git && cd 3powers && uv tool install ./engine
 
 # 2. In YOUR project (new or existing), run the guided onboarding. It asks for the directory, the
@@ -149,7 +149,7 @@ To contribute, see **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, platform s
 
 ## Status
 
-**v1.0 release candidate (1.0.0-rc.1).** The full judiciary is built and self-applied at the strictest tier. Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
+**v1.0.0 — first stable release.** The full judiciary is built and self-applied at the strictest tier, and the engine ships on PyPI as **3powers** (`uv tool install 3powers`). Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
 
 ## License
 

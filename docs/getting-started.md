@@ -20,11 +20,18 @@ lifecycle in your repository, stopping only at the two human gates.
 
 ### Step 1 — Install the engine
 
-You need [`uv`](https://docs.astral.sh/uv/) and `git`. Install `3pwr` from a clone of this repository:
+You need [`uv`](https://docs.astral.sh/uv/) and `git`. Install the published distribution — it is
+named **3powers** on PyPI, while the command it installs is `3pwr`:
+
+```bash
+uv tool install 3powers          # or: uvx 3powers  — run once, without installing
+3pwr --version                   # prints the installed engine version
+```
+
+Prefer to work from a clone of this repository? Install from source instead:
 
 ```bash
 git clone https://github.com/VerzCar/3powers && uv tool install ./3powers/engine
-3pwr --version        # prints the installed engine version
 ```
 
 ### Step 2 — Initialize your repository
@@ -102,6 +109,14 @@ gate · `4` setup/dispatch failure.
 path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an entry for each failure
 phrase, and `3pwr run --resume` continues from the last completed stage — completed stages never
 re-run.
+
+**Working alongside your team.** Every `3pwr run` does its work on its **own dedicated
+`3pwr/<NNN>-<slug>` branch** with a brand-new run id, committing stage by stage and recording each step
+in the signed ledger — so many developers and their agents can drive 3Powers concurrently without
+colliding. Give each person their own clone (or `git worktree`) and they never contend; within one
+checkout, a second `3pwr run` while one is active fails fast rather than racing on the shared branch.
+See [Concepts → Many hands, no collisions](concepts.md#many-hands-no-collisions) for the isolation
+model.
 
 <a id="maintainer-walkthrough"></a>
 ## The maintainer walkthrough (this repo, gates-only)

@@ -16,6 +16,14 @@
       "type": "string",
       "description": "The branch a fresh run's branch is created off (falls back to the current commit when it does not resolve)."
     },
+    "fetch_base": {
+      "type": "boolean",
+      "description": "Whether a fresh run does a best-effort fetch of the base branch and branches off the remote tip; offline/no-remote/failure falls back safely and the local base is never mutated (default true)."
+    },
+    "remote": {
+      "type": "string",
+      "description": "The remote a fresh run fetches the base branch from when fetch_base is on (default origin); an unknown remote simply falls back."
+    },
     "author": {
       "type": "object",
       "description": "Author identity for commits 3pwr itself creates (applied per commit; the developer's own git config is never mutated).",

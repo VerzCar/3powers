@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from threepowers import gitflow
 from threepowers.config import Settings, find_root, model_diversity_ok, tier_config
 
 
@@ -37,6 +38,29 @@ def test_model_diversity(tmp_path):
     assert model_diversity_ok(roles, "oracle", "coder")  # 3PWR-FR-022: different families
     assert not model_diversity_ok(roles, "coder", "coder")  # same family
     assert not model_diversity_ok(roles, "blank", "coder")  # unknown family => not safe
+
+
+def test_git_prefs_parse_fetch_base_and_remote_with_tolerant_fallback(tmp_path):
+    """Covers: REQ-C — git.yaml's fetch_base/remote parse when present, default when absent (missing
+    file → shipped defaults, no malformed flag), and a malformed file falls back to the defaults
+    with malformed=True (warn once, never crash)."""
+    # present, explicitly disabled, with a non-origin remote
+    cfg = tmp_path / "git.yaml"
+    cfg.write_text("version: 1\nfetch_base: false\nremote: upstream\n", encoding="utf-8")
+    p = gitflow.load_prefs(cfg)
+    assert p.fetch_base is False and p.remote == "upstream" and p.malformed is False
+    # a missing file → the shipped defaults, no malformed flag
+    d = gitflow.load_prefs(tmp_path / "absent.yaml")
+    assert d.fetch_base is True and d.remote == "origin" and d.malformed is False
+    # a non-boolean fetch_base reverts to the default rather than coercing surprising truthiness
+    weird = tmp_path / "weird.yaml"
+    weird.write_text("fetch_base: sometimes\n", encoding="utf-8")
+    assert gitflow.load_prefs(weird).fetch_base is True
+    # a malformed file (not a mapping) → the defaults plus the malformed flag for the single warning
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("- not\n- a map\n", encoding="utf-8")
+    b = gitflow.load_prefs(bad)
+    assert b.malformed is True and b.fetch_base is True and b.remote == "origin"
 
 
 def test_settings_paths_and_missing_yaml(tmp_path):
