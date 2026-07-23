@@ -6,7 +6,26 @@ All notable changes to 3Powers are documented here. The format is based on
 3Powers entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in the
 spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
 plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the current
-release is **v1.0.1**.
+release is **v1.1.0**.
+
+## [1.1.0] — v1.1: rewind a run to an earlier stage
+
+Minor release. Adds a way to deliberately send an in-flight run *back* to an earlier stage to fix or
+clarify it, without tearing up the signed history. No existing command changed its behaviour.
+
+### Added
+
+- **`3pwr run --redo <stage>`.** Rewind an in-flight run to an earlier completed producing stage
+  (`discovery`, `spec`, `plan`, or `build`), optionally attaching revision feedback with
+  `--revise "<msg>"` / `--revise-file <path>`, then re-flow the lifecycle from that stage forward
+  through the human gates. The rewind is a deliberate, audited act: it requires `--spec-id`,
+  `--approver`, and `--reason`, and it operates only on an existing run. A `--redo spec` re-run routes
+  back through the spec-approval gate so the amended spec is re-approved and re-sealed; a redo of a
+  later stage leaves the existing spec seal untouched. The rewind is recorded by **appending** a
+  signed marker to the ledger — never by deleting or rewriting ledger history or git commits — so
+  `3pwr verify` still passes and the trust spine stays append-only and offline-reconstructable. A run
+  that has already advanced to Ship is refused and pointed at `revert` instead. `3pwr run --status`
+  now surfaces the rewind (target stage + approver). (plan/039)
 
 ## [1.0.1] — v1.0: packaging fix
 
