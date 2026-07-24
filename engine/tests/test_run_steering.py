@@ -398,7 +398,7 @@ def test_failure_and_completion_notify_with_next_steps(run_repo, monkeypatch):
     r2 = ["--root", str(run_repo), "run", "--resume", "--no-input", "--spec-id", "RUN2"]
     assert main([*r2, "--approver", "human"]) == EXIT_PAUSED
     assert main([*r2, "--approver", "human"]) == 0
-    assert any("lifecycle complete" in t for t in sent)
+    assert any("complete — ready to push" in t for t in sent)
 
 
 def test_broken_channel_never_blocks_or_alters_the_run(run_repo, monkeypatch, capsys):

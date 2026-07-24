@@ -11,7 +11,8 @@ import json
 
 import pytest
 
-from threepowers.cli import main
+from threepowers.cli import main, trust
+from threepowers.cli._common import _settings
 
 RISK_TIERS = """
 tiers:
@@ -478,3 +479,59 @@ def test_eval_cli(project):
     assert main(["--root", str(root), "eval", "--cases", str(cases)]) == 0
     (root / "doc.md").write_text("the rule was quietly weakened\n", encoding="utf-8")  # regression
     assert main(["--root", str(root), "eval", "--cases", str(cases)]) == 1
+
+
+# --------------------------------------------------------------------------- advance enforcement core
+def test_advance_check_refuses_with_reasons_tagged_by_check(project):
+    """PLAN-040: the shared advance enforcement core returns a structured, machine-attributable
+    refusal — each reason tagged with the CHECK_* it came from — so the run's remediation dispatch
+    can act on the failing check without re-parsing prose. Nothing recorded yet ⇒ both the missing
+    verdict and the missing sign-off refuse."""
+    root, proj = project
+    result = trust.advance_check(_settings(str(root)), spec_id="DEMO")
+    assert not result.ok
+    by_check = {r.check: r.message for r in result.refusals}
+    assert (
+        trust.CHECK_VERDICT in by_check
+        and "no enforced verdict recorded" in by_check[trust.CHECK_VERDICT]
+    )
+    assert (
+        trust.CHECK_SIGNOFF in by_check
+        and "no human sign-off recorded" in by_check[trust.CHECK_SIGNOFF]
+    )
+
+
+def test_advance_check_reasons_and_refusals_stay_in_lockstep(project):
+    """PLAN-040: the flat ``reasons`` list (byte-identical to ``3pwr advance`` output) and the
+    structured ``refusals`` never diverge — same length, same messages, same order."""
+    root, _ = project
+    result = trust.advance_check(_settings(str(root)), spec_id="DEMO")
+    assert result.reasons == [r.message for r in result.refusals]
+    assert all(r.check for r in result.refusals)  # every refusal names its producing check
+
+
+def test_advance_check_passes_green_after_verdict_and_signoff(project):
+    """PLAN-040: with a green verdict recorded and a human sign-off at/after it, the core passes —
+    ``ok`` true and no reasons — the exact condition under which the run advances in-process with
+    no agent dispatch."""
+    root, proj = project
+    assert _gate_run(root, proj) == 0  # records a green enforced verdict
+    assert _signoff(root) == 0  # human sign-off at/after that verdict
+    result = trust.advance_check(_settings(str(root)), spec_id="DEMO")
+    assert result.ok and result.reasons == [] and result.refusals == []
+
+
+def test_advance_payload_records_the_stage_and_omits_absent_provenance(project):
+    """PLAN-040: the signed ``stage_advance`` payload the run and the CLI both write carries the
+    requested stage; provenance fields the check did not populate are omitted, keeping the payload
+    minimal and deterministic."""
+    root, proj = project
+    assert _gate_run(root, proj) == 0
+    assert _signoff(root) == 0
+    result = trust.advance_check(_settings(str(root)), spec_id="DEMO")
+    payload = trust.advance_payload("ship", result)
+    assert payload["stage"] == "ship"
+    # a Standard-tier green run with no deviations populates no oracle/deviation provenance
+    assert "deviations_applied" not in payload
+    assert "spec_integrity_deviated" not in payload
+    assert "oracle_ok" not in payload

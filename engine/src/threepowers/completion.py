@@ -53,6 +53,14 @@ CLASS_UNRECORDED = "artifact_unrecorded"
 # The producing steps whose feature-folder markdown is an engine-written *record*.
 RECORD_STEPS: tuple[str, ...] = ("oracle", "implement")
 
+# The single-line note the changelog falls back to when the implement agent authored no entries —
+# one source, referenced by both the renderer and the highlight reader so the reader can skip it.
+_NO_ENTRIES_NOTE = "No changelog entries were recorded for this run."
+
+# The cap on highlight bullets surfaced in the run-completion business summary: a short, scannable
+# digest of what shipped, never the full changelog.
+SUMMARY_BULLET_CAP = 5
+
 
 @dataclass(frozen=True)
 class CompletionCheck:
@@ -320,10 +328,56 @@ def render_changelog(spec_id: str, *, work_kinds: Sequence[str] = (), report: st
         lines += [
             f"### {_changelog_section(work_kinds)}",
             "",
-            "- No changelog entries were recorded for this run.",
+            f"- {_NO_ENTRIES_NOTE}",
             "",
         ]
     return "\n".join(lines) + "\n"
+
+
+def changelog_highlights(text: str, *, cap: int = SUMMARY_BULLET_CAP) -> list[str]:
+    """The run's changelog highlight bullets — up to ``cap``, in document order.
+
+    Reads an agent-authored ``changelog.md`` body (the ``- `` list items under the run's
+    ``## Specification`` heading, across the Added/Changed/Fixed/Security sections) and returns the
+    plain bullet text with the leading ``- `` stripped, capped at ``cap`` so the completion summary
+    stays a short digest. The engine's own "no entries recorded" placeholder is skipped, so an
+    unauthored changelog yields an empty list — the caller then renders the one-line fallback rather
+    than a business summary. Pure and deterministic: identical text always yields identical bullets."""
+    in_spec = False
+    bullets: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## Specification"):
+            in_spec = True
+            continue
+        if in_spec and line.startswith("## "):
+            break  # a sibling top-level section closes the run's record
+        if not in_spec or not line.startswith("- "):
+            continue
+        item = line[2:].strip()
+        if item and item != _NO_ENTRIES_NOTE:
+            bullets.append(item)
+            if len(bullets) >= cap:
+                break
+    return bullets
+
+
+def read_changelog_highlights(feature_dir: Path, *, cap: int = SUMMARY_BULLET_CAP) -> list[str]:
+    """The capped highlight bullets from the run's ``changelog.md``, or ``[]`` when unavailable.
+
+    Locates the implement stage's ``changelog.md`` record in ``feature_dir`` (via the read-tolerant
+    :func:`threepowers.workspace.find_artifact` resolution, so the legacy ``implement.md`` name still
+    resolves), reads it, and returns :func:`changelog_highlights`. A missing or unreadable record
+    yields ``[]`` — a legacy run without a changelog completes with the one-line fallback and never
+    errors (backward compatibility)."""
+    artifact = find_artifact(feature_dir, "implement")
+    if artifact is None:
+        return []
+    try:
+        text = artifact.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return changelog_highlights(text, cap=cap)
 
 
 def write_record(

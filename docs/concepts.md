@@ -166,6 +166,14 @@ reconstructs offline and survives a fresh checkout. In practice `3pwr run` drive
 the native executive; for a hands-on drive, run the stages with the `3pwr` CLI and the judiciary `/3pwr.*`
 command prompts. See [Getting Started](getting-started.md#driving-the-full-lifecycle).
 
+**A finished run lands "ready to push."** When the lifecycle reaches Ship, the tracker renders Ship as
+the final completed step — the run is **complete, ready to push** — and Observe as a follow-on pointer
+rather than a pending step. The run prints an explicit "All stages are done." line, a short
+plain-language summary drawn from the run's `changelog.md`, and an Observe call-to-action stating the
+current state (the run branch, Ship reached, everything committed) and the next actions. Because every
+judgment step and every human-gate pause commits the engine's state (see *Fresh sessions, visible
+cost* below), the working tree is **clean** at that point — nothing is left half-committed to push.
+
 **Discovery runs when the change needs it.** Feature and design work opens with a dispatched
 exploration of the problem space whose record (`discovery.md`) feeds the Spec stage as prior
 context; a defect fix, docs, chore, or refactor skips straight to Spec (either default is
@@ -177,7 +185,9 @@ exactly what each stage's agent is told, without any prompt text hiding inside t
 ### Observability registry
 
 The **Observe** stage closes the loop: production lessons return to the spec as new intent, never as
-ad-hoc patches. Its anchor is the observability registry, `.3powers/config/observability.yaml` — a
+ad-hoc patches. That is the guidance the completion call-to-action makes concrete — a production
+lesson comes back as a **new `3pwr run "<intent>"`**, driven through the same judiciary, not as a
+quiet edit to shipped code. Its anchor is the observability registry, `.3powers/config/observability.yaml` — a
 declaration of which of a spec's **non-functional requirements have a live check in production** (a
 probe, an SLO monitor, an alert, a scheduled job). The engine is fully offline and cannot see your
 production system, so the registry is how that knowledge enters the trust spine: each entry pairs an
@@ -192,14 +202,25 @@ Each dispatched stage — and each phase of a phased build — runs as a **fresh
 independent process whose prompt reloads everything it needs (the approved spec, the rules, the
 phase's tasks and file scope). No conversation state carries over, and the engine never asks a
 backend to resume a prior session; a backend that could restore state gets its no-resume flag from
-its manifest. Parallelism is two-level: the *engine* dispatches `[P]`-marked phases with disjoint
-file scopes concurrently as separate fresh sessions, while `[P]`-marked *tasks inside* a phase must
-be executed via the agent's own sub-agents. Cost stays visible without touching determinism: the
+its manifest. Parallelism is two-level: the *engine* runs a `[P]`-marked phase concurrently only when
+all of its declared dependencies completed in a prior batch, it declares a file scope, and that scope
+is disjoint from every other phase in the same batch — otherwise it is serialized with a named
+reason. `[P]`-marked *tasks inside* a phase must be executed via the agent's own sub-agents. Cost
+stays visible without touching determinism: the
 agent-reported token usage — and, where the backend reports it, the run's dollar cost — per stage
 and phase is recorded additively — in `progress.md`, the signed ledger's run entries, and the
 `--json` results — and shows as unknown when a backend doesn't report it. Neither tokens nor cost
 enter the gates or the verdict. See
 [Engine Architecture](engine-architecture.md#session-freshness-and-cost-visibility).
+
+**Commit granularity is part of the trust story.** A phased build commits **one commit per implement
+phase** — in deterministic phase order, from the collecting thread only, each carrying just that
+phase's produced paths — followed by a single trailing record commit for the ledger and
+`progress.md`. Beyond the build, the engine commits its own state (the ledger and the run's
+`progress.md`) after every judgment step and before every human-gate pause. The payoff is auditability
+and a **clean working tree**: each phase is a legible unit in history, and a paused or finished run
+never leaves uncommitted engine state behind. The discipline stays relaxable only through the signed
+deviations (`--commit-relaxed` / `git_stage_commit`).
 
 ## Agnostic by construction
 

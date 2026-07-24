@@ -602,7 +602,10 @@ def test_stage_commit_stages_only_produced_paths_with_agent_message(run_repo, ca
     subjects = _log_subjects(run_repo)
     specify = next(s for s in subjects if s.startswith("3pwr(RUN): specify"))
     assert "authored the specify work for the run" in specify  # the agent-written description
-    files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
+    # HEAD at the pause is the engine's own state commit (ledger + progress.md refreshed for the
+    # gate); the specify *producing* commit is what stages the produced artifact — inspect it.
+    specify_hash = _git(run_repo, "log", "-1", "-F", "--grep", "3pwr(RUN): specify", "--pretty=%H")
+    files = _git(run_repo, "show", "--name-only", "--pretty=format:", specify_hash).split()
     # only the produced path plus the engine's ledger (RUNID-FR-005) and the run's progress file
     # (PROGFILE-FR-008) — never add -A
     assert sorted(files) == [
@@ -665,6 +668,9 @@ def test_run_is_auditable_from_the_branch_log_alone(run_repo, monkeypatch):
     assert _resume(run_repo) == EXIT_PAUSED
     subjects = [s for s in reversed(_log_subjects(run_repo)) if s.startswith("3pwr(RUN):")]
     steps = [s.split(":")[1].split("—")[0].strip() for s in subjects]
+    # the engine's own state commits (ledger + progress.md, recorded at judgment steps and before
+    # human gates) are interleaved but are not producing stages — drop them from the stage walk
+    steps = [st for st in steps if st != "record engine state"]
     # lifecycle order (discovery heads the walk since it became the first producing stage)
     assert steps == ["discovery", "specify", "plan", "tasks", "oracle", "implement"]
     authors = set(_git(run_repo, "log", "--pretty=%an", "--grep", "3pwr(RUN)", "-F").splitlines())

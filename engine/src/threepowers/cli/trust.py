@@ -7,6 +7,7 @@ import argparse
 import difflib
 import json
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -38,6 +39,7 @@ from ._common import (
 )
 
 if TYPE_CHECKING:
+    from ..config import Settings
     from ._common import AddCommon, SubParsers
 
 
@@ -282,19 +284,85 @@ def cmd_spec_diff(args: argparse.Namespace) -> int:
     return EXIT_FAIL
 
 
-def cmd_advance(args: argparse.Namespace) -> int:
-    """Local, CI-independent enforcement."""
-    s = _settings(args.root)
+# The six enforcement checks a stage-boundary advance runs, named so a refusal is
+# machine-attributable to the check that produced it — the run orchestrator's remediation dispatch
+# renders these to tell the agent which blocker to fix. The overdue-emergency refusal rides under
+# the verdict check (it gates the same verdict-coverage decision).
+CHECK_LEDGER = "ledger"
+CHECK_VERDICT = "verdict"
+CHECK_SIGNOFF = "signoff"
+CHECK_ORACLE = "oracle"
+CHECK_SPEC_INTEGRITY = "spec_integrity"
+CHECK_GIT = "git"
+
+
+@dataclass(frozen=True)
+class RefusalReason:
+    """A single structured reason an advance was refused.
+
+    ``check`` names which of the six enforcement checks produced the refusal — one of the module's
+    ``CHECK_*`` identifiers; ``message`` is the human-facing explanation, byte-identical to the line
+    ``3pwr advance`` renders. Carried so a caller (the run's remediation dispatch) can act on the
+    failing check without re-parsing prose."""
+
+    check: str
+    message: str
+
+
+@dataclass
+class AdvanceResult:
+    """The outcome of the deterministic advance enforcement core.
+
+    ``ok`` is true exactly when no check refused (``reasons`` is empty). ``reasons`` is the ordered,
+    flat list of refusal messages — byte-identical to what ``3pwr advance`` prints — and
+    ``refusals`` is the same set tagged with the producing check. The remaining fields carry the
+    provenance a successful advance records in its signed ``stage_advance`` payload (the deviations
+    applied, the spec-integrity deviation flag, and the oracle-independence findings), plus the
+    oracle advisories that are surfaced but never block."""
+
+    ok: bool
+    reasons: list[str]
+    refusals: list[RefusalReason] = field(default_factory=list)
+    deviations_applied: list[int] = field(default_factory=list)
+    spec_integrity_deviated: bool = False
+    oracle_ok: Optional[bool] = None
+    oracle_advisory: list[str] = field(default_factory=list)
+    oracle_dispatch_ok: Optional[bool] = None
+    oracle_isolation: Optional[str] = None
+    oracle_diversity_relaxed: bool = False
+
+
+def advance_check(s: Settings, *, spec_id: str = "") -> AdvanceResult:
+    """Run the deterministic advance enforcement core and return a structured result.
+
+    This is the shared judgment ``3pwr advance`` (the CLI) and the ``3pwr run`` orchestrator both
+    consult, so the two enforcement points cannot drift. It runs the six checks in fixed order — the
+    ledger verifies; the latest *enforced* verdict is green (or its red gates are covered by active,
+    signed deviations); a human sign-off exists at or after that verdict; oracle independence holds
+    at the High-risk tier; spec integrity holds; and the run's git discipline holds (on the run's
+    dedicated branch, with the completed stage's work committed) — accumulating one refusal per
+    failing check while preserving the exact refusal ordering and wording.
+
+    Pure and side-effect-free: it reads the ledger, the spec, and the working tree but WRITES
+    nothing — the caller records the signed ``stage_advance`` entry via :func:`advance_payload`.
+    ``ok`` is true iff nothing refused."""
     ledger = Ledger(s.ledger_path)
     entries = ledger.entries()
     active = deviations.active_deviations(entries)
     reasons: list[str] = []
+    refusals: list[RefusalReason] = []
     deviations_applied: list[int] = []
+
+    def refuse(check: str, message: str) -> None:
+        # Accumulate the flat message (byte-identical CLI output) and its structured twin together,
+        # so the ordering of the two lists can never diverge.
+        reasons.append(message)
+        refusals.append(RefusalReason(check, message))
 
     # 1. Ledger must verify (accepting the primary or a distinct oracle signer).
     vres = verify_ledger(s.ledger_path, s.pubkey_path, [s.oracle_pubkey_path])
     if not vres.ok:
-        reasons.append("ledger fails verification")
+        refuse(CHECK_LEDGER, "ledger fails verification")
 
     # 2. Latest *enforced* verdict must be green — OR every red gate must be covered by an
     #    active, signed deviation. Report-only verdicts are advisory
@@ -306,7 +374,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
     ]
     last_verdict = enforced[-1] if enforced else None
     if not last_verdict:
-        reasons.append("no enforced verdict recorded")
+        refuse(CHECK_VERDICT, "no enforced verdict recorded")
     elif last_verdict.get("payload", {}).get("result") != STATUS_PASS:
         # The shared coverage decision: `run` consults the same helper at Verify, so the
         # two enforcement points cannot drift.
@@ -316,7 +384,10 @@ def cmd_advance(args: argparse.Namespace) -> int:
             deviations.uncovered_red_gates(verdict_payload, active, last_verdict.get("spec_id"))
         )
         if uncovered:
-            reasons.append(f"latest verdict is red on un-deviated gate(s): {', '.join(uncovered)}")
+            refuse(
+                CHECK_VERDICT,
+                f"latest verdict is red on un-deviated gate(s): {', '.join(uncovered)}",
+            )
         else:
             deviations_applied = sorted(
                 int(d["seq"])
@@ -330,17 +401,18 @@ def cmd_advance(args: argparse.Namespace) -> int:
     # 2b. An emergency cleanup overdue past one working day blocks the advance.
     overdue = deviations.overdue_emergencies(entries)
     if overdue:
-        reasons.append(
+        refuse(
+            CHECK_VERDICT,
             f"emergency cleanup overdue ({len(overdue)}) — file the follow-up requirement and "
-            "`3pwr deviation --revoke <seq>`"
+            "`3pwr deviation --revoke <seq>`",
         )
 
     # 3. A human sign-off must exist at or after the latest verdict.
     last_signoff = ledger.latest_of("signoff")
     if not last_signoff:
-        reasons.append("no human sign-off recorded")
+        refuse(CHECK_SIGNOFF, "no human sign-off recorded")
     elif last_verdict and last_signoff.get("seq", -1) < last_verdict.get("seq", 0):
-        reasons.append("sign-off predates the latest verdict")
+        refuse(CHECK_SIGNOFF, "sign-off predates the latest verdict")
 
     # 4. Oracle independence. The judiciary must have authored the oracle
     #    from the spec, with a different model family, before the implementation. This binds at the
@@ -353,7 +425,7 @@ def cmd_advance(args: argparse.Namespace) -> int:
     oracle_dispatch_ok: Optional[bool] = None
     oracle_isolation: Optional[str] = None
     oracle_diversity_relaxed = False
-    spec_for_oracle = args.spec_id or (last_verdict.get("spec_id") if last_verdict else "") or ""
+    spec_for_oracle = spec_id or (last_verdict.get("spec_id") if last_verdict else "") or ""
     tier = (last_verdict.get("payload", {}) if last_verdict else {}).get("tier")
     if tier == "High-risk":
         rec = oracle.authoring_record(entries, spec_for_oracle)
@@ -375,7 +447,8 @@ def cmd_advance(args: argparse.Namespace) -> int:
         oracle_dispatch_ok = ind.dispatch_ok
         oracle_isolation = ind.isolation_method
         if not ind.ok:
-            reasons += [f"oracle independence — {r}" for r in ind.reasons]
+            for r in ind.reasons:
+                refuse(CHECK_ORACLE, f"oracle independence — {r}")
 
     # 5. Spec integrity: once a human has approved the spec, its recorded
     #    hash must still match the document on disk — at every tier. A signed, active
@@ -395,10 +468,11 @@ def cmd_advance(args: argparse.Namespace) -> int:
             ]
             deviations_applied = sorted(set(deviations_applied) | set(dev_seqs))
         else:
-            reasons.append(
+            refuse(
+                CHECK_SPEC_INTEGRITY,
                 f"spec_modified — spec changed after approval (ledger seq={lock.approval_seq}); "
                 "review with `3pwr spec diff`, re-approve via `3pwr signoff --stage spec`, or "
-                "record a `3pwr deviation --gate spec_integrity`"
+                "record a `3pwr deviation --gate spec_integrity`",
             )
 
     # 6. Git run discipline: when the spec's run records a dedicated branch, a
@@ -410,76 +484,111 @@ def cmd_advance(args: argparse.Namespace) -> int:
         covered_git = deviations.covered_gates(active, spec_for_oracle)
         git_cond = gitflow.precondition(s.root)
         if git_cond:
-            reasons.append(f"git — {git_cond}")
+            refuse(CHECK_GIT, f"git — {git_cond}")
         else:
             cur_branch = gitflow.current_branch(s.root)
             if cur_branch != git_branch and deviations.GIT_RUN_BRANCH not in covered_git:
-                reasons.append(
+                refuse(
+                    CHECK_GIT,
                     f"git — not on the run's dedicated branch '{git_branch}' (currently "
                     f"'{cur_branch or 'detached HEAD'}'); `git checkout {git_branch}`, or record "
-                    f"`3pwr deviation --gate {deviations.GIT_RUN_BRANCH}`"
+                    f"`3pwr deviation --gate {deviations.GIT_RUN_BRANCH}`",
                 )
             dirty = gitflow.uncommitted_run_paths(s.root, entries, spec_for_oracle)
             if dirty and deviations.GIT_STAGE_COMMIT not in covered_git:
                 shown = ", ".join(dirty[:5]) + (" …" if len(dirty) > 5 else "")
-                reasons.append(
+                refuse(
+                    CHECK_GIT,
                     f"git — the completed stage's work is not committed: {shown}; commit it on "
-                    f"'{git_branch}', or record `3pwr deviation --gate {deviations.GIT_STAGE_COMMIT}`"
+                    f"'{git_branch}', or record `3pwr deviation --gate {deviations.GIT_STAGE_COMMIT}`",
                 )
 
-    if reasons:
+    return AdvanceResult(
+        ok=not reasons,
+        reasons=reasons,
+        refusals=refusals,
+        deviations_applied=deviations_applied,
+        spec_integrity_deviated=spec_integrity_deviated,
+        oracle_ok=oracle_ok,
+        oracle_advisory=oracle_advisory,
+        oracle_dispatch_ok=oracle_dispatch_ok,
+        oracle_isolation=oracle_isolation,
+        oracle_diversity_relaxed=oracle_diversity_relaxed,
+    )
+
+
+def advance_payload(stage: str, result: AdvanceResult) -> dict:
+    """Build the signed ``stage_advance`` ledger payload from a passing advance-check result.
+
+    Shared by ``3pwr advance`` and the run orchestrator so both record identical provenance: the
+    requested ``stage`` plus, when present, the deviations applied, the spec-integrity deviation
+    flag, and the oracle-independence findings (ok, dispatch isolation, relaxed diversity). Only
+    the fields the check actually populated are emitted, so the payload stays minimal and
+    deterministic."""
+    payload: dict = {"stage": stage}
+    if result.deviations_applied:
+        payload["deviations_applied"] = result.deviations_applied
+    if result.spec_integrity_deviated:
+        payload["spec_integrity_deviated"] = True
+    if result.oracle_ok is not None:
+        payload["oracle_ok"] = result.oracle_ok
+    if result.oracle_dispatch_ok is not None:
+        payload["dispatch_ok"] = result.oracle_dispatch_ok
+    if result.oracle_isolation:
+        payload["isolation_method"] = result.oracle_isolation
+    if result.oracle_diversity_relaxed:
+        payload["diversity_relaxed"] = True
+    return payload
+
+
+def cmd_advance(args: argparse.Namespace) -> int:
+    """Local, CI-independent enforcement."""
+    s = _settings(args.root)
+    result = advance_check(s, spec_id=args.spec_id or "")
+
+    if result.reasons:
         cst = _styler(args)
         rows = [cst.status_row("fail", f"REFUSED to advance to '{args.stage}'")]
-        rows += [cst.status_row("fail", r, indent=4) for r in reasons]
+        rows += [cst.status_row("fail", r, indent=4) for r in result.reasons]
         rows += [
             cst.status_row("warn", f"advisory (not a blocker): {a}", indent=4)
-            for a in oracle_advisory
+            for a in result.oracle_advisory
         ]
         _print(
             {
                 "advanced": False,
                 "stage": args.stage,
-                "reasons": reasons,
-                "oracle_advisory": oracle_advisory,
+                "reasons": result.reasons,
+                "oracle_advisory": result.oracle_advisory,
             },
             args.json,
             _compose(args, cst, title="advance", subject=args.spec_id or args.stage, rows=rows),
         )
         return EXIT_FAIL
 
-    payload: dict = {"stage": args.stage}
-    if deviations_applied:
-        payload["deviations_applied"] = deviations_applied
-    if spec_integrity_deviated:
-        payload["spec_integrity_deviated"] = True
-    if oracle_ok is not None:
-        payload["oracle_ok"] = oracle_ok
-    if oracle_dispatch_ok is not None:
-        payload["dispatch_ok"] = oracle_dispatch_ok
-    if oracle_isolation:
-        payload["isolation_method"] = oracle_isolation
-    if oracle_diversity_relaxed:
-        payload["diversity_relaxed"] = True
+    payload = advance_payload(args.stage, result)
+    ledger = Ledger(s.ledger_path)
     try:
         sk = keys.resolve_signer(s.root)
         entry = ledger.append("stage_advance", payload, sk, spec_id=args.spec_id or "")
     except FileNotFoundError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_USAGE
-    note = f" under deviation {deviations_applied}" if deviations_applied else ""
+    note = f" under deviation {result.deviations_applied}" if result.deviations_applied else ""
     cst = _styler(args)
     rows = [
         cst.status_row("pass", f"advanced to '{args.stage}'{note}", f"ledger seq={entry['seq']}")
     ]
     rows += [
-        cst.status_row("warn", f"advisory (not a blocker): {a}", indent=4) for a in oracle_advisory
+        cst.status_row("warn", f"advisory (not a blocker): {a}", indent=4)
+        for a in result.oracle_advisory
     ]
     _print(
         {
             "advanced": True,
             "stage": args.stage,
             "ledger_seq": entry["seq"],
-            "oracle_advisory": oracle_advisory,
+            "oracle_advisory": result.oracle_advisory,
             **payload,
         },
         args.json,

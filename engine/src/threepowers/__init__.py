@@ -14,7 +14,7 @@ This package implements the language-agnostic core of 3Powers:
 Everything is self-contained in the repository and reconstructable offline.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Version of the normalized verdict / ledger schemas this engine emits.
 # Documented, versioned, and stable. 1.1 adds the additive, backward-compatible

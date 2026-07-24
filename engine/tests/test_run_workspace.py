@@ -177,6 +177,36 @@ def test_changelog_is_a_nonblocking_keep_a_changelog_note(tmp_path):
     assert "### Changed" in completion.render_changelog("X")
 
 
+def test_changelog_highlights_returns_capped_bullets_in_document_order(tmp_path):
+    """PLAN-040: the completion summary digests the run's changelog into up to five bullets, in
+    document order, with the leading ``- `` stripped — a short business-readable "what shipped"."""
+    report = "### Added\n\n" + "".join(f"- item {n}\n" for n in range(1, 8))
+    text = completion.render_changelog("X", report=report)
+    highlights = completion.changelog_highlights(text)
+    assert highlights == [f"item {n}" for n in range(1, 6)]  # capped at five, in order
+    # the cap is adjustable and honoured
+    assert completion.changelog_highlights(text, cap=2) == ["item 1", "item 2"]
+
+
+def test_changelog_highlights_skips_the_no_entries_placeholder(tmp_path):
+    """PLAN-040: an unauthored changelog (only the engine's "no entries recorded" note) yields no
+    highlights, so the caller renders the one-line fallback rather than a bogus business summary."""
+    stub = completion.render_changelog("X", work_kinds=["feature"])  # no authored prose
+    assert completion.changelog_highlights(stub) == []
+
+
+def test_read_changelog_highlights_missing_or_unreadable_record_returns_empty(tmp_path):
+    """PLAN-040: a missing changelog.md (a legacy run, or a folder that never recorded one) yields
+    [] — read-tolerant, never an error — so completion still renders cleanly."""
+    empty_dir = tmp_path / "specs-src" / "099-none"
+    empty_dir.mkdir(parents=True)
+    assert completion.read_changelog_highlights(empty_dir) == []
+    # a present, authored record round-trips through the read path
+    report = "### Fixed\n\n- rows no longer dropped\n"
+    completion.write_record(tmp_path, empty_dir, "implement", spec_id="X", report=report)
+    assert completion.read_changelog_highlights(empty_dir) == ["rows no longer dropped"]
+
+
 def test_changelog_missing_a_requirement_does_not_fail_the_run(tmp_path):
     """SRCX-FR-006 (regression): the per-run changelog is informational and NEVER gates the run. An
     implement record whose authored changelog names no requirement still succeeds — write_record

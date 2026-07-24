@@ -167,8 +167,12 @@ def test_derived_id_reaches_hints_commits_and_notifications(run_repo, monkeypatc
     assert "3pwr run --resume --spec-id 030" in out  # the copy-pasteable resume hint
     assert "--spec-id RUN" not in out
     assert subjects and all(s == "3pwr run 030" for s in subjects)  # notification subject
-    head_subject = _git(run_repo, "log", "-1", "--pretty=%s")
-    assert head_subject.startswith("3pwr(030): specify")  # the stage commit carries the NNN
+    # HEAD at the pause is the engine's own state commit; the producing specify commit carries the
+    # NNN in its subject just the same — locate it in the branch log.
+    specify_subject = _git(
+        run_repo, "log", "-1", "-F", "--grep", "3pwr(030): specify", "--pretty=%s"
+    )
+    assert specify_subject.startswith("3pwr(030): specify")  # the stage commit carries the NNN
 
 
 # --------------------------------------------------------------------------- A3. requirement ids (RUNID-FR-004)
@@ -219,11 +223,16 @@ def test_stage_commit_bundles_the_ledger_file(run_repo):
     """RUNID-FR-005: a producing stage's commit contains .3powers/ledger.jsonl alongside the
     stage's artifact, and the working tree keeps no uncommitted ledger change at the pause."""
     assert main(["--root", str(run_repo), "run", "add x", "--no-input"]) == EXIT_PAUSED
-    subject = _git(run_repo, "log", "-1", "--pretty=%s")
+    # HEAD at the pause is the engine's own state commit; the producing specify commit is the one
+    # that bundles the ledger alongside its artifact — locate and inspect it.
+    specify_hash = _git(run_repo, "log", "-1", "-F", "--grep", "3pwr(030): specify", "--pretty=%H")
+    subject = _git(run_repo, "show", "-s", "--pretty=%s", specify_hash)
     assert subject.startswith("3pwr(030): specify")
-    files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
+    files = _git(run_repo, "show", "--name-only", "--pretty=format:", specify_hash).split()
     assert ".3powers/ledger.jsonl" in files
     assert "specs-src/030-add-x/spec.md" in files
+    # and the pause leaves no uncommitted ledger change behind
+    assert ".3powers/ledger.jsonl" not in _git(run_repo, "status", "--porcelain")
 
 
 # --------------------------------------------------------------------------- A2. oracle destination (RUNID-FR-006)

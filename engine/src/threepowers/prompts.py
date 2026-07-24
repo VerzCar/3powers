@@ -36,7 +36,15 @@ _BUNDLED_TEMPLATES_DIR = Path(__file__).resolve().parent / "scaffold" / "templat
 # The closed variable vocabulary a template body may reference via ``$NAME``. Substitution fills
 # every one of these (empty when the caller supplies no value); names outside this set are left
 # verbatim so template text stays predictable.
-_VARS = ("STEP", "GATE", "ARTIFACT", "FEATURE_FOLDER", "ORACLE_DESTINATION", "FEEDBACK")
+_VARS = (
+    "STEP",
+    "GATE",
+    "ARTIFACT",
+    "FEATURE_FOLDER",
+    "ORACLE_DESTINATION",
+    "FEEDBACK",
+    "REFUSAL_REASONS",
+)
 
 # The producing stages whose prompt asks the agent for a commit description: the
 # post-stage git hook records it as the stage commit's message. A fixed, deterministic block —

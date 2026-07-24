@@ -1,6 +1,6 @@
 [project]
 name = "3powers"
-version = "1.1.0"
+version = "1.2.0"
 description = "An open agent harness with a judiciary: drives coding agents through the whole lifecycle, then judges their work with an independent oracle, deterministic gates, and a signed verdict ledger you can verify offline."
 readme = "README.md"
 requires-python = ">=3.11"

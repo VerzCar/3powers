@@ -6,7 +6,39 @@ All notable changes to 3Powers are documented here. The format is based on
 3Powers entries are grouped by the development milestones (v0.1 → v0.5 → v1.0) described in the
 spec's scope phasing and tracked in detail in [`docs/STATUS.md`](docs/STATUS.md). Each item notes the
 plan document under [`plan/`](plan/) that delivered it. Releases are tagged on `main`; the current
-release is **v1.1.0**.
+release is **v1.2.0**.
+
+## [1.2.0] — v1.2: run-completion experience, per-phase commits, parallel phases
+
+Minor release. Sharpens the end of a `3pwr run` and the mechanics of a phased build. No existing
+command changed its contract.
+
+### Added
+
+- **Run-completion experience.** At the end of a run the stage tracker now renders Ship as the final
+  completed step ("ready to push") and Observe as a follow-on call-to-action instead of a pending
+  row. The run prints an explicit "All stages are done." line, a short business summary drawn from
+  the run's `changelog.md` (capped at five highlights, with a graceful fallback when it is absent or
+  unparseable), and an Observe call-to-action naming the next actions — `observe coverage`,
+  registering checks in `.3powers/config/observability.yaml`, and pushing/merging the run branch —
+  and stating that production lessons return as a **new** `3pwr run`, never ad-hoc patches. (plan/040)
+- **Dependency-aware parallel phases.** A `[P]`-marked implementation-plan phase now runs
+  concurrently within its batch as soon as its declared dependencies completed in a prior batch and
+  its file scope is disjoint from every other phase in the batch — previously a declared dependency
+  silently serialized it. Each batch logs which phases run in parallel versus serial, with a named
+  reason for every serialized phase and the executing agent/model per phase. (plan/040)
+
+### Changed
+
+- **Per-phase commit granularity.** A phased build now commits once per implement phase
+  (`implement(phase N/M): …`) in deterministic order, followed by a single trailing record commit,
+  and the engine commits its own state (ledger + `progress.md`) after each judgment step and before
+  every human gate — so a finished run leaves a clean working tree. `--commit-relaxed` and the signed
+  deviations keep their existing meaning. (plan/040)
+- **In-process advance during a run.** During a `3pwr run` the advance step now runs its enforcement
+  checks in-process on the green path (no agent dispatch); only a refusal dispatches a dedicated
+  remediation agent (`advance.agent.md`) carrying the named blockers. The standalone `3pwr advance`
+  command is unchanged. (plan/040)
 
 ## [1.1.0] — v1.1: rewind a run to an earlier stage
 

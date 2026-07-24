@@ -27,6 +27,7 @@ from typing import Any, Iterable, Literal
 
 import yaml
 
+from .runlock import LOCK_FILENAME as _RUN_LOCK_FILENAME
 from .runner import _changed_files, _git
 
 # The named guards a signed deviation may relax: each relaxable guard maps to exactly
@@ -60,6 +61,13 @@ DEFAULT_AUTHOR_EMAIL = "3pwr@3powers.local"
 # transcripts, seeded config). Never a developer's "unrelated work", so the clean-start guard
 # ignores the whole prefix (the clean-start guard applies only to work outside the run).
 ENGINE_STATE_PREFIX = ".3powers/"
+
+# The advisory run lock's repo-relative path (``.3powers/run.lock``). It is ephemeral engine
+# state — written when a run takes the working-tree lock and deleted the moment the run releases
+# it — so, like a transcript, it is NEVER committed: committing it would leave a "deleted run.lock"
+# dirty in the working tree the instant the run releases the lock, breaking the clean-tree
+# guarantee at every pause and at run end. Excluded from every engine-state commit below.
+_RUN_LOCK_PATH = f"{ENGINE_STATE_PREFIX}{_RUN_LOCK_FILENAME}"
 
 # The engine-written run progress file inside a feature workspace. A paused or
 # failed run legitimately leaves it updated after its last stage commit, so — like the ledger — it
@@ -399,6 +407,31 @@ def stage_commit_message(spec_id: str, step: str, description: str = "") -> str:
     return f"{base} — {description}" if description else base
 
 
+def phase_commit_message(index: int, total: int, description: str = "") -> str:
+    """The per-phase implement commit's subject — ``implement(phase N/M): <description>``.
+
+    ``index`` is the phase's 1-based artifact-order position and ``total`` the phase count, so the
+    subject names which phase of how many this commit lands. ``description`` is the phase's
+    agent-written ``COMMIT:`` line (the caller falls back to the phase description when that line is
+    absent); it is collapsed to a single line and bounded to :data:`_MESSAGE_MAX_LEN`. When no
+    description survives, the bare ``implement(phase N/M)`` label stands. Deterministic in its
+    inputs — identical ``(index, total, description)`` render the identical subject on any
+    machine."""
+    base = f"implement(phase {index}/{total})"
+    desc = " ".join(description.split())[:_MESSAGE_MAX_LEN].rstrip()
+    return f"{base}: {desc}" if desc else base
+
+
+def engine_state_commit_message(spec_id: str, step: str) -> str:
+    """The engine-state commit's subject — deterministic, naming the judgment step it records.
+
+    Rides the trailing/inter-stage commit that persists the trust spine's own writes (the signed
+    ledger and any other ``.3powers/`` engine state, plus the run's ``progress.md``) so a finished
+    or paused run leaves a clean working tree. Identical ``(spec_id, step)`` always render the
+    identical subject."""
+    return f"3pwr({spec_id}): record engine state — {step}"
+
+
 def commit_stage(
     cwd: Path,
     paths: list[str],
@@ -438,6 +471,50 @@ def commit_stage(
         return CommitOutcome(error=f"git commit failed: {err.strip()}")
     rc, out, _ = _git(cwd, ["rev-parse", "--short", "HEAD"])
     return CommitOutcome(sha=out.strip() if rc == 0 else "committed")
+
+
+def commit_engine_state(
+    cwd: Path,
+    *,
+    message: str,
+    author_name: str = DEFAULT_AUTHOR_NAME,
+    author_email: str = DEFAULT_AUTHOR_EMAIL,
+) -> CommitOutcome:
+    """Commit the engine's own trust-spine state as exactly one commit, authored as 3pwr.
+
+    Stages ONLY paths that are engine-owned state — anything under :data:`ENGINE_STATE_PREFIX`
+    (the signed ledger, recorded verdicts, seeded config; run transcripts under ``.3powers/runs/``
+    are already excluded upstream by :func:`~threepowers.runner._changed_files`) and any feature
+    workspace's engine-written ``progress.md`` (the :data:`_PROGRESS_FILE` shape). A developer's
+    unrelated working-tree changes are never swept in.
+
+    The ephemeral run lock (:data:`_RUN_LOCK_PATH`) is never staged even though it lives under the
+    engine-state prefix — it is deleted the moment the run releases the lock, so committing it would
+    leave a "deleted run.lock" dirtying the tree at the next pause; it is filtered out here.
+
+    Contract:
+
+    * **No-op success** — returns a plain :class:`CommitOutcome` (``noop`` true) when none of those
+      paths are dirty, so it is safe to call at every judgment step and before every human-gate
+      pause without forcing an empty commit.
+    * **Deterministic** — stages a sorted, deduped path set; identical dirty state and ``message``
+      yield the identical commit content on any machine.
+    * **Commit-or-fail** — a genuine git failure surfaces as a non-empty ``error`` (the caller
+      classifies it :data:`CLASS_COMMIT_FAILED`); it is reported, never forced.
+
+    Invoked after the judgment steps that append to the ledger (the verify verdict and its auto-fix
+    entries, sign-off, advance, and the final complete append) and before every human-gate pause, so
+    a paused or finished run leaves a clean working tree."""
+    paths = sorted(
+        p
+        for p in _changed_files(cwd)
+        if (p.startswith(ENGINE_STATE_PREFIX) or _PROGRESS_FILE.match(p)) and p != _RUN_LOCK_PATH
+    )
+    if not paths:
+        return CommitOutcome()
+    return commit_stage(
+        cwd, paths, message=message, author_name=author_name, author_email=author_email
+    )
 
 
 def committed_steps(entries: Iterable[dict], spec_id: str) -> list[str]:
