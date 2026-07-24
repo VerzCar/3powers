@@ -125,7 +125,15 @@ push. From here:
 **If something fails:** the message names the stage, the failure class, and the persisted transcript
 path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an entry for each failure
 phrase, and `3pwr run --resume` continues from the last completed stage — completed stages never
-re-run.
+re-run. If the real fix is upstream — an earlier stage was ambiguous or wrong — rewind the run to that
+stage with `3pwr run --redo <stage>` (optionally `--revise "<clarification>"`) and it re-flows the
+lifecycle from there through the human gates.
+
+**When gates go red:** Verify doesn't just stop — it runs a **bounded auto-remediation loop** that
+hands the failing verdict back to the coder to fix, re-running the gates until they pass or the
+attempt budget is spent, all recorded in the ledger. You can also run it by hand on a red verdict
+with [`3pwr gate fix`](cli-reference.md#gate-fix--bounded-code-only-auto-remediation); each gate's failure panel prints the exact fix
+command.
 
 **Working alongside your team.** Every `3pwr run` does its work on its **own dedicated
 `3pwr/<NNN>-<slug>` branch** with a brand-new run id, committing stage by stage and recording each step
@@ -175,6 +183,9 @@ Everything below through §7 is the **gates-only path**: it reaches a signed gre
 the conditional or optional tools installed.
 
 ## 1. Install the engine
+
+This walkthrough drives **this repository's** bundled sample, so it installs `3pwr` from the clone
+you already have. (To install the released engine anywhere else, use `uv tool install 3powers`.)
 
 ```bash
 uv tool install ./engine

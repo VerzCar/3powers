@@ -879,6 +879,14 @@ carries an additive **Batch** column (parallel/serial plus the batch index).
   `--resume` (record a sign-off + continue after a human gate, or continue past a failure) ·
   `--revise MSG` / `--revise-file PATH` (with `--resume`: revise the paused stage with feedback and
   return to the same gate) ·
+  `--redo STAGE` (rewind an in-flight run to an earlier **completed producing stage** — one of
+  `discovery`, `spec`, `plan`, `build` — and re-flow the lifecycle from there through the human gates;
+  requires `--spec-id`, `--approver`, and `--reason`; compose with `--revise MSG` / `--revise-file PATH`
+  to attach the clarification as revision feedback. A Spec redo re-flows through spec approval so the
+  amended spec is re-approved and re-sealed; the redo-able stages are the run's completed producing
+  stages. The rewind is appended to the signed ledger — no history is rewritten — and it is refused once
+  the run has advanced to Ship: use `revert` instead) · `--reason REASON` (the audited reason recorded
+  with a `--redo` rewind) ·
   `--status` (print the stage tracker + the run branch and committed stages) · `--dry-run` (simulate
   offline; no git required) · `--simulate-fail` (force a
   red verdict, for `--dry-run`) · `--no-input` (never prompt) · `--approver APPROVER` · `--note NOTE` ·
@@ -892,6 +900,8 @@ carries an additive **Batch** column (parallel/serial plus the batch index).
 3pwr run --file my-intent.md "take this and create a spec for it but leave out point 5"
 3pwr run --resume --spec-id 042 --approver "$(git config user.name)"
 3pwr run --resume --spec-id 042 --revise "tighten the non-goals; leave out point 5"
+3pwr run --redo spec --revise "the user icon must be keyboard-focusable; specify its ARIA label" \
+         --spec-id 042 --approver "$(git config user.name)" --reason "oracle asked for an ARIA label"
 3pwr run --status --spec-id 042
 ```
 
