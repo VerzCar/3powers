@@ -303,4 +303,4 @@ def failure_message(spec_id: str, failure_class: str, stage: str) -> str:
 
 def completion_message(spec_id: str) -> str:
     """The completion notice."""
-    return f"3pwr run {spec_id}: lifecycle complete — advanced to Ship"
+    return f"3pwr run {spec_id}: complete — ready to push"

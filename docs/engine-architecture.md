@@ -207,7 +207,10 @@ tamper-**evidence**, not tamper-**proofing**: evasion is *detectable*, not *impo
 
 - **`advance`** (in the `cli/` package's trust module) is the local enforcement gate: it refuses unless the ledger verifies, the
   latest *enforced* verdict is green, and a human sign-off exists at/after that verdict. Report-only
-  verdicts are advisory and never satisfy an advance.
+  verdicts are advisory and never satisfy an advance. During a `3pwr run` this same check runs
+  **in-process by default** (no agent dispatch) at each stage boundary; only on a refusal does the run
+  dispatch a headless remediation agent (the `advance.agent.md` template) with the named refusal
+  reasons.
 - **`deviation` / `emergency`** ([`deviations.py`](../engine/src/threepowers/deviations.py)) bend the
   process without breaking it. Deviations act at the **enforcement boundary**, not in the verdict — gates
   run honestly; a signed, reversible `deviation` ledger entry lets `advance` accept specific named red
@@ -242,12 +245,14 @@ non-interactive conventions):
 | Aider | `aider --message` | yes — history restore is opt-in (default off), but chat history *is* persisted to `.aider.chat.history.md` | `--restore-chat-history` | `new_session_args: ["--no-restore-chat-history"]` makes freshness explicit |
 | Hosted (async) | manifest-declared trigger/poll/collect | yes — each trigger starts a new hosted run | n/a | none needed |
 
-**`[P]` parallelism is two-level.** Whole phases marked `[P]` with disjoint declared file scopes are
-dispatched by the *engine* as concurrent, separate fresh sessions
-([`phases.py`](../engine/src/threepowers/phases.py) `schedule`/`run_phases`). *Inside* a phase, tasks
-marked `[P]` must be executed via the agent's **own sub-agents** — the phase handoff prompt and the
-implement agent template both mandate it — so intra-phase parallelism happens in the agent's runtime,
-never by the engine splitting a phase.
+**`[P]` parallelism is two-level.** A whole phase marked `[P]` is dispatched by the *engine* as a
+concurrent, separate fresh session only when all of its declared dependencies completed in a prior
+batch and its declared file scope is disjoint from every other phase in the batch
+([`phases.py`](../engine/src/threepowers/phases.py) `schedule`/`run_phases`); otherwise it is
+serialized with a named reason (unmet dependency, scope overlap, or no declared scope). *Inside* a
+phase, tasks marked `[P]` must be executed via the agent's **own sub-agents** — the phase handoff
+prompt and the implement agent template both mandate it — so intra-phase parallelism happens in the
+agent's runtime, never by the engine splitting a phase.
 
 **Token consumption and cost are captured advisorily.** A manifest's optional `usage` block declares
 where the backend's real token/cost figures live, resolved by a declarative, structured-first

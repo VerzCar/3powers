@@ -100,6 +100,33 @@ def test_write_renders_the_midbuild_schema_with_phases(tmp_path):
     assert "running 'implement'" in text
 
 
+def test_phase_table_renders_additive_batch_markers(tmp_path):
+    """PLAN-040: the phase-detail table carries an additive trailing Batch column — a phase that ran
+    concurrently shows its 1-based batch with ∥, a serialized one with ·, and a phase with no
+    schedule info (a legacy/phaseless artifact) shows —, so the prior columns still parse."""
+    snap = progress.Snapshot(
+        nnn="030",
+        slug="x",
+        timestamp=NOW,
+        spec_id="030",
+        stages=[],
+        current_state="",
+        phase_stage="Build",
+        phases=[
+            progress.PhaseRow(1, "core", "done", "1/1", batch_index=0, parallel=False),
+            progress.PhaseRow(2, "alpha", "done", "1/1", batch_index=1, parallel=True),
+            progress.PhaseRow(3, "beta", "done", "1/1", batch_index=1, parallel=True),
+            progress.PhaseRow(4, "legacy", "done", "1/1"),  # no scheduler info
+        ],
+    )
+    text = progress.render(snap)
+    assert "| Phase | Description | Status | Tasks done | Tokens | Cost | Batch |" in text
+    assert "| 1 | core | ✓ done | 1/1 | — | — | 1 · |" in text  # serialized within batch 1
+    assert "| 2 | alpha | ✓ done | 1/1 | — | — | 2 ∥ |" in text  # concurrent within batch 2
+    assert "| 3 | beta | ✓ done | 1/1 | — | — | 2 ∥ |" in text
+    assert "| 4 | legacy | ✓ done | 1/1 | — | — | — |" in text  # unscheduled → placeholder
+
+
 def test_phase_table_absent_without_phases(tmp_path):
     """PROGFILE-FR-005: the phase-detail table renders only when the current stage has phases — a
     phaseless run (no tasks artifact, or no phase headings) carries no phase table."""
@@ -309,7 +336,7 @@ def test_completion_marks_every_stage_done(tmp_path):
     text = (fd / "progress.md").read_text(encoding="utf-8")
     for stage in ("Discovery", "Spec", "Plan", "Build", "Verify", "Review", "Ship", "Observe"):
         assert "✓ done" in _row(text, stage)
-    assert "✓ lifecycle complete" in text
+    assert "✓ complete — ready to push" in text
 
 
 # --------------------------------------------------------------------------- degradation (NFR-001/002)
@@ -435,7 +462,10 @@ def test_live_run_writes_progress_and_commits_it(run_repo):
     assert text.startswith("# Run 030 · add-x · ")
     assert "🔒 paused" in text and "paused at 'review-spec'" in text
     assert "3pwr run --resume --spec-id 030 --approver <you>" in text
-    files = _git(run_repo, "show", "--name-only", "--pretty=format:", "HEAD").split()
+    # HEAD at the pause is the engine's own state commit; the producing specify commit is the one
+    # that bundles progress.md alongside its artifact and the ledger — locate and inspect it.
+    specify_hash = _git(run_repo, "log", "-1", "-F", "--grep", "3pwr(030): specify", "--pretty=%H")
+    files = _git(run_repo, "show", "--name-only", "--pretty=format:", specify_hash).split()
     assert "specs-src/030-add-x/progress.md" in files
     assert "specs-src/030-add-x/spec.md" in files and ".3powers/ledger.jsonl" in files
 

@@ -342,22 +342,89 @@ def test_no_phase_headings_yields_empty_list_degenerate_case():
 def test_schedule_batches_disjoint_parallel_phases_concurrently():
     """PHASE-FR-011: parallel-marked, dependency-free phases with disjoint scopes share a batch."""
     got = phases.parse_phases(_TASKS_3PHASE)
-    batches, notes = phases.schedule(got)
-    assert [[p.index for p in b] for b in batches] == [[1], [2, 3]]
-    assert notes == []
+    sched = phases.schedule(got)
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2, 3]]
+    assert sched.notes == []
+    # the parallel siblings each carry a parallel decision and NO serialization reason
+    by_index = {d.index: d for d in sched.decisions}
+    assert by_index[2].parallel and by_index[3].parallel
+    assert by_index[2].serialization_reason is None and by_index[3].serialization_reason is None
+    assert by_index[2].batch_index == by_index[3].batch_index == 1
+    assert not by_index[1].parallel  # the non-[P] first phase runs alone
+
+
+def test_schedule_parallelizes_when_dependency_completed_in_prior_batch():
+    """PLAN-040 (a): a [P] phase whose declared dependency completed in a prior batch parallelizes
+    with its disjoint siblings — the dependency being SATISFIED (not merely absent) makes it
+    eligible."""
+    text = (
+        "## Phase 1: core\n\n**File scope**: src/core.py\n**Depends on**: none\n"
+        "- [ ] T1 [X-FR-001] core (files: src/core.py)\n"
+        "## Phase 2: alpha [P]\n\n**File scope**: src/alpha.py\n**Depends on**: Phase 1\n"
+        "- [ ] T2 [X-FR-002] alpha (files: src/alpha.py)\n"
+        "## Phase 3: beta [P]\n\n**File scope**: src/beta.py\n**Depends on**: Phase 1\n"
+        "- [ ] T3 [X-FR-003] beta (files: src/beta.py)\n"
+    )
+    sched = phases.schedule(phases.parse_phases(text))
+    # Phase 1 runs alone first; 2 and 3 both depend only on the now-completed Phase 1 and have
+    # disjoint scopes, so they share the second batch.
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2, 3]]
+    by_index = {d.index: d for d in sched.decisions}
+    assert by_index[2].parallel and by_index[3].parallel
+    assert by_index[2].serialization_reason is None
+    assert sched.notes == []
 
 
 def test_schedule_serializes_overlapping_scopes_despite_markers():
-    """PHASE-FR-011: overlapping declared scopes run sequentially even when marked [P], reported."""
+    """PHASE-FR-011 / PLAN-040 (b): overlapping declared scopes run sequentially even when marked
+    [P], and the blocked phase names the "file scope overlaps Phase N" reason."""
     text = (
         "## Phase 1: a [P]\n\n**File scope**: src/shared.py\n**Depends on**: none\n"
         "- [ ] T1 [X-FR-001] a (files: src/shared.py)\n"
         "## Phase 2: b [P]\n\n**File scope**: src/shared.py\n**Depends on**: none\n"
         "- [ ] T2 [X-FR-002] b (files: src/shared.py)\n"
     )
-    batches, notes = phases.schedule(phases.parse_phases(text))
-    assert [[p.index for p in b] for b in batches] == [[1], [2]]
-    assert notes and "src/shared.py" in notes[0] and "sequentially" in notes[0]
+    sched = phases.schedule(phases.parse_phases(text))
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2]]
+    dec2 = next(d for d in sched.decisions if d.index == 2)
+    assert dec2.serialization_reason == "file scope overlaps Phase 1"
+    assert not dec2.parallel
+    assert sched.notes and "src/shared.py" not in sched.notes[0]  # reason names the phase, not path
+    assert "file scope overlaps Phase 1" in sched.notes[0] and "sequentially" in sched.notes[0]
+
+
+def test_schedule_serializes_a_scopeless_parallel_phase_with_named_reason():
+    """PLAN-040 (c): a [P] phase that declares no file scope cannot be reasoned about for
+    disjointness, so it serializes with the "no file scope declared" reason."""
+    text = (
+        "## Phase 1: a [P]\n\n**File scope**: a.py\n**Depends on**: none\n"
+        "- [ ] T1 [X-FR-001] a (files: a.py)\n"
+        "## Phase 2: b [P]\n\n**Depends on**: none\n- [ ] T2 [X-FR-002] b\n"
+    )
+    sched = phases.schedule(phases.parse_phases(text))
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2]]
+    dec2 = next(d for d in sched.decisions if d.index == 2)
+    assert dec2.serialization_reason == phases.REASON_NO_SCOPE == "no file scope declared"
+    assert not dec2.parallel
+
+
+def test_schedule_serializes_an_unmet_dependency_with_named_reason():
+    """PLAN-040 (d): a [P] phase whose declared dependency has NOT completed in a *prior* (closed)
+    batch — here its dependency is only in the batch currently being formed — serializes with the
+    "depends on Phase N (not yet complete)" reason."""
+    text = (
+        "## Phase 1: a [P]\n\n**File scope**: a.py\n**Depends on**: none\n"
+        "- [ ] T1 [X-FR-001] a (files: a.py)\n"
+        "## Phase 2: b [P]\n\n**File scope**: b.py\n**Depends on**: Phase 1\n"
+        "- [ ] T2 [X-FR-002] b (files: b.py)\n"
+    )
+    sched = phases.schedule(phases.parse_phases(text))
+    # Phase 2 depends on Phase 1, which would otherwise be its concurrent batch-mate; a dependency
+    # is only satisfied once its batch has closed, so Phase 2 is pushed into the next batch.
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2]]
+    dec2 = next(d for d in sched.decisions if d.index == 2)
+    assert dec2.serialization_reason == "depends on Phase 1 (not yet complete)"
+    assert not dec2.parallel
 
 
 def test_schedule_property_concurrent_only_if_scopes_disjoint():
@@ -366,11 +433,49 @@ def test_schedule_property_concurrent_only_if_scopes_disjoint():
         "\n## Phase 4: gamma [P]\n\n**File scope**: src/alpha.py src/gamma.py\n"
         "**Depends on**: none\n- [ ] T4 [X-FR-004] g (files: src/gamma.py)\n"
     )
-    batches, _ = phases.schedule(phases.parse_phases(text))
-    for batch in batches:
+    sched = phases.schedule(phases.parse_phases(text))
+    for batch in sched.batches:
         for i, a in enumerate(batch):
             for b in batch[i + 1 :]:
                 assert not set(a.file_scope) & set(b.file_scope)
+
+
+def test_schedule_is_deterministic_and_stable_across_repeated_calls():
+    """PLAN-040 (e): the schedule is a pure function of its input — repeated calls return identical
+    batches and decisions, stably ordered by phase index."""
+    got = phases.parse_phases(
+        _TASKS_3PHASE
+        + (
+            "\n## Phase 4: gamma [P]\n\n**File scope**: src/gamma.py\n**Depends on**: Phase 1\n"
+            "- [ ] T4 [X-FR-004] g (files: src/gamma.py)\n"
+        )
+    )
+    a = phases.schedule(got)
+    b = phases.schedule(got)
+    assert [[p.index for p in batch] for batch in a.batches] == [
+        [p.index for p in batch] for batch in b.batches
+    ]
+    assert [d.index for d in a.decisions] == sorted(d.index for d in a.decisions)
+    assert [(d.index, d.batch_index, d.parallel, d.serialization_reason) for d in a.decisions] == [
+        (d.index, d.batch_index, d.parallel, d.serialization_reason) for d in b.decisions
+    ]
+
+
+def test_phaseless_artifact_schedules_as_a_single_serial_sequence():
+    """PLAN-040 (f): a phaseless (or all-serial) artifact schedules as a single serial sequence —
+    one batch per phase, none parallel, and no serialization reasons."""
+    text = (
+        "## Phase 1: a\n\n**File scope**: a.py\n**Depends on**: none\n"
+        "- [ ] T1 [X-FR-001] a (files: a.py)\n"
+        "## Phase 2: b\n\n**File scope**: b.py\n**Depends on**: none\n"
+        "- [ ] T2 [X-FR-002] b (files: b.py)\n"
+    )
+    sched = phases.schedule(phases.parse_phases(text))
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2]]
+    assert all(not d.parallel for d in sched.decisions)
+    # a non-[P] phase is never a serialized [P] candidate, so it carries no named reason
+    assert all(d.serialization_reason is None for d in sched.decisions)
+    assert sched.notes == []
 
 
 def test_dependent_or_scopeless_phase_never_joins_a_batch():
@@ -380,15 +485,15 @@ def test_dependent_or_scopeless_phase_never_joins_a_batch():
         "## Phase 2: b [P]\n\n**File scope**: b.py\n**Depends on**: Phase 1\n- [ ] T2 [X-FR-002] b (files: b.py)\n"
         "## Phase 3: c [P]\n\n**Depends on**: none\n- [ ] T3 [X-FR-003] c\n"
     )
-    batches, _ = phases.schedule(phases.parse_phases(text))
-    assert [[p.index for p in b] for b in batches] == [[1], [2], [3]]
+    sched = phases.schedule(phases.parse_phases(text))
+    assert [[p.index for p in b] for b in sched.batches] == [[1], [2], [3]]
 
 
 # --------------------------------------------------------------------------- execution (PHASE-FR-010/012)
 def test_run_phases_dispatches_each_phase_concurrent_batch_together():
     """PHASE-FR-010/011: every phase is dispatched once; a batch's phases run concurrently."""
     got = phases.parse_phases(_TASKS_3PHASE)
-    batches, _ = phases.schedule(got)
+    batches = phases.schedule(got).batches
     active = {"n": 0, "max": 0}
     lock = threading.Lock()
     barrier = threading.Barrier(2, timeout=5)
@@ -412,7 +517,7 @@ def test_run_phases_records_deterministic_order_and_names_failures():
     """PHASE-FR-012: results are recorded in artifact order regardless of completion order; a failing
     phase fails the run with an actionable message naming it; siblings' results are kept."""
     got = phases.parse_phases(_TASKS_3PHASE)
-    batches, _ = phases.schedule(got)
+    batches = phases.schedule(got).batches
 
     def run_one(ph):
         return (ph.index != 3), ("" if ph.index != 3 else "compile error")
@@ -431,7 +536,7 @@ def test_run_phases_never_reports_skipped_later_phases_as_passed():
         "## Phase 1: a\n\n**File scope**: a.py\n- [ ] T1 [X-FR-001] a (files: a.py)\n"
         "## Phase 2: b\n\n**File scope**: b.py\n- [ ] T2 [X-FR-002] b (files: b.py)\n"
     )
-    batches, _ = phases.schedule(phases.parse_phases(text))
+    batches = phases.schedule(phases.parse_phases(text)).batches
     run = phases.run_phases(batches, lambda ph: (False, "boom") if ph.index == 1 else (True, ""))
     assert not run.ok
     assert not run.results[1].ok and "skipped" in run.results[1].detail

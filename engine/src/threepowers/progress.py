@@ -84,6 +84,8 @@ class PhaseRow:
     tasks_done: str  # "3/5", or "—" for an untouched pending phase
     tokens: Optional[int] = None  # agent-reported usage; None renders the unknown placeholder
     cost: Optional[float] = None  # agent-reported run cost (USD); None renders the placeholder
+    batch_index: Optional[int] = None  # 0-based scheduler batch; None when scheduling is unknown
+    parallel: Optional[bool] = None  # whether the phase runs concurrently within its batch
 
 
 @dataclass
@@ -126,6 +128,18 @@ def _cost_cell(cost: Optional[float]) -> str:
     return f"${cost:.4f}" if cost is not None else "—"
 
 
+def _batch_cell(batch_index: Optional[int], parallel: Optional[bool]) -> str:
+    """The Batch column cell: the 1-based scheduler batch and how the phase ran within it.
+
+    ``—`` when the schedule is unknown (a phaseless or legacy artifact carrying no batching);
+    otherwise ``N ∥`` for a phase that runs concurrently with a batch sibling, or ``N ·`` for a
+    serialized one. Additive: the marker rides an extra trailing column, so an existing phase table
+    still parses."""
+    if batch_index is None:
+        return "—"
+    return f"{batch_index + 1} {'∥' if parallel else '·'}"
+
+
 def render(snap: Snapshot) -> str:
     """Render the progress markdown for ``snap`` — pure and deterministic given the snapshot.
 
@@ -150,14 +164,15 @@ def render(snap: Snapshot) -> str:
     if snap.phases:
         lines += ["", f"### {snap.phase_stage} — phase detail", ""]
         lines += [
-            "| Phase | Description | Status | Tasks done | Tokens | Cost |",
-            "|-------|-------------|--------|------------|--------|------|",
+            "| Phase | Description | Status | Tasks done | Tokens | Cost | Batch |",
+            "|-------|-------------|--------|------------|--------|------|-------|",
         ]
         for ph in snap.phases:
             status_cell = f"{GLYPHS.get(ph.status, '·')} {ph.status}"
             lines.append(
                 f"| {ph.index} | {ph.description} | {status_cell} | {ph.tasks_done} | "
-                f"{_tokens_cell(ph.tokens)} | {_cost_cell(ph.cost)} |"
+                f"{_tokens_cell(ph.tokens)} | {_cost_cell(ph.cost)} | "
+                f"{_batch_cell(ph.batch_index, ph.parallel)} |"
             )
     lines += ["", "## Current state", "", snap.current_state or "○ not started yet"]
     if snap.since:
@@ -347,7 +362,7 @@ class Reporter:
         """Lifecycle complete: every stage row turns done and the current state says so."""
         for stage in STAGES:
             self._status[stage] = STATUS_DONE
-        self._current_state = "✓ lifecycle complete — advanced to Ship; observe feeds new intent"
+        self._current_state = "✓ complete — ready to push"
         return self.write()
 
     # ------------------------------------------------------------------ snapshot + write
@@ -419,6 +434,9 @@ class Reporter:
         parsed = phasesmod.parse_phases(text)
         if not parsed:
             return [], ""
+        # Additive batch markers: the same pure scheduler the dispatcher uses, so the table names
+        # each phase's batch and parallel/serial mode consistently with the run's pre-batch logs.
+        decisions = {d.index: d for d in phasesmod.schedule(parsed).decisions}
         build_failed = self._status.get("Build") == STATUS_FAILED
         rows: list[PhaseRow] = []
         running_label = ""
@@ -435,6 +453,7 @@ class Reporter:
             else:
                 status = STATUS_PENDING
             tasks_done = "—" if (status == STATUS_PENDING and done == 0) else f"{done}/{total}"
+            dec = decisions.get(ph.index)
             rows.append(
                 PhaseRow(
                     index=ph.index,
@@ -443,6 +462,8 @@ class Reporter:
                     tasks_done=tasks_done,
                     tokens=self._phase_tokens.get(ph.index),
                     cost=self._phase_cost.get(ph.index),
+                    batch_index=dec.batch_index if dec is not None else None,
+                    parallel=dec.parallel if dec is not None else None,
                 )
             )
         return rows, running_label

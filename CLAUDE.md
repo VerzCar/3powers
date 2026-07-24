@@ -53,9 +53,14 @@ assembled from markdown templates — repo-local `.3powers/templates/agents/*.ag
 engine's bundled defaults — the single source of the dispatched instructions. Post-approval stage
 prompts reload the approved spec + the prior stage's artifact reference; a phased implementation
 plan (`implementation-plan.md`; legacy `tasks.md`)
-artifact makes implement run **one fresh headless session per phase** — concurrently for `[P]`-marked phases with
-disjoint file scopes — with per-phase context estimates warned (never blocked) against the advisory
-budget in `.3powers/config/context.yaml`. Each run's artifacts lie flat in its auto-allocated feature
+artifact makes implement run **one fresh headless session per phase** — a `[P]`-marked phase runs
+concurrently only when its declared dependencies completed in a prior batch and its file scope is
+disjoint from every other phase in the batch, else it is serialized with a named reason — with
+per-phase context estimates warned (never blocked) against the advisory
+budget in `.3powers/config/context.yaml`. A phased build commits **one commit per implement phase**
+(`implement(phase N/M): …`) plus a trailing record commit, and the engine commits its own state
+(ledger + `progress.md`) after each judgment step and before each human gate, so a finished run ends
+**complete — ready to push** with a clean working tree. Each run's artifacts lie flat in its auto-allocated feature
 folder `specs-src/<NNN>-<slug>/`, alongside an engine-maintained `progress.md`; the legacy base folder
 `specs/` and the legacy split layout
 (`specs/<feature>/spec/spec.md` + `specs/<feature>/artifacts/`) stay readable. For a hands-on,

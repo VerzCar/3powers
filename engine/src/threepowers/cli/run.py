@@ -38,6 +38,7 @@ from .. import (
     workkind,
     workspace,
 )
+from . import trust
 from ..config import Settings
 from ..gates import PrerequisiteError
 from ..gates import fixed_paths as auto_fixed_paths
@@ -815,6 +816,9 @@ def _dispatch_phased(
     sk,
     spec_id: str,
     variables: Optional[dict[str, str]] = None,
+    run_branch: str = "",
+    commit_relaxed: bool = False,
+    prefs: Optional[gitflow.GitPrefs] = None,
 ) -> runnermod.StageResult:
     """Run the implement stage phase by phase.
 
@@ -824,11 +828,29 @@ def _dispatch_phased(
     and no dependency are dispatched concurrently; results are recorded in deterministic artifact
     order via one ledger entry appended AFTER collection, from this thread — parallel completion never
     touches the trust spine concurrently. Any phase failure fails the stage naming the
-    phase(s); later phases are recorded as explicitly skipped, never as passed."""
+    phase(s); later phases are recorded as explicitly skipped, never as passed.
+
+    Commit granularity rides here too: once every phase has succeeded, each phase's produced source
+    lands as ONE commit — ``implement(phase N/M): <description>`` — issued sequentially in
+    deterministic phase order from THIS collecting thread only, never from a batch worker (git index
+    lock contention). Each phase commit carries ONLY the paths inside that phase's declared scope; the
+    ledger ``phases`` entry and ``progress.md`` ride the trailing implement record commit the caller's
+    post-stage hook makes. A commit failure fails the stage with :data:`gitflow.CLASS_COMMIT_FAILED`;
+    ``--commit-relaxed`` / a signed ``git_stage_commit`` deviation skips the per-phase commits, exactly
+    as it skips the post-stage commit."""
     t0 = time.monotonic()
-    batches, notes = phases.schedule(phase_list)
-    for note in notes:
-        print(f"  · {note}", file=sys.stderr)
+    # The worktree snapshot BEFORE any phase runs — differenced against the post-collection snapshot
+    # to attribute each phase's produced paths to its declared scope for the per-phase commits below.
+    pre_all = runnermod.worktree_state(s.root)
+    sched = phases.schedule(phase_list)
+    batches = sched.batches
+    # Visible parallelism: render the scheduler's decision metadata as pre-batch log lines — batch
+    # number, parallel vs serial, the named reason for every serialized `[P]` phase, and the
+    # executing agent/model per phase (the `roles.yaml` `subagent_models` override for this stage
+    # when set, else the stage backend's model).
+    phase_model = s.subagent_models().get(step, "") or str(backend.model)
+    for line in _prebatch_log_lines(sched, agent_name=agent_name, model=phase_model):
+        print(line, file=sys.stderr)
     try:
         constitution = s.constitution_path.read_text(encoding="utf-8")
     except OSError:
@@ -839,6 +861,10 @@ def _dispatch_phased(
     # collide. Feeds the additive ledger fields and the progress table — never the verdict.
     tokens_by_phase: dict[int, int] = {}
     cost_by_phase: dict[int, float] = {}
+    # Each phase's agent-written `COMMIT:` description, keyed by phase index — read in the worker
+    # (a transcript read, never a commit) and folded into that phase's commit subject on the
+    # collecting thread below. Distinct keys per phase, so concurrent batch threads never collide.
+    desc_by_phase: dict[int, str] = {}
     # Each phase's authored completion report, keyed by phase index — combined in phase order into
     # the stage's business changelog prose so an N-phase run's changelog covers every phase's
     # requirements (the collector below folds them into one record).
@@ -871,6 +897,12 @@ def _dispatch_phased(
             tokens_by_phase[ph.index] = res.tokens
         if res.cost is not None:
             cost_by_phase[ph.index] = res.cost
+        # The phase's agent-written `COMMIT:` line, extracted from its transcript here (a read, never
+        # a commit); the collecting thread folds it into this phase's commit subject, falling back to
+        # the phase description when the agent wrote no usable line.
+        cdesc = gitflow.agent_commit_description(s.root, res.transcript)
+        if cdesc:
+            desc_by_phase[ph.index] = cdesc
         rep = _implement_report(s, res.transcript)
         if rep:
             reports_by_phase[ph.index] = rep
@@ -893,7 +925,6 @@ def _dispatch_phased(
     # The stage's business changelog prose: every phase's authored report in deterministic phase
     # order, so the collected changelog covers all phases' requirements.
     combined_report = "\n\n".join(reports_by_phase[i] for i in sorted(reports_by_phase))
-    ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     def _result(
         ok: bool, outcome: str, detail: str = "", artifact: str = "", paths: list[str] | None = None
@@ -919,6 +950,42 @@ def _dispatch_phased(
             tokens=stage_tokens,
             cost=stage_cost,
         )
+
+    # Per-phase commit granularity — issued ONLY from this collecting thread (never a batch worker:
+    # git index lock contention), in deterministic phase order, and ONLY once every phase succeeded.
+    # Each phase's produced source is the intersection of the run's produced set (pre → post
+    # worktree diff) with that phase's declared scope; engine-owned state (the ledger, progress.md)
+    # is deliberately excluded here — it rides the trailing implement record commit the caller's
+    # post-stage hook makes. A commit failure fails the stage with CLASS_COMMIT_FAILED. The
+    # `--commit-relaxed` / signed `git_stage_commit` deviation escape hatch skips these commits,
+    # exactly as it skips the post-stage commit.
+    gprefs = prefs or gitflow.GitPrefs()
+    if prun.ok and run_branch and not commit_relaxed:
+        produced_all = set(runnermod.produced_paths(pre_all, runnermod.worktree_state(s.root)))
+        for ph in sorted(phase_list, key=lambda p: p.index):
+            phase_paths = sorted(
+                p
+                for p in produced_all & set(ph.file_scope)
+                if not p.startswith(gitflow.ENGINE_STATE_PREFIX)
+            )
+            if not phase_paths:
+                continue
+            desc = desc_by_phase.get(ph.index) or ph.name
+            commit = gitflow.commit_stage(
+                s.root,
+                phase_paths,
+                message=gitflow.phase_commit_message(ph.index, total, desc),
+                author_name=gprefs.author_name,
+                author_email=gprefs.author_email,
+            )
+            if commit.error:
+                return _result(
+                    False,
+                    gitflow.CLASS_COMMIT_FAILED,
+                    detail=f"phase {ph.index} '{ph.name}' could not be committed — {commit.error}",
+                )
+
+    ledger.append("run", {"kind": "phases", "step": step, "results": results}, sk, spec_id=spec_id)
 
     if not prun.ok:
         return _result(False, "dispatch_failed", detail=prun.failure_detail)
@@ -969,6 +1036,138 @@ def _progress_safe(update: Callable[[], Any]) -> None:
         update()
     except Exception as exc:  # any progress-write problem degrades to a warning, never a failure
         print(f"warning: progress.md not updated — {exc}", file=sys.stderr)
+
+
+def _commit_engine_state(
+    s: Settings,
+    *,
+    spec_id: str,
+    step: str,
+    run_branch: str,
+    commit_relaxed: bool,
+    prefs: Optional[gitflow.GitPrefs],
+) -> None:
+    """Commit the engine's trust-spine state (the ledger + the run's ``progress.md``) at a judgment
+    step, so a paused or finished run leaves a clean working tree.
+
+    A no-op when the run does not commit — no run branch (dry-run / simulated), or the per-stage
+    commit is relaxed on the signed record (``--commit-relaxed`` / the ``git_stage_commit``
+    deviation) — the same escape hatch the producing-stage commits honour. Otherwise it delegates to
+    :func:`gitflow.commit_engine_state`, which stages ONLY engine-owned state and is itself a no-op
+    when nothing engine-owned is dirty. A genuine git failure degrades to a stderr warning (never
+    crashing the judgment step it follows), consistent with the run's other best-effort
+    ledger-riding commits; the normal path leaves the tree clean."""
+    if not run_branch or commit_relaxed:
+        return
+    gprefs = prefs or gitflow.GitPrefs()
+    outcome = gitflow.commit_engine_state(
+        s.root,
+        message=gitflow.engine_state_commit_message(spec_id, step),
+        author_name=gprefs.author_name,
+        author_email=gprefs.author_email,
+    )
+    if outcome.error:
+        print(f"warning: engine state not committed — {outcome.error}", file=sys.stderr)
+
+
+def _prebatch_log_lines(sched: phases.Schedule, *, agent_name: str, model: str) -> list[str]:
+    """The per-batch dispatch log rendered before a phased implement stage runs.
+
+    One group per scheduled batch, in run order: its 1-based number and whether its phases run in
+    parallel or serially, then one line per phase naming the executing ``agent / model`` and — for a
+    serialized ``[P]`` phase — the scheduler's named reason it did not parallelize (a dependency not
+    yet complete, a file-scope overlap, or no declared file scope). ``model`` already reflects the
+    ``roles.yaml`` ``subagent_models`` override for the stage when one is set. Pure and deterministic
+    given the schedule."""
+    by_batch: dict[int, list[phases.PhaseDecision]] = {}
+    for d in sched.decisions:
+        by_batch.setdefault(d.batch_index, []).append(d)
+    lines: list[str] = []
+    for bi in sorted(by_batch):
+        members = sorted(by_batch[bi], key=lambda d: d.index)
+        mode = "parallel" if len(members) > 1 else "serial"
+        lines.append(f"  batch {bi + 1} — {len(members)} phase(s), {mode}")
+        for d in members:
+            reason = f" — serialized: {d.serialization_reason}" if d.serialization_reason else ""
+            lines.append(f"    · phase {d.index} ({d.name}) → {agent_name} / {model}{reason}")
+    return lines
+
+
+def _completion_tracker(st: style.Styler) -> str:
+    """The run-completion stage tracker: every stage through Ship rendered as completed.
+
+    A finished run has *reached and completed* Ship, so — unlike the live tracker, which marks the
+    reached stage ``▶`` (current) — every stage up to and including Ship is ``✓`` ("ready to push").
+    Observe is omitted from the row; it is surfaced separately as the post-run follow-on pointer/CTA
+    rather than a pending row. Uses the same done glyph as :func:`orchestrate.render_tracker`."""
+    done = "v" if st.ascii_only else "✓"
+    cells = [st.ok(f"{done} {stage}") for stage in orchestrate.STAGES if stage != "Observe"]
+    return "  ".join(cells)
+
+
+def _completion_summary_lines(feature_dir: Optional[Path], st: style.Styler) -> list[str]:
+    """The "All stages are done." statement plus the run's changelog-derived business summary.
+
+    The highlight bullets come from the implement stage's ``changelog.md`` record — capped at five by
+    :func:`completion.read_changelog_highlights`. When the record is absent or carried no authored
+    entries the summary degrades to the single-line fallback, never an error (a legacy run without a
+    changelog still completes cleanly)."""
+    lines = [f"  {st.bold('All stages are done.')}"]
+    highlights = (
+        completion.read_changelog_highlights(feature_dir) if feature_dir is not None else []
+    )
+    if highlights:
+        lines.append(f"  {st.dim('what shipped:')}")
+        lines += [f"    · {h}" for h in highlights]
+    else:
+        lines.append(f"  {st.dim('what shipped: recorded in this run’s changelog.md')}")
+    return lines
+
+
+def _spec_ref_value(root: Path, feature_dir: Optional[Path]) -> str:
+    """The governing spec's repo-relative path for the ``observe coverage --spec`` CTA.
+
+    Resolves the feature's ``spec.md`` (either layout) to a repo-relative POSIX path; falls back to a
+    ``<path/to/spec.md>`` placeholder when the run has no bound folder (a dry run) or the spec cannot
+    be located, so the printed command always reads sensibly."""
+    if feature_dir is not None:
+        spec = workspace.spec_path(feature_dir)
+        if spec is not None:
+            try:
+                return spec.relative_to(root).as_posix()
+            except ValueError:
+                return spec.as_posix()
+    return "<path/to/spec.md>"
+
+
+def _observe_cta_lines(
+    st: style.Styler,
+    *,
+    root: Path,
+    feature_dir: Optional[Path],
+    run_branch: str,
+) -> list[str]:
+    """The Observe call-to-action block printed at run completion.
+
+    States the settled current state — the run branch, Ship reached, every run-produced change
+    committed (a clean working tree, guaranteed by the per-phase + engine-state commits) — then the
+    next actions: measure production coverage of the spec, register the checks that watch it, and
+    push/merge the run branch. Closes with the harness's iteration rule: a production lesson returns
+    as a NEW ``3pwr run`` intent, never an ad-hoc patch."""
+    ptr = ">" if st.ascii_only else "▶"
+    branch = run_branch or "(this run’s branch)"
+    spec_ref = _spec_ref_value(root, feature_dir)
+    new_run = st.bold('3pwr run "<intent>"')
+    return [
+        f"  {st.dim(ptr + ' Observe — the post-run follow-on')}",
+        f"    on branch {st.bold(branch)}: Ship reached, every run-produced change committed.",
+        "    next:",
+        f"      · measure production coverage of the spec: "
+        f"{st.bold(f'3pwr observe coverage --spec {spec_ref}')}",
+        f"      · register the checks that watch it in {st.bold('.3powers/config/observability.yaml')}",
+        f"      · push / merge {st.bold(branch)} to ship it",
+        f"    a production lesson returns as a NEW {new_run} — never an ad-hoc patch.",
+    ]
 
 
 def _native_runner(
@@ -1160,7 +1359,58 @@ def _native_runner(
                 sk=sk,
                 spec_id=spec_id,
                 variables=variables,
+                run_branch=run_branch,
+                commit_relaxed=commit_relaxed,
+                prefs=prefs,
             )
+        elif step == "advance":
+            # The Ship advance runs its deterministic enforcement core IN-PROCESS: no agent
+            # dispatch on the green path — the engine records the signed `stage_advance` entry
+            # exactly as `3pwr advance` does. Only a REFUSAL dispatches an agent, with the
+            # `advance.agent.md` remediation template carrying the named refusal reasons so the
+            # agent can fix the blockers honestly, commit on the run branch, and re-run advance.
+            check = trust.advance_check(s, spec_id=spec_id)
+            if check.ok:
+                try:
+                    entry = ledger.append(
+                        "stage_advance",
+                        trust.advance_payload(stage, check),
+                        sk,
+                        spec_id=spec_id,
+                    )
+                    result = runnermod.StageResult(
+                        step=step,
+                        stage=stage,
+                        ok=True,
+                        outcome="ok",
+                        artifact=f"advanced (ledger seq={entry['seq']})",
+                    )
+                except FileNotFoundError as exc:
+                    # No signer resolvable — a setup failure, not a gate-red, on the same
+                    # dispatch-failure class the runner uses for a stage that could not run.
+                    result = runnermod.StageResult(
+                        step=step,
+                        stage=stage,
+                        ok=False,
+                        outcome="dispatch_failed",
+                        detail=str(exc),
+                    )
+            else:
+                result = runnermod.run_stage(
+                    step,
+                    stage,
+                    attempt=lambda: backend.dispatch(
+                        step,
+                        stage,
+                        spec_text=spec_text,
+                        context=context,
+                        variables={"REFUSAL_REASONS": "\n".join(check.reasons)},
+                    ),
+                    retries=retries,
+                    verify_artifact=verify,
+                    agent=agent_name,
+                    model=str(backend.model),
+                )
         else:
             result = runnermod.run_stage(
                 step,
@@ -1257,6 +1507,12 @@ def _native_runner(
             # per-commit. A stage that produced nothing forces no empty
             # commit; paths a human already committed by hand are a no-op keeping the human's own
             # author. After it, no run-produced change is left uncommitted.
+            #
+            # For a PHASED implement the produced source was already committed one-commit-per-phase
+            # from the collecting thread inside `_dispatch_phased`; those paths re-stage to an empty
+            # index here (a no-op), so this hook does NOT double-commit them. It carries only what is
+            # still dirty — the changelog record, the ledger `phases`+`stage` entries, and
+            # `progress.md` — making this the single TRAILING implement record commit.
             produced = produced_box.get("paths", [])
             if produced and s.ledger_path.is_file():
                 # The engine's ledger rides every producing stage commit: the
@@ -1341,6 +1597,19 @@ def _native_runner(
                     detail=chk.message,
                     transcript=result.transcript,
                 )
+        if result.ok and step == "advance":
+            # The advance produces no artifact, so the post-stage hook above committed nothing;
+            # its signed `stage_advance` entry, the run/stage entry, and `progress.md` are
+            # engine-owned trust state — commit them here so the finished run leaves a clean tree.
+            # A no-op when the run does not commit (dry-run, --commit-relaxed).
+            _commit_engine_state(
+                s,
+                spec_id=spec_id,
+                step="advance",
+                run_branch=run_branch,
+                commit_relaxed=commit_relaxed,
+                prefs=prefs,
+            )
         return result
 
     def run_verdict(stage: str) -> str:
@@ -1449,6 +1718,18 @@ def _native_runner(
             )
             if commit.error:
                 print(f"warning: auto-fixed paths not committed — {commit.error}", file=sys.stderr)
+        # The verdict entry (and any auto-fix verdict/remediation entries above) is engine-owned
+        # trust state: commit it so the verify — and, on the review-verify pass, the review — verdict
+        # leaves a clean working tree. A no-op when the verdict produced no code commit above yet
+        # still appended a ledger entry, which is the common green-verify case.
+        _commit_engine_state(
+            s,
+            spec_id=spec_id,
+            step="verify",
+            run_branch=run_branch,
+            commit_relaxed=commit_relaxed,
+            prefs=prefs,
+        )
         return outcome
 
     return NativeRunner(
@@ -2259,6 +2540,17 @@ def _cmd_run_locked(
                 sk,
                 spec_id=spec_id,
             )
+            # Before pausing for the human gate: persist the engine's trust state (this gate entry,
+            # the ledger, progress.md) so the tree the user reviews at the pause is clean — the same
+            # clean-tree guarantee a finished run gives.
+            _commit_engine_state(
+                s,
+                spec_id=spec_id,
+                step=result.gate or result.stage,
+                run_branch=run_branch,
+                commit_relaxed=commit_relaxed,
+                prefs=git_prefs,
+            )
             gate_artifact = steering.gate_artifact(s.root, feature_dir, result.gate)
             _notify_event(
                 s,
@@ -2344,6 +2636,16 @@ def _cmd_run_locked(
                 )
                 return EXIT_FAIL
             _run_signoff(s, ledger, sk, spec_id, result.gate, args.approver, args.note)
+            # The sign-off is engine-owned trust state: commit it before driving the next segment,
+            # so the approved gate leaves a clean working tree.
+            _commit_engine_state(
+                s,
+                spec_id=spec_id,
+                step="signoff",
+                run_branch=run_branch,
+                commit_relaxed=commit_relaxed,
+                prefs=git_prefs,
+            )
             _record_dispatch(
                 orchestrate.resume_start_index(ledger.entries(), spec_id, result.gate)
             )  # provenance for the next segment (no re-record)
@@ -2581,10 +2883,26 @@ def _cmd_run_locked(
         return EXIT_FAIL
 
     ledger.append("run", {"kind": "complete", "stage": "Ship"}, sk, spec_id=spec_id)
+    # The completing run's final engine-state commit: the `complete` entry and the ledger it rides
+    # in are engine-owned trust state, so a FINISHED run leaves a clean working tree — nothing
+    # run-produced left uncommitted.
+    _commit_engine_state(
+        s,
+        spec_id=spec_id,
+        step="complete",
+        run_branch=run_branch,
+        commit_relaxed=commit_relaxed,
+        prefs=git_prefs,
+    )
     _notify_event(s, args, notify.EVENT_COMPLETION, notify.completion_message(spec_id), spec_id)
-    human = (
-        f"{orchestrate.render_tracker('Observe', rst)}\n"
-        f"  {rst.ok('✓ lifecycle complete')} — advanced to Ship; observe feeds new intent"
+    human = "\n".join(
+        [
+            _completion_tracker(rst),
+            f"  {rst.ok('✓ complete — ready to push')}",
+            *_completion_summary_lines(feature_dir, rst),
+            "",
+            *_observe_cta_lines(rst, root=s.root, feature_dir=feature_dir, run_branch=run_branch),
+        ]
     )
     _print({"status": "done", "spec_id": spec_id, "stages": _stages()}, args.json, human)
     return EXIT_OK

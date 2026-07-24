@@ -10,8 +10,10 @@ budget. This module owns the deterministic mechanics:
   artifact **bytes** — no provider tokenizer, no network;
 * :func:`oversize_warning` words the strictly-advisory over-budget warning — the budget
   never fails a stage or gate;
-* :func:`schedule` batches phases for parallel subagent dispatch **only** when they are marked parallel,
-  declare no dependency, and have disjoint declared file scopes;
+* :func:`schedule` batches phases for parallel subagent dispatch — a ``[P]`` phase joins a concurrent
+  batch only when its declared dependencies have completed in a prior batch, it declares a file scope,
+  and that scope is disjoint from every other batch member — and reports a named reason for every
+  serialized ``[P]`` phase;
 * :func:`run_phases` executes the schedule — one fresh session per phase, concurrent inside a batch — and
   returns results in deterministic artifact order.
 
@@ -241,47 +243,175 @@ def oversize_warning(phase: Phase, estimate: int, budget: int) -> Optional[str]:
 
 
 # --------------------------------------------------------------------------- scheduling
+# The three closed serialization-reason strings a serialized ``[P]`` phase can carry. They are the
+# machine-usable vocabulary the CLI renders as pre-batch log lines — kept here as the single source
+# so every consumer names a serialization the same way.
+REASON_NO_SCOPE = "no file scope declared"
+
+
+def _reason_depends(index: int) -> str:
+    """The named reason for a ``[P]`` phase blocked by a dependency not yet completed."""
+    return f"depends on Phase {index} (not yet complete)"
+
+
+def _reason_overlap(index: int) -> str:
+    """The named reason for a ``[P]`` phase blocked by a file-scope overlap with a batch member."""
+    return f"file scope overlaps Phase {index}"
+
+
 def scope_overlap(a: Phase, b: Phase) -> list[str]:
     """The declared file paths two phases share (sorted) — the disjointness check's evidence."""
     return sorted(set(a.file_scope) & set(b.file_scope))
 
 
-def _parallel_eligible(phase: Phase) -> bool:
-    # A phase joins a concurrent batch only when it is marked parallel, declares no dependency, and
-    # declares a non-empty file scope — an undeclared scope could touch anything, so it never runs
-    # concurrently (the conservative reading of the parallel-dispatch rule).
-    return phase.parallel and not phase.depends_on and bool(phase.file_scope)
+_PHASE_REF = re.compile(r"\d+")
 
 
-def schedule(phases: list[Phase]) -> tuple[list[list[Phase]], list[str]]:
-    """Batch phases for dispatch: each batch runs concurrently, batches run in order.
+def _dependency_indices(phase: Phase) -> set[int]:
+    """The 1-based phase indices a phase declares it depends on — parsed from its ``depends_on`` refs.
 
-    Consecutive phases join one batch only when every member is parallel-marked, dependency-free, and
-    pairwise disjoint in declared file scope; any other phase runs alone, in artifact order. Returns the
-    batches plus human-readable notes for each pair that was serialized *despite* parallel markers (the
-    reported overlap). Pure and deterministic: two phases end up in the same batch only
-    if their declared file-scope sets do not intersect."""
+    Each declared dependency (e.g. ``"Phase 1"`` or ``"1"``) contributes its leading integer; a ref
+    carrying no integer is ignored. Pure and deterministic."""
+    indices: set[int] = set()
+    for dep in phase.depends_on:
+        m = _PHASE_REF.search(dep)
+        if m:
+            indices.add(int(m.group()))
+    return indices
+
+
+def _serialization_reason(
+    phase: Phase, current_batch: list[Phase], completed: set[int]
+) -> Optional[str]:
+    """Why a ``[P]`` phase cannot join the batch being formed, or ``None`` when it can.
+
+    Checked in a fixed order so the outcome is deterministic and every serialization is named by
+    exactly one cause: an undeclared file scope, then a dependency not yet completed in a *prior*
+    (already-closed) batch, then a file-scope overlap with a member of the batch being formed."""
+    if not phase.file_scope:
+        return REASON_NO_SCOPE
+    unmet = sorted(d for d in _dependency_indices(phase) if d not in completed)
+    if unmet:
+        return _reason_depends(unmet[0])
+    for member in current_batch:
+        if scope_overlap(phase, member):
+            return _reason_overlap(member.index)
+    return None
+
+
+@dataclass(frozen=True)
+class PhaseDecision:
+    """One phase's scheduling decision — its batch, whether it runs concurrently, and, for a
+    serialized ``[P]`` phase, the named reason it did not parallelize.
+
+    ``batch_index`` is the 0-based position of the phase's batch in run order. ``parallel`` is
+    ``True`` only when the phase's batch holds more than one member (it actually runs concurrently).
+    ``serialization_reason`` is exactly one of the three closed strings — :data:`REASON_NO_SCOPE`,
+    ``"depends on Phase N (not yet complete)"``, or ``"file scope overlaps Phase N"`` — when a
+    ``[P]`` phase was blocked from a sibling batch, and ``None`` when the phase runs in parallel or
+    was never a ``[P]`` candidate blocked by a concrete cause. Machine-usable: downstream rendering
+    (CLI pre-batch logs, ``progress.md`` markers) consumes these fields directly."""
+
+    index: int
+    name: str
+    batch_index: int
+    parallel: bool
+    serialization_reason: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Schedule:
+    """The scheduler's verdict: ordered batches plus per-phase decision metadata.
+
+    ``batches[i]`` runs concurrently; batches run in order. ``decisions`` holds one
+    :class:`PhaseDecision` per phase, stably ordered by phase index. Pure and deterministic, and —
+    like the rest of this module — free of any trust-spine state; the caller appends run results
+    from one thread *after* collection."""
+
+    batches: list[list[Phase]]
+    decisions: list[PhaseDecision]
+
+    @property
+    def notes(self) -> list[str]:
+        """Human-readable serialization notes — one line per serialized ``[P]`` phase naming its reason.
+
+        Derived from :attr:`decisions`; preserves the phase-order, reason-bearing summary the CLI
+        prints today while richer per-batch rendering consumes the structured decisions directly."""
+        return [
+            f"phase {d.index} ({d.name}) runs sequentially — {d.serialization_reason}"
+            for d in self.decisions
+            if d.serialization_reason is not None
+        ]
+
+
+def schedule(phase_list: list[Phase]) -> Schedule:
+    """Batch phases for dispatch and record why each ``[P]`` phase did or did not parallelize.
+
+    A ``[P]`` phase joins the batch currently being formed when (1) every phase it declares a
+    dependency on has completed in a *prior* (already-closed) batch, (2) it declares a non-empty
+    file scope, and (3) its scope is disjoint from every other member of that batch. Otherwise it is
+    serialized into its own batch and its :class:`PhaseDecision` carries exactly one named reason —
+    :data:`REASON_NO_SCOPE`, ``"depends on Phase N (not yet complete)"``, or ``"file scope overlaps
+    Phase N"`` (checked in that order). A non-``[P]`` phase always runs alone.
+
+    Returns a :class:`Schedule` carrying the ordered ``batches`` (each runs concurrently; batches run
+    in order) and one ``decisions`` record per phase in stable phase-index order. Pure and
+    deterministic: identical input always yields identical batches, decisions, and ordering on any
+    machine, and the module never touches the trust spine."""
     batches: list[list[Phase]] = []
-    notes: list[str] = []
+    reasons: dict[int, str] = {}
+    completed: set[int] = set()  # indices in already-closed (prior) batches
     current: list[Phase] = []
-    for ph in phases:
-        if _parallel_eligible(ph) and current and all(_parallel_eligible(p) for p in current):
-            overlaps = [(p, scope_overlap(ph, p)) for p in current]
-            clash = [(p, o) for p, o in overlaps if o]
-            if not clash:
-                current.append(ph)
-                continue
-            for p, o in clash:
-                notes.append(
-                    f"phases {p.index} and {ph.index} share files ({', '.join(o[:3])}"
-                    f"{', …' if len(o) > 3 else ''}) — running sequentially despite parallel markers"
-                )
+
+    def _close() -> None:
+        nonlocal current
         if current:
             batches.append(current)
+            for member in current:
+                completed.add(member.index)
+            current = []
+
+    for ph in phase_list:
+        if not ph.parallel:
+            # A non-parallel phase always runs alone, in its own batch, in artifact order.
+            _close()
+            current = [ph]
+            _close()
+            continue
+        reason = _serialization_reason(ph, current, completed)
+        if reason is None:
+            current.append(ph)
+            continue
+        # Blocked from the batch being formed: close it (its members complete) and start this phase
+        # in a fresh batch, where a later disjoint sibling may still join it.
+        _close()
         current = [ph]
-    if current:
-        batches.append(current)
-    return batches, notes
+        reasons[ph.index] = reason
+    _close()
+
+    batch_of: dict[int, int] = {}
+    size_of: dict[int, int] = {}
+    for bi, batch in enumerate(batches):
+        for member in batch:
+            batch_of[member.index] = bi
+            size_of[member.index] = len(batch)
+
+    decisions: list[PhaseDecision] = []
+    for ph in sorted(phase_list, key=lambda p: p.index):
+        parallel = size_of.get(ph.index, 1) > 1
+        # A phase that ends up sharing its batch actually parallelized: its earlier blocker (if any)
+        # no longer applies, so no reason is reported.
+        reason = None if parallel else reasons.get(ph.index)
+        decisions.append(
+            PhaseDecision(
+                index=ph.index,
+                name=ph.name,
+                batch_index=batch_of.get(ph.index, 0),
+                parallel=parallel,
+                serialization_reason=reason,
+            )
+        )
+    return Schedule(batches=batches, decisions=decisions)
 
 
 # --------------------------------------------------------------------------- execution

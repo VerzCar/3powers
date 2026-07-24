@@ -99,11 +99,28 @@ agent, different-family oracle) plus a dependency summary, and exits 0 only when
    and it names the run's `specs-src/<NNN>-*/` folder);
 2. **Sign-off** — review the evidence, then resume the same way.
 
-After the second approval the run completes ("lifecycle complete — advanced to Ship") and exits `0`.
-Progress, verdicts, and any failure are recorded in the signed ledger: check anytime with
-`3pwr run --status --spec-id 001`. Scripts can branch on the [documented exit
+After the second approval the run completes ("complete — ready to push") and exits `0`. The tracker
+shows Ship as the final completed step and Observe as a follow-on pointer, followed by an "All stages
+are done." line, a short plain-language summary from the run's `changelog.md`, and an Observe
+call-to-action naming what to do next. Progress, verdicts, and any failure are recorded in the signed
+ledger: check anytime with `3pwr run --status --spec-id 001`. Scripts can branch on the [documented exit
 codes](cli-reference.md#run-exit-codes) — `0` done · `1` gates red · `2` usage · `3` paused at a human
 gate · `4` setup/dispatch failure.
+
+**After a run.** The run branch is committed and the working tree is clean, so the run is ready to
+push. From here:
+
+- **Check instrumentation** — `3pwr observe coverage --spec specs-src/001-*/spec.md` flags any
+  non-functional requirement with no live check registered in `.3powers/config/observability.yaml`.
+- **Ship it** — push or merge the run's `3pwr/001-*` branch through your normal review; the run never
+  pushes for you.
+- **A next, related change is a new run**, not an edit to shipped code — `3pwr run "<next intent>"`
+  allocates a fresh spec and branch and drives it through the same judiciary. Production lessons come
+  back this way too.
+- **Revising the in-flight run** (before you've moved on) uses the run's own controls, not a new run:
+  `--resume --revise "<feedback>"` (or `--revise-file <path>`) at a human-gate pause re-dispatches the
+  paused stage and returns to the same gate; and `3pwr revert --to <seq>` appends a signed reversal
+  returning the spec to a prior recorded stage when you need to back out.
 
 **If something fails:** the message names the stage, the failure class, and the persisted transcript
 path (`.3powers/runs/<spec-id>/`); [Troubleshooting](troubleshooting.md) has an entry for each failure

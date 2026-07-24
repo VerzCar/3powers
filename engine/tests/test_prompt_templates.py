@@ -55,6 +55,21 @@ def test_substitute_unknown_variable_left_verbatim():
     assert prompts.substitute("keep $UNKNOWN as-is") == "keep $UNKNOWN as-is"
 
 
+def test_substitute_fills_refusal_reasons_multiline():
+    """PLAN-040: the advance remediation template's $REFUSAL_REASONS renders the joined blocker
+    lines verbatim so the dispatched agent sees exactly why the advance gate refused."""
+    reasons = "- ledger: broken chain at seq 4\n- sign-off: missing"
+    out = prompts.substitute("Why:\n$REFUSAL_REASONS\nFix them.", {"REFUSAL_REASONS": reasons})
+    assert reasons in out
+    assert "$REFUSAL_REASONS" not in out
+
+
+def test_refusal_reasons_is_in_the_closed_vocabulary():
+    """PLAN-040: REFUSAL_REASONS is a defined variable — unfilled it renders empty (never left
+    verbatim), proving it is part of the closed substitution vocabulary."""
+    assert prompts.substitute("[$REFUSAL_REASONS]") == "[]"
+
+
 # --------------------------------------------------------------------------- fragments
 def test_fragment_body_answers_bundled_when_no_templates_dir():
     """With no repo-local templates dir, the bundled fragment body answers."""

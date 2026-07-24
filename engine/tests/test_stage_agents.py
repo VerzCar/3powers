@@ -642,7 +642,13 @@ def test_init_reports_seeded_templates_and_stays_promptless(tmp_path, capsys):
     assert _init(root, "--language", "python", "--json", key=tmp_path / "k.key") == 0
     payload = json.loads(capsys.readouterr().out)
     seeded = payload["stage_templates"]
-    expected = {prompts.template_name(s) for s in STAGES} | {f"{f}.agent.md" for f in FRAGMENTS}
+    # every lifecycle stage template + the reusable fragments + the advance remediation template
+    # (dispatched only when a High-risk `advance` refuses; a coder-role template, not a stage)
+    expected = (
+        {prompts.template_name(s) for s in STAGES}
+        | {f"{f}.agent.md" for f in FRAGMENTS}
+        | {"advance.agent.md"}
+    )
     assert set(seeded) == expected
     assert all(v == "created" for v in seeded.values())
 

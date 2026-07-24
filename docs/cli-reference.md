@@ -606,6 +606,17 @@ and the fix; relaxable only via the signed `git_run_branch` / `git_stage_commit`
 Exit `1` (refused) with reasons, or `0` and a signed `stage_advance` entry (which records any
 `deviations_applied`).
 
+**Advance during a `3pwr run` (in-process by default).** When a run reaches a stage boundary it runs
+this same enforcement check **in-process — no agent is dispatched**; on success it records the
+`stage_advance` and commits the engine state and continues. Only on a **refusal** does the run
+dispatch a headless remediation agent, using the dedicated `advance.agent.md` template. That agent is
+handed the named refusal reasons (via the closed template variable `$REFUSAL_REASONS`) and instructed
+to fix the named blockers honestly, commit the run-produced work on the run branch, and re-run
+`3pwr advance` — never weakening a gate and never self-filing a deviation. The template's bundled
+default ships with the engine; a repo-local override at
+`.3powers/templates/agents/advance.agent.md` (the standard three-tier resolution) tunes the
+remediation instructions without changing the enforcement.
+
 ### `status` — per-spec lifecycle stage
 Derives the eight-stage position of each spec from the ledger.
 - `--spec-id SPEC_ID` — filter to one spec.
@@ -721,8 +732,11 @@ is absent or a field is renamed, usage reads `—`.
 **Session freshness.** Every dispatched stage and phase is a **fresh agent session** — an
 independent process with no conversation state carried between dispatches; the engine never emits a
 resume/continue flag, and a manifest's `new_session_args` passes a backend's no-resume flag where
-one exists. `[P]` phases with disjoint file scopes run concurrently as separate engine-dispatched
-sessions; `[P]` tasks inside a phase are executed via the agent's own sub-agents.
+one exists. A `[P]`-marked phase joins a concurrent batch only when **all** of its declared
+dependencies (`Depends on: Phase N`) completed in a prior batch, it declares a file scope, and that
+scope is **disjoint** from every other phase in the batch; otherwise it is serialized with exactly
+one named reason — `depends on Phase N (not yet complete)`, `file scope overlaps Phase N`, or `no
+file scope declared`. `[P]` tasks inside a phase are executed via the agent's own sub-agents.
 **Cheaper sub-agents per stage (advisory, opt-in).** A stage's own sub-agents can be steered to a
 cheaper model per step via the additive `subagent_models` map in `roles.yaml` (see `config roles
 setup` above), while the stage's main agent keeps its role model. It is emitted only through the
@@ -736,7 +750,7 @@ overrides the engine's bundled default; an absent, empty, or unreadable file fal
 bundled template, then to the generic fragment. Four **fragments** compose the surrounding prompt —
 `preamble`, `generic`, `commit-note`, and `revise` — and are overridable the same way. A template
 body may reference the closed variable vocabulary `$STEP`, `$GATE`, `$ARTIFACT`, `$FEATURE_FOLDER`,
-`$ORACLE_DESTINATION`, `$FEEDBACK`, substituted at dispatch time: an unset variable renders empty,
+`$ORACLE_DESTINATION`, `$FEEDBACK`, `$REFUSAL_REASONS`, substituted at dispatch time: an unset variable renders empty,
 `$$` escapes a literal `$`, and any other `$name` is left verbatim. The engine-framed INTENT /
 APPROVED SPEC / PRIOR CONTEXT / FILE SCOPE blocks are never substituted — a template tunes the
 instruction body only.
@@ -751,9 +765,17 @@ that already exists, it **refuses on the setup path** rather than continuing tha
 at `3pwr run --resume --spec-id <NNN>` to continue the existing run explicitly. Re-entry of an existing
 branch happens only on the explicit resume path. The run **refuses to start** when the working tree
 carries uncommitted changes not produced by the run (naming the paths and the `git_clean_start`
-deviation — the edits are never touched). After each producing stage, the post-stage hook commits exactly one commit staging only the
-run's produced paths, whose message is the agent's `COMMIT:` description (deterministic
-`3pwr(<spec-id>): <step>` fallback) and whose author is the configured `3pwr` identity — applied
+deviation — the edits are never touched). During a phased build the engine commits **one commit per
+implement phase** — in deterministic phase order, from the collecting thread only (never a worker
+thread), each staging only that phase's produced paths, with message `implement(phase N/M): <description>`
+(the description from the phase's `COMMIT:` transcript line) — followed by a single **trailing implement
+record commit** carrying the ledger `phases` entry and `progress.md`. Every other producing stage
+commits exactly one commit staging only the run's produced paths, whose message is the agent's
+`COMMIT:` description (deterministic `3pwr(<spec-id>): <step>` fallback). Beyond the producing stages,
+the engine commits its own **engine state** (the ledger and the run's `progress.md`) after every
+judgment step (the verify verdict including auto-fix, review-verify, sign-off, advance, final
+completion) and before every human-gate pause — so a paused or finished run always leaves a **clean
+working tree**. Every commit's author is the configured `3pwr` identity — applied
 per-commit, never mutating the developer's git config, never force-pushing or rewriting history.
 Preferences (branch prefix, base branch, 3pwr author) live in `.3powers/config/git.yaml`; the
 discipline itself is mandatory and relaxable only via the signed deviations
@@ -825,6 +847,23 @@ too), the run proceeds past Verify instead of stopping at gate-red, printing one
 `advance` makes, from the same shared logic. The recorded verdict stays honestly red; only the
 proceed decision consults deviations. If any red gate is uncovered, the run stops naming the
 uncovered gate(s) exactly as before.
+
+**Run completion (DONE).** When the lifecycle reaches Ship the run ends **complete — ready to push**:
+the tracker renders Ship as the final *completed* step and Observe as a follow-on pointer line rather
+than a pending row, and the same "complete — ready to push" wording appears in `progress.md`'s
+final-state line and the completion notification. The completion output then prints an explicit
+"All stages are done." statement plus a short business summary rendered from the run's `changelog.md`
+(highlight bullets capped at 5; a graceful one-liner fallback when `changelog.md` is absent or
+unparseable — no extra agent dispatch, no new artifact), followed by an **Observe call-to-action**
+that states the current state (the run branch, Ship reached, everything committed) and the next
+actions — `3pwr observe coverage --spec <spec>`, register checks in
+`.3powers/config/observability.yaml`, and push/merge the run branch — noting that production lessons
+return as a NEW `3pwr run "<intent>"`, never ad-hoc patches. During a phased build the run emits
+**pre-batch log lines** before each batch: the batch number, whether it runs in parallel or serial,
+the named serialization reason for every serialized `[P]` phase, and the executing agent/model per
+phase (including a `roles.yaml` `subagent_models` entry when set). The `progress.md` phase table
+carries an additive **Batch** column (parallel/serial plus the batch index).
+
 - `intent` (positional) · `--file PATH` (read the intent from a text file; inline intent text is
   appended as an instruction) · `--mode auto|commit` · `--integration INTEGRATION` (coder agent backend) ·
   `--agent AGENT` (override the coder backend for this run) · `--spec-id SPEC_ID` (the run's
