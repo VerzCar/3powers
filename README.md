@@ -149,7 +149,7 @@ To contribute, see **[CONTRIBUTING.md](CONTRIBUTING.md)** (dev setup, platform s
 
 ## Status
 
-**v1.0 — first stable release** (current release **1.0.1**, a packaging patch over 1.0.0). The full judiciary is built and self-applied at the strictest tier, and the engine ships on PyPI as **3powers** (`uv tool install 3powers`). Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
+**v1.0 — first stable release** (current release **1.2.0**). The full judiciary is built and self-applied at the strictest tier, and the engine ships on PyPI as **3powers** (`uv tool install 3powers`). Implementation status lives in exactly one place: **[docs/STATUS.md](docs/STATUS.md)**, the spec-validated breakdown of what is delivered versus [residual](docs/glossary.md#residual), and what is next.
 
 ## License
 
